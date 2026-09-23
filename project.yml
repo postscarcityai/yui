@@ -1,0 +1,29 @@
+name: Yui
+options:
+  bundleIdPrefix: com.yuigui
+  deploymentTarget:
+    iOS: "26.0"
+settings:
+  base:
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    SWIFT_VERSION: "6.0"
+    DEVELOPMENT_TEAM: ${YUI_TEAM_ID}
+    CODE_SIGN_STYLE: Automatic
+targets:
+  Yui:
+    type: application
+    platform: iOS
+    sources: [Yui/Sources, Yui/Resources]
+    info:
+      path: Yui/Info.plist
+      properties:
+        CFBundleDisplayName: Yui
+        UILaunchScreen: {}
+        ITSAppUsesNonExemptEncryption: false
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.yuigui.app
+        TARGETED_DEVICE_FAMILY: "1"
+        GENERATE_INFOPLIST_FILE: YES
