@@ -5,3 +5,7 @@ DerivedData/
 *.xcarchive
 .DS_Store
 supabase/.temp/
+.env
+.env.*
+__pycache__/
+*.p8
