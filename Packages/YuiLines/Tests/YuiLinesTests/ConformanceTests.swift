@@ -17,6 +17,8 @@ struct Vector: Sendable, CustomTestStringConvertible {
     let emits: [[YLValue]]?
     /// Ids of the adds that open on the stage under `style` (spec section 5).
     let stage: [String]?
+    /// The page of each add, in order (spec section 5, Pages).
+    let pages: [Int]?
     let style: [String: String]
     var testDescription: String { "\(file) :: \(name)" }
 }
@@ -41,6 +43,7 @@ enum Vectors {
                 chunks: v["chunks"]?.array?.map { $0.string! },
                 emits: v["emits"]?.array?.map { $0.array! },
                 stage: v["stage"]?.array?.map { $0.string! },
+                pages: v["pages"]?.array?.map { Int($0.number!) },
                 style: v["style"]?.object?.compactMapValues { $0.string } ?? [:]
             )
         }
@@ -87,6 +90,11 @@ func conformance(_ v: Vector) {
     if let stage = v.stage {
         let staged = YuiLines.parse(v.input).filter { YuiLines.opensOnStage($0, style: v.style) }.compactMap(\.id)
         #expect(staged == stage, "stage: \(staged)")
+    }
+
+    if let pages = v.pages {
+        let got = YuiLines.parse(v.input).filter { $0.op == .add }.map { YuiLines.page(of: $0.screen) }
+        #expect(got == pages, "pages: \(got)")
     }
 
     #expect(v.expected.contains { $0["op"] == "error" } == v.error, "`error` flag does not match expected")

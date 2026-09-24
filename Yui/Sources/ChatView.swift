@@ -36,7 +36,15 @@ struct ChatView: View {
     @State private var scrolledUp = false
     /// Agent messages that landed while scrolled up: the count on the arrow.
     @State private var unread = 0
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// The page on show (YUI-31): 1 the chat, 2 and 3 the agent's screens. Follows `store.page`.
+    @State private var page: Int? = 1
+    /// Reduce Motion: pages cross-fade instead of sliding.
+    @State private var pageFade = 1.0
+    @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
+    /// The system setting, or `-yuiReduceMotion` for UI tests (a simulator can't flip it).
+    private var reduceMotion: Bool {
+        systemReduceMotion || ProcessInfo.processInfo.arguments.contains("-yuiReduceMotion")
+    }
 
     var body: some View {
         let c = theme.swatch(scheme)
@@ -49,78 +57,22 @@ struct ChatView: View {
                     } retry: {
                         Task { await agents.refresh() }
                     }
-                } else if store.messages.isEmpty && !store.waiting {
-                    EmptyChat(agent: store.agent, loading: store.agent != nil && !store.loaded) { store.send($0) }
                 } else {
-                    ScrollView {
-                        // Not Lazy: LazyVStack drops preset cards from the accessibility tree (iOS 26/27),
-                        // so VoiceOver and UI tests saw only the plain bubbles.
-                        VStack(spacing: theme.spacing.m) {
-                            ForEach(store.messages) { m in
-                                if let yl = m.yl {
-                                    YLReply(screen: yl, scope: m.id, agent: store.agent, style: agentStyle) { store.openStage(m.id) }
-                                } else {
-                                    Bubble(message: m, agent: store.agent, pending: outbox.isPending(m.id),
-                                           reaction: store.wearsReaction(m) ? store.reaction(for: m) : nil,
-                                           lifted: store.reacting == m.id,
-                                           open: { openReactions(m.id) },
-                                           react: { store.react(m.id, with: $0) })
-                                }
-                            }
-                            if let agent = store.agent, outbox.offline, !outbox.pending(agentID: agent.id).isEmpty {
-                                // On the phone, not on Yui yet: it sends itself when the connection is back.
-                                QuietNote(text: "Not sent yet. It goes the moment you're back online.", icon: "clock")
-                            } else if store.waiting, let agent = store.agent, agent.liveness != .online {
-                                // Delivered, but the agent's computer is away: say so instead of fake dots.
-                                QuietNote(text: agent.liveness == .asleep
-                                          ? "\(agent.name) is asleep. It gets this when its computer wakes."
-                                          : "\(agent.name) is offline. It gets this when its gateway starts again.",
-                                          icon: agent.liveness == .asleep ? "moon.zzz" : "powersleep")
-                            } else if store.waiting {
-                                TypingDots(agent: store.agent).id("typing")
-                                WorkingNote(agent: store.agent, since: store.waitingSince, pickedUp: store.pickedUpAt)
-                            }
-                            if let error = store.error {
-                                Text(error)
-                                    .font(theme.font(theme.type.caption, .semibold))
-                                    .foregroundStyle(c.inkSoft)
-                                    .frame(maxWidth: .infinity)
-                            }
-                        }
-                        .padding(.horizontal, theme.spacing.l)
-                        .padding(.vertical, theme.spacing.m)
-                    }
-                    .defaultScrollAnchor(.bottom)
-                    .scrollPosition($position)
-                    .scrollDismissesKeyboard(.interactively)
-                    // How far above the newest message the view sits, in screens.
-                    .onScrollGeometryChange(for: CGFloat.self) { geo in
-                        // containerSize is inside the insets (nav bar above, composer below).
-                        let below = geo.contentSize.height - geo.contentInsets.top - geo.contentOffset.y - geo.containerSize.height
-                        return below / max(geo.containerSize.height, 1)
-                    } action: { _, screens in
-                        followScroll(screens: screens)
-                    }
-                    .onChange(of: store.messages.map(\.id)) { old, new in countNew(old: old, new: new) }
-                    // The agent's saved screens, one tap from the stage (YUI-32).
-                    .safeAreaInset(edge: .top, spacing: 0) {
-                        if !store.shelf.screens.isEmpty {
-                            ShelfBar(screens: store.shelf.screens, open: store.reopen, remove: store.unshelve)
-                                .transition(.move(edge: .top).combined(with: .opacity))
-                        }
-                    }
-                    .overlay(alignment: .bottom) {
-                        if scrolledUp {
-                            JumpToBottom(unread: unread, action: jumpToBottom)
-                                .padding(.bottom, theme.spacing.m)
-                                .transition(reduceMotion ? .opacity : .scale(scale: 0.6).combined(with: .opacity))
-                        }
-                    }
+                    // Three screens per agent (YUI-31): the chat, then screens 2 and 3 a swipe away.
+                    PagedThread(store: store, page: $page, fade: pageFade, agent: store.agent, style: agentStyle) { thread }
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(c.background)
-            .safeAreaInset(edge: .bottom) { if !firstRun { inputBar(c) } }
+            .safeAreaInset(edge: .bottom) {
+                if !firstRun {
+                    VStack(spacing: theme.spacing.s) {
+                        // Chat · 2 · 3 (YUI-31), in the composer's inset so every page clears it.
+                        PageTabs(page: page ?? 1, filled: Set([2, 3].filter { !store.onPage($0).isEmpty })) { store.goToPage($0) }
+                        inputBar(c)
+                    }
+                }
+            }
             // Held agent bubble: the tapback bar over a dimmed thread (YUI-49).
             .overlayPreferenceValue(ReactionAnchor.self) { anchor in
                 GeometryReader { geo in
@@ -203,6 +155,7 @@ struct ChatView: View {
         }
         .environment(\.ylEmit, store.emit)
         .environment(\.ylShow, store.ylShow)
+        .environment(\.ylPage, store.ylPage)
         .environment(\.ylAnswers, store.ylAnswers)
         .environment(\.yuiMedia, store.agent.flatMap { a in account.session?.userID == "demo" ? nil : YuiMedia(account: account, agentID: a.id) })
         .environment(\.ylTimers, store.timers)
@@ -213,6 +166,17 @@ struct ChatView: View {
             store.onLook = { id, props, at in Task { await agents.applyThemeLine(agentID: id, props: props, at: at) } }
         }
         .onChange(of: theme) { store.spring = theme.spring }
+        // Pages (YUI-31): a swipe tells the store; the store (a tab, a pill, a
+        // reply sent to a page) moves the pager with a spring, or a fade under Reduce Motion.
+        .onChange(of: page) { if let page { store.showingPage(page) } }
+        // Streamed lines can ask for 2 and then 3 within a quarter second; a new
+        // scroll animation cuts the last one short, so take only the newest ask.
+        .task(id: store.pageTurns) {
+            guard store.pageTurns > 0 else { return }
+            try? await Task.sleep(for: .milliseconds(250))
+            turnPage(to: store.page)
+        }
+        .onChange(of: store.agent?.id, initial: true) { turnPage(to: store.page) }
         #if DEBUG
         // -yuiReactDemo bar|<meaning> ("love it"): the reaction bar open, or a reacted bubble, for screenshots.
         .task {
@@ -288,6 +252,79 @@ struct ChatView: View {
             if !agents.agents.contains(where: { $0.id == id }) { Task { await agents.refresh() } }
         }
         .tint(c.accent)
+    }
+
+    /// Page 1: the thread itself, or the empty chat before the first message.
+    @ViewBuilder private var thread: some View {
+        let c = theme.swatch(scheme)
+        if store.messages.isEmpty && !store.waiting {
+            EmptyChat(agent: store.agent, loading: store.agent != nil && !store.loaded) { store.send($0) }
+        } else {
+            ScrollView {
+                // Not Lazy: LazyVStack drops preset cards from the accessibility tree (iOS 26/27),
+                // so VoiceOver and UI tests saw only the plain bubbles.
+                VStack(spacing: theme.spacing.m) {
+                    ForEach(store.messages) { m in
+                        if let yl = m.yl {
+                            YLReply(screen: yl, scope: m.id, agent: store.agent, style: agentStyle) { store.openStage(m.id) }
+                        } else {
+                            Bubble(message: m, agent: store.agent, pending: outbox.isPending(m.id),
+                                   reaction: store.wearsReaction(m) ? store.reaction(for: m) : nil,
+                                   lifted: store.reacting == m.id,
+                                   open: { openReactions(m.id) },
+                                   react: { store.react(m.id, with: $0) })
+                        }
+                    }
+                    if let agent = store.agent, outbox.offline, !outbox.pending(agentID: agent.id).isEmpty {
+                        // On the phone, not on Yui yet: it sends itself when the connection is back.
+                        QuietNote(text: "Not sent yet. It goes the moment you're back online.", icon: "clock")
+                    } else if store.waiting, let agent = store.agent, agent.liveness != .online {
+                        // Delivered, but the agent's computer is away: say so instead of fake dots.
+                        QuietNote(text: agent.liveness == .asleep
+                                  ? "\(agent.name) is asleep. It gets this when its computer wakes."
+                                  : "\(agent.name) is offline. It gets this when its gateway starts again.",
+                                  icon: agent.liveness == .asleep ? "moon.zzz" : "powersleep")
+                    } else if store.waiting {
+                        TypingDots(agent: store.agent).id("typing")
+                        WorkingNote(agent: store.agent, since: store.waitingSince, pickedUp: store.pickedUpAt)
+                    }
+                    if let error = store.error {
+                        Text(error)
+                            .font(theme.font(theme.type.caption, .semibold))
+                            .foregroundStyle(c.inkSoft)
+                            .frame(maxWidth: .infinity)
+                    }
+                }
+                .padding(.horizontal, theme.spacing.l)
+                .padding(.vertical, theme.spacing.m)
+            }
+            .defaultScrollAnchor(.bottom)
+            .scrollPosition($position)
+            .scrollDismissesKeyboard(.interactively)
+            // How far above the newest message the view sits, in screens.
+            .onScrollGeometryChange(for: CGFloat.self) { geo in
+                // containerSize is inside the insets (nav bar above, composer below).
+                let below = geo.contentSize.height - geo.contentInsets.top - geo.contentOffset.y - geo.containerSize.height
+                return below / max(geo.containerSize.height, 1)
+            } action: { _, screens in
+                followScroll(screens: screens)
+            }
+            .onChange(of: store.messages.map(\.id)) { old, new in countNew(old: old, new: new) }
+            // The agent's saved screens, one tap from the stage (YUI-32).
+            .safeAreaInset(edge: .top, spacing: 0) {
+                if !store.shelf.screens.isEmpty {
+                    ShelfBar(screens: store.shelf.screens, open: store.reopen, remove: store.unshelve)
+                        .transition(.move(edge: .top).combined(with: .opacity))
+                }
+            }
+            .overlay(alignment: .bottom) {
+                if scrolledUp {
+                    JumpToBottom(unread: unread, action: jumpToBottom)
+                        .padding(.bottom, theme.spacing.m)
+                        .transition(reduceMotion ? .opacity : .scale(scale: 0.6).combined(with: .opacity))
+                }
+            }
+        }
     }
 
     /// Signed in with no agents yet (every new account): nothing here can answer,
@@ -565,6 +602,17 @@ struct ChatView: View {
         } else if scrolledUp {
             withAnimation(theme.spring) { unread += added.count }
         }
+    }
+
+    private func turnPage(to n: Int) {
+        guard page != n else { return }
+        guard reduceMotion else {
+            withAnimation(theme.spring) { page = n }
+            return
+        }
+        pageFade = 0
+        page = n
+        withAnimation(.easeInOut(duration: 0.25)) { pageFade = 1 }
     }
 
     private func jumpToBottom() {

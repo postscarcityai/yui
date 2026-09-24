@@ -17,6 +17,8 @@ extension YuiLines {
                                     style: [String: String] = [:]) -> Bool {
         if screen == "full" { return true }
         if isWorkout(preset: preset, props: props) { return true }
+        // A route to a page beats the stage defaults (spec section 5, Pages).
+        if page(of: screen) != 1 { return false }
         if props["inline"]?.bool == true { return false }
         if style["screen"] == "chat" { return false }
         if style["screen"] == "full" { return true }
@@ -28,5 +30,20 @@ extension YuiLines {
     public static func opensOnStage(_ node: YLNode, style: [String: String] = [:]) -> Bool {
         guard node.op == .add, let preset = node.preset else { return false }
         return opensOnStage(preset: preset, screen: node.screen, props: node.props ?? [:], style: style)
+    }
+}
+
+/// Pages (spec `yuigui/spec/YL.md` section 5, "Pages"): every agent gets three
+/// screens side by side, the chat and then screens 2 and 3.
+extension YuiLines {
+    /// The page a screen lives on: 2 and 3 are pages beside the chat; every
+    /// other screen (`1`, `chat`, `full`, `stats-view`) renders in the chat, page 1.
+    /// Mirrors `pageOf` in the JS reference parser.
+    public static func page(of screen: String) -> Int {
+        switch screen {
+        case "2": 2
+        case "3": 3
+        default: 1
+        }
     }
 }

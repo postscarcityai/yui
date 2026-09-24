@@ -59,6 +59,53 @@ final class ChatStore {
         }
     }
 
+    // MARK: Pages (YUI-31, spec YL.md section 5, Pages)
+
+    /// The page on show: 1 is the chat, 2 and 3 the agent's screens beside it.
+    private(set) var page = 1
+    /// The page each agent's thread was on, so switching agents and back keeps it.
+    private var pages: [String: Int] = [:]
+
+    /// Bumped on every request to move (a tab, a pill, a reply sent to a page),
+    /// so the pager moves even when it and `page` disagree.
+    private(set) var pageTurns = 0
+
+    func goToPage(_ n: Int) {
+        guard (1...3).contains(n) else { return }
+        showingPage(n)
+        pageTurns += 1
+    }
+
+    /// The person swiped to page `n`: note it, nothing to move.
+    func showingPage(_ n: Int) {
+        guard (1...3).contains(n) else { return }
+        page = n
+        if let id = agent?.id { pages[id] = n }
+    }
+
+    /// Made once, like `ylShow`: the chat's "On screen 2" pills go through it.
+    @ObservationIgnored private(set) lazy var ylPage = YLPage { [weak self] n in self?.goToPage(n) }
+
+    /// What is on page `n`: each reply with something there, oldest first.
+    /// A page keeps what lands on it across replies until `>2 clear`.
+    func onPage(_ n: Int) -> [ChatMessage] {
+        messages.filter { $0.yl.map { !$0.onPage(n, style: style).isEmpty } ?? false }
+    }
+
+    /// A live reply added something to a page: bring the newest such page forward.
+    /// Patches, `clear` and history loading never move the person.
+    private func pageUpdate(_ nodes: [YLNode]) {
+        guard let n = nodes.last(where: { $0.op == .add && YuiLines.page(of: $0.screen) != 1
+            && !YuiLines.opensOnStage($0, style: style) }).map({ YuiLines.page(of: $0.screen) }) else { return }
+        goToPage(n)
+    }
+
+    /// `>2 clear` empties the page, which holds what earlier replies put there too.
+    private func clearPage(_ node: YLNode, except id: String? = nil) {
+        guard node.op == .clear, YuiLines.page(of: node.screen) != 1 else { return }
+        for j in messages.indices where messages[j].id != id && messages[j].yl != nil { messages[j].yl?.apply(node) }
+    }
+
     /// The agent this thread talks to, when there is one.
     private(set) var agent: YuiAgent?
     /// The agent owes a reply: shows the typing dots.
@@ -256,6 +303,7 @@ final class ChatStore {
         reacting = nil
         stageID = nil
         stageOpen = false
+        page = agent.flatMap { pages[$0.id] } ?? 1
         seen = []
         cursor = nil
         waiting = false
@@ -393,6 +441,8 @@ final class ChatStore {
         guard seen.insert(id).inserted else { return }
         if row.sender == "agent" { waiting = false; pickedUpAt = nil }
         var new: [ChatMessage] = []
+        /// A live reply's lines: they can bring a page forward.
+        var live: [YLNode] = []
         if row.sender == "user" {
             if row.kind == "event" {
                 record(meta: row.meta)
@@ -408,7 +458,9 @@ final class ChatStore {
                 case .text(let t): new.append(ChatMessage(id: "\(id)#\(i)", text: t, fromUser: false))
                 case .yl(let y):
                     var screen = YLScreen()
-                    for node in YuiLines.parse(y) {
+                    let nodes = YuiLines.parse(y)
+                    for node in nodes {
+                        clearPage(node)
                         // A patch for something an earlier reply drew (`~choose +lock`
                         // after the booking is confirmed) lands on the newest match.
                         if node.op == .patch, let t = node.target, !screen.has(t),
@@ -421,6 +473,7 @@ final class ChatStore {
                     file(screen.shelfOps, at: YuiTime.date(row.createdAt) ?? .now)
                     if let agentID = agent?.id { for look in screen.looks { onLook?(agentID, look, row.createdAt) } }
                     new.append(ChatMessage(id: "\(id)#\(i)", text: "", fromUser: false, yl: screen))
+                    if loaded { live += nodes }
                 }
             }
         }
@@ -428,6 +481,7 @@ final class ChatStore {
         withAnimation(loaded ? spring : nil) { messages.append(contentsOf: new) }
         // Live replies can take the stage; history loading on open never does.
         if loaded { for m in new where m.yl != nil { stageUpdate(m.id, before: nil) } }
+        pageUpdate(live)
     }
 
     /// Adds an agent reply and feeds it through the stream parser a line at a
@@ -450,8 +504,12 @@ final class ChatStore {
         guard var yl = messages[i].yl else { return }
         let before = yl
         for n in nodes { apply(n, to: &yl) }
-        withAnimation(spring) { messages[i].yl = yl }
+        withAnimation(spring) {
+            for n in nodes { clearPage(n, except: id) }
+            messages[i].yl = yl
+        }
         file(Array(yl.shelfOps.dropFirst(before.shelfOps.count)), at: .now)
+        pageUpdate(nodes)
         stageUpdate(id, before: before)
         // Demo streams restyle live too, stamped now.
         for n in nodes where n.op == .theme {

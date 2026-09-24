@@ -10,6 +10,15 @@ extension EnvironmentValues {
     @Entry var ylShow = YLShow()
     /// The thread's answers, for presets that reopen answered.
     @Entry var ylAnswers = YLAnswers()
+    /// Goes to one of the agent's pages (2 or 3) from the chat's page pills.
+    @Entry var ylPage = YLPage()
+}
+
+/// Moves the thread to page `n` (spec section 5, Pages).
+struct YLPage: Sendable {
+    var run: @MainActor @Sendable (Int) -> Void = { _ in }
+    @MainActor func callAsFunction(_ n: Int) { run(n) }
+    init(_ run: @escaping @MainActor @Sendable (Int) -> Void = { _ in }) { self.run = run }
 }
 
 /// `(reply scope, screen, saved name)`: the host applies `show name` to that reply.
@@ -40,6 +49,7 @@ struct YLItemsView: View {
                 } else {
                     StagePill(components: cs, scope: scope, open: openStage)
                 }
+            case .page(let n, let cs): PagePill(page: n, components: cs)
             }
         }
     }

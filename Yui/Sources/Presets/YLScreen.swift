@@ -108,6 +108,12 @@ struct YLScreen: Equatable, Sendable {
         components.contains { $0.ylID == target || $0.preset == target }
     }
 
+    /// What this reply put on page `n` (2 or 3), in line order. Staged ones
+    /// (a workout sent to a page) stay on the stage.
+    func onPage(_ n: Int, style: [String: String]) -> [YLComponent] {
+        top.filter { $0.page == n && !$0.onStage(style) }
+    }
+
     /// Something on the stage the agent has not closed again.
     func wantsStage(_ style: [String: String]) -> Bool {
         top.contains { $0.serial > closedAt && $0.onStage(style) }
@@ -125,6 +131,9 @@ struct YLScreen: Equatable, Sendable {
 }
 
 extension YLComponent {
+    /// The page this component lives on (spec section 5, Pages): 2 or 3, else the chat.
+    var page: Int { YuiLines.page(of: screen) }
+
     static let groupHeads: Set<String> = ["deck", "plan", "narrate"]
 }
 
@@ -147,22 +156,31 @@ enum YLItem: Identifiable {
     case one(YLComponent)
     case steps([YLComponent])
     case pill([YLComponent])
+    /// Components sent to screen 2 or 3: in the chat, one "On screen 2" pill per run.
+    case page(Int, [YLComponent])
 
     var id: String {
         switch self {
         case .one(let c): "c\(c.serial)"
         case .steps(let cs): "s\(cs[0].serial)"
         case .pill(let cs): "p\(cs[0].serial)"
+        case .page(_, let cs): "g\(cs[0].serial)"
         }
     }
 
-    /// `pills` nil lays everything out in place (the stage); with a style,
-    /// staged components fold into pills (the chat).
+    /// `pills` nil lays everything out in place (the stage, a page); with a style,
+    /// staged components fold into pills and page components into page pills (the chat).
     static func layout(_ components: [YLComponent], pills style: [String: String]?) -> [YLItem] {
         var out: [YLItem] = []
         for c in components {
             if let style, c.onStage(style) {
                 if case .pill(let run) = out.last { out[out.count - 1] = .pill(run + [c]) } else { out.append(.pill([c])) }
+            } else if style != nil, c.page != 1 {
+                if case .page(let n, let run) = out.last, n == c.page {
+                    out[out.count - 1] = .page(n, run + [c])
+                } else {
+                    out.append(.page(c.page, [c]))
+                }
             } else if c.preset == "step" {
                 if case .steps(let run) = out.last, run.last?.screen == c.screen {
                     out[out.count - 1] = .steps(run + [c])
