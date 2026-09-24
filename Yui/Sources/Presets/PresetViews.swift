@@ -19,6 +19,9 @@ struct PresetView: View {
         case "list": ListPreset(c: component)
         case "timer": TimerPreset(c: component)
         case "say": SayPreset(text: component.string("text") ?? "")
+        case "image": ImagePreset(c: component)
+        case "video": VideoPreset(c: component)
+        case "camera": CameraPreset(c: component)
         default: LaterPreset(c: component)
         }
     }

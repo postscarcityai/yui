@@ -4,7 +4,8 @@
 Negative RLS: anon/authenticated cannot touch yui_* tables, yui_user cannot
 touch any portal table. Cross-user isolation. Edge function rejections. Then a
 full lifecycle: create a test account with rows in every yui_* table, refresh
-its session, delete it through yui-delete, and prove zero rows remain.
+its session, delete it through yui-delete, and prove zero rows remain and
+zero objects remain in the yui-media bucket (YUI-21).
 
 Needs a Supabase access token (SUPABASE_ACCESS_TOKEN or the CLI's keychain
 entry). Secrets are fetched at run time and never written to disk.
@@ -83,7 +84,8 @@ leaks = [r["t"] for r in rows if r["any"]]
 check("yui_user has no privilege on any portal or server-only table", not leaks, ",".join(leaks) or f"{len(rows)} tables clean")
 rows = sql("select n.nspname from pg_namespace n where has_schema_privilege('yui_user', n.oid, 'USAGE') order by 1")
 schemas = [r["nspname"] for r in rows]
-check("yui_user can use no schema but public (+ pg built-ins)", set(schemas) <= {"public", "pg_catalog", "information_schema"}, ",".join(schemas))
+# YUI-21: storage too, for the yui-media bucket (policies in media_test.py).
+check("yui_user can use no schema but public, storage (+ pg built-ins)", set(schemas) <= {"public", "storage", "pg_catalog", "information_schema"}, ",".join(schemas))
 rows = sql("select p.proname from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.prosecdef and has_function_privilege('yui_user', p.oid, 'EXECUTE')")
 check("yui_user can execute no SECURITY DEFINER function in public", not rows, str(rows))
 rows = sql("select c.relname from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and c.relname like 'yui\\_%' and c.relkind='r' and not c.relrowsecurity")
@@ -167,6 +169,19 @@ s4, _ = rest("POST", "yui_messages", tokT, {"user_id": T, "agent_id": ag["agent"
 check("test user makes its own device/agent/pairing/connector/token/message", (s, s2, s3, s5, s4) == (201, 200, 200, 200, 201), f"{(s, s2, s3, s5, s4)}")
 connector_token = pr.get("connector_token")
 
+def upload(tok, path, data=b"\x89PNG\r\n\x1a\nyui-test", ct="image/png"):
+    req = urllib.request.Request(f"{BASE}/storage/v1/object/yui-media/{path}", data=data, method="POST",
+                                 headers={"apikey": PUBLISHABLE, "authorization": f"Bearer {tok}", "content-type": ct})
+    try:
+        with urllib.request.urlopen(req) as r: return r.status
+    except urllib.error.HTTPError as e: return e.code
+s = upload(tokT, f"{T}/{ag['agent']['id']}/user/{uuid.uuid4()}.png")
+host_db = fn("yui-connect", {"action": "session"}, connector_token)[1]["access_token"]
+s2 = upload(host_db, f"{T}/{ag['agent']['id']}/agent/{uuid.uuid4()}.png")
+media_q = f"select count(*)::int n from storage.objects where bucket_id='yui-media' and name like '{T}/%'"
+check("test user has a photo and an agent picture in yui-media", (s, s2) == (200, 200)
+      and sql(media_q)[0]["n"] == 2, f"{(s, s2)}")
+
 s, r = fn("yui-auth", {"grant_type": "refresh", "refresh_token": rt})
 check("refresh rotates: new access + refresh token", s == 200 and r.get("refresh_token") not in (None, rt) and r.get("expires_in") == 900, f"{s}")
 new_access, new_rt = r["access_token"], r["refresh_token"]
@@ -187,6 +202,8 @@ check("yui-delete returns deleted", s == 200 and r.get("deleted") is True, f"{s}
 after = {r["t"]: r["n"] for r in sql(count_q)}
 print("  rows after delete: ", after)
 check("zero rows remain for the deleted account", sum(after.values()) == 0)
+left = sql(media_q)[0]["n"]
+check("zero media objects remain for the deleted account", left == 0 and r.get("media_removed") == 2, f"left={left} removed={r.get('media_removed')}")
 s, r = rest("GET", "yui_messages?select=*", new_access)
 check("the deleted user's token now sees nothing", s == 200 and r == [], f"{s} {r}")
 s, r = fn("yui-delete", {}, new_access)

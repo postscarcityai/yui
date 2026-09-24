@@ -33,6 +33,7 @@ targets:
         UILaunchScreen: {}
         ITSAppUsesNonExemptEncryption: false
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
+        NSCameraUsageDescription: Your agents can ask for a photo, like your plate or a receipt. Yui sends it only to the agent that asked.
         # yui://agent/<id>/thread opens that agent's thread (push taps, links from other channels).
         CFBundleURLTypes:
           - CFBundleURLName: com.yuigui.app

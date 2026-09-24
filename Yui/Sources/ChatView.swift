@@ -106,6 +106,7 @@ struct ChatView: View {
         }
         }
         .environment(\.ylEmit, store.emit)
+        .environment(\.yuiMedia, store.agent.flatMap { a in account.session?.userID == "demo" ? nil : YuiMedia(account: account, agentID: a.id) })
         .environment(\.ylTimers, store.timers)
         .onChange(of: agentStyle, initial: true) { store.style = agentStyle }
         .onAppear {

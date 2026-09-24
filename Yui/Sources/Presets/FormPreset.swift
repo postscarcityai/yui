@@ -31,7 +31,8 @@ struct FormPreset: View {
                 }
                 sent = true
                 let echo = fields.compactMap { f -> String? in
-                    guard let v = out[f.key], let t = FieldRow.display(v), !t.isEmpty else { return nil }
+                    guard let v = out[f.key], let t = f.type == "photo" && v != .null ? "added" : FieldRow.display(v),
+                          !t.isEmpty else { return nil }
                     return "\(f.label): \(t)"
                 }.joined(separator: "\n")
                 emit(c.event(["form": .object(out)], echo: echo.isEmpty ? "Sent" : echo))
@@ -92,6 +93,8 @@ private struct FieldRow: View {
     let field: FormField
     @Binding var value: YLValue
     @State private var photo: PhotosPickerItem?
+    @State private var uploading = false
+    @Environment(\.yuiMedia) private var media
     @Environment(\.yuiTheme) private var theme
     @Environment(\.colorScheme) private var scheme
 
@@ -146,15 +149,26 @@ private struct FieldRow: View {
                 .tint(s.accent)
         case "photo":
             PhotosPicker(selection: $photo, matching: .images) {
-                Label(value == .null ? "Add a photo" : "Photo added", systemImage: value == .null ? "camera.fill" : "checkmark")
+                Label(uploading ? "Adding your photo" : value == .null ? "Add a photo" : "Photo added",
+                      systemImage: uploading ? "arrow.up.circle" : value == .null ? "camera.fill" : "checkmark")
                     .font(theme.font(theme.type.body, .bold))
                     .foregroundStyle(s.userInk)
                     .padding(.horizontal, theme.spacing.l)
                     .padding(.vertical, theme.spacing.m)
                     .background(value == .null ? s.lavender : s.mint, in: Capsule())
             }
-            // The upload pipeline is Phase 3; for now the answer records that a photo was chosen.
-            .onChange(of: photo) { _, item in value = item == nil ? .null : .string(item?.itemIdentifier ?? "photo") }
+            .disabled(uploading)
+            // The photo goes up to yui-media first; the answer is its path, which the agent's host downloads.
+            .onChange(of: photo) { _, item in
+                guard let item else { value = .null; return }
+                uploading = true
+                Task {
+                    defer { uploading = false }
+                    guard let media, let data = try? await item.loadTransferable(type: Data.self),
+                          let path = try? await media.upload(photo: data) else { value = .null; photo = nil; return }
+                    value = .string(path)
+                }
+            }
         default:
             textInput(s)
         }

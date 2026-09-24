@@ -3,7 +3,9 @@
 // Authorization: Bearer <yui access token>. Revokes the user's Sign in with
 // Apple token, then deletes the yui_users row; ON DELETE CASCADE removes
 // every other yui_* row (sessions, Apple token, devices, agents, pairings,
-// messages).
+// messages). Media in the yui-media bucket has no foreign key, so it goes
+// first, through the Storage API; anything left behind is an orphan the
+// media sweep removes (supabase/scripts/media_sweep.py).
 import {
   admin,
   APPLE_ISSUER,
@@ -43,13 +45,23 @@ Deno.serve(async (req) => {
       if (!res.ok) console.error("apple revoke failed", res.status, await res.text());
     }
 
+    let mediaRemoved = 0;
+    const { data: names, error: listErr } = await db.rpc("yui_media_names", { uid: userId });
+    if (listErr) console.error("media list failed", listErr);
+    for (let i = 0; names && i < names.length; i += 1000) {
+      const { data: gone, error: rmErr } = await db.storage.from("yui-media")
+        .remove(names.slice(i, i + 1000));
+      if (rmErr) console.error("media remove failed", rmErr);
+      mediaRemoved += gone?.length ?? 0;
+    }
+
     // The user asked for deletion: delete even if Apple's revoke failed.
     const { data: gone, error } = await db.from("yui_users")
       .delete().eq("id", userId).select("id");
     if (error) throw error;
     if (!gone?.length) return json({ error: "not_found" }, 404);
 
-    return json({ deleted: true, apple_token_revoked: appleRevoked });
+    return json({ deleted: true, apple_token_revoked: appleRevoked, media_removed: mediaRemoved });
   } catch (e) {
     console.error("yui-delete", e);
     return json({ error: "server_error" }, 500);

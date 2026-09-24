@@ -8,6 +8,8 @@ They also run without Hermes loaded:
     connector.py add --profile monk [--name Monk] [--color mint]
     connector.py heartbeat
     connector.py status
+    connector.py media ~/out/frame.png "Frame 1" --profile monk   # send a picture
+    connector.py media --prompt "storyboard frame: ..." --aspect 16:9  # render + send
 
 One connector per machine: its token lives in ~/.hermes/yui/connector.json
 (mode 600) and every profile on this machine shares it. Stdlib only.
@@ -207,6 +209,61 @@ def cmd_status(args) -> int:
     return cmd_heartbeat(args) if state.get("token") else 0
 
 
+def cmd_media(args) -> int:
+    """Send a picture or video (a file, a URL, or one rendered from --prompt) into the thread."""
+    try:
+        from . import media
+    except ImportError:  # run as a script
+        import media
+    token = load().get("token")
+    if not token:
+        sys.exit(NOT_PAIRED)
+    s, sess = call({"action": "session"}, token)
+    if s != 200:
+        print(f"session failed: {sess.get('error', s)}", file=sys.stderr)
+        return 1
+    ref = _profile(args)
+    target, sender = pick_agent(sess.get("agents") or [], ref, args.to)
+    if not target:
+        print(f"no Yui agent {args.to or ref!r} on this machine", file=sys.stderr)
+        return 1
+    try:
+        src = args.src
+        if args.prompt:
+            src = media.generate(args.prompt, args.aspect, edit=args.src)
+        if not src:
+            sys.exit("give a file or URL, or --prompt")
+        data, ctype = media.read_source(src)
+        path = media.upload(sess["access_token"], sess["user_id"], target["id"], data, ctype)
+        url = media.sign(sess["access_token"], path)
+    except media.MediaError as e:
+        print(f"media failed: {e}", file=sys.stderr)
+        return 1
+    preset = "video" if ctype.startswith("video/") else "image"
+    line = f"{preset} {url}" + (f" {json.dumps(args.caption)}" if args.caption else "")
+    body = ((args.text.strip() + "\n\n") if args.text else "") + f"```yui\n{line}\n```"
+    req = urllib.request.Request(f"{SUPABASE_URL}/rest/v1/yui_messages", method="POST", data=json.dumps({
+        "user_id": sess["user_id"], "agent_id": target["id"], "sender": "agent", "body": body, "kind": "text",
+    }).encode(), headers={"content-type": "application/json", "apikey": PUBLISHABLE, "prefer": "return=representation",
+                          "authorization": f"Bearer {sess['access_token']}"})
+    with urllib.request.urlopen(req, timeout=20) as r:
+        mid = json.loads(r.read())[0]["id"]
+    ps, pushed = call_push(notify_body(mid, sender, True), token)
+    print(json.dumps({"success": True, "message_id": mid, "agent": target["name"], "path": path,
+                      "pushed_to": pushed.get("delivered", 0)}))
+    return 0
+
+
+def call_push(body: dict, token: str) -> tuple[int, dict]:
+    req = urllib.request.Request(PUSH, data=json.dumps(body).encode(), method="POST", headers={
+        "content-type": "application/json", "apikey": PUBLISHABLE, "authorization": f"Bearer {token}"})
+    try:
+        with urllib.request.urlopen(req, timeout=20) as r:
+            return r.status, json.loads(r.read() or b"{}")
+    except urllib.error.HTTPError as e:
+        return e.code, {}
+
+
 def build_parser(ap: argparse.ArgumentParser, with_profile: bool = True) -> None:
     sub = ap.add_subparsers(dest="yui_cmd", required=True)
     p = sub.add_parser("pair", help="bind this Hermes profile to the agent the app just made")
@@ -222,8 +279,16 @@ def build_parser(ap: argparse.ArgumentParser, with_profile: bool = True) -> None
     h.set_defaults(fn=cmd_heartbeat)
     st = sub.add_parser("status", help="show the connector and its agents")
     st.set_defaults(fn=cmd_status, quiet=False)
+    m = sub.add_parser("media", help="send a picture or video into the thread; --prompt renders one first (fal)")
+    m.add_argument("src", nargs="?", help="file or URL (with --prompt: the image to edit)")
+    m.add_argument("caption", nargs="?")
+    m.add_argument("--prompt", help="render with fal nano-banana-2 (FAL_KEY), then send")
+    m.add_argument("--aspect", default="1:1", help="aspect ratio for --prompt, e.g. 16:9, 9:16")
+    m.add_argument("--text", help="chat text to send above it")
+    m.add_argument("--to", help="which Yui agent's thread (default: this profile's)")
+    m.set_defaults(fn=cmd_media)
     if with_profile:
-        for sp in (p, a):
+        for sp in (p, a, m):
             sp.add_argument("--profile", "-p", help="Hermes profile (default: the active one)")
 
 

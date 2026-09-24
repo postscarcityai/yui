@@ -6,6 +6,7 @@ typealias Props = [String: YLValue]
 let presets: Set<String> = [
     "timer", "ask", "choose", "pick", "slide", "form",
     "list", "table", "card", "image", "camera", "mic",
+    "video",  // YUI-21: video playback. gallery, compare, storyboard come with the media vectors (16)
 ]
 
 private func joinText(_ toks: [Token]) -> String { toks.map(\.text).joined(separator: " ") }
@@ -103,7 +104,7 @@ private func positional(_ preset: String, _ pos: [Token]) -> Props {
         if let first = pos.first { o["title"] = .string(first.text) }
         if pos.count > 1 { o["body"] = .string(joinText(Array(pos.dropFirst()))) }
 
-    case "image":
+    case "image", "video":
         var cap: [Token] = []
         for t in pos {
             let isURL = ["http://", "https://", "/", "data:"].contains { t.text.hasPrefix($0) }

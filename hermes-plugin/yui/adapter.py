@@ -27,6 +27,13 @@ Transport: the gateway dials OUT to Supabase (PROOF). No inbound ports.
      (send_message target "yui"), even one with no Yui agent of its own:
      it lands in the user's first agent's thread, signed with its name.
 
+  7. Media (YUI-21, media.py): local files and generator URLs inside ```yui
+     fences are uploaded to the private yui-media bucket and swapped for
+     signed URLs before the row is written; send_image/send_image_file/
+     send_video do the same. The person's photos (camera, form photo fields)
+     arrive as bucket paths in events and are downloaded to local files the
+     agent can open, and handed to vision as media.
+
 The channel guide (CHANNEL.md, synced verbatim from yuigui/spec/CHANNEL.md by
 ../sync_channel.py) is this platform's system-prompt hint, so it is in the
 system prompt on every turn on the Yui channel, and only there.
@@ -59,7 +66,7 @@ except ImportError:  # pragma: no cover
 from gateway.config import Platform, PlatformConfig
 from gateway.platforms.base import BasePlatformAdapter, MessageEvent, MessageType, SendResult
 
-from . import connector
+from . import connector, media
 
 logger = logging.getLogger(__name__)
 
@@ -349,9 +356,15 @@ class YuiAdapter(BasePlatformAdapter):
             user_id=row["user_id"],
             user_name="Yui user",
         )
+        text, photos, types = row["body"], [], []
+        if media.USER_PATH.search(row["body"] + json.dumps(row.get("meta") or {})):
+            text, photos, types = await asyncio.to_thread(media.localize, row["body"], row.get("meta") or {},
+                                                          self._token, logger)
         event = MessageEvent(
-            text=row["body"],
-            message_type=MessageType.TEXT,
+            text=text,
+            message_type=MessageType.PHOTO if photos else MessageType.TEXT,
+            media_urls=photos,
+            media_types=types,
             source=source,
             raw_message=row,
             message_id=row["id"],
@@ -432,6 +445,7 @@ class YuiAdapter(BasePlatformAdapter):
             body = body[:MAX_MESSAGE_LENGTH]
         if self._token_exp - time.time() < 60:
             await self._refresh_session()
+        body = await asyncio.to_thread(media.rewrite, body, lambda src: self._host(agent_id, src), logger)
         row = {"user_id": self._user_id, "agent_id": agent_id, "sender": "agent", "body": body, "kind": "text"}
         r = await self._client.post(f"{REST}/yui_messages", json=row, headers={
             **self._rest_headers(), "prefer": "return=representation"})
@@ -445,6 +459,9 @@ class YuiAdapter(BasePlatformAdapter):
             self._tasks.append(asyncio.create_task(self._notify(mid, sender, handoff)))
             self._tasks = [t for t in self._tasks if not t.done()]
         return SendResult(success=True, message_id=mid)
+
+    def _host(self, agent_id: str, src: str) -> str:
+        return media.host(self._token, self._user_id, agent_id, src)
 
     async def _notify(self, message_id: str, sender: Optional[str], handoff: bool) -> None:
         """Push the message to the user's phones. Best effort: the thread has it either way."""
@@ -473,9 +490,18 @@ class YuiAdapter(BasePlatformAdapter):
 
     async def send_image(self, chat_id: str, image_url: str, caption: Optional[str] = None,
                          reply_to: Optional[str] = None, metadata: Optional[Dict[str, Any]] = None) -> SendResult:
-        # A picture is a Yui Lines `image` component.
-        line = f"image {image_url}" + (f" {json.dumps(caption)}" if caption else "")
-        return await self.send(chat_id, f"```yui\n{line}\n```", reply_to, metadata)
+        # A picture is a Yui Lines `image` component; send() re-hosts the file.
+        return await self.send(chat_id, media_fence("image", image_url, caption), reply_to, metadata)
+
+    async def send_image_file(self, chat_id: str, image_path: str, caption: Optional[str] = None,
+                              reply_to: Optional[str] = None, metadata: Optional[Dict[str, Any]] = None,
+                              **kwargs) -> SendResult:
+        return await self.send(chat_id, media_fence("image", image_path, caption), reply_to, metadata)
+
+    async def send_video(self, chat_id: str, video_path: str, caption: Optional[str] = None,
+                         reply_to: Optional[str] = None, metadata: Optional[Dict[str, Any]] = None,
+                         **kwargs) -> SendResult:
+        return await self.send(chat_id, media_fence("video", video_path, caption), reply_to, metadata)
 
     async def send_typing(self, chat_id: str, metadata=None) -> None:
         return None
@@ -483,6 +509,12 @@ class YuiAdapter(BasePlatformAdapter):
     async def get_chat_info(self, chat_id: str) -> Dict[str, Any]:
         a = next((x for x in self._all_agents if x.get("id") == chat_id), self._agents.get(chat_id, {}))
         return {"name": f"Yui: {a.get('name', chat_id)}", "type": "dm", "chat_id": chat_id}
+
+
+def media_fence(preset: str, src: str, caption: Optional[str] = None) -> str:
+    src = src.replace(" ", "%20") if src.startswith(("http://", "https://")) else src
+    line = f"{preset} {src}" + (f" {json.dumps(caption)}" if caption else "")
+    return f"```yui\n{line}\n```"
 
 
 # -- out-of-process delivery (cron, send_message without the gateway) ---------
@@ -503,9 +535,15 @@ async def _standalone_send(pconfig, chat_id: str, message: str, *, thread_id: Op
         target, sender = connector.pick_agent(s.get("agents") or [], ref, chat_id)
         if not target:
             return {"error": f"yui: no agent {chat_id!r} for profile {ref}"}
+        files = [f[0] if isinstance(f, (tuple, list)) else f for f in (media_files or [])]  # (path, is_voice)
+        body = "\n\n".join([message.strip()] + [
+            media_fence("video" if f.lower().endswith((".mp4", ".mov", ".m4v")) else "image", f)
+            for f in files if f.lower().rsplit(".", 1)[-1] in media.TYPES]).strip()
+        body = await asyncio.to_thread(
+            media.rewrite, body, lambda src: media.host(s["access_token"], s["user_id"], target["id"], src), logger)
         r = await c.post(f"{REST}/yui_messages", json={
             "user_id": s["user_id"], "agent_id": target["id"], "sender": "agent",
-            "body": message.strip()[:MAX_MESSAGE_LENGTH], "kind": "text"},
+            "body": body[:MAX_MESSAGE_LENGTH], "kind": "text"},
             headers={"apikey": connector.PUBLISHABLE, "authorization": f"Bearer {s['access_token']}",
                      "prefer": "return=representation"})
         if r.status_code >= 300:
