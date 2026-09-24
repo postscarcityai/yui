@@ -68,8 +68,15 @@ final class ChatStore {
     private var poll: Task<Void, Never>?
     private var cursor: String?
     private var seen = Set<String>()
-    /// When the reply started being owed: a long wait shows a fix-it hint.
+    /// When the reply started being owed: the working note counts from here.
     private(set) var waitingSince: Date?
+    /// When the agent's host picked the message up (its delivered_at): from
+    /// then on the agent is working on it, however long that takes.
+    private(set) var pickedUpAt: Date?
+    private var turnCheckedAt = Date.distantPast
+    /// A reopened thread only resumes a turn this recent (the host gives up on
+    /// a turn after 30 minutes, TURN_TIMEOUT_SECONDS in the plugin).
+    static let turnWindow: TimeInterval = 30 * 60
 
     init(messages: [ChatMessage] = []) { self.messages = messages }
 
@@ -169,6 +176,7 @@ final class ChatStore {
         seen = []
         cursor = nil
         waiting = false
+        pickedUpAt = nil
         loaded = false
         error = nil
         guard client != nil else { return }
@@ -200,6 +208,7 @@ final class ChatStore {
         seen.insert(id.lowercased())
         waiting = true
         waitingSince = .now
+        pickedUpAt = nil
         Outbox.shared.add(.init(id: id.lowercased(), userID: user, agentID: agentID, body: body, kind: kind,
                                 meta: meta, queuedAt: .now))
     }
@@ -221,6 +230,7 @@ final class ChatStore {
         messages.append(contentsOf: new)
         waiting = true
         waitingSince = .now
+        pickedUpAt = nil
     }
 
     func refresh() async {
@@ -231,12 +241,15 @@ final class ChatStore {
             let rows = try await client.fetch(since: cursor.map { YuiTime.before($0, seconds: 10) })
             guard agent?.id == agentID else { return }
             for row in rows { add(row) }
+            if first { resume(rows) }
             if let last = rows.last?.createdAt, last > (cursor ?? "") { cursor = last }
             loaded = true
-            // Dots give up after 3 minutes for an agent that is online; one that is
-            // asleep keeps its "waiting" note until the answer comes.
-            if let since = waitingSince, Date.now.timeIntervalSince(since) > 180,
-               agent?.liveness == .online, Outbox.shared.pending(agentID: agentID).isEmpty { waiting = false }
+            // No time limit on a turn: the dots stay until the reply comes or the
+            // host says the turn is over. Asleep or offline agents get their own note.
+            if waiting, Date.now.timeIntervalSince(turnCheckedAt) > 4, Outbox.shared.pending(agentID: agentID).isEmpty {
+                turnCheckedAt = .now
+                if let row = try await client.newestFromUser(), agent?.id == agentID, waiting { track(row) }
+            }
         } catch {
             loaded = true
         }
@@ -246,13 +259,31 @@ final class ChatStore {
     /// Thread rows, oldest first, the way a poll adds them. Tests and `-yuiThreadRows` use it.
     func load(_ rows: [ThreadRow]) {
         for row in rows { add(row) }
+        resume(rows)
+    }
+
+    /// A thread opened mid-turn: its newest row is the person's and the agent
+    /// has not finished it, so the working note picks up where it was.
+    private func resume(_ rows: [ThreadRow], now: Date = .now) {
+        guard let last = rows.last, last.sender == "user", last.handledAt == nil,
+              let sent = YuiTime.date(last.createdAt), now.timeIntervalSince(sent) < Self.turnWindow else { return }
+        waiting = true
+        waitingSince = sent
+        pickedUpAt = last.deliveredAt.flatMap(YuiTime.date)
+    }
+
+    /// How far the turn on the person's newest row has got. Finished with no
+    /// reply after a grace period (a command, a turn that errored): stop waiting.
+    private func track(_ row: ThreadRow, now: Date = .now) {
+        pickedUpAt = row.deliveredAt.flatMap(YuiTime.date) ?? pickedUpAt
+        if let done = row.handledAt.flatMap(YuiTime.date), now.timeIntervalSince(done) > 20 { waiting = false }
     }
 
     private func add(_ row: ThreadRow) {
         let id = row.id.lowercased()
         // Polls overlap: only a row not seen before can end the wait.
         guard seen.insert(id).inserted else { return }
-        if row.sender == "agent" { waiting = false }
+        if row.sender == "agent" { waiting = false; pickedUpAt = nil }
         var new: [ChatMessage] = []
         if row.sender == "user" {
             if row.kind == "event" {

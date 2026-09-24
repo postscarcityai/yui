@@ -9,10 +9,13 @@ struct ThreadRow: Decodable, Sendable {
     let kind: String
     let meta: YLValue?
     let createdAt: String
+    /// The person's rows only: the host picked it up, and the agent's turn on it finished.
+    var deliveredAt: String? = nil
+    var handledAt: String? = nil
 
     enum CodingKeys: String, CodingKey {
         case id, sender, body, kind, meta
-        case createdAt = "created_at"
+        case createdAt = "created_at", deliveredAt = "delivered_at", handledAt = "handled_at"
     }
 }
 
@@ -118,7 +121,7 @@ struct ThreadClient {
     /// a row can commit after a later one, and ids dedupe the overlap.
     func fetch(since: String?, limit: Int = 100) async throws -> [ThreadRow] {
         var items = [
-            URLQueryItem(name: "select", value: "id,sender,body,kind,meta,created_at"),
+            URLQueryItem(name: "select", value: Self.columns),
             URLQueryItem(name: "agent_id", value: "eq.\(agentID)"),
         ]
         if let since {
@@ -135,6 +138,20 @@ struct ThreadClient {
         let data = try await request(URLRequest(url: c.url!))
         let rows = try JSONDecoder().decode([ThreadRow].self, from: data)
         return since == nil ? rows.reversed() : rows
+    }
+
+    static let columns = "id,sender,body,kind,meta,created_at,delivered_at,handled_at"
+
+    /// The person's newest row, for how far the agent's turn on it has got.
+    func newestFromUser() async throws -> ThreadRow? {
+        var c = URLComponents(url: YuiBackend.url.appending(path: "rest/v1/yui_messages"), resolvingAgainstBaseURL: false)!
+        c.queryItems = [URLQueryItem(name: "select", value: Self.columns),
+                        URLQueryItem(name: "agent_id", value: "eq.\(agentID)"),
+                        URLQueryItem(name: "sender", value: "eq.user"),
+                        URLQueryItem(name: "order", value: "created_at.desc"),
+                        URLQueryItem(name: "limit", value: "1")]
+        let data = try await request(URLRequest(url: c.url!))
+        return try JSONDecoder().decode([ThreadRow].self, from: data).first
     }
 
     func post(id: String, body: String, kind: String = "text", meta: YLValue? = nil) async throws {
@@ -180,5 +197,16 @@ enum YuiTime {
         if let dot = base.firstIndex(of: ".") { base = String(base[..<dot]) }
         guard let date = try? Date(base + (zone.isEmpty ? "Z" : zone), strategy: .iso8601) else { return ts }
         return date.addingTimeInterval(-seconds).formatted(.iso8601)
+    }
+
+    /// A Postgres timestamp ("2026-09-24T12:15:45.187+00:00") as a date, to the second.
+    static func date(_ ts: String) -> Date? {
+        var base = ts
+        var zone = "Z"
+        if let z = base.range(of: #"(Z|[+-]\d\d:\d\d)$"#, options: .regularExpression) {
+            zone = String(base[z]); base.removeSubrange(z)
+        }
+        if let dot = base.firstIndex(of: ".") { base = String(base[..<dot]) }
+        return try? Date(base + zone, strategy: .iso8601)
     }
 }

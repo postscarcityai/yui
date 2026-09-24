@@ -59,7 +59,7 @@ struct ChatView: View {
                                           icon: agent.liveness == .asleep ? "moon.zzz" : "powersleep")
                             } else if store.waiting {
                                 TypingDots(agent: store.agent).id("typing")
-                                SlowReplyHint(agent: store.agent, since: store.waitingSince)
+                                WorkingNote(agent: store.agent, since: store.waitingSince, pickedUp: store.pickedUpAt)
                             }
                             if let error = store.error {
                                 Text(error)
@@ -576,24 +576,59 @@ private struct FirstRun: View {
     }
 }
 
-/// The reply is late: after 45 seconds, say what usually fixes it.
-private struct SlowReplyHint: View {
+/// The agent owes a reply: say it is on it and for how long, the way Telegram
+/// does. Long turns are normal (TestFlight: "assume it's always going to take
+/// a little while"), so there is no time limit and no fix-it advice here; an
+/// agent whose computer is away gets its own asleep/offline note instead.
+struct WorkingNote: View {
     var agent: YuiAgent?
     var since: Date?
+    var pickedUp: Date?
     @Environment(\.yuiTheme) private var theme
     @Environment(\.colorScheme) private var scheme
 
+    /// "Yui is working · 1m 24s". Before the host picks it up, it is still on its way.
+    static func label(name: String, since: Date?, pickedUp: Date?, now: Date) -> String {
+        guard let start = pickedUp ?? since else { return "\(name) is working" }
+        let took = elapsed(now.timeIntervalSince(start))
+        return pickedUp == nil ? "Sent to \(name) · \(took)" : "\(name) is working · \(took)"
+    }
+
+    /// 12s, 1m 24s, 1h 3m.
+    static func elapsed(_ t: TimeInterval) -> String {
+        let s = max(0, Int(t))
+        if s < 60 { return "\(s)s" }
+        if s < 3600 { return "\(s / 60)m \(s % 60)s" }
+        return "\(s / 3600)h \(s % 3600 / 60)m"
+    }
+
+    /// After this long, add that it's fine to leave.
+    static let longTurn: TimeInterval = 120
+
     var body: some View {
-        TimelineView(.periodic(from: .now, by: 5)) { ctx in
-            if let since, ctx.date.timeIntervalSince(since) > 45 {
-                let name = agent?.name ?? "Your agent"
-                Label("\(name) is taking a while. If it stays quiet, run hermes gateway restart on its computer.",
-                      systemImage: "hourglass")
-                    .font(theme.font(theme.type.caption, .semibold))
-                    .foregroundStyle(theme.swatch(scheme).inkSoft)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .transition(.opacity)
+        let c = theme.swatch(scheme)
+        let name = agent?.name ?? "Your agent"
+        TimelineView(.periodic(from: .now, by: 1)) { ctx in
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: theme.spacing.s) {
+                    Image(systemName: "sparkles")
+                        .foregroundStyle(c.accent)
+                        .symbolEffect(.variableColor.iterative.reversing, options: .repeat(.continuous))
+                    Text(Self.label(name: name, since: since, pickedUp: pickedUp, now: ctx.date))
+                        .monospacedDigit()
+                        .contentTransition(.numericText())
+                }
+                if let start = pickedUp ?? since, ctx.date.timeIntervalSince(start) > Self.longTurn {
+                    Text("Long jobs are fine. Leave any time, the answer lands here.")
+                        .transition(.opacity)
+                }
             }
+            .font(theme.font(theme.type.caption, .semibold))
+            .foregroundStyle(c.inkSoft)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .accessibilityElement(children: .combine)
+            .accessibilityIdentifier("working")
         }
+        .transition(.opacity)
     }
 }
