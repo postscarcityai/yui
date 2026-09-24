@@ -17,6 +17,22 @@ struct MascotAvatar: View {
     }
 }
 
+/// Chris's bunny-ear Yui wordmark. A template image, so the theme's `brand` token sets its color.
+struct Wordmark: View {
+    var height: Double
+    @Environment(\.yuiTheme) private var theme
+    @Environment(\.colorScheme) private var scheme
+
+    var body: some View {
+        Image("Wordmark")
+            .resizable()
+            .scaledToFit()
+            .frame(height: height)
+            .foregroundStyle(theme.swatch(scheme).brand)
+            .accessibilityLabel("Yui")
+    }
+}
+
 /// Tap feedback: a quick spring pop, driven by the theme's motion tokens.
 struct BounceButtonStyle: ButtonStyle {
     @Environment(\.yuiTheme) private var theme

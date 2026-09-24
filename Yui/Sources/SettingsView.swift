@@ -10,7 +10,8 @@ struct SettingsView: View {
         VStack(spacing: theme.spacing.xl) {
             VStack(spacing: theme.spacing.s) {
                 MascotAvatar(size: 72)
-                Text("Settings").font(theme.font(theme.type.display, .heavy)).foregroundStyle(c.ink)
+                Wordmark(height: 40)
+                Text("Settings").font(theme.font(theme.type.title, .heavy)).foregroundStyle(c.inkSoft)
             }
             VStack(alignment: .leading, spacing: theme.spacing.m) {
                 Text("Appearance").font(theme.font(theme.type.caption, .bold)).foregroundStyle(c.inkSoft)

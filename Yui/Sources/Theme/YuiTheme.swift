@@ -19,6 +19,8 @@ struct YuiTheme: Codable, Equatable, Sendable {
         var ink: String
         var inkSoft: String
         var outline: String
+        /// The wordmark coral. Tints the logo; `accent` follows it for primary controls.
+        var brand: String
         var accent: String
         var mint: String
         var lavender: String
@@ -65,18 +67,19 @@ struct YuiTheme: Codable, Equatable, Sendable {
 }
 
 extension YuiTheme {
-    /// Default look: Korean stationery cute. Cream paper, pastel accents, soft plum ink.
+    /// Default look: Korean stationery cute. Cream paper, soft plum ink, the coral wordmark
+    /// as the one brand color, pastels as supporting accents.
     static let yui = YuiTheme(
         name: "yui",
         light: Palette(
             background: "#FFF9F0", surface: "#FFFFFF", ink: "#3A3340", inkSoft: "#8C8294",
-            outline: "#F0E4D6", accent: "#FFB59E", mint: "#BDEBD6", lavender: "#D9CCF7",
-            butter: "#FFE8A3", userBubble: "#FFC9B5", userInk: "#3A3340",
+            outline: "#F0E4D6", brand: "#FF7E8A", accent: "#FF7E8A", mint: "#BDEBD6",
+            lavender: "#D9CCF7", butter: "#FFE8A3", userBubble: "#FFA8B0", userInk: "#3A3340",
             agentBubble: "#FFFFFF", agentInk: "#3A3340"),
         dark: Palette(
             background: "#231D33", surface: "#2F2842", ink: "#F6EEF7", inkSoft: "#A99FB8",
-            outline: "#3D3452", accent: "#EFA894", mint: "#9FCDB9", lavender: "#B8ABDD",
-            butter: "#E6D08F", userBubble: "#E7A894", userInk: "#2A2238",
+            outline: "#3D3452", brand: "#FF7E8A", accent: "#FF7E8A", mint: "#9FCDB9",
+            lavender: "#B8ABDD", butter: "#E6D08F", userBubble: "#F28D97", userInk: "#2A2238",
             agentBubble: "#352D4A", agentInk: "#F6EEF7"),
         radius: Radii(bubble: 22, bubbleTail: 8, pill: 26, card: 28, avatar: 18),
         spacing: Spacing(xs: 4, s: 8, m: 12, l: 16, xl: 24),
@@ -143,13 +146,13 @@ enum Appearance: String, CaseIterable, Identifiable {
 
 /// A palette resolved to SwiftUI colors for the current scheme.
 struct Swatch {
-    let background, surface, ink, inkSoft, outline, accent, mint, lavender, butter: Color
+    let background, surface, ink, inkSoft, outline, brand, accent, mint, lavender, butter: Color
     let userBubble, userInk, agentBubble, agentInk: Color
 
     init(_ p: YuiTheme.Palette) {
         background = Color(hex: p.background); surface = Color(hex: p.surface)
         ink = Color(hex: p.ink); inkSoft = Color(hex: p.inkSoft); outline = Color(hex: p.outline)
-        accent = Color(hex: p.accent); mint = Color(hex: p.mint)
+        brand = Color(hex: p.brand); accent = Color(hex: p.accent); mint = Color(hex: p.mint)
         lavender = Color(hex: p.lavender); butter = Color(hex: p.butter)
         userBubble = Color(hex: p.userBubble); userInk = Color(hex: p.userInk)
         agentBubble = Color(hex: p.agentBubble); agentInk = Color(hex: p.agentInk)

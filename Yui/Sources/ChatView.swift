@@ -43,7 +43,7 @@ struct ChatView: View {
                 ToolbarItem(placement: .principal) {
                     HStack(spacing: theme.spacing.s) {
                         MascotAvatar(size: 30)
-                        Text("Yui").font(theme.font(theme.type.title, .heavy)).foregroundStyle(c.ink)
+                        Wordmark(height: 24)
                     }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
@@ -156,9 +156,13 @@ private struct EmptyChat: View {
                 .phaseAnimator([false, true]) { view, up in
                     view.offset(y: up ? -8 : 0)
                 } animation: { _ in .easeInOut(duration: 1.1) }
-            Text("Yui is here!")
-                .font(theme.font(theme.type.display, .heavy))
-                .foregroundStyle(c.ink)
+            HStack(alignment: .lastTextBaseline, spacing: theme.spacing.s) {
+                Wordmark(height: 52)
+                Text("is here!")
+                    .font(theme.font(theme.type.display, .heavy))
+                    .foregroundStyle(c.ink)
+            }
+            .accessibilityElement(children: .combine)
             Text("Say hi, ask a question, or tell me\nwhat you want to get done.")
                 .font(theme.font(theme.type.body))
                 .foregroundStyle(c.inkSoft)
