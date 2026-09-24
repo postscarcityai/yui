@@ -43,6 +43,11 @@ Transport: the gateway dials OUT to Supabase (PROOF). No inbound ports.
      arrive as bucket paths in events and are downloaded to local files the
      agent can open, and handed to vision as media.
 
+  8. Flywheel (YUI-42, flywheel.py): with `yui.flywheel: true` in the
+     profile's config, every `custom {json}` line in a reply is noted by its
+     shape only (type tree and key names, never a value) in
+     <profile home>/yui/flywheel.jsonl, so repeated shapes can become presets.
+
 The channel guide (CHANNEL.md, synced verbatim from yuigui/spec/CHANNEL.md by
 ../sync_channel.py) is this platform's system-prompt hint, so it is in the
 system prompt on every turn on the Yui channel, and only there.
@@ -77,7 +82,7 @@ from gateway.config import Platform, PlatformConfig
 from gateway.platforms.base import (BasePlatformAdapter, MessageEvent, MessageType, ProcessingOutcome,
                                     SendResult)
 
-from . import connector, media, outbox
+from . import connector, flywheel, media, outbox
 
 logger = logging.getLogger(__name__)
 
@@ -581,6 +586,7 @@ class YuiAdapter(BasePlatformAdapter):
             return SendResult(success=True, message_id=None)
         if len(body) > MAX_MESSAGE_LENGTH:
             body = body[:MAX_MESSAGE_LENGTH]
+        flywheel.record(body, connector.current_profile())  # custom shapes only, off unless yui.flywheel
         body = await asyncio.to_thread(media.rewrite, body, lambda src: self._host(agent_id, src), logger)
         row = {"id": str(uuid.uuid4()), "user_id": self._user_id, "agent_id": agent_id, "sender": "agent",
                "body": body, "kind": "text"}
@@ -779,6 +785,7 @@ async def _standalone_send(pconfig, chat_id: str, message: str, *, thread_id: Op
         body = "\n\n".join([message.strip()] + [
             media_fence("video" if f.lower().endswith((".mp4", ".mov", ".m4v")) else "image", f)
             for f in files if f.lower().rsplit(".", 1)[-1] in media.TYPES]).strip()
+        flywheel.record(body, connector.current_profile())
         body = await asyncio.to_thread(
             media.rewrite, body, lambda src: media.host(s["access_token"], s["user_id"], target["id"], src), logger)
         row = {"id": str(uuid.uuid4()), "user_id": s["user_id"], "agent_id": target["id"], "sender": "agent",
