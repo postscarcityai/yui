@@ -47,7 +47,7 @@ import {
 
 const MAX_FAILED_CLAIMS = 10;
 const THROTTLE_WINDOW_MS = 10 * 60_000;
-const KINDS = ["hermes", "http", "mcp", "hosted"];
+const KINDS = ["hermes", "openclaw", "http", "mcp", "hosted"];
 
 // deno-lint-ignore no-explicit-any
 type Body = Record<string, any>;

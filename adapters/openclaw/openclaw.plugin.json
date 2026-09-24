@@ -1,0 +1,21 @@
+{
+  "id": "yui",
+  "name": "Yui",
+  "description": "Yui channel: your OpenClaw agent on your iPhone, with real screens",
+  "channels": ["yui"],
+  "configSchema": { "type": "object", "additionalProperties": false, "properties": {} },
+  "channelConfigs": {
+    "yui": {
+      "schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "enabled": { "type": "boolean" },
+          "agent": { "type": "string", "description": "OpenClaw agent for Yui agents whose ref names none" },
+          "stateFile": { "type": "string", "description": "Where the connector token lives (default <state dir>/yui/connector.json)" },
+          "interval": { "type": "number", "minimum": 0.5, "maximum": 30 }
+        }
+      }
+    }
+  }
+}

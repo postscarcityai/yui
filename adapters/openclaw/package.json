@@ -1,0 +1,25 @@
+{
+  "name": "@yuigui/openclaw-yui",
+  "version": "0.1.0",
+  "description": "Yui channel for OpenClaw: your agent on your iPhone, with real screens",
+  "type": "module",
+  "license": "Apache-2.0",
+  "repository": { "type": "git", "url": "https://github.com/postscarcityai/yui", "directory": "adapters/openclaw" },
+  "peerDependencies": { "openclaw": ">=2026.6.11" },
+  "peerDependenciesMeta": { "openclaw": { "optional": true } },
+  "openclaw": {
+    "extensions": ["./index.ts"],
+    "channel": {
+      "id": "yui",
+      "label": "Yui",
+      "selectionLabel": "Yui (iPhone)",
+      "detailLabel": "Yui",
+      "docsPath": "/channels/yui",
+      "docsLabel": "yui",
+      "blurb": "your agent on your phone, with real screens: buttons, pickers, forms, timers.",
+      "markdownCapable": true,
+      "order": 90
+    },
+    "compat": { "pluginApi": ">=2026.6.11" }
+  }
+}

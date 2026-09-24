@@ -19,6 +19,7 @@ This repo holds the native SwiftUI app, the Swift Yui Lines parser, the Supabase
 | `Packages/YuiLines/` | Swift parser for Yui Lines, no dependencies |
 | `project.yml` | XcodeGen project. The `.xcodeproj` is generated, not committed |
 | `hermes-plugin/` | The `yui` Hermes platform plugin |
+| `adapters/openclaw/` | Yui channel plugin for OpenClaw: an OpenClaw agent talks in Yui like a Hermes agent |
 | `adapters/webhook/` | Webhook bridge, Python and Node: any agent that answers an HTTP POST |
 | `supabase/` | Migrations, edge functions and live tests for accounts and agents |
 | `scripts/` | TestFlight upload and App Store Connect helpers |
@@ -64,6 +65,8 @@ The `yui` plugin makes Yui a Hermes messaging platform, next to Telegram. Each H
 The plugin injects a short guide into each Yui turn so the agent knows it can put Yui Lines on screen (source: `yuigui/spec/CHANNEL.md`, synced by `hermes-plugin/sync_channel.py`). The connector credential lives at `~/.hermes/yui/connector.json`, outside the repo.
 
 Without Hermes loaded, `python3 hermes-plugin/yui/connector.py pair <code> --profile <profile>` does the same pairing. How messages, events and credentials flow: `yuigui/spec/RELAY.md`.
+
+**On OpenClaw?** Install the channel plugin in `adapters/openclaw/` (`openclaw plugins install ./yui/adapters/openclaw`), pair with `openclaw yui pair <code>`, restart the gateway. Your agent gets the channel guide every turn and answers with screens. Test: `python3 adapters/openclaw/tests/openclaw_e2e.py`.
 
 **Not on Hermes?** Any agent that answers an HTTP POST can talk in Yui through the webhook bridge in `adapters/webhook/` (Python stdlib or Node 20, no dependencies): pair it with the same code, point it at your agent's URL, and it delivers every message once, with the channel guide in each request. Ten-line example agents included. Test: `python3 adapters/webhook/tests/webhook_e2e.py`.
 
