@@ -74,7 +74,39 @@ A live round trip test (type, get a Yui Lines screen, tap, get a timer) runs aga
 - Push (`supabase/migrations/20260924020000_yui_push.sql`, function `yui-push`): the app registers its APNs token at sign-in; a host asks `yui-push` to notify after it writes into a thread, and the tap opens `yui://agent/<id>/thread`. Secrets `YUI_APNS_P8`, `YUI_APNS_KEY_ID`, `YUI_APNS_TOPIC`. Tests: `python3 supabase/tests/push_test.py`.
 - Our project is shared with other apps, so we apply migrations by hand. Never `supabase db push` or `config push` against it.
 - Deploy a function: `supabase functions deploy <name> --project-ref <ref> --use-api --no-verify-jwt`. Secrets (`YUI_JWT_SECRET`, `YUI_SIWA_*`, `YUI_APNS_*`, `YUI_APPLE_TEAM_ID`) are edge function secrets and never live in the repo.
-- Tests run live against a real project: `python3 supabase/tests/accounts_test.py` (RLS, cross-user isolation, create and delete) and `python3 supabase/tests/agents_test.py` (registry). Run both after any change to a migration or function.
+- Tests run live against a real project: `python3 supabase/tests/accounts_test.py` (RLS, cross-user isolation, create and delete) and `python3 supabase/tests/agents_test.py` (registry). Run both after any change to a migration or function. `python3 supabase/tests/strangers_test.py` runs two unrelated throwaway accounts against each other and against every limit below.
+
+## Limits
+
+Yui shares its database with other apps, so a stranger must not be able to hurt the backend, other people, or anything outside `yui_*`. Migration `supabase/migrations/20260924070000_yui_limits.sql` enforces this in Postgres, where every write passes (the app's and the host's direct writes as well as the edge functions). The numbers live in the server table `yui_limits`, readable by any Yui token, and can be tuned there without a release.
+
+Rates are token buckets: `burst` requests at once, refilled at `per minute`. A phone that was offline or a Mac that slept comes back to a full bucket, so its outbox flush lands in one go; only a sustained flood is refused. A refused write gets `429 rate_limited` and costs nothing, and both outboxes (app and plugin) retry 429 with backoff, so nothing is lost. A resend of a row that already landed gets its usual `409`, never a 429.
+
+| What | Limit | Refused with |
+|---|---|---|
+| Messages and taps, per account | burst 120, then 30 per minute | 429 `rate_limited` |
+| Agent replies, per host | burst 240, then 60 per minute | 429 `rate_limited` |
+| `yui-connect` calls (heartbeat, session, add), per host | burst 30, then 6 per minute | 429 `rate_limited` |
+| Push notifications (`yui-push` notify), per host | burst 60, then 10 per minute | 429 `rate_limited` |
+| `yui-agents` calls, per account | burst 60, then 30 per minute | 429 `rate_limited` |
+| Pairing codes, per account | burst 20, then about 20 an hour | 429 `rate_limited` |
+| Wrong pairing codes, per client address | 10 per 10 minutes | 429 `too_many_attempts` |
+| Message body | 1 to 32,000 characters | 400 (check constraint) |
+| Message metadata (`meta`) | 16 KB | 400 (check constraint) |
+| Agent look (`theme`) | 2 KB | 400 (check constraint) |
+| Photo or video | 50 MB, images and mp4/mov only | 400 (bucket rule) |
+| Pictures per day, per account | 200 from the person, 200 from agents | 400 (storage policy) |
+| Agents per account | 50 | 403 `limit_reached` |
+| Paired hosts per account (not removed) | 10 | 403 `limit_reached` |
+| Phones registered for push, per account | 10 | 403 `limit_reached` |
+| Live agent-management tokens, per account | 10 | 403 `limit_reached` |
+| Message retention | 90 days, then deleted by the daily sweep | |
+
+**Kill switch.** `yui_users.suspended_at` stops one account, `yui_connectors.suspended_at` stops one host. It takes effect on the next request, including tokens minted before: a suspended account cannot send, upload, manage agents, refresh its session or connect a host (`403 account_suspended` / `403 suspended`); a suspended host cannot read, write, upload, connect or push. Nothing is deleted and sessions survive, so restoring brings everything back. Operate it with `python3 supabase/scripts/kill_switch.py status | suspend user|connector <id> --reason "..." | restore user|connector <id>`. A suspended account can still delete itself.
+
+**Retention.** `public.yui_retention()` deletes messages older than 90 days, plus expired pairing codes and sessions, old pairing attempts and idle rate buckets. The daily sweep (`supabase/scripts/media_sweep.py --delete`) runs it first, then removes pictures no remaining message uses.
+
+**Isolation.** `yui_user` and `yui_connector` hold no privilege on any table outside `yui_*` (plus the `yui-media` bucket in Storage), can run no non-Yui security-definer function, and no non-Yui policy applies to them. PROOF Auth keeps signups disabled; Yui accounts never enter it. `strangers_test.py` proves all of this on every run.
 
 ## TestFlight
 

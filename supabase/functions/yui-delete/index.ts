@@ -11,6 +11,7 @@ import {
   APPLE_ISSUER,
   appleClientId,
   appleClientSecret,
+  failure,
   json,
   verifyAccessToken,
 } from "../_shared/yui.ts";
@@ -63,7 +64,6 @@ Deno.serve(async (req) => {
 
     return json({ deleted: true, apple_token_revoked: appleRevoked, media_removed: mediaRemoved });
   } catch (e) {
-    console.error("yui-delete", e);
-    return json({ error: "server_error" }, 500);
+    return failure("yui-delete", e);
   }
 });

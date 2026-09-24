@@ -14,16 +14,19 @@ import {
   AGENT_COLORS,
   AGENT_COLUMNS,
   agentView,
+  assertActive,
   bearer,
   cleanLook,
   cleanName,
   defaultColor,
+  failure,
   insertAgent,
   json,
   MGMT_PREFIX,
   nameFromRef,
   randomToken,
   sha256Hex,
+  take,
   validRemoteRef,
   verifyAccessToken,
 } from "../_shared/yui.ts";
@@ -58,11 +61,14 @@ Deno.serve(async (req) => {
     const handler = ACTIONS[body.action as string];
     if (!handler) return json({ error: "unknown_action" }, 400);
     if (handler.appOnly && caller.via !== "app") return json({ error: "forbidden" }, 403);
+    // YUI-26: a suspended account manages nothing; each account has a call budget.
+    const db = admin();
+    await assertActive(db, caller.userId);
+    await take(db, `agents:u:${caller.userId}`, "agents_api");
     return json(await handler.run(caller.userId, body));
   } catch (e) {
     if (e instanceof HttpError) return json({ error: e.code }, e.status);
-    console.error("yui-agents", body.action, e);
-    return json({ error: "server_error" }, 500);
+    return failure(`yui-agents ${body.action}`, e);
   }
 });
 

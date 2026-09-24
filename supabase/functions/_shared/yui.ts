@@ -214,3 +214,36 @@ export async function agentView(db: any, userId: string, id: string) {
   if (error) throw error;
   return data;
 }
+
+// Limits and the kill switch (YUI-26, migration 20260924070000_yui_limits.sql).
+// The database guards raise SQLSTATE PTxxx and PostgREST answers status xxx;
+// `failure` hands that status on instead of a 500. Numbers: README "Limits".
+export class Refused extends Error {
+  constructor(public status: number, public code: string) {
+    super(code);
+  }
+}
+
+export function failure(where: string, e: unknown): Response {
+  if (e instanceof Refused) return json({ error: e.code }, e.status);
+  const m = /^PT(\d{3})$/.exec((e as { code?: string })?.code ?? "");
+  if (m) return json({ error: (e as { message?: string }).message || "refused" }, Number(m[1]));
+  console.error(where, e);
+  return json({ error: "server_error" }, 500);
+}
+
+// Takes one token from a rate bucket; throws 429 when it is empty. A database
+// error lets the call through: a broken limiter must not take Yui down.
+// deno-lint-ignore no-explicit-any
+export async function take(db: any, key: string, limit: string): Promise<void> {
+  const { data, error } = await db.rpc("yui_take", { k: key, lim: limit });
+  if (error) console.error("yui_take", key, error);
+  else if (data === false) throw new Refused(429, "rate_limited");
+}
+
+// Throws 403 when the account is switched off.
+// deno-lint-ignore no-explicit-any
+export async function assertActive(db: any, userId: string): Promise<void> {
+  const { data } = await db.from("yui_users").select("suspended_at").eq("id", userId).maybeSingle();
+  if (data?.suspended_at) throw new Refused(403, "account_suspended");
+}

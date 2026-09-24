@@ -21,7 +21,9 @@
 //       The current channel guide {version, body}: the text any agent gets
 //       on the Yui channel (yuigui/spec/CHANNEL.md).
 //
-// Wrong codes are throttled per client address (10 per 10 minutes).
+// Wrong codes are throttled per client address (10 per 10 minutes). Every
+// call with a connector token takes from that host's rate bucket, and a
+// suspended host or account gets 403 suspended (YUI-26).
 import {
   admin,
   AGENT_COLORS,
@@ -31,12 +33,15 @@ import {
   CONNECTOR_PREFIX,
   CONNECTOR_TTL_SECONDS,
   defaultColor,
+  failure,
   insertAgent,
   json,
   mintConnectorToken,
   nameFromRef,
   randomToken,
+  Refused,
   sha256Hex,
+  take,
   validRemoteRef,
 } from "../_shared/yui.ts";
 
@@ -75,17 +80,21 @@ Deno.serve(async (req) => {
         return json({ error: "unknown_action" }, 400);
     }
   } catch (e) {
-    console.error("yui-connect", body.action, e);
-    return json({ error: "server_error" }, 500);
+    return failure(`yui-connect ${body.action}`, e);
   }
 });
 
 async function connectorFor(db: DB, req: Request) {
   const token = bearer(req);
   if (!token.startsWith(CONNECTOR_PREFIX)) return null;
-  const { data } = await db.from("yui_connectors").select("id, user_id, name, kind")
+  const { data } = await db.from("yui_connectors").select("id, user_id, name, kind, suspended_at")
     .eq("token_hash", await sha256Hex(token)).is("revoked_at", null).maybeSingle();
-  return data;
+  if (!data) return null;
+  const { data: owner } = await db.from("yui_users").select("suspended_at").eq("id", data.user_id).maybeSingle();
+  if (data.suspended_at || owner?.suspended_at) throw new Refused(403, "suspended");
+  await take(db, `connect:c:${data.id}`, "connect");
+  const { suspended_at: _, ...connector } = data;
+  return connector;
 }
 
 function clientIp(req: Request): string {

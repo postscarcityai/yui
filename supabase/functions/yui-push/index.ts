@@ -27,7 +27,18 @@
 // APNs: token auth (ES256, the APNs key), HTTP/2 straight to Apple. Secrets:
 // YUI_APNS_P8, YUI_APNS_KEY_ID, YUI_APPLE_TEAM_ID, YUI_APNS_TOPIC.
 import { importPKCS8, SignJWT } from "npm:jose@5";
-import { admin, bearer, cleanName, CONNECTOR_PREFIX, json, sha256Hex, verifyAccessToken } from "../_shared/yui.ts";
+import {
+  admin,
+  bearer,
+  cleanName,
+  CONNECTOR_PREFIX,
+  failure,
+  json,
+  Refused,
+  sha256Hex,
+  take,
+  verifyAccessToken,
+} from "../_shared/yui.ts";
 
 const NOTIFY_WINDOW_MS = 10 * 60_000;
 const PRESENCE_MS = 90_000;
@@ -74,8 +85,7 @@ Deno.serve(async (req) => {
         return json({ error: "unknown_action" }, 400);
     }
   } catch (e) {
-    console.error("yui-push", body.action, e);
-    return json({ error: "server_error" }, 500);
+    return failure(`yui-push ${body.action}`, e);
   }
 });
 
@@ -125,9 +135,14 @@ async function presence(userId: string, b: Body): Promise<Response> {
 async function connectorFor(db: DB, req: Request) {
   const token = bearer(req);
   if (!token.startsWith(CONNECTOR_PREFIX)) return null;
-  const { data } = await db.from("yui_connectors").select("id, user_id")
+  const { data } = await db.from("yui_connectors").select("id, user_id, suspended_at")
     .eq("token_hash", await sha256Hex(token)).is("revoked_at", null).maybeSingle();
-  return data;
+  if (!data) return null;
+  // YUI-26: a suspended host or account pushes nothing; each host has a push budget.
+  const { data: owner } = await db.from("yui_users").select("suspended_at").eq("id", data.user_id).maybeSingle();
+  if (data.suspended_at || owner?.suspended_at) throw new Refused(403, "suspended");
+  await take(db, `push:c:${data.id}`, "push");
+  return { id: data.id, user_id: data.user_id };
 }
 
 // Text outside ```yui fences, squashed to one line.

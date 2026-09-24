@@ -13,6 +13,8 @@ import {
   APPLE_ISSUER,
   appleClientId,
   appleClientSecret,
+  assertActive,
+  failure,
   json,
   mintAccessToken,
   randomToken,
@@ -50,8 +52,7 @@ Deno.serve(async (req) => {
         return json({ error: "unsupported_grant_type" }, 400);
     }
   } catch (e) {
-    console.error("yui-auth", e);
-    return json({ error: "server_error" }, 500);
+    return failure("yui-auth", e);
   }
 });
 
@@ -88,6 +89,7 @@ async function signInWithApple(body: Body): Promise<Response> {
     .select("id, email, created_at")
     .single();
   if (error) throw error;
+  await assertActive(db, user.id);
 
   // Keep Apple's refresh token so account deletion can revoke it.
   if (body.authorization_code) {
@@ -150,6 +152,8 @@ async function refresh(token?: string): Promise<Response> {
     return json({ error: "invalid_grant" }, 401);
   }
   if (new Date(s.expires_at) < new Date()) return json({ error: "invalid_grant" }, 401);
+  // Before rotating: a suspended account keeps its session for when it is restored.
+  await assertActive(db, s.user_id);
 
   const { data: rotated } = await db.from("yui_sessions")
     .update({ revoked_at: new Date().toISOString() })

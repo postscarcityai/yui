@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
-"""YUI-21 media sweep: remove orphaned objects from the yui-media bucket.
+"""YUI-21 media sweep: retention first (YUI-26), then orphaned media.
+
+Retention: public.yui_retention() deletes messages older than
+message_retention_days (yui_limits, README "Limits") and expired
+housekeeping rows. The pictures those messages used become orphans and go in
+the media pass once the grace period has run.
 
 An object is an orphan when its owner or agent is gone (account or agent
 deleted, or yui-delete could not reach Storage), or when it is older than the
@@ -8,7 +13,7 @@ or a message the person deleted). The rule lives in SQL:
 public.yui_media_orphans(grace), migration 20260924040000_yui_media.sql.
 
     media_sweep.py            # dry run: count and list
-    media_sweep.py --delete   # remove them
+    media_sweep.py --delete   # apply retention, then remove orphans
     media_sweep.py --grace '6 hours'
 
 Needs a Supabase access token (SUPABASE_ACCESS_TOKEN or the CLI's keychain
@@ -46,6 +51,13 @@ def main() -> int:
     ap.add_argument("--grace", default="1 day")
     args = ap.parse_args()
     mgmt = {"authorization": f"Bearer {access_token()}"}
+    s, rows = http("POST", f"https://api.supabase.com/v1/projects/{REF}/database/query", mgmt,
+                   {"query": f"select * from public.yui_retention({'false' if args.delete else 'true'})"})
+    if s >= 300:
+        print(f"retention failed: {s} {rows}", file=sys.stderr)
+        return 1
+    print(("retention removed " if args.delete else "retention due: ")
+          + ", ".join(f"{r['n_rows']} {r['what']}" for r in rows))
     grace = args.grace.replace("'", "")
     s, rows = http("POST", f"https://api.supabase.com/v1/projects/{REF}/database/query", mgmt,
                    {"query": f"select public.yui_media_orphans('{grace}'::interval) as name"})
