@@ -12,6 +12,7 @@ struct YuiApp: App {
         let account = Account()
         _account = State(initialValue: account)
         _agents = State(initialValue: AgentStore(account: account))
+        LiveTimer.shared.setUp()
     }
 
     var body: some Scene {

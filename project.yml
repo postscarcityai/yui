@@ -21,10 +21,11 @@ targets:
   Yui:
     type: application
     platform: iOS
-    sources: [Yui/Sources, Yui/Resources]
+    sources: [Yui/Sources, Yui/Resources, Shared]
     dependencies:
       - package: YuiLines
       - package: SwiftMath
+      - target: YuiWidgets
     entitlements:
       path: Yui/Yui.entitlements
       properties:
@@ -38,6 +39,10 @@ targets:
         UILaunchScreen: {}
         ITSAppUsesNonExemptEncryption: false
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
+        # A running timer on the lock screen and in the Dynamic Island (YUI-30).
+        NSSupportsLiveActivities: true
+        # Keeps a running timer's rounds and beeps going with the phone locked.
+        UIBackgroundModes: [audio]
         NSCameraUsageDescription: Send a photo to an agent, or take one when it asks, like your plate or a receipt. Yui sends it only to the agent in that thread.
         NSMicrophoneUsageDescription: Hold the mic to talk to your agent. Yui turns your words into text on your phone and sends the text.
         NSSpeechRecognitionUsageDescription: Hold the mic to talk to your agent. Your words become text on your phone before they are sent.
@@ -53,6 +58,25 @@ targets:
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
     scheme:
       testTargets: [YuiTests, YuiUITests]
+  # Live Activities: the timer on the lock screen and in the Dynamic Island (YUI-30).
+  YuiWidgets:
+    type: app-extension
+    platform: iOS
+    sources: [YuiWidgets, Shared, Yui/Sources/Theme/YuiTheme.swift]
+    info:
+      path: YuiWidgets/Info.plist
+      properties:
+        CFBundleDisplayName: Yui
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.yuigui.app.widgets
+        TARGETED_DEVICE_FAMILY: "1"
+        GENERATE_INFOPLIST_FILE: YES
+        SKIP_INSTALL: YES
   # Unit tests hosted in the app (the chat store, answers on reopen).
   YuiTests:
     type: bundle.unit-test

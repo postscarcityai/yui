@@ -39,6 +39,12 @@
 	<string>Hold the mic to talk to your agent. Yui turns your words into text on your phone and sends the text.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
 	<string>Hold the mic to talk to your agent. Your words become text on your phone before they are sent.</string>
+	<key>NSSupportsLiveActivities</key>
+	<true/>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>audio</string>
+	</array>
 	<key>UILaunchScreen</key>
 	<dict/>
 	<key>UISupportedInterfaceOrientations</key>

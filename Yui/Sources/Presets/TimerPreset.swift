@@ -5,7 +5,8 @@ import YuiLines
 /// `timer`: work/rest rounds on a progress ring, or a stopwatch with `+up`.
 /// Beeps on the last 3 seconds of a phase and on every phase change.
 /// The clock lives in `TimerRuns` when the chat hosts it, so the same timer
-/// keeps its time between the stage and the chat (YUI-13).
+/// keeps its time between the stage and the chat (YUI-13). Started, it also
+/// runs on the lock screen and in the Dynamic Island (LiveTimer, YUI-30).
 struct TimerPreset: View {
     let c: YLComponent
     @State private var local = TimerRun()
@@ -119,6 +120,7 @@ struct TimerPreset: View {
                 }
             }
         }
+        LiveTimer.shared.sync(run, key: liveKey, c, theme: theme, scheme: scheme)
     }
 
     private func reset() {
@@ -127,7 +129,11 @@ struct TimerPreset: View {
             run.banked = 0
             run.finished = false
         }
+        LiveTimer.shared.reset(key: liveKey)
     }
+
+    /// Same key as `TimerRuns`: one lock-screen timer per reply and component (YUI-30).
+    private var liveKey: String { "\(scope)#\(c.serial)" }
 
     private func beep(_ phaseChange: Bool) {
         guard c.string("sound") != "off" else { return }
