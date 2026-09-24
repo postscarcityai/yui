@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
-"""YUI-8 push tests against PROOF (live).
+"""YUI-8 / YUI-24 push tests against PROOF (live).
 
 yui-push registers a phone's APNs token for the signed-in user (app token)
 and lets a host notify that user about an agent message it just wrote
-(connector token), only for threads of agents bound to that host. The fake
+(connector token), only for threads of agents bound to that host. YUI-24:
+no push to a phone that is open on that thread (presence), none for a muted
+agent, and presence goes stale so a killed app still gets it. The fake
 device token must reach Apple and come back BadDeviceToken: that proves the
 function signs a provider token Apple accepts (a bad key is 403
 InvalidProviderToken) without pushing to anyone's phone. Every test account
@@ -91,6 +93,56 @@ try:
               f"('{A}','{a_agent}','agent','old', now() - interval '1 hour') returning id")[0]["id"]
     s, r = push({"action": "notify", "message_id": old}, a_ct)
     check("messages older than 10 minutes do not push", s == 409, f"{s} {r}")
+
+    print("== Presence and mute (YUI-24)")
+    def agent_msg(body="Answer"):
+        return rest("POST", "yui_messages", ctA, {"user_id": A, "agent_id": a_agent, "sender": "agent",
+                    "body": body, "kind": "text"}, prefer="return=representation")[1][0]["id"]
+    s2, other = fn("yui-agents", {"action": "create", "name": "Other"}, tokA)
+    other_id = other["agent"]["id"]
+    s, r = push({"action": "presence", "token": FAKE, "active": True, "agent_id": a_agent}, tokA)
+    row = sql(f"select active_agent_id, active_at is not null as on from yui_devices where apns_token = '{FAKE}'")
+    check("app reports it is open on the thread", s == 200 and r.get("tracked") and row == [{"active_agent_id": a_agent, "on": True}], f"{s} {r} {row}")
+    s, r = push({"action": "notify", "message_id": agent_msg()}, a_ct)
+    check("open on that thread: no push, counted as skipped", s == 200 and r["devices"] == 0 and r["skipped"] == 1, f"{s} {r}")
+    push({"action": "presence", "token": FAKE, "active": True, "agent_id": other_id}, tokA)
+    s, r = push({"action": "notify", "message_id": agent_msg()}, a_ct)
+    check("open on another agent's thread: push goes out", s == 200 and r["devices"] == 1 and r["skipped"] == 0, f"{s} {r}")
+    push({"action": "presence", "token": FAKE, "active": True, "agent_id": a_agent}, tokA)
+    sql(f"update yui_devices set active_at = now() - interval '2 minutes' where apns_token = '{FAKE}'")
+    s, r = push({"action": "notify", "message_id": agent_msg()}, a_ct)
+    check("presence older than 90s (app killed): push goes out", s == 200 and r["devices"] == 1, f"{s} {r}")
+    push({"action": "presence", "token": FAKE, "active": True, "agent_id": a_agent}, tokA)
+    s, r = push({"action": "presence", "token": FAKE, "active": False}, tokA)
+    row = sql(f"select active_agent_id, active_at from yui_devices where apns_token = '{FAKE}'")
+    check("app goes to the background: presence cleared", s == 200 and row == [{"active_agent_id": None, "active_at": None}], f"{row}")
+    s, r = push({"action": "notify", "message_id": agent_msg()}, a_ct)
+    check("backgrounded: push goes out", s == 200 and r["devices"] == 1, f"{s} {r}")
+    s, r = push({"action": "presence", "token": FAKE, "active": True, "agent_id": a_agent}, tokB)
+    row = sql(f"select active_at from yui_devices where apns_token = '{FAKE}'")
+    check("another user cannot set this phone's presence", s == 200 and not r.get("tracked") and row == [{"active_at": None}], f"{r} {row}")
+    s, r = push({"action": "presence", "token": FAKE, "active": True, "agent_id": b_agent}, tokA)
+    row = sql(f"select active_agent_id from yui_devices where apns_token = '{FAKE}'")
+    check("presence on someone else's agent is not stored", s == 200 and row == [{"active_agent_id": None}], f"{row}")
+    s, r = push({"action": "presence", "token": FAKE, "active": "yes"}, tokA)
+    check("presence needs a boolean", s == 400, f"{s}")
+    s, r = push({"action": "presence", "token": FAKE, "active": True}, a_ct)
+    check("presence with a connector token is 401", s == 401, f"{s}")
+    push({"action": "presence", "token": FAKE, "active": False}, tokA)
+
+    s, r = fn("yui-agents", {"action": "update", "id": a_agent, "push_muted": True}, tokA)
+    check("user mutes the agent in its settings", s == 200 and r["agent"]["push_muted"] is True, f"{s} {r}")
+    s, r = fn("yui-agents", {"action": "update", "id": a_agent, "push_muted": "no"}, tokA)
+    check("mute needs a boolean", s == 400, f"{s}")
+    s, r = push({"action": "notify", "message_id": agent_msg(), "from": "Urza"}, a_ct)
+    check("muted agent: no push, even for a handoff", s == 200 and r.get("muted") and r["devices"] == 0, f"{s} {r}")
+    s, r = rest("PATCH", f"yui_agents?id=eq.{a_agent}", tokB, {"push_muted": False}, prefer="return=representation")
+    row = sql(f"select push_muted from yui_agents where id = '{a_agent}'")
+    check("another user cannot unmute it", row == [{"push_muted": True}], f"{s} {r} {row}")
+    s, r = rest("PATCH", f"yui_agents?id=eq.{a_agent}", tokA, {"push_muted": False}, prefer="return=representation")
+    check("owner unmutes over REST too", s == 200 and r and r[0]["push_muted"] is False, f"{s} {r}")
+    s, r = push({"action": "notify", "message_id": agent_msg()}, a_ct)
+    check("unmuted: pushes again", s == 200 and r["devices"] == 1, f"{s} {r}")
 
     print("== Move and unregister")
     s, r = push({"action": "register", "token": FAKE, "environment": "sandbox"}, tokB)

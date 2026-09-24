@@ -21,16 +21,19 @@ struct YuiAgent: Codable, Identifiable, Equatable, Sendable {
     var sort: Int
     /// Its look (`yui_agents.theme`): colors, shape, type, motion, preferred screens.
     var theme: AgentLook? = nil
+    /// Its answers don't push to this person's phones (YUI-24). Nil from older servers.
+    var pushMuted: Bool? = nil
 
     enum CodingKeys: String, CodingKey {
         case id, name, handle, color, avatar, kind, status, sort, theme
         case connectorID = "connector_id", connectorName = "connector_name", remoteRef = "remote_ref"
-        case lastSeenAt = "last_seen_at", isDefault = "is_default"
+        case lastSeenAt = "last_seen_at", isDefault = "is_default", pushMuted = "push_muted"
     }
 }
 
 extension YuiAgent {
     var isYui: Bool { avatar == "yui" }
+    var muted: Bool { pushMuted ?? false }
     /// The whole app wears this while its thread is open.
     var yuiTheme: YuiTheme { AgentLook.theme(theme, name: handle.isEmpty ? name : handle, isYui: isYui) }
 }
@@ -129,10 +132,11 @@ final class AgentStore {
     }
 
     func update(_ agent: YuiAgent, name: String? = nil, color: String? = nil, theme: AgentLook? = nil,
-                makeDefault: Bool = false) async {
+                makeDefault: Bool = false, pushMuted: Bool? = nil) async {
         guard let i = agents.firstIndex(where: { $0.id == agent.id }) else { return }
         // The look shows at once; the server write follows.
         if let theme { agents[i].theme = theme }
+        if let pushMuted { agents[i].pushMuted = pushMuted }
         if isDemo {
             if let name { agents[i].name = name }
             if let color { agents[i].color = color }
@@ -145,6 +149,7 @@ final class AgentStore {
         if let theme, let data = try? JSONEncoder().encode(theme),
            let json = try? JSONSerialization.jsonObject(with: data) { body["theme"] = json }
         if makeDefault { body["is_default"] = true }
+        if let pushMuted { body["push_muted"] = pushMuted }
         do {
             let _: AgentReply = try await call(body)
             await refresh()

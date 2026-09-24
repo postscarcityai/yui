@@ -174,7 +174,7 @@ const ACTIONS: Record<string, Action> = {
     },
   },
 
-  // {id, name?, color?, theme?, sort?, is_default?, remote_ref?}
+  // {id, name?, color?, theme?, sort?, is_default?, remote_ref?, push_muted?}
   update: {
     async run(userId, b) {
       const db = admin();
@@ -199,6 +199,10 @@ const ACTIONS: Record<string, Action> = {
         patch.sort = b.sort;
       }
       if (b.is_default === true) patch.is_default = true;
+      if (b.push_muted !== undefined) {
+        if (typeof b.push_muted !== "boolean") throw new HttpError(400, "invalid_push_muted");
+        patch.push_muted = b.push_muted;
+      }
       if (b.remote_ref !== undefined) {
         if (!validRemoteRef(b.remote_ref)) throw new HttpError(400, "invalid_remote_ref");
         patch.remote_ref = b.remote_ref;

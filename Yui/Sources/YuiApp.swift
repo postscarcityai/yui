@@ -4,6 +4,7 @@ import SwiftUI
 struct YuiApp: App {
     @UIApplicationDelegateAdaptor(YuiAppDelegate.self) private var appDelegate
     @AppStorage("appearance") private var appearance: Appearance = .system
+    @Environment(\.scenePhase) private var scenePhase
     @State private var account: Account
     @State private var agents: AgentStore
 
@@ -33,6 +34,8 @@ struct YuiApp: App {
                 await PushCenter.shared.start(account: account)
             }
             .onOpenURL { PushCenter.shared.open($0) }
+            // Open on a thread: its answers show there, no push (YUI-24).
+            .onChange(of: scenePhase, initial: true) { PushCenter.shared.setForeground(scenePhase == .active) }
         }
     }
 }

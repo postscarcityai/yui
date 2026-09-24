@@ -9,6 +9,12 @@ import UserNotifications
 /// Yui" on Telegram): its host writes into that agent's thread and asks
 /// `yui-push` to notify this phone. Tapping the notification, or opening
 /// `yui://agent/<agent id>/thread`, lands in that thread.
+///
+/// Presence (YUI-24): while the app is open it tells `yui-push` which thread
+/// is on screen, once a minute and on every change, and clears it on the way
+/// to the background. The server then skips this phone for answers in that
+/// thread, so an answer you are watching arrive never buzzes too. A killed
+/// app stops reporting and counts as closed after 90 seconds.
 @MainActor @Observable
 final class PushCenter: NSObject {
     static let shared = PushCenter()
@@ -16,7 +22,12 @@ final class PushCenter: NSObject {
     /// A thread to open, from a notification tap or a link. ChatView consumes it.
     var pendingAgentID: String?
     /// The thread on screen right now: its own pushes don't show a banner.
-    var visibleAgentID: String?
+    var visibleAgentID: String? {
+        didSet { if visibleAgentID != oldValue, foreground { Task { await reportPresence() } } }
+    }
+    /// The app is on screen (scene phase active).
+    private(set) var foreground = false
+    private var heartbeat: Task<Void, Never>?
     private(set) var deviceToken: String?
     private weak var account: Account?
     private var registeredFor: String?
@@ -66,9 +77,42 @@ final class PushCenter: NSObject {
             try await call(["action": "register", "token": token, "environment": Self.environment,
                             "name": UIDevice.current.name], bearer: bearer)
             registeredFor = "\(user):\(token)"
+            if foreground { await reportPresence() }
         } catch {
             // Next launch or sign-in tries again.
         }
+    }
+
+    /// Scene phase: open (with a heartbeat) or on the way to the background.
+    func setForeground(_ on: Bool) {
+        guard on != foreground else { return }
+        foreground = on
+        heartbeat?.cancel()
+        if on {
+            heartbeat = Task { [weak self] in
+                while !Task.isCancelled {
+                    await self?.reportPresence()
+                    try? await Task.sleep(for: .seconds(60))
+                }
+            }
+        } else {
+            // A few seconds of background time so "closed" reaches the server.
+            let app = UIApplication.shared
+            var bg = UIBackgroundTaskIdentifier.invalid
+            bg = app.beginBackgroundTask { app.endBackgroundTask(bg) }
+            Task {
+                await reportPresence()
+                app.endBackgroundTask(bg)
+            }
+        }
+    }
+
+    private func reportPresence() async {
+        guard let token = deviceToken, registeredFor != nil, let account, account.isSignedIn,
+              let bearer = try? await account.validAccessToken() else { return }
+        var body: [String: Any] = ["action": "presence", "token": token, "active": foreground]
+        if foreground, let agent = visibleAgentID { body["agent_id"] = agent }
+        _ = try? await call(body, bearer: bearer)
     }
 
     /// `yui://agent/<id>/thread` (also `yui://agent/<id>`).
@@ -80,13 +124,13 @@ final class PushCenter: NSObject {
         return true
     }
 
-    private func call(_ body: [String: String], bearer: String) async throws {
+    private func call(_ body: [String: Any], bearer: String) async throws {
         var req = URLRequest(url: YuiBackend.function("yui-push"))
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.setValue(YuiBackend.publishableKey, forHTTPHeaderField: "apikey")
         req.setValue("Bearer \(bearer)", forHTTPHeaderField: "Authorization")
-        req.httpBody = try JSONEncoder().encode(body)
+        req.httpBody = try JSONSerialization.data(withJSONObject: body)
         let (_, response) = try await URLSession.shared.data(for: req)
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
             throw AccountError.server("push_\((response as? HTTPURLResponse)?.statusCode ?? 0)")

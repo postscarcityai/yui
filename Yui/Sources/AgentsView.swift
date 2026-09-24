@@ -126,6 +126,11 @@ private struct AgentRow: View {
                             .padding(.horizontal, 6).padding(.vertical, 2)
                             .background(c.background, in: Capsule())
                     }
+                    if agent.muted {
+                        Image(systemName: "bell.slash.fill")
+                            .font(theme.font(11, .bold)).foregroundStyle(c.inkSoft)
+                            .accessibilityLabel("Notifications off")
+                    }
                 }
                 StatusLine(agent: agent)
             }
@@ -464,7 +469,7 @@ private struct PairingStep: View {
     }
 }
 
-/// Rename, pick a look (the sheet previews it live), make default, new pairing code, remove.
+/// Rename, pick a look (the sheet previews it live), notifications, make default, new pairing code, remove.
 private struct EditAgentSheet: View {
     let agent: YuiAgent
     @Environment(AgentStore.self) private var store
@@ -472,6 +477,7 @@ private struct EditAgentSheet: View {
     @Environment(\.colorScheme) private var scheme
     @State private var name = ""
     @State private var look: String?
+    @State private var notify = true
     @State private var confirmRemove = false
     @State private var code: PairingCode?
 
@@ -507,6 +513,7 @@ private struct EditAgentSheet: View {
                         Task {
                             if n != agent.name, !n.isEmpty { await store.update(agent, name: n) }
                             if look != agent.theme?.preset { await store.setLook(agent, preset: look) }
+                            if notify == agent.muted { await store.update(agent, pushMuted: !notify) }
                             dismiss()
                         }
                     }
@@ -523,7 +530,7 @@ private struct EditAgentSheet: View {
         }
         .environment(\.yuiTheme, theme)
         .animation(theme.spring, value: theme)
-        .onAppear { name = agent.name; look = agent.theme?.preset }
+        .onAppear { name = agent.name; look = agent.theme?.preset; notify = !agent.muted }
     }
 
     /// "full screen, stacked buttons": the agent's style profile in words.
@@ -570,6 +577,19 @@ private struct EditAgentSheet: View {
                 Text("Runs on \(host) as the \(ref) profile.")
                     .font(theme.font(theme.type.caption)).foregroundStyle(c.inkSoft)
             }
+            Toggle(isOn: $notify) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Notifications").font(theme.font(theme.type.body, .bold)).foregroundStyle(c.ink)
+                    Text(notify ? "Your phone buzzes when \(agent.name) answers and Yui is closed."
+                                : "\(agent.name) stays quiet. Its answers wait in the thread.")
+                        .font(theme.font(theme.type.caption)).foregroundStyle(c.inkSoft)
+                }
+            }
+            .tint(c.accent)
+            .padding(theme.spacing.l)
+            .background(c.surface, in: .rect(cornerRadius: theme.radius.card))
+            .overlay(RoundedRectangle(cornerRadius: theme.radius.card).stroke(c.outline, lineWidth: 1.5))
+            .accessibilityIdentifier("agent-notifications")
             VStack(spacing: 0) {
                 if !agent.isDefault {
                     row("Make default", "star.fill", c.ink) {

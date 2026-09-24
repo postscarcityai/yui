@@ -7,6 +7,10 @@
 //       environment: "production" (TestFlight/App Store) or "sandbox" (Xcode).
 //   {action: "unregister", token}
 //       Sign out: this phone stops getting the user's pushes.
+//   {action: "presence", token, active, agent_id?}   (YUI-24)
+//       The app is open (active: true) on agent_id's thread, or it just went
+//       to the background (active: false). Sent on every change and once a
+//       minute while open. Stale after PRESENCE_MS: a killed app is closed.
 //
 // Host side, Bearer yui_ct_... connector token:
 //   {action: "notify", message_id, from?, handoff?}
@@ -16,6 +20,9 @@
 //       Only for messages in threads of agents bound to this connector,
 //       written in the last 10 minutes. `from` names the Hermes profile that
 //       handed the message off when it is not the thread's own agent.
+//       Skipped (YUI-24): agents the user muted (yui_agents.push_muted), and
+//       phones that are open on that agent's thread right now, where the
+//       answer already shows. Phones open on another thread still get it.
 //
 // APNs: token auth (ES256, the APNs key), HTTP/2 straight to Apple. Secrets:
 // YUI_APNS_P8, YUI_APNS_KEY_ID, YUI_APPLE_TEAM_ID, YUI_APNS_TOPIC.
@@ -23,6 +30,8 @@ import { importPKCS8, SignJWT } from "npm:jose@5";
 import { admin, bearer, cleanName, CONNECTOR_PREFIX, json, sha256Hex, verifyAccessToken } from "../_shared/yui.ts";
 
 const NOTIFY_WINDOW_MS = 10 * 60_000;
+const PRESENCE_MS = 90_000;
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const HOSTS = { production: "https://api.push.apple.com", sandbox: "https://api.sandbox.push.apple.com" };
 const TOKEN = /^[0-9a-f]{64,200}$/;
 
@@ -48,13 +57,15 @@ Deno.serve(async (req) => {
   try {
     switch (body.action) {
       case "register":
-      case "unregister": {
+      case "unregister":
+      case "presence": {
         let userId: string;
         try {
           userId = await verifyAccessToken(req);
         } catch {
           return json({ error: "unauthorized" }, 401);
         }
+        if (body.action === "presence") return await presence(userId, body);
         return body.action === "register" ? await register(userId, body) : await unregister(userId, body);
       }
       case "notify":
@@ -92,6 +103,25 @@ async function unregister(userId: string, b: Body): Promise<Response> {
   return json({ ok: true });
 }
 
+async function presence(userId: string, b: Body): Promise<Response> {
+  const token = typeof b.token === "string" ? b.token.toLowerCase() : "";
+  if (!TOKEN.test(token)) return json({ error: "invalid_token" }, 400);
+  if (typeof b.active !== "boolean") return json({ error: "invalid_active" }, 400);
+  let agentId: string | null = null;
+  if (b.active && b.agent_id != null) {
+    if (typeof b.agent_id !== "string" || !UUID.test(b.agent_id)) return json({ error: "invalid_agent_id" }, 400);
+    const { data } = await admin().from("yui_agents").select("id").eq("id", b.agent_id).eq("user_id", userId).maybeSingle();
+    agentId = data?.id ?? null;
+  }
+  const { data, error } = await admin().from("yui_devices").update({
+    active_at: b.active ? new Date().toISOString() : null,
+    active_agent_id: agentId,
+  }).eq("apns_token", token).eq("user_id", userId).select("id");
+  if (error) throw error;
+  // Not registered (yet): nothing to track. The app registers first.
+  return json({ ok: true, tracked: (data ?? []).length > 0 });
+}
+
 async function connectorFor(db: DB, req: Request) {
   const token = bearer(req);
   if (!token.startsWith(CONNECTOR_PREFIX)) return null;
@@ -114,7 +144,7 @@ async function notify(req: Request, b: Body): Promise<Response> {
   const { data: msg } = await db.from("yui_messages").select("id, user_id, agent_id, sender, body, created_at")
     .eq("id", b.message_id).maybeSingle();
   const { data: agent } = msg
-    ? await db.from("yui_agents").select("id, name, connector_id").eq("id", msg.agent_id).maybeSingle()
+    ? await db.from("yui_agents").select("id, name, connector_id, push_muted").eq("id", msg.agent_id).maybeSingle()
     : { data: null };
   // Same answer for "no such message" and "not yours": no probing other threads.
   if (!msg || !agent || agent.connector_id !== connector.id || msg.user_id !== connector.user_id) {
@@ -122,6 +152,7 @@ async function notify(req: Request, b: Body): Promise<Response> {
   }
   if (msg.sender !== "agent") return json({ error: "not_an_agent_message" }, 400);
   if (Date.now() - new Date(msg.created_at).getTime() > NOTIFY_WINDOW_MS) return json({ error: "too_old" }, 409);
+  if (agent.push_muted) return json({ ok: true, muted: true, devices: 0, delivered: 0, skipped: 0, results: [] });
 
   const from = cleanName(b.from);
   const who = from ?? agent.name;
@@ -137,10 +168,20 @@ async function notify(req: Request, b: Body): Promise<Response> {
     url: `yui://agent/${agent.id}/thread`,
   };
 
-  const { data: devices } = await db.from("yui_devices").select("id, apns_token, environment")
+  const { data: all } = await db.from("yui_devices").select("id, apns_token, environment, active_at, active_agent_id")
     .eq("user_id", msg.user_id).not("apns_token", "is", null);
-  const results = await Promise.all((devices ?? []).map((d: DB) => push(db, d, payload)));
-  return json({ ok: true, devices: results.length, delivered: results.filter((r) => r.ok).length, results });
+  // Open on this thread right now: the answer is already on screen.
+  const watching = (d: DB) =>
+    d.active_agent_id === agent.id && d.active_at && Date.now() - new Date(d.active_at).getTime() < PRESENCE_MS;
+  const devices = (all ?? []).filter((d: DB) => !watching(d));
+  const results = await Promise.all(devices.map((d: DB) => push(db, d, payload)));
+  return json({
+    ok: true,
+    devices: results.length,
+    delivered: results.filter((r) => r.ok).length,
+    skipped: (all ?? []).length - devices.length,
+    results,
+  });
 }
 
 let jwtCache: { jwt: string; at: number } | null = null;
