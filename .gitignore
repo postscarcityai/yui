@@ -4,3 +4,4 @@ DerivedData/
 *.ipa
 *.xcarchive
 .DS_Store
+supabase/.temp/
