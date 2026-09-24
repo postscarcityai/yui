@@ -86,6 +86,42 @@ final class ChatStore {
     /// environment of every preset (and every full-screen cover) each render.
     @ObservationIgnored private(set) lazy var emit = YLEmit { [weak self] e in self?.receive(e) }
 
+    // MARK: Reactions (YUI-49, spec yuigui/spec/REACTIONS.md)
+
+    /// The emoji on each agent reply, by thread row id. One per row.
+    private(set) var reactions: [String: String] = [:]
+    /// The bubble whose reaction bar is open.
+    var reacting: String?
+
+    var reactingMessage: ChatMessage? { reacting.flatMap { id in messages.first { $0.id == id } } }
+
+    /// The bubble that wears a row's badge: its last text bubble.
+    func wearsReaction(_ m: ChatMessage) -> Bool {
+        !m.fromUser && m.yl == nil && messages.last { $0.rowID == m.rowID && !$0.fromUser && $0.yl == nil }?.id == m.id
+    }
+
+    func reaction(for m: ChatMessage) -> Reaction? { Reaction.named(reactions[m.rowID]) }
+
+    /// Reacts to the reply `messageID` belongs to. The one already there again
+    /// takes it back; another replaces it. Goes to the agent as one turn.
+    func react(_ messageID: String, with pick: Reaction?) {
+        guard let m = messages.first(where: { $0.id == messageID }), !m.fromUser else { return }
+        let row = m.rowID
+        let old = Reaction.named(reactions[row])
+        let new = pick == old ? nil : pick
+        guard new != old else { return }
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.62)) { reactions[row] = new?.emoji }
+        let quoted = messages.filter { $0.rowID == row && !$0.fromUser && $0.yl == nil }.map(\.text).joined(separator: "\n")
+        post(body: Reaction.body(msg: row, reaction: new, changed: old != nil && new != nil, quoting: quoted),
+             kind: "event", meta: Reaction.meta(msg: row, reaction: new))
+    }
+
+    /// A react event (history, outbox or poll): newest wins, rows come oldest first.
+    private func applyReaction(meta: YLValue?) {
+        guard let r = Reaction.from(meta: meta) else { return }
+        reactions[r.msg] = r.emoji
+    }
+
     // MARK: Answers
 
     /// The newest answer for each component, by reply (message id) then YL id.
@@ -173,6 +209,8 @@ final class ChatStore {
         self.account = account
         messages = []
         answers = [:]
+        reactions = [:]
+        reacting = nil
         stageID = nil
         stageOpen = false
         seen = []
@@ -247,6 +285,7 @@ final class ChatStore {
         for item in Outbox.shared.pending(agentID: agentID) where seen.insert(item.id).inserted {
             if item.kind == "event" {
                 record(meta: item.meta)
+                applyReaction(meta: item.meta)
                 if let echo = item.meta?.object?["echo"]?.string { new.append(ChatMessage(id: item.id, text: echo, fromUser: true)) }
             } else {
                 new.append(Self.userMessage(id: item.id, body: item.body, meta: item.meta))
@@ -314,11 +353,13 @@ final class ChatStore {
         if row.sender == "user" {
             if row.kind == "event" {
                 record(meta: row.meta)
+                applyReaction(meta: row.meta)
                 if let echo = row.meta?.object?["echo"]?.string { new.append(ChatMessage(id: id, text: echo, fromUser: true)) }
             } else {
                 new.append(Self.userMessage(id: id, body: row.body, meta: row.meta))
             }
         } else {
+            if let r = row.reaction { reactions[id] = r }
             for (i, seg) in YuiFence.split(row.body).enumerated() {
                 switch seg {
                 case .text(let t): new.append(ChatMessage(id: "\(id)#\(i)", text: t, fromUser: false))

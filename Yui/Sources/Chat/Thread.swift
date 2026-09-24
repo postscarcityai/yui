@@ -12,9 +12,11 @@ struct ThreadRow: Decodable, Sendable {
     /// The person's rows only: the host picked it up, and the agent's turn on it finished.
     var deliveredAt: String? = nil
     var handledAt: String? = nil
+    /// Agent rows only: the person's reaction on it (YUI-49).
+    var reaction: String? = nil
 
     enum CodingKeys: String, CodingKey {
-        case id, sender, body, kind, meta
+        case id, sender, body, kind, meta, reaction
         case createdAt = "created_at", deliveredAt = "delivered_at", handledAt = "handled_at"
     }
 }
@@ -140,7 +142,7 @@ struct ThreadClient {
         return since == nil ? rows.reversed() : rows
     }
 
-    static let columns = "id,sender,body,kind,meta,created_at,delivered_at,handled_at"
+    static let columns = "id,sender,body,kind,meta,created_at,delivered_at,handled_at,reaction"
 
     /// The person's newest row, for how far the agent's turn on it has got.
     func newestFromUser() async throws -> ThreadRow? {

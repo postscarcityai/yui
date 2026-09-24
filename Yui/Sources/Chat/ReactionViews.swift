@@ -1,0 +1,227 @@
+import SwiftUI
+import UIKit
+
+/// The bounds of the bubble whose reaction bar is open, for the overlay.
+struct ReactionAnchor: PreferenceKey {
+    static let defaultValue: Anchor<CGRect>? = nil
+    static func reduce(value: inout Anchor<CGRect>?, nextValue: () -> Anchor<CGRect>?) { value = value ?? nextValue() }
+}
+
+/// A chat bubble's words in its shape and colors. The thread and the lifted
+/// copy in the reaction overlay draw the same thing.
+struct BubbleText: View {
+    let text: String
+    let fromUser: Bool
+    @Environment(\.yuiTheme) private var theme
+    @Environment(\.colorScheme) private var scheme
+
+    var body: some View {
+        let c = theme.swatch(scheme)
+        let r = theme.radius
+        let shape = UnevenRoundedRectangle(
+            topLeadingRadius: r.bubble,
+            bottomLeadingRadius: fromUser ? r.bubble : r.bubbleTail,
+            bottomTrailingRadius: fromUser ? r.bubbleTail : r.bubble,
+            topTrailingRadius: r.bubble)
+        Text(text)
+            .font(theme.font(theme.type.body, .medium))
+            .foregroundStyle(fromUser ? c.userInk : c.agentInk)
+            .padding(.horizontal, theme.spacing.l)
+            .padding(.vertical, theme.spacing.m)
+            .background(fromUser ? c.userBubble : c.agentBubble, in: shape)
+            .overlay(shape.stroke(fromUser ? .clear : c.outline, lineWidth: 1.5))
+    }
+}
+
+/// An agent bubble you can react to: hold it (or tap its badge) for the bar,
+/// or use the named accessibility actions. The emoji sits on its corner.
+struct Reactable: ViewModifier {
+    let text: String
+    let reaction: Reaction?
+    /// The bar is open on it: the overlay draws the lifted copy in its place.
+    let lifted: Bool
+    let open: () -> Void
+    let react: (Reaction?) -> Void
+
+    func body(content: Content) -> some View {
+        content
+            .anchorPreference(key: ReactionAnchor.self, value: .bounds) { lifted ? $0 : nil }
+            .overlay(alignment: .bottomTrailing) {
+                if let reaction {
+                    ReactionBadge(reaction: reaction)
+                        .offset(x: 10, y: 16)
+                        .onTapGesture(perform: open)
+                        .transition(.scale(scale: 0.2).combined(with: .opacity))
+                        .accessibilityHidden(true)
+                }
+            }
+            .opacity(lifted ? 0 : 1)
+            .padding(.bottom, reaction == nil ? 0 : 14)
+            .onLongPressGesture(minimumDuration: 0.35, maximumDistance: 12, perform: open)
+            .sensoryFeedback(.impact(weight: .medium), trigger: lifted) { _, now in now }
+            .accessibilityValue(reaction.map { "Reacted \($0.emoji), \($0.meaning)" } ?? "")
+            .accessibilityActions {
+                ForEach(Reaction.all) { r in
+                    Button("React \(r.emoji) \(r.meaning)") { react(r) }
+                }
+                if reaction != nil { Button("Remove reaction") { react(nil) } }
+                Button("Copy") { UIPasteboard.general.string = text }
+            }
+    }
+}
+
+/// The small emoji on a reacted bubble's corner.
+struct ReactionBadge: View {
+    let reaction: Reaction
+    @Environment(\.yuiTheme) private var theme
+    @Environment(\.colorScheme) private var scheme
+
+    var body: some View {
+        let c = theme.swatch(scheme)
+        Text(reaction.emoji)
+            .font(.system(size: 15))
+            .frame(width: 28, height: 28)
+            .background(c.surface, in: Circle())
+            .overlay(Circle().stroke(c.outline, lineWidth: 1.5))
+            .shadow(color: .black.opacity(0.12), radius: 3, y: 1)
+            .accessibilityIdentifier("reaction-badge")
+    }
+}
+
+/// Held bubble: the thread dims, the bubble lifts, the six reactions float
+/// above it and Copy sits below (a tapback, the Telegram and iMessage way).
+struct ReactionOverlay: View {
+    let message: ChatMessage
+    /// The held bubble, in this view's space.
+    let rect: CGRect
+    let size: CGSize
+    let current: Reaction?
+    let pick: (Reaction?) -> Void
+    let dismiss: () -> Void
+    @Environment(\.yuiTheme) private var theme
+    @Environment(\.colorScheme) private var scheme
+    @State private var up = false
+    @State private var chosen: Reaction?
+
+    private let item = CGSize(width: 48, height: 58)
+    private var barSize: CGSize { CGSize(width: item.width * CGFloat(Reaction.all.count) + 12, height: item.height + 12) }
+    private let menuSize = CGSize(width: 210, height: 48)
+
+    var body: some View {
+        let c = theme.swatch(scheme)
+        // Above the bubble when there is room, else under it (a message at the very top).
+        let above = rect.minY - barSize.height - 12 > 4
+        let barY = above ? rect.minY - 12 - barSize.height / 2 : rect.maxY + 12 + barSize.height / 2
+        let barX = min(max(rect.minX - 6 + barSize.width / 2, barSize.width / 2 + 8), size.width - barSize.width / 2 - 8)
+        let menuTop = above ? rect.maxY + 12 : barY + barSize.height / 2 + 10
+        let menuY = min(menuTop + menuHeight / 2, size.height - menuHeight / 2 - 8)
+        let menuX = min(max(rect.minX + menuSize.width / 2, menuSize.width / 2 + 8), size.width - menuSize.width / 2 - 8)
+        ZStack(alignment: .topLeading) {
+            Rectangle()
+                .fill(.ultraThinMaterial)
+                .overlay(Color.black.opacity(scheme == .dark ? 0.35 : 0.12))
+                .ignoresSafeArea()
+                .opacity(up ? 1 : 0)
+                .onTapGesture(perform: dismiss)
+                .accessibilityLabel("Close reactions")
+                .accessibilityAddTraits(.isButton)
+                .accessibilityIdentifier("reaction-dismiss")
+
+            BubbleText(text: message.text, fromUser: false)
+                .frame(width: rect.width, height: rect.height)
+                .overlay(alignment: .bottomTrailing) {
+                    if let shown = chosen ?? current {
+                        ReactionBadge(reaction: shown).offset(x: 10, y: 16).transition(.scale(scale: 0.2))
+                    }
+                }
+                .scaleEffect(up ? 1.04 : 1, anchor: above ? .bottomLeading : .topLeading)
+                .shadow(color: .black.opacity(up ? 0.18 : 0), radius: 14, y: 6)
+                .position(x: rect.midX, y: rect.midY)
+                .accessibilityHidden(true)
+
+            bar(c)
+                .scaleEffect(up ? 1 : 0.4, anchor: above ? .bottomLeading : .topLeading)
+                .opacity(up ? 1 : 0)
+                .position(x: barX, y: barY)
+
+            menu(c)
+                .scaleEffect(up ? 1 : 0.6, anchor: above ? .topLeading : .topLeading)
+                .opacity(up ? 1 : 0)
+                .position(x: menuX, y: menuY)
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityAddTraits(.isModal)
+        .accessibilityAction(.escape, dismiss)
+        .onAppear { withAnimation(.spring(response: 0.34, dampingFraction: 0.72)) { up = true } }
+        .sensoryFeedback(.selection, trigger: chosen)
+    }
+
+    private var menuHeight: CGFloat { menuSize.height * (current == nil ? 1 : 2) }
+
+    private func bar(_ c: Swatch) -> some View {
+        HStack(spacing: 0) {
+            ForEach(Array(Reaction.all.enumerated()), id: \.element.id) { i, r in
+                let on = (chosen ?? current) == r
+                Button {
+                    withAnimation(.spring(response: 0.25, dampingFraction: 0.55)) { chosen = r }
+                    pick(r)
+                } label: {
+                    VStack(spacing: 2) {
+                        Text(r.emoji)
+                            .font(.system(size: 28))
+                            .scaleEffect(on ? 1.18 : 1)
+                        Text(r.meaning)
+                            .font(theme.font(10, .bold))
+                            .foregroundStyle(on ? c.ink : c.inkSoft)
+                            .lineLimit(1)
+                            .fixedSize()
+                    }
+                    .frame(width: item.width, height: item.height)
+                    .background(on ? c.accent.opacity(0.22) : .clear, in: RoundedRectangle(cornerRadius: 16))
+                }
+                .buttonStyle(.plain)
+                .scaleEffect(up ? 1 : 0.3)
+                .animation(.spring(response: 0.32, dampingFraction: 0.6).delay(Double(i) * 0.03), value: up)
+                .accessibilityLabel("\(r.emoji) \(r.meaning)")
+                .accessibilityAddTraits(on ? .isSelected : [])
+                .accessibilityIdentifier("react-\(r.meaning)")
+            }
+        }
+        .padding(6)
+        .frame(width: barSize.width, height: barSize.height)
+        .glassEffect(.regular, in: .capsule)
+        .overlay(Capsule().stroke(c.outline.opacity(0.6), lineWidth: 1))
+    }
+
+    private func menu(_ c: Swatch) -> some View {
+        VStack(spacing: 0) {
+            menuRow("Copy", icon: "doc.on.doc", c) {
+                UIPasteboard.general.string = message.text
+                dismiss()
+            }
+            if let current {
+                Divider().overlay(c.outline)
+                menuRow("Remove \(current.emoji)", icon: "xmark.circle", c) { pick(nil) }
+                    .accessibilityIdentifier("react-remove")
+            }
+        }
+        .frame(width: menuSize.width)
+        .glassEffect(.regular, in: .rect(cornerRadius: 18))
+        .overlay(RoundedRectangle(cornerRadius: 18).stroke(c.outline.opacity(0.6), lineWidth: 1))
+    }
+
+    private func menuRow(_ title: String, icon: String, _ c: Swatch, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack {
+                Text(title).font(theme.font(theme.type.body, .semibold))
+                Spacer()
+                Image(systemName: icon)
+            }
+            .foregroundStyle(c.ink)
+            .padding(.horizontal, theme.spacing.l)
+            .frame(height: menuSize.height)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+}

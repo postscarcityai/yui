@@ -54,7 +54,11 @@ struct ChatView: View {
                                 if let yl = m.yl {
                                     YLReply(screen: yl, scope: m.id, agent: store.agent, style: agentStyle) { store.openStage(m.id) }
                                 } else {
-                                    Bubble(message: m, agent: store.agent, pending: outbox.isPending(m.id))
+                                    Bubble(message: m, agent: store.agent, pending: outbox.isPending(m.id),
+                                           reaction: store.wearsReaction(m) ? store.reaction(for: m) : nil,
+                                           lifted: store.reacting == m.id,
+                                           open: { openReactions(m.id) },
+                                           react: { store.react(m.id, with: $0) })
                                 }
                             }
                             if let agent = store.agent, outbox.offline, !outbox.pending(agentID: agent.id).isEmpty {
@@ -87,6 +91,24 @@ struct ChatView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(c.background)
             .safeAreaInset(edge: .bottom) { if !firstRun { inputBar(c) } }
+            // Held agent bubble: the tapback bar over a dimmed thread (YUI-49).
+            .overlayPreferenceValue(ReactionAnchor.self) { anchor in
+                GeometryReader { geo in
+                    if let anchor, let m = store.reactingMessage {
+                        ReactionOverlay(message: m, rect: geo[anchor], size: geo.size, current: store.reaction(for: m)) { pick in
+                            store.react(m.id, with: pick)
+                            Task {
+                                try? await Task.sleep(for: .milliseconds(260))
+                                closeReactions()
+                            }
+                        } dismiss: {
+                            closeReactions()
+                        }
+                        .id(m.id)
+                        .transition(.opacity)
+                    }
+                }
+            }
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
@@ -162,6 +184,13 @@ struct ChatView: View {
         }
         .onChange(of: theme) { store.spring = theme.spring }
         #if DEBUG
+        // -yuiReactDemo bar|<meaning> ("love it"): the reaction bar open, or a reacted bubble, for screenshots.
+        .task {
+            guard let mode = UserDefaults.standard.string(forKey: "yuiReactDemo") else { return }
+            try? await Task.sleep(for: .seconds(1))
+            guard let m = store.messages.last(where: { !$0.fromUser && $0.yl == nil }) else { return }
+            if mode == "bar" { openReactions(m.id) } else { store.react(m.id, with: Reaction.all.first { $0.meaning == mode } ?? Reaction.all[0]) }
+        }
         // -yuiThemeDemo "say Autumn it is.\ntheme autumn": the agent restyles itself, live, for screenshots.
         // -yuiDemoPrompt "Tabata tonight?" puts the person's message above it, after
         // -yuiDemoDelay seconds [1.5] (demo clips wait for the recording to catch up).
@@ -458,6 +487,15 @@ struct ChatView: View {
         }
     }
 
+    private func openReactions(_ id: String) {
+        focused = false
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { store.reacting = id }
+    }
+
+    private func closeReactions() {
+        withAnimation(.easeOut(duration: 0.2)) { store.reacting = nil }
+    }
+
     /// Empties the field and swaps in a new one, keeping the keyboard up.
     private func clearComposer() {
         draft = ""
@@ -482,6 +520,11 @@ struct ChatView: View {
 
     /// `-yuiDemo` seeds a chat; `-yuiYL <sample>` seeds one YL reply (see `YLSamples`).
     static var seed: [ChatMessage] {
+        if UserDefaults.standard.string(forKey: "yuiReactDemo") != nil {
+            return [ChatMessage(text: "Saturday workout?", fromUser: true),
+                    ChatMessage(text: "Want me to set up Saturday? Squats 5x5 at 185, then a 20 minute tabata, done by 10.",
+                                fromUser: false)]
+        }
         if let name = UserDefaults.standard.string(forKey: "yuiYL"), let text = YLSamples.text(name) {
             return [ChatMessage(text: "Show me the \(name) one", fromUser: true),
                     ChatMessage(text: "", fromUser: false, yl: YLScreen(text))]
@@ -520,30 +563,26 @@ private struct Bubble: View {
     var agent: YuiAgent?
     /// Still in the outbox: on the phone, not on Yui yet.
     var pending = false
+    /// Agent bubbles: the reaction it wears, and the reaction bar (YUI-49).
+    var reaction: Reaction?
+    var lifted = false
+    var open: () -> Void = {}
+    var react: (Reaction?) -> Void = { _ in }
     @Environment(\.yuiTheme) private var theme
-    @Environment(\.colorScheme) private var scheme
 
     var body: some View {
-        let c = theme.swatch(scheme)
-        let r = theme.radius
-        let shape = UnevenRoundedRectangle(
-            topLeadingRadius: r.bubble,
-            bottomLeadingRadius: message.fromUser ? r.bubble : r.bubbleTail,
-            bottomTrailingRadius: message.fromUser ? r.bubbleTail : r.bubble,
-            topTrailingRadius: r.bubble)
         HStack(alignment: .bottom, spacing: theme.spacing.s) {
             if message.fromUser { Spacer(minLength: 48) } else { AgentFace(agent: agent) }
             VStack(alignment: .trailing, spacing: theme.spacing.xs) {
                 ForEach(Array(message.photos.enumerated()), id: \.offset) { BubblePhoto(photo: $1) }
                 if !message.text.isEmpty {
-                    Text(message.text)
-                        .font(theme.font(theme.type.body, .medium))
-                        .foregroundStyle(message.fromUser ? c.userInk : c.agentInk)
-                        .padding(.horizontal, theme.spacing.l)
-                        .padding(.vertical, theme.spacing.m)
-                        .background(message.fromUser ? c.userBubble : c.agentBubble, in: shape)
-                        .overlay(shape.stroke(message.fromUser ? .clear : c.outline, lineWidth: 1.5))
+                    let words = BubbleText(text: message.text, fromUser: message.fromUser)
                         .accessibilityLabel(pending ? "\(message.text), not sent yet" : message.text)
+                    if message.fromUser {
+                        words
+                    } else {
+                        words.modifier(Reactable(text: message.text, reaction: reaction, lifted: lifted, open: open, react: react))
+                    }
                 }
             }
             .opacity(pending ? 0.6 : 1)
