@@ -73,7 +73,9 @@ final class ChatStore {
 
     init(messages: [ChatMessage] = []) { self.messages = messages }
 
-    var emit: YLEmit { YLEmit { [weak self] e in self?.receive(e) } }
+    /// Made once, like `ylShow`: a fresh closure on every render changes the
+    /// environment of every preset (and every full-screen cover) each render.
+    @ObservationIgnored private(set) lazy var emit = YLEmit { [weak self] e in self?.receive(e) }
 
     func receive(_ e: YLEvent) {
         events.insert(e, at: 0)

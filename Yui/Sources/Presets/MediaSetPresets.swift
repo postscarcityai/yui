@@ -30,6 +30,7 @@ struct MediaTile: View {
 }
 
 /// Full screen, swipe to the next item. Pictures pinch to zoom, videos play.
+/// The X or a swipe down closes it.
 struct MediaViewer: View {
     let items: [URL]
     let captions: [String]
@@ -37,7 +38,7 @@ struct MediaViewer: View {
     let close: () -> Void
 
     var body: some View {
-        ZStack(alignment: .topTrailing) {
+        ZStack {
             Color.black.ignoresSafeArea()
             TabView(selection: $index) {
                 ForEach(Array(items.enumerated()), id: \.offset) { i, url in
@@ -58,12 +59,8 @@ struct MediaViewer: View {
                 }
             }
             .tabViewStyle(.page(indexDisplayMode: items.count > 1 ? .always : .never))
-            Button("Close", systemImage: "xmark", action: close)
-                .labelStyle(.iconOnly)
-                .font(.title2.bold())
-                .foregroundStyle(.white)
-                .padding()
         }
+        .fullScreenExit(close: close)
     }
 }
 
@@ -272,6 +269,8 @@ struct ComparePreset: View {
     @State private var split = 0.5
     @State private var showAfter = true
     @State private var choice: String?
+    @State private var full = false
+    @Environment(\.ylOnStage) private var onStage
     @Environment(\.ylEmit) private var emit
     @Environment(\.yuiTheme) private var theme
     @Environment(\.colorScheme) private var scheme
@@ -288,33 +287,27 @@ struct ComparePreset: View {
         let before = YLMediaURL.url(c.string("before"))
         let after = YLMediaURL.url(c.string("after"))
         PresetCard {
-            if let t = c.string("title") { PresetTitle(text: t) }
-            Picker("Compare", selection: Binding(get: { current }, set: { m in withAnimation(theme.spring) { mode = m } })) {
-                Text("Slider").tag("slider")
-                Text("Side by side").tag("side")
-                Text("Toggle").tag("toggle")
-            }
-            .pickerStyle(.segmented)
-            Group {
-                switch current {
-                case "side":
-                    box(8 / 5) {
-                        HStack(spacing: theme.spacing.xs) {
-                            labeled(before, labels[0], hl: false)
-                            labeled(after, labels[1], hl: true)
-                        }
+            HStack(spacing: theme.spacing.s) {
+                if let t = c.string("title") { PresetTitle(text: t) }
+                Spacer(minLength: 0)
+                if !onStage {
+                    Button { full = true } label: {
+                        Image(systemName: "arrow.up.left.and.arrow.down.right")
+                            .font(theme.font(theme.type.caption, .black))
+                            .foregroundStyle(s.ink)
+                            .frame(width: 36, height: 36)
+                            .background(s.background, in: Circle())
+                            .overlay(Circle().stroke(s.outline, lineWidth: 1.5))
+                            .frame(width: 44, height: 44)
+                            .contentShape(.rect)
                     }
-                case "toggle":
-                    box(4 / 3) { labeled(showAfter ? after : before, labels[showAfter ? 1 : 0], hl: showAfter) }
-                        .contentShape(.rect)
-                        .onTapGesture { withAnimation(theme.spring) { showAfter.toggle() } }
-                        .accessibilityAddTraits(.isButton)
-                        .accessibilityHint("Shows the other side")
-                default:
-                    box(4 / 3) { slider(before, after, s) }
+                    .buttonStyle(BounceButtonStyle())
+                    .accessibilityLabel("Compare full screen")
                 }
             }
-            .clipShape(.rect(cornerRadius: theme.radius.bubble))
+            modes(current)
+            pictures(current, before, after, s, full: nil)
+                .clipShape(.rect(cornerRadius: theme.radius.bubble))
             notes(s)
             if c.flag("pick"), !c.locked {
                 HStack(spacing: theme.spacing.s) {
@@ -331,13 +324,70 @@ struct ComparePreset: View {
             }
         }
         .disabled(c.locked)
+        // The whole phone for the pictures: same mode, same slider position.
+        .fullScreenCover(isPresented: $full) {
+            VStack(alignment: .leading, spacing: theme.spacing.m) {
+                if let t = c.string("title") { PresetTitle(text: t).padding(.trailing, 64) }
+                modes(current).padding(.trailing, c.string("title") == nil ? 64 : 0)
+                GeometryReader { geo in
+                    pictures(current, before, after, s, full: geo.size)
+                        .clipShape(.rect(cornerRadius: theme.radius.bubble))
+                }
+                notes(s)
+            }
+            .padding(theme.spacing.l)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            .background(s.background.ignoresSafeArea())
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("Compare viewer")
+            .fullScreenExit { full = false }
+        }
     }
 
-    /// Full width at `ratio`. The size comes from the empty box, never from the
-    /// pictures: a fill image's own size leaks out, shrinking the slider or
-    /// stretching side by side (and the whole reply) past the screen.
-    private func box(_ ratio: CGFloat, @ViewBuilder _ content: () -> some View) -> some View {
-        RatioBox(ratio: ratio) { content() }.clipped()
+    private func modes(_ current: String) -> some View {
+        Picker("Compare", selection: Binding(get: { current }, set: { m in withAnimation(theme.spring) { mode = m } })) {
+            Text("Slider").tag("slider")
+            Text("Side by side").tag("side")
+            Text("Toggle").tag("toggle")
+        }
+        .pickerStyle(.segmented)
+    }
+
+    /// The two pictures in `mode`: in the chat at a fixed ratio, full screen at
+    /// `full` (side by side stacks top and bottom on a tall screen).
+    @ViewBuilder
+    private func pictures(_ mode: String, _ before: URL?, _ after: URL?, _ s: Swatch, full: CGSize?) -> some View {
+        switch mode {
+        case "side":
+            box(8 / 5, full) {
+                let a = labeled(before, labels[0], hl: false), b = labeled(after, labels[1], hl: true)
+                if let full, full.height > full.width {
+                    VStack(spacing: theme.spacing.xs) { a; b }
+                } else {
+                    HStack(spacing: theme.spacing.xs) { a; b }
+                }
+            }
+        case "toggle":
+            box(4 / 3, full) { labeled(showAfter ? after : before, labels[showAfter ? 1 : 0], hl: showAfter) }
+                .contentShape(.rect)
+                .onTapGesture { withAnimation(theme.spring) { showAfter.toggle() } }
+                .accessibilityAddTraits(.isButton)
+                .accessibilityHint("Shows the other side")
+        default:
+            box(4 / 3, full) { slider(before, after, s) }
+        }
+    }
+
+    /// Full width at `ratio`, or exactly `full`. The size comes from the empty
+    /// box, never from the pictures: a fill image's own size leaks out,
+    /// shrinking the slider or stretching side by side (and the whole reply) past the screen.
+    @ViewBuilder
+    private func box(_ ratio: CGFloat, _ full: CGSize?, @ViewBuilder _ content: () -> some View) -> some View {
+        if let full {
+            content().frame(width: full.width, height: full.height).clipped()
+        } else {
+            RatioBox(ratio: ratio) { content() }.clipped()
+        }
     }
 
     private func picture(_ url: URL?) -> some View {

@@ -177,6 +177,7 @@ struct DeckPreset: View {
                          toggleNotes: { notes = !(notes ?? c.flag("notes")) }, full: true, openFull: nil, emit: pageEmit,
                          close: { full = false })
                     .environment(\.ylComponents, all)
+                    .fullScreenExit(x: false) { full = false }
             }
     }
 
@@ -300,14 +301,19 @@ private struct DeckBody: View {
 
     private func small(_ label: String, _ icon: String, on: Bool = false, action: @escaping () -> Void) -> some View {
         let s = theme.swatch(scheme)
-        return Button(label, systemImage: icon, action: action)
-            .labelStyle(.iconOnly)
-            .font(theme.font(theme.type.caption, .black))
-            .foregroundStyle(on ? s.onAccent : s.ink)
-            .frame(width: 36, height: 36)
-            .background(on ? s.accent : s.background, in: Circle())
-            .overlay(Circle().stroke(s.outline, lineWidth: 1.5))
-            .buttonStyle(BounceButtonStyle())
+        // The circle is inside the label: drawn outside, only the glyph took taps.
+        return Button(action: action) {
+            Image(systemName: icon)
+                .font(theme.font(theme.type.caption, .black))
+                .foregroundStyle(on ? s.onAccent : s.ink)
+                .frame(width: 36, height: 36)
+                .background(on ? s.accent : s.background, in: Circle())
+                .overlay(Circle().stroke(s.outline, lineWidth: 1.5))
+                .frame(width: 44, height: 44)
+                .contentShape(.rect)
+        }
+        .buttonStyle(BounceButtonStyle())
+        .accessibilityLabel(label)
     }
 }
 
@@ -599,6 +605,7 @@ struct NarratePreset: View {
                 stage(steps, full: true)
                     .environment(\.ylComponents, all)
                     .environment(\.ylOnStage, true)
+                    .fullScreenExit(x: false) { full = false }
             }
             // Observed, not a stored callback: members stream in after the head,
             // so a closure captured on appear would see an empty walkthrough.
@@ -750,15 +757,18 @@ struct NarratePreset: View {
 
     private func control(_ label: String, _ icon: String, disabled: Bool = false, _ action: @escaping () -> Void) -> some View {
         let s = theme.swatch(scheme)
-        return Button(label, systemImage: icon, action: action)
-            .labelStyle(.iconOnly)
-            .font(theme.font(theme.type.body, .black))
-            .foregroundStyle(disabled ? s.inkSoft : s.ink)
-            .frame(width: 44, height: 44)
-            .background(s.background, in: Circle())
-            .overlay(Circle().stroke(s.outline, lineWidth: 1.5))
-            .buttonStyle(BounceButtonStyle())
-            .disabled(disabled)
+        return Button(action: action) {
+            Image(systemName: icon)
+                .font(theme.font(theme.type.body, .black))
+                .foregroundStyle(disabled ? s.inkSoft : s.ink)
+                .frame(width: 44, height: 44)
+                .background(s.background, in: Circle())
+                .overlay(Circle().stroke(s.outline, lineWidth: 1.5))
+                .contentShape(Circle())
+        }
+        .buttonStyle(BounceButtonStyle())
+        .accessibilityLabel(label)
+        .disabled(disabled)
     }
 
     private var voice: AVSpeechSynthesisVoice? {

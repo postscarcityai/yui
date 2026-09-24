@@ -111,14 +111,19 @@ struct StageView: View {
             }
             HStack {
                 Spacer()
-                Button("Close full screen", systemImage: "xmark", action: close)
-                    .labelStyle(.iconOnly)
-                    .font(theme.font(theme.type.body, .black))
-                    .foregroundStyle(c.ink)
-                    .frame(width: 44, height: 44)
-                    .background(c.surface, in: Circle())
-                    .overlay(Circle().stroke(c.outline, lineWidth: 1.5))
-                    .buttonStyle(BounceButtonStyle())
+                // The circle is inside the label: drawn outside, only the glyph took taps.
+                Button(action: close) {
+                    Image(systemName: "xmark")
+                        .font(theme.font(theme.type.body, .black))
+                        .foregroundStyle(c.ink)
+                        .frame(width: 44, height: 44)
+                        .background(c.surface, in: Circle())
+                        .overlay(Circle().stroke(c.outline, lineWidth: 1.5))
+                        .frame(width: 56, height: 56)
+                        .contentShape(.rect)
+                }
+                .buttonStyle(BounceButtonStyle())
+                .accessibilityLabel("Close full screen")
             }
         }
         .frame(height: 64)

@@ -85,19 +85,15 @@ private struct ZoomedImage: View {
     @State private var scale: CGFloat = 1
 
     var body: some View {
-        ZStack(alignment: .topTrailing) {
+        ZStack {
             Color.black.ignoresSafeArea()
             RemoteImage(src: src, fit: .fit)
                 .scaleEffect(scale)
                 .gesture(MagnifyGesture().onChanged { scale = max(1, $0.magnification) }
                     .onEnded { _ in withAnimation { scale = 1 } })
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-            Button("Close", systemImage: "xmark", action: close)
-                .labelStyle(.iconOnly)
-                .font(.title2.bold())
-                .foregroundStyle(.white)
-                .padding()
         }
+        .fullScreenExit(close: close)
     }
 }
 
