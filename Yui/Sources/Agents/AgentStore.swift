@@ -139,6 +139,19 @@ final class AgentStore {
             let a = YuiAgent(id: UUID().uuidString, name: name, handle: name.lowercased(), color: color,
                              kind: "hermes", status: .pending, isDefault: agents.isEmpty, sort: agents.count)
             agents.append(a)
+            #if DEBUG
+            // -yuiDemoPairAfter <s>: the new agent comes online after s seconds, as if its host just paired (SOC-3 videos).
+            let after = UserDefaults.standard.double(forKey: "yuiDemoPairAfter")
+            if after > 0 {
+                Task {
+                    try? await Task.sleep(for: .seconds(after))
+                    guard let i = agents.firstIndex(where: { $0.id == a.id }) else { return }
+                    agents[i].status = .connected
+                    agents[i].connectorName = "your Mac"
+                    agents[i].lastSeenAt = .now
+                }
+            }
+            #endif
             return (a, Self.demoCode)
         }
         let r: CreateReply = try await call(["action": "create", "name": name, "color": color, "pair": true])
@@ -332,5 +345,5 @@ final class AgentStore {
                  connectorName: "Mac mini", remoteRef: "nova", status: .connected, lastSeenAt: .now,
                  isDefault: false, sort: 4),
     ]
-    static let demoCode = PairingCode(code: "482913", expiresAt: .now.addingTimeInterval(600))
+    static let demoCode = PairingCode(code: "123456", expiresAt: .now.addingTimeInterval(600))
 }

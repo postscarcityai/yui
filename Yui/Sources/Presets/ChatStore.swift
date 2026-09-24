@@ -325,6 +325,20 @@ final class ChatStore {
     /// False when it can't go out (no agent or session yet): nothing is added, the caller keeps the text.
     @discardableResult
     func send(_ text: String) -> Bool {
+        #if DEBUG
+        // -yuiDemoReply "<lines>": on the demo account the agent answers what you send with these lines (SOC-3 videos).
+        if client == nil, agent != nil, let reply = UserDefaults.standard.string(forKey: "yuiDemoReply") {
+            withAnimation(Self.sendSpring) { messages.append(ChatMessage(text: text, fromUser: true)) }
+            waiting = true
+            waitingSince = .now
+            Task {
+                try? await Task.sleep(for: .seconds(1.6))
+                waiting = false
+                stream(reply.replacingOccurrences(of: "\\n", with: "\n"))
+            }
+            return true
+        }
+        #endif
         guard client != nil, agent != nil, account?.session?.userID != nil else { return false }
         let m = ChatMessage(id: UUID().uuidString.lowercased(), text: text, fromUser: true)
         withAnimation(Self.sendSpring) { messages.append(m) }

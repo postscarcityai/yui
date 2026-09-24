@@ -329,8 +329,10 @@ struct ChatView: View {
 
     /// Signed in with no agents yet (every new account): nothing here can answer,
     /// so the chat says how to connect one instead of pretending.
+    /// The demo account shows it too when started with `-yuiNoAgents` (SOC-3 videos).
     private var firstRun: Bool {
-        account.session?.userID != "demo" && agents.agents.isEmpty
+        (account.session?.userID != "demo" || ProcessInfo.processInfo.arguments.contains("-yuiNoAgents"))
+            && agents.agents.isEmpty
     }
 
     private func inputBar(_ c: Swatch) -> some View {
