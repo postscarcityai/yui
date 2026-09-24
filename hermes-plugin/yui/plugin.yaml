@@ -1,0 +1,21 @@
+name: yui
+label: Yui
+kind: platform
+version: 0.1.0
+description: >
+  Yui app (yuigui.com) as a Hermes messaging platform. Each registered
+  profile gets its own thread in the app and keeps one brain and memory
+  across Yui and Telegram. Dials out to Supabase Realtime + REST with a
+  scoped connector token; no inbound ports. Replies may carry ```yui fenced
+  Yui Lines that the app renders as buttons, forms, timers and more.
+  Source: postscarcityai/yui hermes-plugin/. Spec: yuigui/spec/RELAY.md.
+author: PostScarcity AI
+optional_env:
+  - name: YUI_REMOTE_REF
+    description: "Which Yui agents this profile serves (default: the profile name)"
+    prompt: "Yui remote_ref"
+    password: false
+  - name: YUI_HOME_CHANNEL
+    description: "Default Yui agent (id or handle) for cron delivery"
+    prompt: "Yui home agent"
+    password: false

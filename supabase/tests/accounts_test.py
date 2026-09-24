@@ -123,7 +123,8 @@ try:
     s, r = rest("POST", "yui_messages", tokA, {"user_id": B, "sender": "user", "body": "spoof"})
     check("A cannot insert a message as B", s in (401, 403), f"{s} {r.get('code') if isinstance(r, dict) else r}")
     s, r = rest("PATCH", f"yui_messages?user_id=eq.{B}", tokA, {"body": "pwned"}, prefer="return=representation")
-    check("A cannot update B's message", s == 200 and r == [], f"{s} {r}")
+    # YUI-7 revoked UPDATE on messages outright (403); before that RLS filtered it to 0 rows.
+    check("A cannot update B's message", s == 403 or (s == 200 and r == []), f"{s} {r}")
     s, r = rest("DELETE", f"yui_messages?user_id=eq.{B}", tokA, prefer="return=representation")
     check("A cannot delete B's message", s == 200 and r == [], f"{s} {r}")
     s, r = rest("PATCH", f"yui_users?id=eq.{A}", tokA, {"apple_sub": "hijack"})

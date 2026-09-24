@@ -44,6 +44,14 @@ final class Account {
             return
         }
         if ProcessInfo.processInfo.arguments.contains("-yuiSignedOut") { return }
+        // Simulator runs against the live backend: `-yuiRefreshToken <token> -yuiUserID <uuid>`
+        // (a yui_sessions row made server-side). Sign in with Apple can't be driven headless.
+        if let rt = UserDefaults.standard.string(forKey: "yuiRefreshToken"),
+           let uid = UserDefaults.standard.string(forKey: "yuiUserID") {
+            session = YuiSession(userID: uid, appleUserID: "debug", email: nil,
+                                 accessToken: "", accessExpiry: .distantPast, refreshToken: rt)
+            return
+        }
         #endif
         session = Keychain.load(YuiSession.self, key: Self.keychainKey)
         NotificationCenter.default.addObserver(
@@ -81,7 +89,7 @@ final class Account {
 
     /// Apple can revoke Yui from Settings > Apple ID; check on launch.
     func checkAppleCredential() async {
-        guard let appleID = session?.appleUserID, appleID != "demo" else { return }
+        guard let appleID = session?.appleUserID, appleID != "demo", appleID != "debug" else { return }
         let state = try? await ASAuthorizationAppleIDProvider().credentialState(forUserID: appleID)
         if state == .revoked || state == .notFound { clear() }
     }

@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """Host side of the Yui agent registry (spec: yuigui/spec/AGENTS.md).
 
-The YUI-7 Hermes plugin exposes these as `hermes -p <profile> yui pair|add`.
-Until then, run it directly:
+The `yui` Hermes plugin exposes these as `hermes -p <profile> yui pair|add|status`.
+They also run without Hermes loaded:
 
-    yui_connect.py pair 123456 --profile yui     # code from the app's Add agent
-    yui_connect.py add --profile monk [--name Monk] [--color mint]
-    yui_connect.py heartbeat
-    yui_connect.py status
+    connector.py pair 123456 --profile yui     # code from the app's Add agent
+    connector.py add --profile monk [--name Monk] [--color mint]
+    connector.py heartbeat
+    connector.py status
 
 One connector per machine: its token lives in ~/.hermes/yui/connector.json
 (mode 600) and every profile on this machine shares it. Stdlib only.
@@ -15,10 +15,31 @@ One connector per machine: its token lives in ~/.hermes/yui/connector.json
 import argparse, json, os, socket, subprocess, sys, urllib.error, urllib.request
 from pathlib import Path
 
-BASE = "https://ewzzaoperdpxqxkshynx.supabase.co/functions/v1/yui-connect"
+SUPABASE_URL = "https://ewzzaoperdpxqxkshynx.supabase.co"
+BASE = f"{SUPABASE_URL}/functions/v1/yui-connect"
 # Public client key (anon role only; it cannot read any yui_ table).
 PUBLISHABLE = "sb_publishable_OhqLI7p27yiELT4tn8i7JA_TnnwPYsS"
-STATE = Path(os.environ.get("HERMES_HOME", Path.home() / ".hermes")) / "yui" / "connector.json"
+COLORS = ["lavender", "mint", "butter", "brand"]
+
+
+def hermes_root() -> Path:
+    """~/.hermes, even when HERMES_HOME points at a profile."""
+    home = Path(os.environ.get("HERMES_HOME") or Path.home() / ".hermes")
+    return home.parent.parent if home.parent.name == "profiles" else home
+
+
+STATE = Path(os.environ.get("YUI_CONNECTOR_FILE") or hermes_root() / "yui" / "connector.json")
+
+
+def current_profile() -> str | None:
+    """The Hermes profile this process runs as (`default` for ~/.hermes)."""
+    if os.environ.get("HERMES_PROFILE"):
+        return os.environ["HERMES_PROFILE"]
+    home = os.environ.get("HERMES_HOME")
+    if not home:
+        return None
+    p = Path(home)
+    return p.name if p.parent.name == "profiles" else "default"
 
 
 def load() -> dict:
@@ -59,25 +80,54 @@ def host_name() -> str:
         return socket.gethostname().split(".")[0]
 
 
-def profile(args) -> str:
-    p = args.profile or os.environ.get("HERMES_PROFILE")
+def show(agent: dict) -> str:
+    return f"{agent['name']} (@{agent['handle']}, profile {agent.get('remote_ref')}, {agent['status']})"
+
+
+def pair(code: str, profile: str, host: str | None = None) -> tuple[int, dict]:
+    state = load()
+    s, r = call({"action": "pair", "code": code, "remote_ref": profile,
+                 "host_name": host or host_name(), "kind": "hermes"}, state.get("token"))
+    if r.get("connector_token"):
+        # New connector for this machine (first pairing, or a different Yui account).
+        save({"token": r["connector_token"], "connector_id": r.get("connector", {}).get("id"),
+              "name": r.get("connector", {}).get("name")})
+    return s, r
+
+
+def add(profile: str, name: str | None = None, color: str | None = None) -> tuple[int, dict]:
+    token = load().get("token")
+    if not token:
+        return 401, {"error": "not_paired"}
+    body = {"action": "add", "remote_ref": profile}
+    if name:
+        body["name"] = name
+    if color:
+        body["color"] = color
+    return call(body, token)
+
+
+def heartbeat() -> tuple[int, dict]:
+    token = load().get("token")
+    if not token:
+        return 401, {"error": "not_paired"}
+    return call({"action": "heartbeat"}, token)
+
+
+# -- CLI (shared with `hermes yui ...`) --------------------------------------
+
+NOT_PAIRED = "this machine is not paired yet: add an agent in the app and run `pair <code>` first"
+
+
+def _profile(args) -> str:
+    p = getattr(args, "profile", None) or current_profile()
     if not p:
         sys.exit("which agent? pass --profile <hermes profile>")
     return p
 
 
-def show(agent: dict) -> str:
-    return f"{agent['name']} (@{agent['handle']}, profile {agent.get('remote_ref')}, {agent['status']})"
-
-
 def cmd_pair(args) -> int:
-    state = load()
-    s, r = call({"action": "pair", "code": args.code, "remote_ref": profile(args),
-                 "host_name": args.host_name or host_name(), "kind": "hermes"}, state.get("token"))
-    if r.get("connector_token"):
-        # New connector for this machine (first pairing, or a different Yui account).
-        save({"token": r["connector_token"], "connector_id": r.get("connector", {}).get("id"),
-              "name": r.get("connector", {}).get("name")})
+    s, r = pair(args.code, _profile(args), args.host_name)
     if s != 200:
         print(f"pair failed: {r.get('error', s)}", file=sys.stderr)
         return 1
@@ -86,15 +136,9 @@ def cmd_pair(args) -> int:
 
 
 def cmd_add(args) -> int:
-    token = load().get("token")
-    if not token:
-        sys.exit("this machine is not paired yet: add an agent in the app and run `pair <code>` first")
-    body = {"action": "add", "remote_ref": profile(args)}
-    if args.name:
-        body["name"] = args.name
-    if args.color:
-        body["color"] = args.color
-    s, r = call(body, token)
+    s, r = add(_profile(args), args.name, args.color)
+    if r.get("error") == "not_paired":
+        sys.exit(NOT_PAIRED)
     if s != 200:
         print(f"add failed: {r.get('error', s)}", file=sys.stderr)
         return 1
@@ -103,14 +147,13 @@ def cmd_add(args) -> int:
 
 
 def cmd_heartbeat(args) -> int:
-    token = load().get("token")
-    if not token:
+    s, r = heartbeat()
+    if r.get("error") == "not_paired":
         sys.exit("not paired")
-    s, r = call({"action": "heartbeat"}, token)
     if s != 200:
         print(f"heartbeat failed: {r.get('error', s)}", file=sys.stderr)
         return 1
-    if args.quiet:
+    if getattr(args, "quiet", False):
         return 0
     print(f"{r['connector']['name']} online at {r['seen_at']}; agents: "
           + (", ".join(f"{a['name']} ({a['remote_ref']})" for a in r["agents"]) or "none"))
@@ -123,26 +166,34 @@ def cmd_status(args) -> int:
     return cmd_heartbeat(args) if state.get("token") else 0
 
 
-def main() -> int:
-    ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    sub = ap.add_subparsers(dest="cmd", required=True)
-    p = sub.add_parser("pair", help="bind a Hermes profile to the agent the app just made")
+def build_parser(ap: argparse.ArgumentParser, with_profile: bool = True) -> None:
+    sub = ap.add_subparsers(dest="yui_cmd", required=True)
+    p = sub.add_parser("pair", help="bind this Hermes profile to the agent the app just made")
     p.add_argument("code")
-    p.add_argument("--profile", "-p")
     p.add_argument("--host-name")
     p.set_defaults(fn=cmd_pair)
-    a = sub.add_parser("add", help="register another profile on this already-paired machine")
-    a.add_argument("--profile", "-p")
+    a = sub.add_parser("add", help="register this profile on an already-paired machine")
     a.add_argument("--name")
-    a.add_argument("--color", choices=["lavender", "mint", "butter", "brand"])
+    a.add_argument("--color", choices=COLORS)
     a.set_defaults(fn=cmd_add)
     h = sub.add_parser("heartbeat", help="mark this machine online")
     h.add_argument("--quiet", "-q", action="store_true")
     h.set_defaults(fn=cmd_heartbeat)
-    st = sub.add_parser("status")
+    st = sub.add_parser("status", help="show the connector and its agents")
     st.set_defaults(fn=cmd_status, quiet=False)
-    args = ap.parse_args()
+    if with_profile:
+        for sp in (p, a):
+            sp.add_argument("--profile", "-p", help="Hermes profile (default: the active one)")
+
+
+def dispatch(args) -> int:
     return args.fn(args)
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    build_parser(ap)
+    return dispatch(ap.parse_args())
 
 
 if __name__ == "__main__":

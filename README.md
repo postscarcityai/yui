@@ -62,12 +62,15 @@ The `yui` plugin makes Yui a Hermes messaging platform, next to Telegram. Each H
 
 The plugin injects a short guide into each Yui turn so the agent knows it can put Yui Lines on screen (source: `yuigui/spec/CHANNEL.md`, synced by `hermes-plugin/sync_channel.py`). The connector credential lives at `~/.hermes/yui/connector.json`, outside the repo.
 
-If your checkout has no `hermes-plugin/install.sh` yet, the plugin has not landed. Pair with the standalone client instead: `python3 hermes-plugin/yui_connect.py pair <code> --profile <profile>`.
+Without Hermes loaded, `python3 hermes-plugin/yui/connector.py pair <code> --profile <profile>` does the same pairing. How messages, events and credentials flow: `yuigui/spec/RELAY.md`.
+
+A live round trip test (type, get a Yui Lines screen, tap, get a timer) runs against a real session and a running gateway: `TEST_RUNNER_YUI_RT=<refresh token> TEST_RUNNER_YUI_USER=<uuid> xcodebuild test -scheme Yui -only-testing:YuiUITests`. Without those it skips. Mint a fresh `yui_sessions` row for every run: yui-auth rotates refresh tokens, and replaying a spent one reads as a leak and signs the account out on every device.
 
 ## Backend notes
 
 - Sign in with Apple only. Users never enter Supabase Auth: `yui-auth` verifies Apple's identity token and mints a 15-minute JWT with role `yui_user`, which can reach only `yui_*` rows keyed to that user. `yui-delete` revokes the Apple token and deletes the account. Every `yui_*` table cascades from `yui_users`.
 - Agents are managed by the user, never hardcoded. Spec: `yuigui/spec/AGENTS.md`. `yui-agents` serves the app, `yui-connect` serves the host (pair, add, heartbeat).
+- Relay (`supabase/migrations/20260924010000_yui_relay.sql`): the host trades its connector token at `yui-connect` for a 60-minute `yui_connector` JWT that can read and answer only the threads of agents bound to that host. Tests: `python3 supabase/tests/relay_test.py`.
 - Our project is shared with other apps, so we apply migrations by hand. Never `supabase db push` or `config push` against it.
 - Deploy a function: `supabase functions deploy <name> --project-ref <ref> --use-api --no-verify-jwt`. Secrets (`YUI_JWT_SECRET`, `YUI_SIWA_*`, `YUI_APPLE_TEAM_ID`) are edge function secrets and never live in the repo.
 - Tests run live against a real project: `python3 supabase/tests/accounts_test.py` (RLS, cross-user isolation, create and delete) and `python3 supabase/tests/agents_test.py` (registry). Run both after any change to a migration or function.

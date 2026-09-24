@@ -4,7 +4,7 @@ import SwiftUI
 import YuiLines
 
 struct ChatMessage: Identifiable, Equatable {
-    let id = UUID()
+    var id = UUID().uuidString
     var text: String
     var fromUser: Bool
     /// An agent reply in Yui Lines, drawn as presets instead of a bubble.
@@ -12,11 +12,25 @@ struct ChatMessage: Identifiable, Equatable {
 }
 
 /// The chat's messages plus the event log going back to the agent.
+/// Attached to an agent, it is that agent's thread (yui_messages, spec
+/// yuigui/spec/RELAY.md); detached, it is the local demo chat.
 @Observable @MainActor
 final class ChatStore {
     var messages: [ChatMessage]
     private(set) var events: [YLEvent] = []
     var spring: Animation = .default
+
+    /// The agent this thread talks to, when there is one.
+    private(set) var agent: YuiAgent?
+    /// The agent owes a reply: shows the typing dots.
+    private(set) var waiting = false
+    private(set) var loaded = false
+    var error: String?
+    private var client: ThreadClient?
+    private var poll: Task<Void, Never>?
+    private var cursor: String?
+    private var seen = Set<String>()
+    private var waitingSince: Date?
 
     init(messages: [ChatMessage] = []) { self.messages = messages }
 
@@ -24,9 +38,93 @@ final class ChatStore {
 
     func receive(_ e: YLEvent) {
         events.insert(e, at: 0)
-        print("yl event", e.json)
-        guard let echo = e.echo else { return }
-        withAnimation(spring) { messages.append(ChatMessage(text: echo, fromUser: true)) }
+        if let echo = e.echo {
+            withAnimation(spring) { messages.append(ChatMessage(text: echo, fromUser: true)) }
+        }
+        guard client != nil, e.relays else { return }
+        post(body: e.line, kind: "event", meta: e.meta)
+    }
+
+    // MARK: Thread
+
+    /// Switches to `agent`'s thread and keeps it fresh. nil detaches.
+    func attach(_ agent: YuiAgent?, account: Account) {
+        guard agent?.id != self.agent?.id || client == nil && agent != nil else { return }
+        poll?.cancel()
+        self.agent = agent
+        client = agent.map { ThreadClient(account: account, agentID: $0.id) }
+        messages = []
+        seen = []
+        cursor = nil
+        waiting = false
+        loaded = false
+        error = nil
+        guard client != nil else { return }
+        poll = Task { [weak self] in
+            while !Task.isCancelled {
+                await self?.refresh()
+                try? await Task.sleep(for: .seconds(1.5))
+            }
+        }
+    }
+
+    func send(_ text: String) {
+        let m = ChatMessage(text: text, fromUser: true)
+        withAnimation(spring) { messages.append(m) }
+        post(id: m.id, body: text, kind: "text", meta: nil)
+    }
+
+    private func post(id: String = UUID().uuidString, body: String, kind: String, meta: YLValue?) {
+        guard let client else { return }
+        seen.insert(id.lowercased())
+        waiting = true
+        waitingSince = .now
+        Task {
+            do {
+                try await client.post(id: id, body: body, kind: kind, meta: meta)
+                error = nil
+            } catch {
+                waiting = false
+                self.error = "Couldn't send that. Check your connection and try again."
+            }
+        }
+    }
+
+    func refresh() async {
+        guard let client, let agentID = agent?.id else { return }
+        do {
+            let rows = try await client.fetch(since: cursor)
+            guard agent?.id == agentID else { return }
+            for row in rows { add(row) }
+            if let last = rows.last { cursor = last.createdAt }
+            loaded = true
+            if let since = waitingSince, Date.now.timeIntervalSince(since) > 180 { waiting = false }
+        } catch {
+            loaded = true
+        }
+    }
+
+    private func add(_ row: ThreadRow) {
+        let id = row.id.lowercased()
+        if row.sender == "agent" { waiting = false }
+        guard seen.insert(id).inserted else { return }
+        var new: [ChatMessage] = []
+        if row.sender == "user" {
+            if row.kind == "event" {
+                if let echo = row.meta?.object?["echo"]?.string { new.append(ChatMessage(id: id, text: echo, fromUser: true)) }
+            } else {
+                new.append(ChatMessage(id: id, text: row.body, fromUser: true))
+            }
+        } else {
+            for (i, seg) in YuiFence.split(row.body).enumerated() {
+                switch seg {
+                case .text(let t): new.append(ChatMessage(id: "\(id)#\(i)", text: t, fromUser: false))
+                case .yl(let y): new.append(ChatMessage(id: "\(id)#\(i)", text: "", fromUser: false, yl: YLScreen(y)))
+                }
+            }
+        }
+        guard !new.isEmpty else { return }
+        withAnimation(loaded ? spring : nil) { messages.append(contentsOf: new) }
     }
 
     /// Adds an agent reply and feeds it through the stream parser a line at a
@@ -44,7 +142,7 @@ final class ChatStore {
         }
     }
 
-    private func apply(_ nodes: [YLNode], to id: UUID) {
+    private func apply(_ nodes: [YLNode], to id: String) {
         guard !nodes.isEmpty, let i = messages.firstIndex(where: { $0.id == id }) else { return }
         withAnimation(spring) {
             for n in nodes { messages[i].yl?.apply(n) }

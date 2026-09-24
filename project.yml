@@ -37,3 +37,17 @@ targets:
         TARGETED_DEVICE_FAMILY: "1"
         GENERATE_INFOPLIST_FILE: YES
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+    scheme:
+      testTargets: [YuiUITests]
+  YuiUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources: [YuiUITests]
+    dependencies:
+      - target: Yui
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.yuigui.app.uitests
+        TARGETED_DEVICE_FAMILY: "1"
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_TARGET_NAME: Yui

@@ -10,6 +10,13 @@
 //       A paired host registers another of its profiles. No code needed.
 //   {action: "heartbeat"}                                Bearer yui_ct_...
 //       Marks the host online; returns the agents it serves.
+//   {action: "session"}                                  Bearer yui_ct_...
+//       Trades the connector token for a 60-minute database token (role
+//       yui_connector) for Realtime and REST on the threads it serves, plus
+//       the current channel guide. Heartbeats too.
+//   {action: "guide"}                                    no auth
+//       The current channel guide {version, body}: the text any agent gets
+//       on the Yui channel (yuigui/spec/CHANNEL.md).
 //
 // Wrong codes are throttled per client address (10 per 10 minutes).
 import {
@@ -19,9 +26,11 @@ import {
   bearer,
   cleanName,
   CONNECTOR_PREFIX,
+  CONNECTOR_TTL_SECONDS,
   defaultColor,
   insertAgent,
   json,
+  mintConnectorToken,
   nameFromRef,
   randomToken,
   sha256Hex,
@@ -53,6 +62,10 @@ Deno.serve(async (req) => {
         return await add(req, body);
       case "heartbeat":
         return await heartbeat(req);
+      case "session":
+        return await session(req);
+      case "guide":
+        return json({ guide: await guide(admin()) });
       default:
         return json({ error: "unknown_action" }, 400);
     }
@@ -172,4 +185,29 @@ async function heartbeat(req: Request): Promise<Response> {
   const { data: agents } = await db.from("yui_agents").select("id, name, handle, remote_ref")
     .eq("connector_id", connector.id).order("sort");
   return json({ connector: { id: connector.id, name: connector.name }, seen_at: now, agents: agents ?? [] });
+}
+
+// deno-lint-ignore no-explicit-any
+async function guide(db: DB): Promise<any> {
+  const { data } = await db.from("yui_channel_guides").select("version, body")
+    .order("created_at", { ascending: false }).limit(1).maybeSingle();
+  return data;
+}
+
+async function session(req: Request): Promise<Response> {
+  const db = admin();
+  const connector = await connectorFor(db, req);
+  if (!connector) return json({ error: "unauthorized" }, 401);
+  const now = new Date();
+  await db.from("yui_connectors").update({ last_seen_at: now.toISOString() }).eq("id", connector.id);
+  const { data: agents } = await db.from("yui_agents").select("id, name, handle, remote_ref")
+    .eq("connector_id", connector.id).order("sort");
+  return json({
+    access_token: await mintConnectorToken(connector.user_id, connector.id),
+    expires_at: new Date(now.getTime() + CONNECTOR_TTL_SECONDS * 1000).toISOString(),
+    user_id: connector.user_id,
+    connector: { id: connector.id, name: connector.name },
+    agents: agents ?? [],
+    guide: await guide(db),
+  });
 }

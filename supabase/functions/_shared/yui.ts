@@ -43,6 +43,20 @@ export function mintAccessToken(userId: string): Promise<string> {
     .sign(jwtKey());
 }
 
+// Host transport token: role yui_connector, scoped by RLS to the threads of
+// agents bound to connector `cid` (migration 20260924010000_yui_relay.sql).
+export const CONNECTOR_TTL_SECONDS = 60 * 60;
+export function mintConnectorToken(userId: string, connectorId: string): Promise<string> {
+  return new SignJWT({ role: "yui_connector", cid: connectorId })
+    .setProtectedHeader({ alg: "HS256", typ: "JWT" })
+    .setSubject(userId)
+    .setIssuer("yui-connect")
+    .setAudience(AUDIENCE)
+    .setIssuedAt()
+    .setExpirationTime(`${CONNECTOR_TTL_SECONDS}s`)
+    .sign(jwtKey());
+}
+
 export async function verifyAccessToken(req: Request): Promise<string> {
   const header = req.headers.get("authorization") ?? "";
   const token = header.replace(/^Bearer\s+/i, "");

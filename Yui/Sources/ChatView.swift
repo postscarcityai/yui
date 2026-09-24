@@ -1,10 +1,12 @@
 import SwiftUI
 
-/// Phase 1 shell: the chat screen every agent starts from.
+/// The chat with the selected agent (one thread per agent, over the relay).
 /// Agent replies in Yui Lines render inline as presets.
 struct ChatView: View {
     @Environment(\.yuiTheme) private var theme
     @Environment(\.colorScheme) private var scheme
+    @Environment(Account.self) private var account
+    @Environment(AgentStore.self) private var agents
     @State private var draft = ""
     @State private var store = ChatStore(messages: ChatView.seed)
     @State private var showSettings = ProcessInfo.processInfo.arguments.contains("-yuiSettings")
@@ -17,15 +19,22 @@ struct ChatView: View {
         let c = theme.swatch(scheme)
         NavigationStack {
             Group {
-                if store.messages.isEmpty {
-                    EmptyChat()
+                if store.messages.isEmpty && !store.waiting {
+                    EmptyChat(agent: store.agent, loading: store.agent != nil && !store.loaded)
                 } else {
                     ScrollView {
                         // Not Lazy: LazyVStack drops preset cards from the accessibility tree (iOS 26/27),
                         // so VoiceOver and UI tests saw only the plain bubbles.
                         VStack(spacing: theme.spacing.m) {
                             ForEach(store.messages) { m in
-                                if let yl = m.yl { YLReply(screen: yl) } else { Bubble(message: m) }
+                                if let yl = m.yl { YLReply(screen: yl, agent: store.agent) } else { Bubble(message: m, agent: store.agent) }
+                            }
+                            if store.waiting { TypingDots(agent: store.agent).id("typing") }
+                            if let error = store.error {
+                                Text(error)
+                                    .font(theme.font(theme.type.caption, .semibold))
+                                    .foregroundStyle(c.inkSoft)
+                                    .frame(maxWidth: .infinity)
                             }
                         }
                         .padding(.horizontal, theme.spacing.l)
@@ -45,7 +54,21 @@ struct ChatView: View {
                         .tint(c.inkSoft)
                 }
                 ToolbarItem(placement: .principal) {
-                    Wordmark(height: 26)
+                    if let agent = store.agent {
+                        Button { showAgents = true } label: {
+                            HStack(spacing: theme.spacing.s) {
+                                AgentBadge(agent: agent, size: 26)
+                                Text(agent.name)
+                                    .font(theme.font(theme.type.body, .heavy))
+                                    .foregroundStyle(c.ink)
+                                Circle().fill(agent.status == .connected ? c.mint : c.outline).frame(width: 8, height: 8)
+                            }
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Talking to \(agent.name), \(agent.status == .connected ? "online" : "offline")")
+                    } else {
+                        Wordmark(height: 26)
+                    }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Settings", systemImage: "gearshape.fill") { showSettings = true }
@@ -66,6 +89,12 @@ struct ChatView: View {
         }
         .environment(\.ylEmit, store.emit)
         .onAppear { store.spring = theme.spring }
+        .task { await agents.refresh() }
+        .onChange(of: agents.selected?.id, initial: true) {
+            // The demo account keeps the local demo chat.
+            guard account.session?.userID != "demo" else { return }
+            store.attach(agents.selected, account: account)
+        }
         .tint(c.accent)
     }
 
@@ -100,6 +129,11 @@ struct ChatView: View {
     private func send() {
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
+        if store.agent != nil {
+            store.send(text)
+            draft = ""
+            return
+        }
         withAnimation(theme.spring) { store.messages.append(ChatMessage(text: text, fromUser: true)) }
         draft = ""
         Task {
@@ -136,11 +170,12 @@ struct ChatView: View {
 /// An agent reply in Yui Lines: the presets in line order, errors underneath.
 private struct YLReply: View {
     let screen: YLScreen
+    var agent: YuiAgent?
     @Environment(\.yuiTheme) private var theme
 
     var body: some View {
         HStack(alignment: .top, spacing: theme.spacing.s) {
-            YuiAvatar(size: 34)
+            AgentFace(agent: agent)
             VStack(alignment: .leading, spacing: theme.spacing.m) {
                 ForEach(screen.components) { PresetView(component: $0) }
                 ForEach(Array(screen.errors.enumerated()), id: \.offset) { YLErrorRow(node: $1) }
@@ -152,6 +187,7 @@ private struct YLReply: View {
 
 private struct Bubble: View {
     let message: ChatMessage
+    var agent: YuiAgent?
     @Environment(\.yuiTheme) private var theme
     @Environment(\.colorScheme) private var scheme
 
@@ -164,7 +200,7 @@ private struct Bubble: View {
             bottomTrailingRadius: message.fromUser ? r.bubbleTail : r.bubble,
             topTrailingRadius: r.bubble)
         HStack(alignment: .bottom, spacing: theme.spacing.s) {
-            if message.fromUser { Spacer(minLength: 48) } else { YuiAvatar(size: 34) }
+            if message.fromUser { Spacer(minLength: 48) } else { AgentFace(agent: agent) }
             Text(message.text)
                 .font(theme.font(theme.type.body, .medium))
                 .foregroundStyle(message.fromUser ? c.userInk : c.agentInk)
@@ -179,12 +215,73 @@ private struct Bubble: View {
     }
 }
 
-private struct EmptyChat: View {
+/// The agent's face next to its messages: its badge, or Yui's mark in the demo.
+private struct AgentFace: View {
+    var agent: YuiAgent?
+    var body: some View {
+        if let agent { AgentBadge(agent: agent, size: 34) } else { YuiAvatar(size: 34) }
+    }
+}
+
+/// The agent is thinking.
+private struct TypingDots: View {
+    var agent: YuiAgent?
     @Environment(\.yuiTheme) private var theme
     @Environment(\.colorScheme) private var scheme
 
     var body: some View {
         let c = theme.swatch(scheme)
+        HStack(alignment: .bottom, spacing: theme.spacing.s) {
+            AgentFace(agent: agent)
+            HStack(spacing: 5) {
+                ForEach(0..<3, id: \.self) { i in
+                    Circle().fill(c.inkSoft).frame(width: 7, height: 7)
+                        .phaseAnimator([0.3, 1.0]) { dot, o in dot.opacity(o) } animation: { _ in
+                            .easeInOut(duration: 0.5).delay(Double(i) * 0.15)
+                        }
+                }
+            }
+            .padding(.horizontal, theme.spacing.l)
+            .padding(.vertical, theme.spacing.m + 4)
+            .background(c.agentBubble, in: Capsule())
+            .overlay(Capsule().stroke(c.outline, lineWidth: 1.5))
+            Spacer(minLength: 48)
+        }
+        .accessibilityLabel("\(agent?.name ?? "Yui") is typing")
+        .transition(.opacity)
+    }
+}
+
+private struct EmptyChat: View {
+    var agent: YuiAgent? = nil
+    var loading = false
+    @Environment(\.yuiTheme) private var theme
+    @Environment(\.colorScheme) private var scheme
+
+    var body: some View {
+        let c = theme.swatch(scheme)
+        if loading {
+            ProgressView().tint(c.inkSoft)
+        } else if let agent, agent.avatar != "yui" {
+            VStack(spacing: theme.spacing.l) {
+                AgentBadge(agent: agent, size: 96)
+                Text("Say hi to \(agent.name)!")
+                    .font(theme.font(theme.type.display, .heavy))
+                    .foregroundStyle(c.ink)
+                    .multilineTextAlignment(.center)
+                Text(agent.status == .connected ? "Same agent as everywhere else,\nnow with buttons." :
+                        "\(agent.name) is offline right now.\nMessages wait until it's back.")
+                    .font(theme.font(theme.type.body))
+                    .foregroundStyle(c.inkSoft)
+                    .multilineTextAlignment(.center)
+            }
+            .padding(theme.spacing.xl)
+        } else {
+            greeting(c)
+        }
+    }
+
+    private func greeting(_ c: Swatch) -> some View {
         VStack(spacing: theme.spacing.l) {
             Wordmark(height: 110)
                 .phaseAnimator([false, true]) { view, up in
