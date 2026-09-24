@@ -67,7 +67,8 @@ final class ChatStore {
     private var poll: Task<Void, Never>?
     private var cursor: String?
     private var seen = Set<String>()
-    private var waitingSince: Date?
+    /// When the reply started being owed: a long wait shows a fix-it hint.
+    private(set) var waitingSince: Date?
 
     init(messages: [ChatMessage] = []) { self.messages = messages }
 

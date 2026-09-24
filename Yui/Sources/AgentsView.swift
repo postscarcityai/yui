@@ -33,7 +33,12 @@ struct AgentsView: View {
             }
         }
         .sheet(isPresented: $adding) {
-            AddAgentSheet()
+            // Paired and "Say hi": straight to the new agent's thread.
+            AddAgentSheet { id in
+                store.selectedID = id
+                adding = false
+                dismiss()
+            }
                 .presentationDetents([.large])
                 .presentationCornerRadius(theme.radius.card)
         }
@@ -206,10 +211,11 @@ private struct EmptyAgents: View {
                 .foregroundStyle(c.accent)
             Text("Add your first agent")
                 .font(theme.font(theme.type.display, theme.strong)).foregroundStyle(c.ink)
-            Text("Connect an agent that runs on your computer, like a Hermes profile. It takes a minute.")
+            Text("Yui shows the answers of an agent you run on your own computer, like a Hermes profile. Connecting one takes about five minutes.")
                 .font(theme.font(theme.type.body)).foregroundStyle(c.inkSoft)
                 .multilineTextAlignment(.center)
             PillButton(title: "Add agent", systemImage: "plus", action: add)
+            GuideLink()
             Spacer(minLength: 0)
         }
         .padding(theme.spacing.xl)
@@ -288,13 +294,16 @@ struct LookPickerRow: View {
     }
 }
 
-/// Add agent: name it, pick a look, get a code, run one command on the host.
-private struct AddAgentSheet: View {
+/// Add agent: name it, pick a look, get a code, run three commands on the host.
+/// Opens from the agents list, and straight from the chat on a new account.
+struct AddAgentSheet: View {
+    /// Paired, and the person tapped "Say hi": the new agent's id.
+    var done: (String) -> Void = { _ in }
     @Environment(AgentStore.self) private var store
     @Environment(\.dismiss) private var dismiss
     @Environment(\.yuiTheme) private var theme
     @Environment(\.colorScheme) private var scheme
-    @State private var name = ProcessInfo.processInfo.arguments.contains("-yuiAddAgent") ? "Monk" : ""
+    @State private var name = ProcessInfo.processInfo.arguments.contains("-yuiAddAgent") ? "Nova" : ""
     @State private var look: String?
     @State private var pending: (agent: YuiAgent, code: PairingCode)?
     @State private var working = false
@@ -306,9 +315,9 @@ private struct AddAgentSheet: View {
         NavigationStack {
             ScrollView {
                 if let pending {
-                    PairingStep(agentID: pending.agent.id, code: pending.code) {
+                    PairingStep(agentID: pending.agent.id, code: pending.code, newCode: {
                         self.pending = (pending.agent, try await store.newCode(for: pending.agent))
-                    }
+                    }, sayHi: { done(pending.agent.id) })
                 } else {
                     nameStep(c)
                 }
@@ -339,7 +348,7 @@ private struct AddAgentSheet: View {
             }
             Text("What should we call them?")
                 .font(theme.font(theme.type.title, .bold)).foregroundStyle(c.ink)
-            TextField("Name, like Monk", text: $name)
+            TextField("Name, like Nova", text: $name)
                 .font(theme.font(theme.type.body, .semibold))
                 .focused($focused)
                 .submitLabel(.next)
@@ -355,7 +364,7 @@ private struct AddAgentSheet: View {
             PillButton(title: "Get a pairing code", working: working) { Task { await create() } }
                 .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty)
                 .opacity(name.trimmingCharacters(in: .whitespaces).isEmpty ? 0.5 : 1)
-            Text("You'll get a code to type on the computer your agent runs on.")
+            Text("Next you'll get a code and three short commands to run on the computer your agent lives on.")
                 .font(theme.font(theme.type.caption)).foregroundStyle(c.inkSoft)
         }
         .padding(theme.spacing.xl)
@@ -371,23 +380,31 @@ private struct AddAgentSheet: View {
             if look != nil { await store.setLook(agent, preset: look) }
             withAnimation(theme.spring) { pending = (agent, code) }
         } catch {
-            self.error = error.localizedDescription
+            self.error = "Couldn't make a code just now. Check your connection and tap again."
         }
     }
 }
 
-/// The code, the one command, and a live "connected" once the host claims it.
+/// The code, the three commands from yuigui.com/start, and a live "connected"
+/// once the host claims it. Stuck or expired: says how to fix it.
 private struct PairingStep: View {
     let agentID: String
     let code: PairingCode
     let newCode: () async throws -> Void
+    /// Paired: "Say hi" opens the thread. Nil (a re-pair from settings) shows no button.
+    var sayHi: (() -> Void)? = nil
     @Environment(AgentStore.self) private var store
     @Environment(\.yuiTheme) private var theme
     @Environment(\.colorScheme) private var scheme
+    @State private var since = Date.now
 
     private var agent: YuiAgent? { store.agents.first { $0.id == agentID } }
     private var connected: Bool { agent.map { $0.status != .pending } ?? false }
-    private var command: String { "hermes -p <profile> yui pair \(code.code)" }
+    /// Waiting this long means a step was missed: show the fix.
+    static let stuckAfter: TimeInterval = ProcessInfo.processInfo.arguments.contains("-yuiPairStuck") ? 0 : 150
+
+    static let install = "hermes plugins install postscarcityai/yui/hermes-plugin/yui --enable"
+    static let restart = "hermes gateway restart"
 
     var body: some View {
         let c = theme.swatch(scheme)
@@ -405,57 +422,50 @@ private struct PairingStep: View {
                         .font(.system(size: 56, weight: .bold)).foregroundStyle(.green)
                     Text("\(agent.name) is connected!")
                         .font(theme.font(theme.type.display, theme.strong)).foregroundStyle(c.ink)
-                    if let host = agent.connectorName {
-                        Text("Running on \(host).").font(theme.font(theme.type.body)).foregroundStyle(c.inkSoft)
+                        .multilineTextAlignment(.center)
+                    Text(agent.connectorName.map { "Running on \($0). Say hi and it answers here." }
+                         ?? "Say hi and it answers here.")
+                        .font(theme.font(theme.type.body)).foregroundStyle(c.inkSoft)
+                        .multilineTextAlignment(.center)
+                    if let sayHi {
+                        PillButton(title: "Say hi to \(agent.name)", systemImage: "hand.wave.fill", action: sayHi)
+                            .padding(.top, theme.spacing.s)
                     }
                 }
                 .frame(maxWidth: .infinity)
                 .transition(.scale.combined(with: .opacity))
             } else {
-                Text("On the computer your agent runs on, type this:")
-                    .font(theme.font(theme.type.body, .semibold)).foregroundStyle(c.ink)
                 TimelineView(.periodic(from: .now, by: 1)) { ctx in
                     let left = max(0, Int(code.expiresAt.timeIntervalSince(ctx.date)))
-                    VStack(spacing: theme.spacing.s) {
-                        Text(spaced(code.code))
-                            .font(.system(size: 48, weight: .heavy, design: .rounded).monospacedDigit())
-                            .foregroundStyle(left > 0 ? c.ink : c.inkSoft.opacity(0.5))
-                            .strikethrough(left == 0)
-                            .accessibilityLabel("Pairing code \(code.code.map(String.init).joined(separator: " "))")
-                        if left > 0 {
-                            Text("Expires in \(left / 60):\(String(format: "%02d", left % 60))")
-                                .font(theme.font(theme.type.caption, .semibold)).foregroundStyle(c.inkSoft)
-                        } else {
-                            Button("Get a new code") { Task { try? await newCode() } }
-                                .font(theme.font(theme.type.body, .bold)).tint(c.accent)
+                    VStack(alignment: .leading, spacing: theme.spacing.l) {
+                        Text("On the computer \(agent?.name ?? "your agent") runs on, open a terminal and run these three commands.")
+                            .font(theme.font(theme.type.body, .semibold)).foregroundStyle(c.ink)
+                        step(1, "Install the Yui plugin", Self.install, note: "Already installed? Skip to step 2.", c)
+                        step(2, "Pair with this code", "hermes yui pair \(code.code)", note: nil, c)
+                        codeCard(left, c)
+                        step(3, "Restart the gateway", Self.restart,
+                             note: "No gateway service yet? Run hermes gateway install first.", c)
+                        Text("Using a named profile? Put -p <profile> right after hermes in each command.")
+                            .font(theme.font(theme.type.caption)).foregroundStyle(c.inkSoft)
+                        if left == 0 {
+                            fix("That code ran out.", "Tap Get a new code above, then run step 2 again with the new code.", c)
+                        } else if ctx.date.timeIntervalSince(since) >= Self.stuckAfter {
+                            fix("Still waiting?",
+                                "Run hermes yui status on that computer. Not paired: run step 2 again. Paired: run step 3, the gateway only connects after a restart.", c)
                         }
+                        HStack(spacing: theme.spacing.s) {
+                            ProgressView()
+                            Text("Waiting for your computer…").font(theme.font(theme.type.caption, .semibold)).foregroundStyle(c.inkSoft)
+                        }
+                        .accessibilityElement(children: .combine)
+                        GuideLink()
                     }
-                    .frame(maxWidth: .infinity)
-                    .padding(theme.spacing.l)
-                    .background(c.surface, in: .rect(cornerRadius: theme.radius.card))
-                    .overlay(RoundedRectangle(cornerRadius: theme.radius.card).stroke(c.outline, lineWidth: 1.5))
-                }
-                HStack {
-                    Text(command)
-                        .font(.system(size: 14, weight: .medium, design: .monospaced))
-                        .foregroundStyle(c.ink)
-                        .textSelection(.enabled)
-                    Spacer(minLength: 0)
-                    Button("Copy", systemImage: "doc.on.doc") { UIPasteboard.general.string = command }
-                        .labelStyle(.iconOnly).tint(c.inkSoft)
-                }
-                .padding(theme.spacing.m)
-                .background(c.surface, in: .rect(cornerRadius: theme.radius.bubble))
-                Text("Replace <profile> with the agent's Hermes profile name. Already connected this computer before? Skip the code and run `hermes -p <profile> yui add` there instead.")
-                    .font(theme.font(theme.type.caption)).foregroundStyle(c.inkSoft)
-                HStack(spacing: theme.spacing.s) {
-                    ProgressView()
-                    Text("Waiting for your computer…").font(theme.font(theme.type.caption, .semibold)).foregroundStyle(c.inkSoft)
                 }
             }
         }
         .padding(theme.spacing.xl)
         .animation(theme.spring, value: connected)
+        .onChange(of: code) { since = .now }
         .task {
             while !Task.isCancelled && !connected {
                 try? await Task.sleep(for: .seconds(2))
@@ -464,8 +474,85 @@ private struct PairingStep: View {
         }
     }
 
+    private func codeCard(_ left: Int, _ c: Swatch) -> some View {
+        VStack(spacing: theme.spacing.s) {
+            Text(spaced(code.code))
+                .font(.system(size: 44, weight: .heavy, design: .rounded).monospacedDigit())
+                .foregroundStyle(left > 0 ? c.ink : c.inkSoft.opacity(0.5))
+                .strikethrough(left == 0)
+                .accessibilityLabel("Pairing code \(code.code.map(String.init).joined(separator: " "))")
+            if left > 0 {
+                Text("Works once. Expires in \(left / 60):\(String(format: "%02d", left % 60))")
+                    .font(theme.font(theme.type.caption, .semibold)).foregroundStyle(c.inkSoft)
+            } else {
+                Button("Get a new code") { Task { try? await newCode() } }
+                    .font(theme.font(theme.type.body, .bold)).tint(c.accent)
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .padding(theme.spacing.l)
+        .background(c.surface, in: .rect(cornerRadius: theme.radius.card))
+        .overlay(RoundedRectangle(cornerRadius: theme.radius.card).stroke(c.outline, lineWidth: 1.5))
+    }
+
+    /// One numbered step: what it does, the exact command with a copy button.
+    private func step(_ n: Int, _ title: String, _ command: String, note: String?, _ c: Swatch) -> some View {
+        VStack(alignment: .leading, spacing: theme.spacing.s) {
+            HStack(spacing: theme.spacing.s) {
+                Text("\(n)")
+                    .font(theme.font(theme.type.caption, .black)).foregroundStyle(c.onAccent)
+                    .frame(width: 22, height: 22)
+                    .background(c.accent, in: Circle())
+                Text(title).font(theme.font(theme.type.body, .bold)).foregroundStyle(c.ink)
+            }
+            HStack(alignment: .top) {
+                Text(command)
+                    .font(.system(size: 13, weight: .medium, design: .monospaced))
+                    .foregroundStyle(c.ink)
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 0)
+                Button("Copy step \(n)", systemImage: "doc.on.doc") { UIPasteboard.general.string = command }
+                    .labelStyle(.iconOnly).tint(c.inkSoft)
+            }
+            .padding(theme.spacing.m)
+            .background(c.surface, in: .rect(cornerRadius: theme.radius.bubble))
+            .overlay(RoundedRectangle(cornerRadius: theme.radius.bubble).stroke(c.outline, lineWidth: 1))
+            if let note {
+                Text(note).font(theme.font(theme.type.caption)).foregroundStyle(c.inkSoft)
+            }
+        }
+    }
+
+    private func fix(_ title: String, _ body: String, _ c: Swatch) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Label(title, systemImage: "wrench.and.screwdriver.fill")
+                .font(theme.font(theme.type.body, .bold)).foregroundStyle(c.ink)
+            Text(body).font(theme.font(theme.type.caption)).foregroundStyle(c.inkSoft)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(theme.spacing.m)
+        .background(c.butter.opacity(0.35), in: .rect(cornerRadius: theme.radius.bubble))
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("pair-fix")
+    }
+
     private func spaced(_ s: String) -> String {
         s.count == 6 ? "\(s.prefix(3)) \(s.suffix(3))" : s
+    }
+}
+
+/// "Step-by-step guide": yuigui.com/start, same steps with more help.
+struct GuideLink: View {
+    @Environment(\.yuiTheme) private var theme
+    @Environment(\.colorScheme) private var scheme
+
+    var body: some View {
+        Link(destination: YuiBackend.startGuide) {
+            Label("Step-by-step guide at yuigui.com/start", systemImage: "book.fill")
+        }
+        .font(theme.font(theme.type.caption, .bold))
+        .tint(theme.swatch(scheme).inkSoft)
     }
 }
 

@@ -26,10 +26,11 @@ struct YuiApp: App {
             .preferredColorScheme(appearance.colorScheme)
             .environment(PushCenter.shared)
             .task { await account.checkAppleCredential() }
-            // Signed in: register for pushes. Sign out unregisters (Account.willSignOut).
-            .task(id: account.session?.userID) {
+            // Signed in with an agent: register for pushes. Sign out unregisters (Account.willSignOut).
+            // A new account asks for notifications once its first agent exists, not on the first screen.
+            .task(id: "\(account.session?.userID ?? "")|\(agents.agents.isEmpty)") {
                 // The demo account (screenshots) never asks for notifications.
-                guard account.isSignedIn, account.session?.userID != "demo" else { return }
+                guard account.isSignedIn, account.session?.userID != "demo", !agents.agents.isEmpty else { return }
                 account.willSignOut = { await PushCenter.shared.stop() }
                 await PushCenter.shared.start(account: account)
             }

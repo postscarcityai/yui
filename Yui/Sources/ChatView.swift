@@ -15,6 +15,8 @@ struct ChatView: View {
     @State private var settingsDetent: PresentationDetent =
         ProcessInfo.processInfo.arguments.contains("-yuiSettingsLarge") ? .large : .medium
     @State private var showAgents = ProcessInfo.processInfo.arguments.contains("-yuiAgents")
+    /// The first-run button opens Add agent straight from the chat.
+    @State private var addFirst = false
     @FocusState private var focused: Bool
 
     var body: some View {
@@ -22,8 +24,14 @@ struct ChatView: View {
         ZStack {
         NavigationStack {
             Group {
-                if store.messages.isEmpty && !store.waiting {
-                    EmptyChat(agent: store.agent, loading: store.agent != nil && !store.loaded)
+                if firstRun {
+                    FirstRun(loaded: agents.loaded, error: agents.error) {
+                        addFirst = true
+                    } retry: {
+                        Task { await agents.refresh() }
+                    }
+                } else if store.messages.isEmpty && !store.waiting {
+                    EmptyChat(agent: store.agent, loading: store.agent != nil && !store.loaded) { store.send($0) }
                 } else {
                     ScrollView {
                         // Not Lazy: LazyVStack drops preset cards from the accessibility tree (iOS 26/27),
@@ -36,7 +44,10 @@ struct ChatView: View {
                                     Bubble(message: m, agent: store.agent)
                                 }
                             }
-                            if store.waiting { TypingDots(agent: store.agent).id("typing") }
+                            if store.waiting {
+                                TypingDots(agent: store.agent).id("typing")
+                                SlowReplyHint(agent: store.agent, since: store.waitingSince)
+                            }
                             if let error = store.error {
                                 Text(error)
                                     .font(theme.font(theme.type.caption, .semibold))
@@ -53,7 +64,7 @@ struct ChatView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(c.background)
-            .safeAreaInset(edge: .bottom) { inputBar(c) }
+            .safeAreaInset(edge: .bottom) { if !firstRun { inputBar(c) } }
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
@@ -87,6 +98,15 @@ struct ChatView: View {
                 SettingsView()
                     .presentationDetents([.medium, .large], selection: $settingsDetent)
                     .presentationCornerRadius(theme.radius.card)
+            }
+            .sheet(isPresented: $addFirst) {
+                // Paired and "Say hi": the new agent's thread is the chat.
+                AddAgentSheet { id in
+                    agents.selectedID = id
+                    addFirst = false
+                }
+                .presentationDetents([.large])
+                .presentationCornerRadius(theme.radius.card)
             }
             .sheet(isPresented: $showAgents) {
                 AgentsView()
@@ -145,6 +165,12 @@ struct ChatView: View {
         .tint(c.accent)
     }
 
+    /// Signed in with no agents yet (every new account): nothing here can answer,
+    /// so the chat says how to connect one instead of pretending.
+    private var firstRun: Bool {
+        account.session?.userID != "demo" && agents.agents.isEmpty
+    }
+
     private func inputBar(_ c: Swatch) -> some View {
         HStack(spacing: theme.spacing.s) {
             TextField("Say something nice", text: $draft, axis: .vertical)
@@ -176,7 +202,8 @@ struct ChatView: View {
     private func send() {
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
-        if store.agent != nil, account.session?.userID != "demo" {
+        if account.session?.userID != "demo" {
+            guard store.agent != nil else { return }
             store.send(text)
             draft = ""
             return
@@ -191,6 +218,7 @@ struct ChatView: View {
         }
     }
 
+    /// The demo account's canned answers (screenshots only; real accounts never see them).
     static let replies = [
         "Noted! My agent friends move in soon, then I can really help.",
         "Mm, I heard you. Real answers arrive with the agents in Phase 1.",
@@ -327,6 +355,8 @@ private struct TypingDots: View {
 private struct EmptyChat: View {
     var agent: YuiAgent? = nil
     var loading = false
+    /// A starter tap sends it as your first message.
+    var send: (String) -> Void = { _ in }
     @Environment(\.yuiTheme) private var theme
     @Environment(\.colorScheme) private var scheme
 
@@ -341,11 +371,19 @@ private struct EmptyChat: View {
                     .font(theme.font(theme.type.display, theme.strong))
                     .foregroundStyle(c.ink)
                     .multilineTextAlignment(.center)
-                Text(agent.status == .connected ? "Same agent as everywhere else,\nnow with buttons." :
-                        "\(agent.name) is offline right now.\nMessages wait until it's back.")
+                Text(agent.status == .offline ?
+                        "\(agent.name) is offline right now. Messages wait until it's back.\nTo wake it, run hermes gateway restart on its computer." :
+                        "Same agent as everywhere else,\nnow with buttons.")
                     .font(theme.font(theme.type.body))
                     .foregroundStyle(c.inkSoft)
                     .multilineTextAlignment(.center)
+                HStack(spacing: theme.spacing.s) {
+                    ForEach(["Hi!", "What can you show me?"], id: \.self) { text in
+                        Button { send(text) } label: { Chip(text: text, color: c.surface, outline: c.outline) }
+                            .buttonStyle(BounceButtonStyle())
+                    }
+                }
+                .padding(.top, theme.spacing.s)
             }
             .padding(theme.spacing.xl)
         } else {
@@ -381,14 +419,104 @@ private struct EmptyChat: View {
 private struct Chip: View {
     let text: String
     let color: Color
+    /// Set: an outlined chip in the scheme's own ink (a tappable starter).
+    var outline: Color? = nil
     @Environment(\.yuiTheme) private var theme
+    @Environment(\.colorScheme) private var scheme
 
     var body: some View {
         Text(text)
             .font(theme.font(theme.type.caption, .bold))
-            .foregroundStyle(Color(hex: theme.light.ink))
+            .foregroundStyle(outline == nil ? Color(hex: theme.light.ink) : theme.swatch(scheme).ink)
             .padding(.horizontal, theme.spacing.m)
             .padding(.vertical, theme.spacing.s)
             .background(color, in: Capsule())
+            .overlay(Capsule().stroke(outline ?? .clear, lineWidth: 1.5))
+    }
+}
+
+/// A new account: no agents yet. Says what Yui needs and the one next step.
+private struct FirstRun: View {
+    let loaded: Bool
+    let error: String?
+    let add: () -> Void
+    let retry: () -> Void
+    @Environment(\.yuiTheme) private var theme
+    @Environment(\.colorScheme) private var scheme
+
+    var body: some View {
+        let c = theme.swatch(scheme)
+        if !loaded, error == nil {
+            ProgressView().tint(c.inkSoft)
+        } else if !loaded {
+            VStack(spacing: theme.spacing.m) {
+                Image(systemName: "wifi.exclamationmark")
+                    .font(.system(size: 40, weight: .bold)).foregroundStyle(c.inkSoft)
+                Text("Couldn't load your agents")
+                    .font(theme.font(theme.type.title, .bold)).foregroundStyle(c.ink)
+                Text("Check your connection, then try again.")
+                    .font(theme.font(theme.type.body)).foregroundStyle(c.inkSoft)
+                PillButton(title: "Try again", systemImage: "arrow.clockwise", action: retry)
+            }
+            .multilineTextAlignment(.center)
+            .padding(theme.spacing.xl)
+        } else {
+            VStack(spacing: theme.spacing.l) {
+                Spacer(minLength: 0)
+                Wordmark(height: 90)
+                Text("Let's connect your first agent")
+                    .font(theme.font(theme.type.display, theme.strong)).foregroundStyle(c.ink)
+                Text("Yui is where your own agent answers you, with screens you can tap. It runs on your computer, like a Hermes profile, and connecting it takes about five minutes.")
+                    .font(theme.font(theme.type.body)).foregroundStyle(c.inkSoft)
+                VStack(alignment: .leading, spacing: theme.spacing.s) {
+                    row(1, "Add an agent here and get a code")
+                    row(2, "Run three commands on your computer")
+                    row(3, "Say hi")
+                }
+                .padding(theme.spacing.l)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(c.surface, in: .rect(cornerRadius: theme.radius.card))
+                .overlay(RoundedRectangle(cornerRadius: theme.radius.card).stroke(c.outline, lineWidth: 1.5))
+                PillButton(title: "Add your first agent", systemImage: "plus", action: add)
+                GuideLink()
+                Spacer(minLength: 0)
+            }
+            .multilineTextAlignment(.center)
+            .padding(theme.spacing.xl)
+        }
+    }
+
+    private func row(_ n: Int, _ text: String) -> some View {
+        let c = theme.swatch(scheme)
+        return HStack(spacing: theme.spacing.m) {
+            Text("\(n)")
+                .font(theme.font(theme.type.caption, .black)).foregroundStyle(c.onAccent)
+                .frame(width: 24, height: 24)
+                .background(c.accent, in: Circle())
+            Text(text).font(theme.font(theme.type.body, .semibold)).foregroundStyle(c.ink)
+                .multilineTextAlignment(.leading)
+        }
+    }
+}
+
+/// The reply is late: after 45 seconds, say what usually fixes it.
+private struct SlowReplyHint: View {
+    var agent: YuiAgent?
+    var since: Date?
+    @Environment(\.yuiTheme) private var theme
+    @Environment(\.colorScheme) private var scheme
+
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 5)) { ctx in
+            if let since, ctx.date.timeIntervalSince(since) > 45 {
+                let name = agent?.name ?? "Your agent"
+                Label("\(name) is taking a while. If it stays quiet, run hermes gateway restart on its computer.",
+                      systemImage: "hourglass")
+                    .font(theme.font(theme.type.caption, .semibold))
+                    .foregroundStyle(theme.swatch(scheme).inkSoft)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .transition(.opacity)
+            }
+        }
     }
 }

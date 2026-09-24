@@ -1,7 +1,7 @@
 import AuthenticationServices
 import SwiftUI
 
-/// First screen for a signed-out user: the coral wordmark and one button.
+/// First screen for a signed-out user: the coral wordmark, what Yui needs (your own agent), one button.
 struct SignInView: View {
     @Environment(Account.self) private var account
     @Environment(\.yuiTheme) private var theme
@@ -18,7 +18,7 @@ struct SignInView: View {
                 Text("Your agents, in your pocket.")
                     .font(theme.font(theme.type.title, .bold))
                     .foregroundStyle(c.ink)
-                Text("Chat with them, tap their little screens, hear back fast.")
+                Text("Connect the agent you already run, like Hermes. It answers here with screens you can tap.")
                     .font(theme.font(theme.type.body))
                     .foregroundStyle(c.inkSoft)
             }
@@ -38,7 +38,7 @@ struct SignInView: View {
                         defer { working = false }
                         do { try await account.complete(result) } catch {
                             if (error as? ASAuthorizationError)?.code != .canceled {
-                                self.error = error.localizedDescription
+                                self.error = "Sign in didn't finish. Check your connection and try again."
                             }
                         }
                     }
@@ -54,9 +54,12 @@ struct SignInView: View {
                     Text(error).font(theme.font(theme.type.caption, .semibold)).foregroundStyle(c.accent)
                         .multilineTextAlignment(.center)
                 }
-                Link("How Yui handles your data", destination: YuiBackend.privacyPolicy)
-                    .font(theme.font(theme.type.caption, .semibold))
-                    .tint(c.inkSoft)
+                HStack(spacing: theme.spacing.l) {
+                    Link("How it works", destination: YuiBackend.startGuide)
+                    Link("Your data", destination: YuiBackend.privacyPolicy)
+                }
+                .font(theme.font(theme.type.caption, .semibold))
+                .tint(c.inkSoft)
             }
         }
         .padding(theme.spacing.xl)
