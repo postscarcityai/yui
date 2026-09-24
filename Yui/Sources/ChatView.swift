@@ -10,7 +10,7 @@ struct ChatView: View {
     @State private var showSettings = ProcessInfo.processInfo.arguments.contains("-yuiSettings")
     @State private var settingsDetent: PresentationDetent =
         ProcessInfo.processInfo.arguments.contains("-yuiSettingsLarge") ? .large : .medium
-    @State private var showPaste = ProcessInfo.processInfo.arguments.contains("-yuiPaste")
+    @State private var showAgents = ProcessInfo.processInfo.arguments.contains("-yuiAgents")
     @FocusState private var focused: Bool
 
     var body: some View {
@@ -41,7 +41,7 @@ struct ChatView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    Button("Paste YL", systemImage: "chevron.left.forwardslash.chevron.right") { showPaste = true }
+                    Button("Your agents", systemImage: "person.2.fill") { showAgents = true }
                         .tint(c.inkSoft)
                 }
                 ToolbarItem(placement: .principal) {
@@ -58,9 +58,9 @@ struct ChatView: View {
                     .presentationDetents([.medium, .large], selection: $settingsDetent)
                     .presentationCornerRadius(theme.radius.card)
             }
-            .sheet(isPresented: $showPaste) {
-                PasteYLView(store: store)
-                    .presentationDetents([.large])
+            .sheet(isPresented: $showAgents) {
+                AgentsView()
+                    .presentationDetents([.medium])
                     .presentationCornerRadius(theme.radius.card)
             }
         }
