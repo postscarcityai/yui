@@ -26,3 +26,8 @@ PLIST
 xcodebuild -exportArchive -archivePath build/Yui.xcarchive -exportOptionsPlist build/export.plist \
   -exportPath build/export "${AUTH[@]}" | tail -5
 echo "uploaded build $BUILD"
+
+# Public TestFlight: add the build to the "Public" group and submit it for beta
+# review. It is usually still processing here; the yui-testflight-watch cron
+# runs the same step every 10 minutes and finishes the job once it is VALID.
+python3 scripts/testflight_public.py --build "$BUILD" || true
