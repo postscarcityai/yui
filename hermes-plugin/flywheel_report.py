@@ -9,6 +9,7 @@ agents reached for.
     python3 flywheel_report.py                     # full report, the yui profile's log
     python3 flywheel_report.py --log x.jsonl --since 7
     python3 flywheel_report.py --only-qualified    # prints nothing unless a shape crossed the bar (cron)
+    python3 flywheel_report.py --only-qualified --seen seen.txt   # ...and only once per shape
 
 No dependencies. The log holds shapes, never values, so this report is safe to
 paste anywhere.
@@ -112,10 +113,10 @@ def report(rows: list, *, min_uses: int, min_days: int, top: int, source: str) -
     return "\n".join(out) + "\n"
 
 
-def nudge(rows: list, *, min_uses: int, min_days: int) -> str:
-    """The short message the weekly cron sends to Yui. Empty when nothing crossed the bar."""
+def nudge(rows: list, *, min_uses: int, min_days: int, seen: set = frozenset()) -> str:
+    """The short message the weekly cron sends to Yui. Empty when nothing new crossed the bar."""
     shapes, _ = tally(rows)
-    ready = [(h, s) for h, s in shapes if qualifies(s, min_uses, min_days)]
+    ready = [(h, s) for h, s in shapes if qualifies(s, min_uses, min_days) and h not in seen]
     if not ready:
         return ""
     lines = [f"{len(ready)} custom screen{'s' if len(ready) > 1 else ''} came up often enough to become a preset:"]
@@ -133,12 +134,21 @@ def main(argv=None) -> int:
     ap.add_argument("--top", type=int, default=15)
     ap.add_argument("--only-qualified", action="store_true",
                     help="print a short nudge only when a shape crossed the bar, else nothing")
+    ap.add_argument("--seen", type=Path,
+                    help="with --only-qualified: skip hashes listed in this file, then add the new ones")
     ap.add_argument("--out", type=Path, help="also write the report here")
     a = ap.parse_args(argv)
     log = a.log or default_log()
     rows = load(log, a.since)
     if a.only_qualified:
-        sys.stdout.write(nudge(rows, min_uses=a.min_uses, min_days=a.min_days))
+        seen = set(a.seen.read_text().split()) if a.seen and a.seen.exists() else set()
+        text = nudge(rows, min_uses=a.min_uses, min_days=a.min_days, seen=seen)
+        if text and a.seen:
+            shapes, _ = tally(rows)
+            new = [h for h, s in shapes if qualifies(s, a.min_uses, a.min_days) and h not in seen]
+            with a.seen.open("a") as f:
+                f.write("".join(h + "\n" for h in new))
+        sys.stdout.write(text)
         return 0
     text = report(rows, min_uses=a.min_uses, min_days=a.min_days, top=a.top, source=str(log))
     if a.out:

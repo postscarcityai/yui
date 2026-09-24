@@ -283,6 +283,13 @@ class Report(unittest.TestCase):
             with redirect_stdout(buf):
                 report.main(["--log", str(Path(d) / "missing.jsonl"), "--only-qualified"])
             self.assertEqual(buf.getvalue(), "")
+            seen = Path(d) / "seen.txt"
+            for expect in (True, False):   # a shape is announced once, not every week
+                buf = io.StringIO()
+                with redirect_stdout(buf):
+                    report.main(["--log", str(p), "--only-qualified", "--seen", str(seen)])
+                self.assertEqual("aaa" in buf.getvalue(), expect)
+            self.assertEqual(seen.read_text(), "aaa\n")
 
 
 if __name__ == "__main__":
