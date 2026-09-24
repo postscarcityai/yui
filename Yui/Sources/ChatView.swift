@@ -1,3 +1,4 @@
+import PhotosUI
 import SwiftUI
 
 /// The chat with the selected agent (one thread per agent, over the relay).
@@ -22,6 +23,14 @@ struct ChatView: View {
     /// The first-run button opens Add agent straight from the chat.
     @State private var addFirst = false
     @FocusState private var focused: Bool
+    /// Photos waiting in the composer, and the pickers that fill it.
+    @State private var photos: [ComposerPhoto] = []
+    @State private var picked: [PhotosPickerItem] = []
+    @State private var pickingPhotos = false
+    @State private var shooting = false
+    @State private var sending = false
+    @State private var talk = PushToTalk()
+    @State private var composerNote: String?
 
     var body: some View {
         let c = theme.swatch(scheme)
@@ -212,45 +221,234 @@ struct ChatView: View {
     }
 
     private func inputBar(_ c: Swatch) -> some View {
-        HStack(spacing: theme.spacing.s) {
-            TextField("Say something nice", text: $draft, axis: .vertical)
-                .font(theme.font(theme.type.body))
-                .foregroundStyle(c.ink)
-                .lineLimit(1...5)
-                .focused($focused)
-                .accessibilityIdentifier("composer")
-                .onSubmit(send)
-                .id(composerID)
-                .padding(.horizontal, theme.spacing.l)
-                .padding(.vertical, theme.spacing.m)
-                .background(c.surface, in: .rect(cornerRadius: theme.radius.pill))
-                .overlay(RoundedRectangle(cornerRadius: theme.radius.pill).stroke(c.outline, lineWidth: 1.5))
-            Button(action: send) {
-                Image(systemName: "arrow.up")
-                    .font(theme.font(theme.type.title, .black))
-                    .foregroundStyle(draft.isEmpty ? c.inkSoft : c.onAccent)
-                    .frame(width: 46, height: 46)
-                    .background(draft.isEmpty ? c.outline : c.accent, in: Circle())
+        VStack(alignment: .leading, spacing: theme.spacing.s) {
+            if !photos.isEmpty { attachmentStrip(c) }
+            if let note = composerNote {
+                Label(note, systemImage: "info.circle")
+                    .font(theme.font(theme.type.caption, .semibold))
+                    .foregroundStyle(c.inkSoft)
+                    .transition(.opacity)
+                    .accessibilityIdentifier("composer-note")
             }
-            .buttonStyle(BounceButtonStyle())
-            .disabled(draft.isEmpty)
-            .accessibilityLabel("Send")
+            HStack(alignment: .bottom, spacing: theme.spacing.s) {
+                if !talk.listening { attachMenu(c) }
+                if talk.listening { listeningField(c) } else { field(c) }
+                sendButton(c)
+            }
         }
         .padding(.horizontal, theme.spacing.l)
         .padding(.vertical, theme.spacing.s)
         .background(c.background)
+        .animation(theme.spring, value: talk.listening)
+        .animation(theme.spring, value: photos)
+        .fullScreenCover(isPresented: $shooting) {
+            CameraCapture(front: false) { data in
+                shooting = false
+                if let data { add([data]) }
+            }
+            .ignoresSafeArea()
+        }
+        .photosPicker(isPresented: $pickingPhotos, selection: $picked,
+                      maxSelectionCount: max(Attachments.maxPhotos - photos.count, 1), matching: .images)
+        .onChange(of: picked) { _, items in
+            guard !items.isEmpty else { return }
+            picked = []
+            Task {
+                var datas: [Data] = []
+                for item in items { if let d = try? await item.loadTransferable(type: Data.self) { datas.append(d) } }
+                add(datas)
+            }
+        }
+        #if DEBUG
+        // -yuiComposerPhoto <path>: a photo already in the composer (UI tests, screenshots).
+        // -yuiPTTDemo "words": the hold-to-talk listening state.
+        .task {
+            if let path = UserDefaults.standard.string(forKey: "yuiComposerPhoto"),
+               let data = FileManager.default.contents(atPath: path) { add([data]) }
+            if let words = UserDefaults.standard.string(forKey: "yuiPTTDemo") { talk.demo(words) }
+        }
+        #endif
+    }
+
+    private func field(_ c: Swatch) -> some View {
+        TextField(photos.isEmpty ? "Say something nice" : "Add a caption", text: $draft, axis: .vertical)
+            .font(theme.font(theme.type.body))
+            .foregroundStyle(c.ink)
+            .lineLimit(1...5)
+            .focused($focused)
+            .accessibilityIdentifier("composer")
+            .onSubmit(send)
+            .id(composerID)
+            .padding(.horizontal, theme.spacing.l)
+            .padding(.vertical, theme.spacing.m)
+            .frame(minHeight: 46)
+            .background(c.surface, in: .rect(cornerRadius: theme.radius.pill))
+            .overlay(RoundedRectangle(cornerRadius: theme.radius.pill).stroke(c.outline, lineWidth: 1.5))
+    }
+
+    /// Held down: what it hears, live, where the words would be.
+    private func listeningField(_ c: Swatch) -> some View {
+        HStack(spacing: theme.spacing.s) {
+            Circle().fill(c.accent).frame(width: 10, height: 10)
+                .scaleEffect(1 + talk.level * 0.8)
+                .animation(.easeOut(duration: 0.12), value: talk.level)
+            Text(talk.transcript.isEmpty ? "Listening. Let go to send." : talk.transcript)
+                .font(theme.font(theme.type.body, talk.transcript.isEmpty ? .semibold : .regular))
+                .foregroundStyle(talk.transcript.isEmpty ? c.inkSoft : c.ink)
+                .lineLimit(1...5)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(.horizontal, theme.spacing.l)
+        .padding(.vertical, theme.spacing.m)
+        .frame(minHeight: 46)
+        .background(c.surface, in: .rect(cornerRadius: theme.radius.pill))
+        .overlay(RoundedRectangle(cornerRadius: theme.radius.pill).stroke(c.accent, lineWidth: 2))
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("listening")
+    }
+
+    /// One + for everything that isn't words. Room for files and more later, no new buttons.
+    private func attachMenu(_ c: Swatch) -> some View {
+        Menu {
+            Button { pickingPhotos = true } label: { Label("Photo library", systemImage: "photo.on.rectangle") }
+            if UIImagePickerController.isSourceTypeAvailable(.camera) {
+                Button { shooting = true } label: { Label("Camera", systemImage: "camera") }
+            }
+        } label: {
+            Image(systemName: "plus")
+                .font(theme.font(theme.type.title, .black))
+                .foregroundStyle(c.ink)
+                .frame(width: 46, height: 46)
+                .background(c.surface, in: Circle())
+                .overlay(Circle().stroke(c.outline, lineWidth: 1.5))
+        }
+        .disabled(sending || photos.count >= Attachments.maxPhotos)
+        .accessibilityLabel("Attach")
+        .accessibilityIdentifier("attach")
+    }
+
+    private func attachmentStrip(_ c: Swatch) -> some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: theme.spacing.s) {
+                ForEach(photos) { p in
+                    Image(uiImage: p.preview)
+                        .resizable().aspectRatio(contentMode: .fill)
+                        .frame(width: 72, height: 72)
+                        .clipShape(.rect(cornerRadius: theme.radius.bubbleTail + 6))
+                        .overlay(alignment: .topTrailing) {
+                            Button { photos.removeAll { $0.id == p.id } } label: {
+                                Image(systemName: "xmark.circle.fill")
+                                    .font(.system(size: 20, weight: .bold))
+                                    .symbolRenderingMode(.palette)
+                                    .foregroundStyle(c.onAccent, c.ink.opacity(0.7))
+                            }
+                            .padding(3)
+                            .disabled(sending)
+                            .accessibilityLabel("Remove photo")
+                        }
+                        .overlay { if sending { c.background.opacity(0.4).overlay(ProgressView().tint(c.accent)) } }
+                        .accessibilityIdentifier("attachment")
+                }
+            }
+        }
+        .transition(.move(edge: .bottom).combined(with: .opacity))
+    }
+
+    /// Send when there is something to send; otherwise the mic: hold to talk.
+    private func sendButton(_ c: Swatch) -> some View {
+        let ready = !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !photos.isEmpty
+        return Group {
+            if ready || sending {
+                Button(action: send) {
+                    Image(systemName: "arrow.up")
+                        .font(theme.font(theme.type.title, .black))
+                        .foregroundStyle(c.onAccent)
+                        .frame(width: 46, height: 46)
+                        .background(c.accent, in: Circle())
+                }
+                .buttonStyle(BounceButtonStyle())
+                .disabled(sending)
+                .accessibilityLabel("Send")
+            } else {
+                Image(systemName: talk.listening ? "waveform" : "mic.fill")
+                    .font(theme.font(theme.type.title, .black))
+                    .foregroundStyle(talk.listening ? c.onAccent : c.ink)
+                    .symbolEffect(.variableColor.iterative, isActive: talk.listening)
+                    .frame(width: 46, height: 46)
+                    .background(talk.listening ? c.accent : c.surface, in: Circle())
+                    .overlay(Circle().stroke(talk.listening ? .clear : c.outline, lineWidth: 1.5))
+                    .scaleEffect(talk.listening ? 1.25 : 1)
+                    .contentShape(Circle())
+                    .onLongPressGesture(minimumDuration: 0.25, maximumDistance: 120) {
+                        Task { await talk.start(); note(for: talk.phase) }
+                    } onPressingChanged: { pressing in
+                        if pressing { return }
+                        if talk.listening {
+                            Task { let words = await talk.stop(); if !words.isEmpty { draft = words; send() } }
+                        } else if talk.phase == .idle {
+                            flash("Hold the mic to talk, let go to send.")
+                        }
+                    }
+                    .accessibilityLabel(talk.listening ? "Listening" : "Hold to talk")
+                    .accessibilityIdentifier("talk")
+            }
+        }
+    }
+
+    private func note(for phase: PushToTalk.Phase) {
+        switch phase {
+        case .denied: flash("Yui needs the mic and speech recognition. Turn them on in Settings.")
+        case .failed: flash("Can't listen right now. Try typing.")
+        default: break
+        }
+        talk.reset()
+    }
+
+    private func flash(_ text: String) {
+        withAnimation { composerNote = text }
+        Task {
+            try? await Task.sleep(for: .seconds(2.5))
+            withAnimation { if composerNote == text { composerNote = nil } }
+        }
+    }
+
+    private func add(_ datas: [Data]) {
+        let room = Attachments.maxPhotos - photos.count
+        photos += datas.prefix(max(room, 0)).compactMap(ComposerPhoto.init)
+        if datas.count > room { flash("Up to \(Attachments.maxPhotos) photos in one message.") }
     }
 
     private func send() {
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty else { return }
+        guard !text.isEmpty || !photos.isEmpty, !sending else { return }
         if account.session?.userID != "demo" {
-            // Not sent (no agent, no session): the words stay in the field.
-            guard store.agent != nil, store.send(text) else { return }
-            clearComposer()
+            guard store.agent != nil else { return }
+            if photos.isEmpty {
+                // Not sent (no agent, no session): the words stay in the field.
+                guard store.send(text) else { return }
+                clearComposer()
+                return
+            }
+            let outgoing = photos
+            sending = true
+            Task {
+                defer { sending = false }
+                do {
+                    try await store.send(text, photos: outgoing)
+                    photos = []
+                    clearComposer()
+                } catch {
+                    flash("Couldn't send the photo. Try again.")
+                }
+            }
             return
         }
-        withAnimation(ChatStore.sendSpring) { store.messages.append(ChatMessage(text: text, fromUser: true)) }
+        let body = Attachments.body(text: text, photos: photos.count)
+        withAnimation(ChatStore.sendSpring) {
+            store.messages.append(ChatMessage(text: Attachments.caption(body: body, photos: photos.count), fromUser: true,
+                                              photos: photos.map { .local($0.preview) }))
+        }
+        photos = []
         clearComposer()
         Task {
             try? await Task.sleep(for: .milliseconds(700))
@@ -335,15 +533,20 @@ private struct Bubble: View {
             topTrailingRadius: r.bubble)
         HStack(alignment: .bottom, spacing: theme.spacing.s) {
             if message.fromUser { Spacer(minLength: 48) } else { AgentFace(agent: agent) }
-            Text(message.text)
-                .font(theme.font(theme.type.body, .medium))
-                .foregroundStyle(message.fromUser ? c.userInk : c.agentInk)
-                .padding(.horizontal, theme.spacing.l)
-                .padding(.vertical, theme.spacing.m)
-                .background(message.fromUser ? c.userBubble : c.agentBubble, in: shape)
-                .overlay(shape.stroke(message.fromUser ? .clear : c.outline, lineWidth: 1.5))
-                .opacity(pending ? 0.6 : 1)
-                .accessibilityLabel(pending ? "\(message.text), not sent yet" : message.text)
+            VStack(alignment: .trailing, spacing: theme.spacing.xs) {
+                ForEach(Array(message.photos.enumerated()), id: \.offset) { BubblePhoto(photo: $1) }
+                if !message.text.isEmpty {
+                    Text(message.text)
+                        .font(theme.font(theme.type.body, .medium))
+                        .foregroundStyle(message.fromUser ? c.userInk : c.agentInk)
+                        .padding(.horizontal, theme.spacing.l)
+                        .padding(.vertical, theme.spacing.m)
+                        .background(message.fromUser ? c.userBubble : c.agentBubble, in: shape)
+                        .overlay(shape.stroke(message.fromUser ? .clear : c.outline, lineWidth: 1.5))
+                        .accessibilityLabel(pending ? "\(message.text), not sent yet" : message.text)
+                }
+            }
+            .opacity(pending ? 0.6 : 1)
             if !message.fromUser { Spacer(minLength: 48) }
         }
         .animation(.easeInOut(duration: 0.3), value: pending)

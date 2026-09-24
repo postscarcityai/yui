@@ -38,6 +38,11 @@ struct YuiMedia {
     /// A signed link past its expiry is signed again with this person's own token.
     func fresh(_ url: URL) async -> URL {
         guard let path = Self.bucketPath(url), Self.expiry(url).map({ $0.timeIntervalSinceNow < 300 }) ?? true else { return url }
+        return await link(path: path) ?? url
+    }
+
+    /// A signed link to one of this person's bucket paths (their own sent photos on reopen).
+    func link(path: String) async -> URL? {
         if let hit = await SignedCache.shared.get(path) { return hit }
         var req = URLRequest(url: Self.storage.appending(path: "object/sign/\(Self.bucket)/\(path)"))
         req.httpMethod = "POST"
@@ -45,7 +50,7 @@ struct YuiMedia {
         req.httpBody = Data(#"{"expiresIn":604800}"#.utf8)
         guard let data = try? await send(req),
               let signed = (try? JSONSerialization.jsonObject(with: data) as? [String: Any])?["signedURL"] as? String,
-              let out = URL(string: Self.storage.absoluteString + signed) else { return url }
+              let out = URL(string: Self.storage.absoluteString + signed) else { return nil }
         await SignedCache.shared.put(path, out)
         return out
     }

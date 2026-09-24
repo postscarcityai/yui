@@ -9,6 +9,8 @@ struct ChatMessage: Identifiable, Equatable {
     var fromUser: Bool
     /// An agent reply in Yui Lines, drawn as presets instead of a bubble.
     var yl: YLScreen?
+    /// The person's photos on this message (composer attachments).
+    var photos: [MessagePhoto] = []
 }
 
 /// The chat's messages plus the event log going back to the agent.
@@ -201,6 +203,30 @@ final class ChatStore {
         return true
     }
 
+    /// Words and photos. The photos go up first (the outbox holds rows, not
+    /// files), then the row goes out like any other. Throws when an upload
+    /// fails: nothing is added, the composer keeps everything.
+    func send(_ text: String, photos: [ComposerPhoto]) async throws {
+        guard !photos.isEmpty else { if !send(text) { throw AccountError.signedOut }; return }
+        guard client != nil, let agentID = agent?.id, let account else { throw AccountError.signedOut }
+        let media = YuiMedia(account: account, agentID: agentID)
+        var paths: [String] = []
+        for p in photos { paths.append(try await media.upload(photo: p.jpeg)) }
+        guard agent?.id == agentID else { throw AccountError.signedOut }  // switched threads mid-upload
+        let body = Attachments.body(text: text, photos: paths.count)
+        let m = ChatMessage(id: UUID().uuidString.lowercased(), text: Attachments.caption(body: body, photos: paths.count),
+                            fromUser: true, photos: photos.map { .local($0.preview) })
+        withAnimation(Self.sendSpring) { messages.append(m) }
+        post(id: m.id, body: body, kind: "text", meta: Attachments.meta(paths: paths))
+    }
+
+    /// A person's text row (or outbox item) as a bubble, photos included.
+    private static func userMessage(id: String, body: String, meta: YLValue?) -> ChatMessage {
+        let paths = Attachments.paths(meta)
+        return ChatMessage(id: id, text: Attachments.caption(body: body, photos: paths.count), fromUser: true,
+                           photos: paths.map { .stored($0) })
+    }
+
     /// Into the outbox first (on disk), then out: a dropped network or a killed
     /// app never loses it, and it sends itself when the connection is back.
     private func post(id: String = UUID().uuidString.lowercased(), body: String, kind: String, meta: YLValue?) {
@@ -223,7 +249,7 @@ final class ChatStore {
                 record(meta: item.meta)
                 if let echo = item.meta?.object?["echo"]?.string { new.append(ChatMessage(id: item.id, text: echo, fromUser: true)) }
             } else {
-                new.append(ChatMessage(id: item.id, text: item.body, fromUser: true))
+                new.append(Self.userMessage(id: item.id, body: item.body, meta: item.meta))
             }
         }
         guard !new.isEmpty else { return }
@@ -290,7 +316,7 @@ final class ChatStore {
                 record(meta: row.meta)
                 if let echo = row.meta?.object?["echo"]?.string { new.append(ChatMessage(id: id, text: echo, fromUser: true)) }
             } else {
-                new.append(ChatMessage(id: id, text: row.body, fromUser: true))
+                new.append(Self.userMessage(id: id, body: row.body, meta: row.meta))
             }
         } else {
             for (i, seg) in YuiFence.split(row.body).enumerated() {

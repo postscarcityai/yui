@@ -38,7 +38,9 @@ targets:
         UILaunchScreen: {}
         ITSAppUsesNonExemptEncryption: false
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
-        NSCameraUsageDescription: Your agents can ask for a photo, like your plate or a receipt. Yui sends it only to the agent that asked.
+        NSCameraUsageDescription: Send a photo to an agent, or take one when it asks, like your plate or a receipt. Yui sends it only to the agent in that thread.
+        NSMicrophoneUsageDescription: Hold the mic to talk to your agent. Yui turns your words into text on your phone and sends the text.
+        NSSpeechRecognitionUsageDescription: Hold the mic to talk to your agent. Your words become text on your phone before they are sent.
         # yui://agent/<id>/thread opens that agent's thread (push taps, links from other channels).
         CFBundleURLTypes:
           - CFBundleURLName: com.yuigui.app

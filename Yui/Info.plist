@@ -34,7 +34,11 @@
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
 	<key>NSCameraUsageDescription</key>
-	<string>Your agents can ask for a photo, like your plate or a receipt. Yui sends it only to the agent that asked.</string>
+	<string>Send a photo to an agent, or take one when it asks, like your plate or a receipt. Yui sends it only to the agent in that thread.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Hold the mic to talk to your agent. Yui turns your words into text on your phone and sends the text.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Hold the mic to talk to your agent. Your words become text on your phone before they are sent.</string>
 	<key>UILaunchScreen</key>
 	<dict/>
 	<key>UISupportedInterfaceOrientations</key>

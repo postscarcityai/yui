@@ -47,7 +47,8 @@ final class ComposerTests: XCTestCase {
 
         let after = field(app)
         XCTAssertEqual(shown(after), "", "the sent words are still in the composer")
-        XCTAssertFalse(app.buttons["Send"].isEnabled, "Send is live on an empty composer")
+        XCTAssertFalse(app.buttons["Send"].exists, "Send is up on an empty composer")
+        XCTAssertTrue(app.descendants(matching: .any)["talk"].exists, "an empty composer shows the mic")
         XCTAssertEqual(app.staticTexts.matching(NSPredicate(format: "label == %@", text)).count, 1, "sent twice")
         XCTAssertTrue(app.keyboards.firstMatch.exists, "the keyboard went away after Send")
 

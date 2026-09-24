@@ -260,7 +260,7 @@ struct CameraPreset: View {
 }
 
 /// The system camera, one shot. Returns the photo's bytes, or nil on cancel.
-private struct CameraCapture: UIViewControllerRepresentable {
+struct CameraCapture: UIViewControllerRepresentable {
     let front: Bool
     let done: (Data?) -> Void
 
