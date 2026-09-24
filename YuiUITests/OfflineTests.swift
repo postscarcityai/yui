@@ -55,6 +55,9 @@ final class OfflineTests: XCTestCase {
             field.tap()
             field.typeText(text)
             app.buttons["Send"].tap()
+            // Queued on the phone, not sent yet: the words still leave the composer (YUI-50).
+            let left = (app.descendants(matching: .any)["composer"].firstMatch.value as? String) ?? ""
+            XCTAssertTrue(left.isEmpty || left == "Say something nice", "\(text) stayed in the composer: \(left)")
         }
         func text(_ s: String) -> XCUIElement {
             app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", s)).firstMatch

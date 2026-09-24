@@ -31,6 +31,12 @@ struct ChatView: View {
     @State private var sending = false
     @State private var talk = PushToTalk()
     @State private var composerNote: String?
+    /// The thread's scroll, and whether it is far enough up to offer the way back down (YUI-50).
+    @State private var position = ScrollPosition(edge: .bottom)
+    @State private var scrolledUp = false
+    /// Agent messages that landed while scrolled up: the count on the arrow.
+    @State private var unread = 0
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         let c = theme.swatch(scheme)
@@ -85,7 +91,24 @@ struct ChatView: View {
                         .padding(.vertical, theme.spacing.m)
                     }
                     .defaultScrollAnchor(.bottom)
+                    .scrollPosition($position)
                     .scrollDismissesKeyboard(.interactively)
+                    // How far above the newest message the view sits, in screens.
+                    .onScrollGeometryChange(for: CGFloat.self) { geo in
+                        // containerSize is inside the insets (nav bar above, composer below).
+                        let below = geo.contentSize.height - geo.contentInsets.top - geo.contentOffset.y - geo.containerSize.height
+                        return below / max(geo.containerSize.height, 1)
+                    } action: { _, screens in
+                        followScroll(screens: screens)
+                    }
+                    .onChange(of: store.messages.map(\.id)) { old, new in countNew(old: old, new: new) }
+                    .overlay(alignment: .bottom) {
+                        if scrolledUp {
+                            JumpToBottom(unread: unread, action: jumpToBottom)
+                                .padding(.bottom, theme.spacing.m)
+                                .transition(reduceMotion ? .opacity : .scale(scale: 0.6).combined(with: .opacity))
+                        }
+                    }
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -207,6 +230,18 @@ struct ChatView: View {
             }
             try? await Task.sleep(for: .seconds(2.5))
             store.stream(text.replacingOccurrences(of: "\\n", with: "\n"))
+        }
+        // -yuiIncomingWhenUp <n>: n agent messages land a second after the thread is first scrolled up (YUI-50).
+        .task(id: scrolledUp) {
+            let n = UserDefaults.standard.integer(forKey: "yuiIncomingWhenUp")
+            guard n > 0, scrolledUp, !store.messages.contains(where: { $0.text.hasPrefix("While you were up there") }) else { return }
+            try? await Task.sleep(for: .seconds(1))
+            for i in 1...n {
+                withAnimation(theme.spring) {
+                    store.messages.append(ChatMessage(text: "While you were up there, note \(i) of \(n).", fromUser: false))
+                }
+                try? await Task.sleep(for: .milliseconds(300))
+            }
         }
         // -yuiThreadRows <path>: a JSON array of yui_messages rows, loaded the way a
         // reopened thread loads them (answers-on-reopen tests, no network).
@@ -496,6 +531,36 @@ struct ChatView: View {
         withAnimation(.easeOut(duration: 0.2)) { store.reacting = nil }
     }
 
+    /// More than about a screen above the newest message: the arrow shows. It
+    /// goes once you are back at the bottom, and the count goes with it.
+    private func followScroll(screens: CGFloat) {
+        let up = screens > 0.9 ? true : screens < 0.04 ? false : scrolledUp
+        guard up != scrolledUp else { return }
+        withAnimation(reduceMotion ? .easeInOut(duration: 0.2) : theme.spring) {
+            scrolledUp = up
+            if !up { unread = 0 }
+        }
+    }
+
+    /// New rows in the thread. Yours always brings you to the bottom; the
+    /// agent's, while you read further up, add to the arrow's count.
+    private func countNew(old: [String], new: [String]) {
+        let before = Set(old)
+        let added = store.messages.filter { !before.contains($0.id) }
+        guard !added.isEmpty else { return }
+        if added.contains(where: \.fromUser) {
+            jumpToBottom()
+        } else if scrolledUp {
+            withAnimation(theme.spring) { unread += added.count }
+        }
+    }
+
+    private func jumpToBottom() {
+        withAnimation(reduceMotion ? nil : .spring(response: 0.4, dampingFraction: 0.9)) {
+            position.scrollTo(edge: .bottom)
+        }
+    }
+
     /// Empties the field and swaps in a new one, keeping the keyboard up.
     private func clearComposer() {
         draft = ""
@@ -524,6 +589,16 @@ struct ChatView: View {
             return [ChatMessage(text: "Saturday workout?", fromUser: true),
                     ChatMessage(text: "Want me to set up Saturday? Squats 5x5 at 185, then a 20 minute tabata, done by 10.",
                                 fromUser: false)]
+        }
+        // -yuiLongThread <n>: n back-and-forth messages, enough to scroll (YUI-50).
+        let long = UserDefaults.standard.integer(forKey: "yuiLongThread")
+        if long > 0 {
+            return (1...long).map { i in
+                i.isMultiple(of: 2)
+                    ? ChatMessage(text: "Message \(i). Here's a longer answer so the thread fills the screen the way a real one does.",
+                                  fromUser: false)
+                    : ChatMessage(text: "Message \(i)", fromUser: true)
+            }
         }
         if let name = UserDefaults.standard.string(forKey: "yuiYL"), let text = YLSamples.text(name) {
             return [ChatMessage(text: "Show me the \(name) one", fromUser: true),
@@ -569,6 +644,7 @@ private struct Bubble: View {
     var open: () -> Void = {}
     var react: (Reaction?) -> Void = { _ in }
     @Environment(\.yuiTheme) private var theme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         HStack(alignment: .bottom, spacing: theme.spacing.s) {
@@ -589,11 +665,52 @@ private struct Bubble: View {
             if !message.fromUser { Spacer(minLength: 48) }
         }
         .animation(.easeInOut(duration: 0.3), value: pending)
-        .transition(message.fromUser
-            // Sent: lifts off the composer and floats up into the thread.
+        .transition(reduceMotion ? .opacity : message.fromUser
+            // Sent: lifts off the composer and floats up into the thread. Reduce Motion: a fade.
             ? .asymmetric(insertion: .offset(y: 56).combined(with: .scale(scale: 0.8, anchor: .bottomTrailing))
                 .combined(with: .opacity), removal: .opacity)
             : .scale(scale: 0.85, anchor: .bottomLeading).combined(with: .opacity))
+    }
+}
+
+/// Scrolled up in a long thread: one round arrow back to the newest message,
+/// with a count of the agent's messages that arrived meanwhile (YUI-50).
+private struct JumpToBottom: View {
+    let unread: Int
+    let action: () -> Void
+    @Environment(\.yuiTheme) private var theme
+    @Environment(\.colorScheme) private var scheme
+
+    var body: some View {
+        let c = theme.swatch(scheme)
+        Button(action: action) {
+            Image(systemName: "arrow.down")
+                .font(theme.font(theme.type.body, .black))
+                .foregroundStyle(c.ink)
+                .frame(width: 44, height: 44)
+                .background(c.surface, in: Circle())
+                .overlay(Circle().stroke(c.outline, lineWidth: 1.5))
+                .shadow(color: .black.opacity(scheme == .dark ? 0.4 : 0.12), radius: 8, y: 3)
+                .overlay(alignment: .topTrailing) {
+                    if unread > 0 {
+                        Text(unread > 99 ? "99+" : "\(unread)")
+                            .font(theme.font(theme.type.caption, .black))
+                            .monospacedDigit()
+                            .contentTransition(.numericText())
+                            .foregroundStyle(c.onAccent)
+                            .padding(.horizontal, 6)
+                            .frame(minWidth: 22, minHeight: 22)
+                            .background(c.accent, in: Capsule())
+                            .overlay(Capsule().stroke(c.background, lineWidth: 2))
+                            .offset(x: 8, y: -6)
+                            .transition(.scale.combined(with: .opacity))
+                    }
+                }
+        }
+        .buttonStyle(BounceButtonStyle())
+        .accessibilityLabel("Jump to newest")
+        .accessibilityValue(unread > 0 ? "\(unread) new" : "")
+        .accessibilityIdentifier("jump-to-bottom")
     }
 }
 

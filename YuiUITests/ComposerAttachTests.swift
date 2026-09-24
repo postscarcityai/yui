@@ -56,6 +56,8 @@ final class ComposerAttachTests: XCTestCase {
         XCTAssertTrue(sent.waitForExistence(timeout: 5), "the photo never reached the thread")
         XCTAssertTrue(app.staticTexts["Lunch, what do you think?"].exists, "the caption is missing")
         XCTAssertFalse(attachment.exists, "the photo stayed in the composer")
+        let left = (field.value as? String) ?? ""
+        XCTAssertTrue(left.isEmpty || left == "Say something nice", "the caption stayed in the composer: \(left)")
         sleep(2)
         // The thread lets the keyboard go on an interactive drag, so pull it down past the bottom.
         if app.keyboards.firstMatch.exists {

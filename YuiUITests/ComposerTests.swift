@@ -82,4 +82,40 @@ final class ComposerTests: XCTestCase {
         XCTAssertEqual(shown(field(app)), "", "the keyboard put the sent words back in the composer")
         XCTAssertEqual(mine().count, 1, "sent twice")
     }
+
+    /// A tap on a screen sends too (YUI-50): its echo lands in the thread and
+    /// nothing turns up in the composer. The next typed message still goes.
+    func testScreenTapLeavesTheComposerEmpty() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-yuiDemoAccount", "-yuiYL", "choose", "-appearance", "light"]
+        app.launch()
+        let push = app.buttons["Push"]
+        XCTAssertTrue(push.waitForExistence(timeout: 20), "no screen to tap")
+        let pushes = app.descendants(matching: .any).matching(NSPredicate(format: "label == %@", "Push"))
+        let before = pushes.count
+        push.tap()
+        let echoed = expectation(for: NSPredicate(format: "count > %d", before), evaluatedWith: pushes)
+        wait(for: [echoed], timeout: 5)
+        XCTAssertEqual(shown(field(app)), "", "a screen tap left words in the composer")
+        XCTAssertFalse(app.buttons["Send"].exists, "Send is up on an empty composer")
+        field(app).tap()
+        field(app).typeText("Push it is")
+        app.buttons["Send"].tap()
+        XCTAssertTrue(app.staticTexts["Push it is"].waitForExistence(timeout: 5))
+        XCTAssertEqual(shown(field(app)), "", "the message after a screen tap stayed in the composer")
+    }
+
+    /// A reaction goes to the agent as a turn (YUI-49): the composer stays empty.
+    func testReactionLeavesTheComposerEmpty() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-yuiDemoAccount", "-yuiReactDemo", "bar", "-appearance", "light"]
+        app.launch()
+        let love = app.buttons["react-love it"]
+        XCTAssertTrue(love.waitForExistence(timeout: 20), "the reaction bar never opened")
+        love.tap()
+        let reacted = app.descendants(matching: .any).matching(NSPredicate(format: "value BEGINSWITH %@", "Reacted")).firstMatch
+        XCTAssertTrue(reacted.waitForExistence(timeout: 5), "the reaction never landed")
+        XCTAssertEqual(shown(field(app)), "", "a reaction left words in the composer")
+        XCTAssertFalse(app.buttons["Send"].exists, "Send is up on an empty composer")
+    }
 }
