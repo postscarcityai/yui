@@ -3,6 +3,9 @@ options:
   bundleIdPrefix: com.yuigui
   deploymentTarget:
     iOS: "26.0"
+packages:
+  YuiLines:
+    path: Packages/YuiLines
 settings:
   base:
     MARKETING_VERSION: "0.1.0"
@@ -15,6 +18,8 @@ targets:
     type: application
     platform: iOS
     sources: [Yui/Sources, Yui/Resources]
+    dependencies:
+      - package: YuiLines
     info:
       path: Yui/Info.plist
       properties:
