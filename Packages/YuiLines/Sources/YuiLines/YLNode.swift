@@ -10,6 +10,8 @@ public struct YLNode: Codable, Equatable, Sendable {
         case save
         /// Restore the screen saved as `name`.
         case show
+        /// Take the screen saved as `name` off the shelf.
+        case forget
         /// Empty the screen.
         case clear
         /// Bare `>S`: later lines go to `screen`.

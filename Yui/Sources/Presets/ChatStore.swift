@@ -182,8 +182,48 @@ final class ChatStore {
     /// `project open=name`: put the saved screen `name` back, the same as the
     /// agent sending `show name` in reply `id` (spec: project).
     func show(_ name: String, screen: String, in id: String) {
-        guard let i = messages.firstIndex(where: { $0.id == id }) else { return }
-        withAnimation(spring) { messages[i].yl?.apply(YLNode(op: .show, screen: screen, name: name, line: "show \(name)")) }
+        guard let i = messages.firstIndex(where: { $0.id == id }), var yl = messages[i].yl else { return }
+        apply(YLNode(op: .show, screen: screen, name: name, line: "show \(name)"), to: &yl)
+        withAnimation(spring) { messages[i].yl = yl }
+    }
+
+    // MARK: Shelf (YUI-32, spec YL.md section 5, saved screens)
+
+    /// The open agent's saved screens. Rebuilt from the thread as it loads, and
+    /// kept on the phone so it outlives the thread's retention.
+    private(set) var shelf = Shelf()
+
+    /// `show name`: this reply's own save first, else the shelf (a save from an
+    /// earlier reply), else the usual error.
+    private func apply(_ node: YLNode, to screen: inout YLScreen) {
+        if node.op == .show, let name = node.name, !screen.hasSaved(name), let saved = shelf[name] {
+            screen.restore(saved, on: node.screen)
+        } else {
+            screen.apply(node)
+        }
+    }
+
+    /// A reply's saves and forgets onto the shelf, stamped with the reply's time.
+    private func file(_ ops: [ShelfOp], at: Date) {
+        var changed = false
+        for op in ops { changed = shelf.apply(op, at: at) || changed }
+        if changed, let agentID = agent?.id { shelf.store(agentID: agentID) }
+    }
+
+    /// A tap on the shelf: the saved screen opens on the stage, fresh, with no turn.
+    func reopen(_ name: String) {
+        guard let saved = shelf[name] else { return }
+        var screen = YLScreen()
+        screen.restore(saved, on: "full")
+        let m = ChatMessage(id: "shelf-\(UUID().uuidString.lowercased())", text: "", fromUser: false, yl: screen)
+        withAnimation(spring) { messages.append(m) }
+        openStage(m.id)
+    }
+
+    /// Held on the shelf, Remove. Only a later save brings it back.
+    func unshelve(_ name: String) {
+        withAnimation(spring) { shelf.remove(name) }
+        if let agentID = agent?.id { shelf.store(agentID: agentID) }
     }
 
     // MARK: Thread
@@ -211,6 +251,7 @@ final class ChatStore {
         self.account = account
         messages = []
         answers = [:]
+        shelf = agent.map { Shelf.load(agentID: $0.id) } ?? Shelf()
         reactions = [:]
         reacting = nil
         stageID = nil
@@ -374,9 +415,10 @@ final class ChatStore {
                            let j = messages.lastIndex(where: { $0.yl?.has(t) == true }) {
                             messages[j].yl?.apply(node)
                         } else {
-                            screen.apply(node)
+                            apply(node, to: &screen)
                         }
                     }
+                    file(screen.shelfOps, at: YuiTime.date(row.createdAt) ?? .now)
                     if let agentID = agent?.id { for look in screen.looks { onLook?(agentID, look, row.createdAt) } }
                     new.append(ChatMessage(id: "\(id)#\(i)", text: "", fromUser: false, yl: screen))
                 }
@@ -405,10 +447,11 @@ final class ChatStore {
 
     private func apply(_ nodes: [YLNode], to id: String) {
         guard !nodes.isEmpty, let i = messages.firstIndex(where: { $0.id == id }) else { return }
-        let before = messages[i].yl
-        withAnimation(spring) {
-            for n in nodes { messages[i].yl?.apply(n) }
-        }
+        guard var yl = messages[i].yl else { return }
+        let before = yl
+        for n in nodes { apply(n, to: &yl) }
+        withAnimation(spring) { messages[i].yl = yl }
+        file(Array(yl.shelfOps.dropFirst(before.shelfOps.count)), at: .now)
         stageUpdate(id, before: before)
         // Demo streams restyle live too, stamped now.
         for n in nodes where n.op == .theme {

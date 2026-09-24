@@ -137,11 +137,13 @@ public struct YLParser: Sendable {
             return YLNode(op: .patch, screen: screen, target: target, props: props, line: line)
         }
 
-        if head == "save" || head == "show" {
-            guard let name = tokens.first?.text, !name.isEmpty else {
+        if head == "save" || head == "show" || head == "forget" {
+            // The name is the rest of the line: `save leg day` is "leg day".
+            let name = tokens.map(\.text).filter { !$0.isEmpty }.joined(separator: " ")
+            guard !name.isEmpty else {
                 return YLNode(op: .error, screen: screen, message: "\(head): needs a name", line: line)
             }
-            return YLNode(op: head == "save" ? .save : .show, screen: screen, name: name, line: line)
+            return YLNode(op: head == "save" ? .save : head == "show" ? .show : .forget, screen: screen, name: name, line: line)
         }
         if head == "clear" { return YLNode(op: .clear, screen: screen, line: line) }
         if head == "end" { return YLNode(op: .end, screen: screen, line: line) }

@@ -13,6 +13,8 @@ struct YLComponent: Identifiable, Equatable, Sendable {
     var line: String
     /// The group head's YL id when this add joined a deck, plan or narrate.
     var inGroup: String? = nil
+    /// The saved screen it came back from (`show name`, the shelf): its events carry `saved`.
+    var saved: String? = nil
 
     var id: Int { serial }
 }
@@ -25,7 +27,9 @@ struct YLScreen: Equatable, Sendable {
     private(set) var errors: [YLNode] = []
     /// `theme` lines in this reply, in order. They restyle the agent, not the screen.
     private(set) var looks: [[String: String]] = []
-    private var saved: [String: [YLComponent]] = [:]
+    private var saved: [String: SavedScreen] = [:]
+    /// This reply's saves and forgets, in order, for the thread's shelf (YUI-32).
+    private(set) var shelfOps: [ShelfOp] = []
     private var serial = 0
     /// The component count when the last `close` line landed. Staged components
     /// at or under it arrived before the agent closed the stage (spec section 5).
@@ -55,20 +59,22 @@ struct YLScreen: Equatable, Sendable {
         case .clear:
             components.removeAll { $0.screen == node.screen }
         case .save:
-            saved[node.name ?? ""] = components.filter { $0.screen == node.screen }
+            let name = node.name ?? ""
+            let shot = SavedScreen(name: name, components: components.filter { $0.screen == node.screen },
+                                   stage: node.screen == "full")
+            saved[name] = shot
+            shelfOps.append(.save(shot))
         case .show:
             guard let shot = saved[node.name ?? ""] else {
                 errors.append(YLNode(op: .error, screen: node.screen, message: "show: nothing saved as \"\(node.name ?? "")\"",
                                      line: node.line))
                 return
             }
-            components.removeAll { $0.screen == node.screen }
-            for var c in shot {
-                serial += 1
-                c = YLComponent(serial: serial, ylID: c.ylID, preset: c.preset, screen: node.screen, props: c.props, line: c.line,
-                                inGroup: c.inGroup)
-                components.append(c)
-            }
+            restore(shot, on: node.screen)
+        case .forget:
+            let name = node.name ?? ""
+            saved[name] = nil
+            shelfOps.append(.forget(name))
         case .focus, .end:
             // Group membership rides on each add (`inGroup`), so `end` has nothing left to do here.
             break
@@ -82,6 +88,20 @@ struct YLScreen: Equatable, Sendable {
     }
 
     var isEmpty: Bool { components.isEmpty && errors.isEmpty && looks.isEmpty }
+
+    /// Whether this reply saved `name` itself (a `show` of it needs no shelf).
+    func hasSaved(_ name: String) -> Bool { saved[name] != nil }
+
+    /// Replaces `screen` with `parts`, as new components: fresh serials, so
+    /// timers start over and nothing is answered yet.
+    mutating func restore(_ parts: [YLComponent], on screen: String) {
+        components.removeAll { $0.screen == screen }
+        for c in parts {
+            serial += 1
+            components.append(YLComponent(serial: serial, ylID: c.ylID, preset: c.preset, screen: screen, props: c.props,
+                                          line: c.line, inGroup: c.inGroup, saved: c.saved))
+        }
+    }
 
     /// Whether a patch aimed at `target` (an id or a preset name) lands here.
     func has(_ target: String) -> Bool {
@@ -197,7 +217,9 @@ extension YLComponent {
     }
 
     func event(_ value: [String: YLValue], echo: String? = nil) -> YLEvent {
-        YLEvent(id: ylID, preset: preset, value: value, echo: echo)
+        var value = value
+        if let saved { value["saved"] = .string(saved) }
+        return YLEvent(id: ylID, preset: preset, value: value, echo: echo)
     }
 
     /// An answer event. Answers can change (spec section 7): every one after the

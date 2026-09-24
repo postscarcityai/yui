@@ -102,6 +102,13 @@ struct ChatView: View {
                         followScroll(screens: screens)
                     }
                     .onChange(of: store.messages.map(\.id)) { old, new in countNew(old: old, new: new) }
+                    // The agent's saved screens, one tap from the stage (YUI-32).
+                    .safeAreaInset(edge: .top, spacing: 0) {
+                        if !store.shelf.screens.isEmpty {
+                            ShelfBar(screens: store.shelf.screens, open: store.reopen, remove: store.unshelve)
+                                .transition(.move(edge: .top).combined(with: .opacity))
+                        }
+                    }
                     .overlay(alignment: .bottom) {
                         if scrolledUp {
                             JumpToBottom(unread: unread, action: jumpToBottom)
@@ -250,6 +257,11 @@ struct ChatView: View {
                   let data = FileManager.default.contents(atPath: path),
                   let rows = try? JSONDecoder().decode([ThreadRow].self, from: data) else { return }
             store.load(rows)
+            // -yuiShelfOpen <name>: tap that saved screen on the shelf, for screenshots.
+            if let name = UserDefaults.standard.string(forKey: "yuiShelfOpen") {
+                try? await Task.sleep(for: .seconds(1))
+                store.reopen(name)
+            }
         }
         #endif
         .task {
