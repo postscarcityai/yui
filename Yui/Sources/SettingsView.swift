@@ -27,6 +27,7 @@ struct SettingsView: View {
                 .background(c.surface, in: .rect(cornerRadius: theme.radius.card))
                 .overlay(RoundedRectangle(cornerRadius: theme.radius.card).stroke(c.outline, lineWidth: 1.5))
                 AgentAccessSection()
+                HelpSection()
                 AccountSection()
             }
             .padding(theme.spacing.xl)
@@ -111,6 +112,37 @@ private struct AgentAccessSection: View {
     }
 }
 
+/// Settings > Help and feedback: answers on yuigui.com/help, and a mail draft
+/// that already names the build. TestFlight's own feedback still works too.
+private struct HelpSection: View {
+    @Environment(\.yuiTheme) private var theme
+    @Environment(\.colorScheme) private var scheme
+
+    var body: some View {
+        let c = theme.swatch(scheme)
+        VStack(alignment: .leading, spacing: theme.spacing.m) {
+            Text("Help and feedback").font(theme.font(theme.type.caption, .bold)).foregroundStyle(c.inkSoft)
+            Link(destination: YuiBackend.help) {
+                Label("Help and questions", systemImage: "questionmark.circle.fill")
+                    .font(theme.font(theme.type.body, .semibold))
+            }
+            Link(destination: YuiBackend.startGuide) {
+                Label("Connect an agent", systemImage: "link")
+                    .font(theme.font(theme.type.body, .semibold))
+            }
+            Link(destination: YuiBackend.feedbackMail()) {
+                Label("Email us", systemImage: "envelope.fill")
+                    .font(theme.font(theme.type.body, .semibold))
+            }
+        }
+        .tint(c.ink)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(theme.spacing.l)
+        .background(c.surface, in: .rect(cornerRadius: theme.radius.card))
+        .overlay(RoundedRectangle(cornerRadius: theme.radius.card).stroke(c.outline, lineWidth: 1.5))
+    }
+}
+
 /// Who is signed in, sign out, privacy policy, and in-app account deletion.
 private struct AccountSection: View {
     @Environment(Account.self) private var account
@@ -125,9 +157,11 @@ private struct AccountSection: View {
         VStack(alignment: .leading, spacing: theme.spacing.m) {
             Text("Account").font(theme.font(theme.type.caption, .bold)).foregroundStyle(c.inkSoft)
             HStack(spacing: theme.spacing.s) {
-                Image(systemName: "apple.logo").font(theme.font(theme.type.title, .bold)).foregroundStyle(c.ink)
+                Image(systemName: account.isReviewAccount ? "sparkles" : "apple.logo")
+                    .font(theme.font(theme.type.title, .bold)).foregroundStyle(c.ink)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Signed in with Apple").font(theme.font(theme.type.body, .bold)).foregroundStyle(c.ink)
+                    Text(account.isReviewAccount ? "Demo account" : "Signed in with Apple")
+                        .font(theme.font(theme.type.body, .bold)).foregroundStyle(c.ink)
                     if let email = account.session?.email {
                         Text(email).font(theme.font(theme.type.caption)).foregroundStyle(c.inkSoft)
                             .lineLimit(1).truncationMode(.middle)

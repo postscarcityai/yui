@@ -3,6 +3,7 @@
 //   {grant_type: "apple", identity_token, nonce, authorization_code?}
 //   {grant_type: "refresh", refresh_token}
 //   {grant_type: "sign_out", refresh_token}
+//   {grant_type: "review", code}   App Review only, see review() below
 //
 // Returns {access_token, expires_in, refresh_token, user}. Yui users never
 // enter Supabase Auth (PROOF keeps signups disabled).
@@ -30,6 +31,7 @@ type Body = {
   nonce?: string;
   authorization_code?: string;
   refresh_token?: string;
+  code?: string;
 };
 
 Deno.serve(async (req) => {
@@ -48,6 +50,8 @@ Deno.serve(async (req) => {
         return await refresh(body.refresh_token);
       case "sign_out":
         return await signOut(body.refresh_token);
+      case "review":
+        return await review(body.code);
       default:
         return json({ error: "unsupported_grant_type" }, 400);
     }
@@ -116,6 +120,32 @@ async function signInWithApple(body: Body): Promise<Response> {
     }
   }
 
+  return json(await issueSession(user.id, user));
+}
+
+// App Review sign-in. Apple's reviewer can't prove Yui with Sign in with
+// Apple alone: a new account has no agent until the person connects their own.
+// The review notes carry a code for ONE throwaway account (YUI_REVIEW_USER)
+// whose demo agent answers (hermes-plugin/demo_agent.py). Off unless both
+// secrets are set. The code is long and random, so no throttle. If the
+// reviewer deletes that account, the next review sign-in recreates it empty
+// and the demo agent pairs itself again.
+async function review(code?: string): Promise<Response> {
+  const want = Deno.env.get("YUI_REVIEW_CODE");
+  const userId = Deno.env.get("YUI_REVIEW_USER");
+  if (!want || !userId || !code) return json({ error: "invalid_grant" }, 401);
+  const norm = (s: string) => s.toUpperCase().replace(/[^A-Z0-9]/g, "");
+  if ((await sha256Hex(norm(code))) !== (await sha256Hex(norm(want)))) {
+    return json({ error: "invalid_grant" }, 401);
+  }
+  const db = admin();
+  const { data: user, error } = await db.from("yui_users")
+    .upsert({ id: userId, apple_sub: `review.${userId}`, last_sign_in_at: new Date().toISOString() },
+      { onConflict: "id" })
+    .select("id, email, created_at")
+    .single();
+  if (error) throw error;
+  await assertActive(db, user.id);
   return json(await issueSession(user.id, user));
 }
 

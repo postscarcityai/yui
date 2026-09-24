@@ -92,9 +92,20 @@ final class Account {
         store(reply, appleUserID: credential.user)
     }
 
+    /// App Review: the code in the review notes signs in to the one demo
+    /// account, whose demo agent answers. No Apple ID behind it.
+    func signIn(reviewCode: String) async throws {
+        let reply: TokenReply = try await post("yui-auth", ["grant_type": "review", "code": reviewCode])
+        store(reply, appleUserID: Self.reviewAppleID)
+    }
+
+    static let reviewAppleID = "review"
+    var isReviewAccount: Bool { session?.appleUserID == Self.reviewAppleID }
+
     /// Apple can revoke Yui from Settings > Apple ID; check on launch.
     func checkAppleCredential() async {
-        guard let appleID = session?.appleUserID, appleID != "demo", appleID != "debug" else { return }
+        guard let appleID = session?.appleUserID, appleID != "demo", appleID != "debug",
+              appleID != Self.reviewAppleID else { return }
         let state = try? await ASAuthorizationAppleIDProvider().credentialState(forUserID: appleID)
         if state == .revoked || state == .notFound { clear() }
     }

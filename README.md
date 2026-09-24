@@ -112,6 +112,8 @@ Rates are token buckets: `burst` requests at once, refilled at `per minute`. A p
 
 `scripts/testflight.sh` archives and uploads with an App Store Connect API key read from `~/.appstoreconnect/`. Never commit keys.
 
+**App Review demo.** Apple's reviewer taps **Demo code** on the sign-in screen and enters the code from the review notes (App Store Connect only, never in this repo). `yui-auth` grant `review` checks it against the edge secret `YUI_REVIEW_CODE` and opens the one account `YUI_REVIEW_USER`; with either secret unset the grant is off. That account's agent is `hermes-plugin/demo_agent.py`: a scripted agent with canned Yui Lines screens, no model and no tools, on its own connector token (`~/.hermes/yui/demo-connector.json`), kept up by launchd. If the reviewer deletes the account, the next demo sign-in recreates it and the demo agent pairs itself again. Gate: `python3 supabase/tests/review_test.py` (21 checks). The App Privacy answers live in `docs/APP-PRIVACY.md`.
+
 ## Contributing
 
 Issues and pull requests are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) and the [Code of Conduct](CODE_OF_CONDUCT.md). Found a security problem? Please read [SECURITY.md](SECURITY.md) first.
