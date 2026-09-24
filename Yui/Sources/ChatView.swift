@@ -1,32 +1,30 @@
 import SwiftUI
 
-struct ChatMessage: Identifiable, Equatable {
-    let id = UUID()
-    var text: String
-    var fromUser: Bool
-}
-
 /// Phase 1 shell: the chat screen every agent starts from.
-/// Presets render inline here once the Yui Lines parser lands.
+/// Agent replies in Yui Lines render inline as presets.
 struct ChatView: View {
     @Environment(\.yuiTheme) private var theme
     @Environment(\.colorScheme) private var scheme
     @State private var draft = ""
-    @State private var messages: [ChatMessage] = ProcessInfo.processInfo.arguments.contains("-yuiDemo")
-        ? ChatView.demo : []
+    @State private var store = ChatStore(messages: ChatView.seed)
     @State private var showSettings = ProcessInfo.processInfo.arguments.contains("-yuiSettings")
+    @State private var showPaste = ProcessInfo.processInfo.arguments.contains("-yuiPaste")
     @FocusState private var focused: Bool
 
     var body: some View {
         let c = theme.swatch(scheme)
         NavigationStack {
             Group {
-                if messages.isEmpty {
+                if store.messages.isEmpty {
                     EmptyChat()
                 } else {
                     ScrollView {
-                        LazyVStack(spacing: theme.spacing.m) {
-                            ForEach(messages) { Bubble(message: $0) }
+                        // Not Lazy: LazyVStack drops preset cards from the accessibility tree (iOS 26/27),
+                        // so VoiceOver and UI tests saw only the plain bubbles.
+                        VStack(spacing: theme.spacing.m) {
+                            ForEach(store.messages) { m in
+                                if let yl = m.yl { YLReply(screen: yl) } else { Bubble(message: m) }
+                            }
                         }
                         .padding(.horizontal, theme.spacing.l)
                         .padding(.vertical, theme.spacing.m)
@@ -40,6 +38,10 @@ struct ChatView: View {
             .safeAreaInset(edge: .bottom) { inputBar(c) }
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("Paste YL", systemImage: "chevron.left.forwardslash.chevron.right") { showPaste = true }
+                        .tint(c.inkSoft)
+                }
                 ToolbarItem(placement: .principal) {
                     HStack(spacing: theme.spacing.s) {
                         MascotAvatar(size: 30)
@@ -57,7 +59,14 @@ struct ChatView: View {
                     .presentationDetents([.medium])
                     .presentationCornerRadius(theme.radius.card)
             }
+            .sheet(isPresented: $showPaste) {
+                PasteYLView(store: store)
+                    .presentationDetents([.large])
+                    .presentationCornerRadius(theme.radius.card)
+            }
         }
+        .environment(\.ylEmit, store.emit)
+        .onAppear { store.spring = theme.spring }
         .tint(c.accent)
     }
 
@@ -92,12 +101,12 @@ struct ChatView: View {
     private func send() {
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
-        withAnimation(theme.spring) { messages.append(ChatMessage(text: text, fromUser: true)) }
+        withAnimation(theme.spring) { store.messages.append(ChatMessage(text: text, fromUser: true)) }
         draft = ""
         Task {
             try? await Task.sleep(for: .milliseconds(700))
             withAnimation(theme.spring) {
-                messages.append(ChatMessage(text: ChatView.replies.randomElement()!, fromUser: false))
+                store.messages.append(ChatMessage(text: ChatView.replies.randomElement()!, fromUser: false))
             }
         }
     }
@@ -112,8 +121,34 @@ struct ChatView: View {
         ChatMessage(text: "Hi Yui!", fromUser: true),
         ChatMessage(text: "Hi hi! I'm Yui. Ask me anything, or tell me what you want to get done today.", fromUser: false),
         ChatMessage(text: "Can you set up a 20 minute tabata for me?", fromUser: true),
-        ChatMessage(text: "On it. Timer cards land here once my presets are ready. Stretch first!", fromUser: false),
+        ChatMessage(text: "", fromUser: false, yl: YLScreen(YLSamples.text("tabata")!)),
     ]
+
+    /// `-yuiDemo` seeds a chat; `-yuiYL <sample>` seeds one YL reply (see `YLSamples`).
+    static var seed: [ChatMessage] {
+        if let name = UserDefaults.standard.string(forKey: "yuiYL"), let text = YLSamples.text(name) {
+            return [ChatMessage(text: "Show me the \(name) one", fromUser: true),
+                    ChatMessage(text: "", fromUser: false, yl: YLScreen(text))]
+        }
+        return ProcessInfo.processInfo.arguments.contains("-yuiDemo") ? demo : []
+    }
+}
+
+/// An agent reply in Yui Lines: the presets in line order, errors underneath.
+private struct YLReply: View {
+    let screen: YLScreen
+    @Environment(\.yuiTheme) private var theme
+
+    var body: some View {
+        HStack(alignment: .top, spacing: theme.spacing.s) {
+            MascotAvatar(size: 34)
+            VStack(alignment: .leading, spacing: theme.spacing.m) {
+                ForEach(screen.components) { PresetView(component: $0) }
+                ForEach(Array(screen.errors.enumerated()), id: \.offset) { YLErrorRow(node: $1) }
+            }
+        }
+        .transition(.opacity)
+    }
 }
 
 private struct Bubble: View {
