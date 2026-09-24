@@ -199,8 +199,11 @@ struct GalleryPreset: View {
         let s = theme.swatch(scheme)
         let r = radius ?? theme.radius.card
         let caption = i < caps.count ? caps[i] : ""
-        return MediaTile(src: url)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        // The picture is laid over Color.clear so the tile is exactly the size it was
+        // given. `.frame(maxWidth: .infinity, maxHeight: .infinity)` grew to a fill
+        // image's own height and spilled over Done, which then took no taps.
+        return Color.clear
+            .overlay { MediaTile(src: url) }
             .overlay(alignment: .bottomLeading) {
                 if !caption.isEmpty {
                     Text(caption)
@@ -237,18 +240,19 @@ struct GalleryPreset: View {
     }
 
     private func submit(_ s: Swatch) -> some View {
-        let fresh = !picked.isEmpty && picked != sent
+        // Done always answers, even with nothing ticked (TestFlight: "the done button
+        // doesn't work"). It reads "Sent" only until the picks change again.
+        let fresh = sent == nil || picked != sent
         return VStack(alignment: .leading, spacing: theme.spacing.xs) {
-            if let cap = c.number("max") {
-                Text("Pick up to \(YLComponent.format(cap))").font(theme.font(theme.type.caption, .semibold)).foregroundStyle(s.inkSoft)
-            }
+            Text(c.number("max").map { "Tap the circles to pick up to \(YLComponent.format($0))" } ?? "Tap the circles to pick")
+                .font(theme.font(theme.type.caption, .semibold)).foregroundStyle(s.inkSoft)
             OptionPill(text: sent != nil && !fresh ? "Sent" : c.string("submit") ?? "Done", fill: s.accent, ink: s.onAccent,
                        on: fresh, grow: true) {
                 let changed = sent != nil
                 sent = picked
                 let names = picked.map { i in i < caps.count && !caps[i].isEmpty ? caps[i] : "#\(i + 1)" }
                 emit(c.answer(["picked": .array(picked.map { .number(Double($0)) })],
-                              echo: "Picked " + names.joined(separator: ", "), changed: changed))
+                              echo: names.isEmpty ? "None of these" : "Picked " + names.joined(separator: ", "), changed: changed))
             }
             .disabled(!fresh)
         }

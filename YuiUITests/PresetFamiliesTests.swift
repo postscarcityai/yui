@@ -67,6 +67,13 @@ final class PresetFamiliesTests: XCTestCase {
         e.exists && !e.frame.isEmpty && e.frame.minY > 100 && e.frame.maxY < app.frame.maxY - 90 && e.isHittable
     }
 
+    /// Scroll the chat back in the avatar gutter: a swipe down the middle lands on
+    /// the compare slider, which takes the drag and the chat never moves.
+    private func gutterSwipeDown() {
+        let top = app.coordinate(withNormalizedOffset: CGVector(dx: 0.04, dy: 0.3))
+        top.press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.04, dy: 0.75)))
+    }
+
     private func scrollTo(_ e: XCUIElement, max: Int = 8) {
         var n = 0
         while !ready(e), n < max { app.swipeUp(velocity: .slow); n += 1 }
@@ -85,7 +92,7 @@ final class PresetFamiliesTests: XCTestCase {
         // The chat follows the stream to the last line; go back up to the grid.
         XCTAssertTrue(app.staticTexts["This week"].waitForExistence(timeout: 20), "the reply never finished")
         var n = 0
-        while !ready(picks.firstMatch), n < 10 { app.swipeDown(velocity: .slow); n += 1 }
+        while !ready(picks.firstMatch), n < 10 { gutterSwipeDown(); n += 1 }
         XCTAssertTrue(picks.firstMatch.exists, "the gallery never arrived")
         sleep(3)
         shot("1-gallery-grid")

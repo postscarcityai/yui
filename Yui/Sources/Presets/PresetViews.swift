@@ -238,15 +238,16 @@ struct ChoosePreset: View {
                 QuizMark(right: multi ? Set(right) == Set(sent) : right == sent, answer: right, why: c.string("why"))
             }
             if multi, !c.locked {
-                // After the first send the button reads "Sent" until the picks change again.
-                let fresh = !picked.isEmpty && picked != sent
+                // Done always answers, none included. After a send it reads "Sent"
+                // until the picks change again.
+                let fresh = sent == nil || picked != sent
                 OptionPill(text: sent != nil && !fresh ? "Sent" : c.string("submit") ?? "Done", fill: s.accent, ink: s.onAccent,
                            on: fresh, grow: true) {
                     let changed = sent != nil
                     sent = picked
                     var v: [String: YLValue] = ["picked": .array(picked.map(YLValue.string))]
                     if let right = c.quizAnswer { v["correct"] = .bool(Set(right) == Set(picked)) }
-                    emit(c.answer(v, echo: picked.joined(separator: ", "), changed: changed))
+                    emit(c.answer(v, echo: picked.isEmpty ? "None of these" : picked.joined(separator: ", "), changed: changed))
                 }
                 .disabled(!fresh)
             }
