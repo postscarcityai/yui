@@ -181,6 +181,13 @@ struct YLEmit: Sendable {
     @MainActor func callAsFunction(_ e: YLEvent) { send(e) }
 }
 
+/// Reads back a component's newest answer, `(reply scope, YL id)`, so answered
+/// components come back answered when the thread is reopened.
+struct YLAnswers: Sendable {
+    var read: @MainActor @Sendable (String, String) -> [String: YLValue]? = { _, _ in nil }
+    @MainActor func callAsFunction(_ scope: String, _ id: String) -> [String: YLValue]? { read(scope, id) }
+}
+
 extension YLComponent {
     func string(_ key: String) -> String? { props[key]?.string }
     func number(_ key: String) -> Double? { props[key]?.number }

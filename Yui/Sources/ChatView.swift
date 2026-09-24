@@ -142,6 +142,7 @@ struct ChatView: View {
         }
         .environment(\.ylEmit, store.emit)
         .environment(\.ylShow, store.ylShow)
+        .environment(\.ylAnswers, store.ylAnswers)
         .environment(\.yuiMedia, store.agent.flatMap { a in account.session?.userID == "demo" ? nil : YuiMedia(account: account, agentID: a.id) })
         .environment(\.ylTimers, store.timers)
         .onChange(of: agentStyle, initial: true) { store.style = agentStyle }
@@ -168,6 +169,14 @@ struct ChatView: View {
             }
             try? await Task.sleep(for: .seconds(2.5))
             store.stream(text.replacingOccurrences(of: "\\n", with: "\n"))
+        }
+        // -yuiThreadRows <path>: a JSON array of yui_messages rows, loaded the way a
+        // reopened thread loads them (answers-on-reopen tests, no network).
+        .task {
+            guard let path = UserDefaults.standard.string(forKey: "yuiThreadRows"),
+                  let data = FileManager.default.contents(atPath: path),
+                  let rows = try? JSONDecoder().decode([ThreadRow].self, from: data) else { return }
+            store.load(rows)
         }
         #endif
         .task {

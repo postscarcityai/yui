@@ -7,6 +7,8 @@ struct FormPreset: View {
     let c: YLComponent
     @State private var values: [String: YLValue] = [:]
     @State private var sent = false
+    @Environment(\.ylScope) private var scope
+    @Environment(\.ylAnswers) private var answers
     @Environment(\.yuiTheme) private var theme
     @Environment(\.colorScheme) private var scheme
     @Environment(\.ylEmit) private var emit
@@ -40,6 +42,13 @@ struct FormPreset: View {
             .disabled(!ready)
         }
         .disabled(sent)
+        // Reopened thread: a sent form comes back filled in and sent.
+        .onChange(of: answers(scope, c.ylID), initial: true) { _, v in
+            guard !sent, let form = v?["form"]?.object else { return }
+            // Number fields edit as text; they went out as numbers.
+            for f in fields { if let v = form[f.key] { values[f.key] = f.type == "number" ? v.number.map { .string(YLComponent.format($0)) } ?? v : v } }
+            sent = true
+        }
     }
 
     private func filled(_ f: FormField) -> Bool {

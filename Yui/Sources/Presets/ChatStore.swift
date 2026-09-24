@@ -77,8 +77,35 @@ final class ChatStore {
     /// environment of every preset (and every full-screen cover) each render.
     @ObservationIgnored private(set) lazy var emit = YLEmit { [weak self] e in self?.receive(e) }
 
+    // MARK: Answers
+
+    /// The newest answer for each component, by reply (message id) then YL id.
+    /// Filled from the thread's own event rows, so a reopened thread shows what
+    /// was chosen, picked or slid instead of blank components.
+    private(set) var answers: [String: [String: [String: YLValue]]] = [:]
+
+    /// Made once, like `emit`: presets read their answer back through it.
+    @ObservationIgnored private(set) lazy var ylAnswers = YLAnswers { [weak self] scope, id in self?.answers[scope]?[id] }
+
+    /// Files an answer under the reply that drew it: the newest message with a
+    /// component of that id and preset. YL ids repeat across replies (`n1` in
+    /// every one), and a later reply's `n1` owns every answer after it lands.
+    private func record(id: String, preset: String, value: [String: YLValue]) {
+        guard let m = messages.last(where: { $0.yl?.components.contains { $0.ylID == id && $0.preset == preset } == true })
+        else { return }
+        answers[m.id, default: [:]][id] = value
+    }
+
+    /// An event row (history, outbox or a live tap) as an answer: only answers carry an echo.
+    private func record(meta: YLValue?) {
+        guard let o = meta?.object, o["echo"] != nil, let id = o["id"]?.string, let preset = o["preset"]?.string,
+              let value = o["value"]?.object else { return }
+        record(id: id, preset: preset, value: value)
+    }
+
     func receive(_ e: YLEvent) {
         events.insert(e, at: 0)
+        if e.echo != nil { record(id: e.id, preset: e.preset, value: e.value) }
         #if DEBUG
         // `-yuiEventLog <path>`: UI tests read back the events a tap sent.
         if let path = UserDefaults.standard.string(forKey: "yuiEventLog"),
@@ -136,6 +163,7 @@ final class ChatStore {
         client = agent.map { ThreadClient(account: account, agentID: $0.id) }
         self.account = account
         messages = []
+        answers = [:]
         stageID = nil
         stageOpen = false
         seen = []
@@ -183,6 +211,7 @@ final class ChatStore {
         var new: [ChatMessage] = []
         for item in Outbox.shared.pending(agentID: agentID) where seen.insert(item.id).inserted {
             if item.kind == "event" {
+                record(meta: item.meta)
                 if let echo = item.meta?.object?["echo"]?.string { new.append(ChatMessage(id: item.id, text: echo, fromUser: true)) }
             } else {
                 new.append(ChatMessage(id: item.id, text: item.body, fromUser: true))
@@ -214,6 +243,11 @@ final class ChatStore {
         if first { restorePending() }
     }
 
+    /// Thread rows, oldest first, the way a poll adds them. Tests and `-yuiThreadRows` use it.
+    func load(_ rows: [ThreadRow]) {
+        for row in rows { add(row) }
+    }
+
     private func add(_ row: ThreadRow) {
         let id = row.id.lowercased()
         // Polls overlap: only a row not seen before can end the wait.
@@ -222,6 +256,7 @@ final class ChatStore {
         var new: [ChatMessage] = []
         if row.sender == "user" {
             if row.kind == "event" {
+                record(meta: row.meta)
                 if let echo = row.meta?.object?["echo"]?.string { new.append(ChatMessage(id: id, text: echo, fromUser: true)) }
             } else {
                 new.append(ChatMessage(id: id, text: row.body, fromUser: true))

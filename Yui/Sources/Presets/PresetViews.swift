@@ -8,6 +8,8 @@ extension EnvironmentValues {
     @Entry var ylComponents: [YLComponent] = []
     /// Puts a saved screen back (`project open=name`).
     @Entry var ylShow = YLShow()
+    /// The thread's answers, for presets that reopen answered.
+    @Entry var ylAnswers = YLAnswers()
 }
 
 /// `(reply scope, screen, saved name)`: the host applies `show name` to that reply.
@@ -146,6 +148,8 @@ struct OptionPill: View {
 struct AskPreset: View {
     let c: YLComponent
     @State private var answer: String?
+    @Environment(\.ylScope) private var scope
+    @Environment(\.ylAnswers) private var answers
     @Environment(\.agentStyle) private var style
     @Environment(\.yuiTheme) private var theme
     @Environment(\.colorScheme) private var scheme
@@ -184,6 +188,10 @@ struct AskPreset: View {
             }
         }
         .disabled(c.locked)
+        // Reopened thread: show the answer the thread already holds.
+        .onChange(of: answers(scope, c.ylID), initial: true) { _, v in
+            if answer == nil, let a = v?["answer"]?.string { answer = a }
+        }
     }
 }
 
@@ -201,6 +209,8 @@ struct ChoosePreset: View {
     /// What went back to the agent last, or nil before the first answer.
     @State private var sent: [String]?
     @FocusState private var otherFocused: Bool
+    @Environment(\.ylScope) private var scope
+    @Environment(\.ylAnswers) private var answers
     @Environment(\.agentStyle) private var style
     @Environment(\.yuiTheme) private var theme
     @Environment(\.colorScheme) private var scheme
@@ -253,6 +263,12 @@ struct ChoosePreset: View {
             }
         }
         .disabled(c.locked)
+        // Reopened thread: the last answer sent comes back picked, and a new tap is a change.
+        .onChange(of: answers(scope, c.ylID), initial: true) { _, v in
+            guard sent == nil, let v else { return }
+            let back = multi ? v["picked"]?.array?.compactMap(\.string) : v["choice"]?.string.map { [$0] }
+            if let back { picked = back; sent = back }
+        }
     }
 
     private func otherField(_ s: Swatch) -> some View {
@@ -322,6 +338,8 @@ struct SlidePreset: View {
     let c: YLComponent
     @State private var value: Double?
     @State private var sent: Double?
+    @Environment(\.ylScope) private var scope
+    @Environment(\.ylAnswers) private var answers
     @Environment(\.yuiTheme) private var theme
     @Environment(\.colorScheme) private var scheme
     @Environment(\.ylEmit) private var emit
@@ -355,6 +373,10 @@ struct SlidePreset: View {
             .foregroundStyle(s.inkSoft)
         }
         .disabled(c.locked)
+        // Reopened thread: the slider sits where it was released.
+        .onChange(of: answers(scope, c.ylID), initial: true) { _, v in
+            if sent == nil, let n = v?["value"]?.number { value = n; sent = n }
+        }
     }
 }
 

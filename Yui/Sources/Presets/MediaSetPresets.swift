@@ -130,6 +130,8 @@ struct GalleryPreset: View {
     @State private var viewing: Int?
     @State private var picked: [Int] = []
     @State private var sent: [Int]?
+    @Environment(\.ylScope) private var scope
+    @Environment(\.ylAnswers) private var answers
     @Environment(\.agentStyle) private var style
     @Environment(\.ylEmit) private var emit
     @Environment(\.yuiTheme) private var theme
@@ -190,6 +192,12 @@ struct GalleryPreset: View {
             if c.flag("pick"), !c.locked { submit(s) }
         }
         .disabled(c.locked)
+        // Reopened thread: the picks sent last come back ticked.
+        .onChange(of: answers(scope, c.ylID), initial: true) { _, v in
+            guard sent == nil, let back = v?["picked"]?.array?.compactMap(\.number) else { return }
+            picked = back.map { Int($0) }
+            sent = picked
+        }
         .fullScreenCover(item: Binding(get: { viewing.map { Viewing(index: $0) } }, set: { viewing = $0?.index })) { v in
             MediaViewer(items: items, captions: caps, index: v.index, close: { viewing = nil })
         }

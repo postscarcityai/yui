@@ -50,7 +50,19 @@ targets:
         GENERATE_INFOPLIST_FILE: YES
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
     scheme:
-      testTargets: [YuiUITests]
+      testTargets: [YuiTests, YuiUITests]
+  # Unit tests hosted in the app (the chat store, answers on reopen).
+  YuiTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources: [YuiTests]
+    dependencies:
+      - target: Yui
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.yuigui.app.tests
+        TARGETED_DEVICE_FAMILY: "1"
+        GENERATE_INFOPLIST_FILE: YES
   YuiUITests:
     type: bundle.ui-testing
     platform: iOS
