@@ -369,7 +369,7 @@ struct PlanPreset: View {
                     }
                     .disabled(cur == 0)
                     let last = cur == steps.count - 1
-                    OptionPill(text: last ? (review ? "Review" : c.string("submit") ?? "Create project") : "Next",
+                    OptionPill(text: last ? (review ? "Review" : c.string("submit") ?? "Send") : "Next",
                                fill: s.accent, ink: s.onAccent, grow: true) {
                         if last { review ? withAnimation(theme.spring) { reviewing = true } : submit(steps) }
                         else { withAnimation(theme.spring) { at = cur + 1 } }
@@ -413,7 +413,7 @@ struct PlanPreset: View {
                     .accessibilityLabel("Edit \(step.prompt)")
                 }
             }
-            OptionPill(text: c.string("submit") ?? "Create project", fill: s.accent, ink: s.onAccent, grow: true) { submit(steps) }
+            OptionPill(text: c.string("submit") ?? "Send", fill: s.accent, ink: s.onAccent, grow: true) { submit(steps) }
         }
     }
 

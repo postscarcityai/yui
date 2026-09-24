@@ -301,7 +301,7 @@ final class PresetFamiliesTests: XCTestCase {
         app.buttons["Review"].tap()
         sleep(1)
         shot("6-plan-review")
-        app.buttons["Create project"].tap()
+        app.buttons["Send"].tap()
         let plan = waitEvent("plan", "plan")?["plan"] as? [String: Any]
         XCTAssertEqual(plan?["kind"] as? String, "Shop")
         XCTAssertEqual(plan?["pages"] as? [String], ["Home", "Contact"])
