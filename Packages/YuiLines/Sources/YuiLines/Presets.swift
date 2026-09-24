@@ -241,6 +241,16 @@ private func positional(_ preset: String, _ pos: [Token]) -> Props {
         for t in pos {
             if let p = t.parts, o["options"] == nil { o["options"] = strings(p) } else { q.append(t) }
         }
+        // Loose options (spec section 4, ask): with no options token, two or more
+        // quoted tokens at the end, after at least one question token, are the options.
+        if o["options"] == nil {
+            var k = q.count
+            while k > 1, q[k - 1].quoted { k -= 1 }
+            if q.count - k >= 2 {
+                o["options"] = strings(q[k...].map(\.text))
+                q.removeSubrange(k...)
+            }
+        }
         if !q.isEmpty { o["q"] = .string(joinText(q)) }
 
     case "slide":

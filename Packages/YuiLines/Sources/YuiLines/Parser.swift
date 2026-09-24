@@ -112,7 +112,21 @@ public struct YLParser: Sendable {
         let head = tokens.removeFirst().raw
 
         if head.hasPrefix("~") {
-            let target = String(head.dropFirst())
+            var target = String(head.dropFirst())
+            // ~preset@id (spec section 5): the id when this reply made it, else the preset name.
+            if let at = target.firstIndex(of: "@") {
+                let name = String(target[..<at]), id = String(target[target.index(after: at)...])
+                if name.range(of: "^[a-z]+$", options: .regularExpression) != nil,
+                   id.range(of: "^[A-Za-z0-9_-]+$", options: .regularExpression) != nil {
+                    guard presets.contains(name) || name == "say" || name == "custom" else {
+                        return YLNode(op: .error, screen: screen, message: "patch: unknown preset \"\(name)\"", line: line)
+                    }
+                    if let known = ids[id], known != name {
+                        return YLNode(op: .error, screen: screen, message: "patch: \"\(id)\" is a \(known), not a \(name)", line: line)
+                    }
+                    target = ids[id] != nil ? id : name
+                }
+            }
             guard let preset = presets.contains(target) || target == "say" ? target : ids[target] else {
                 return YLNode(op: .error, screen: screen, message: "patch: nothing called \"\(target)\"", line: line)
             }
