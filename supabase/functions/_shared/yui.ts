@@ -83,3 +83,78 @@ export async function appleClientSecret(): Promise<string> {
 export function appleClientId(): string {
   return env("YUI_SIWA_CLIENT_ID");
 }
+
+// Opaque bearer secrets that are not JWTs. Only their SHA-256 is stored.
+export const MGMT_PREFIX = "yui_mt_";
+export const CONNECTOR_PREFIX = "yui_ct_";
+
+export function bearer(req: Request): string {
+  return (req.headers.get("authorization") ?? "").replace(/^Bearer\s+/i, "").trim();
+}
+
+export const AGENT_COLORS = ["lavender", "mint", "butter", "brand"] as const;
+const REMOTE_REF = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$/;
+
+export function validRemoteRef(s: unknown): s is string {
+  return typeof s === "string" && REMOTE_REF.test(s);
+}
+
+export function cleanName(s: unknown): string | null {
+  if (typeof s !== "string") return null;
+  const t = s.trim().replace(/\s+/g, " ");
+  return t.length >= 1 && t.length <= 40 ? t : null;
+}
+
+// "yui" -> "Yui", "sean-rush" -> "Sean Rush".
+export function nameFromRef(ref: string): string {
+  return ref.split(/[-_.]+/).filter(Boolean)
+    .map((w) => w[0].toUpperCase() + w.slice(1)).join(" ").slice(0, 40) || "Agent";
+}
+
+// Stable pastel per name, same rule as the app's YuiTheme.agentColorToken.
+export function defaultColor(name: string): string {
+  const pastels = ["mint", "lavender", "butter"];
+  let n = 0;
+  for (const ch of name.toLowerCase()) n += ch.codePointAt(0)!;
+  return pastels[n % pastels.length];
+}
+
+function slug(name: string): string {
+  const s = name.toLowerCase().normalize("NFKD").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+  return (s || "agent").slice(0, 28);
+}
+
+// Creates an agent with a handle unique for the user ("yui", "yui-2", ...).
+// deno-lint-ignore no-explicit-any
+export async function insertAgent(db: any, row: Record<string, unknown>) {
+  const base = slug(row.name as string);
+  const { data: taken } = await db.from("yui_agents").select("handle")
+    .eq("user_id", row.user_id).like("handle", `${base}%`);
+  const used = new Set((taken ?? []).map((r: { handle: string }) => r.handle));
+  let handle = base;
+  for (let i = 2; used.has(handle); i++) handle = `${base}-${i}`;
+  const { data: last } = await db.from("yui_agents").select("sort")
+    .eq("user_id", row.user_id).order("sort", { ascending: false }).limit(1);
+  const { count } = await db.from("yui_agents").select("id", { count: "exact", head: true })
+    .eq("user_id", row.user_id);
+  const { data, error } = await db.from("yui_agents").insert({
+    handle,
+    sort: (last?.[0]?.sort ?? -1) + 1,
+    // The first agent is the default.
+    is_default: count === 0,
+    ...row,
+  }).select("id").single();
+  if (error) throw error;
+  return data.id as string;
+}
+
+export const AGENT_COLUMNS =
+  "id, name, handle, color, avatar, theme, kind, connector_id, connector_name, remote_ref, status, last_seen_at, is_default, sort, created_at, updated_at";
+
+// deno-lint-ignore no-explicit-any
+export async function agentView(db: any, userId: string, id: string) {
+  const { data, error } = await db.from("yui_agent_list").select(AGENT_COLUMNS)
+    .eq("user_id", userId).eq("id", id).single();
+  if (error) throw error;
+  return data;
+}

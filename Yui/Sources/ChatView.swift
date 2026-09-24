@@ -60,7 +60,7 @@ struct ChatView: View {
             }
             .sheet(isPresented: $showAgents) {
                 AgentsView()
-                    .presentationDetents([.medium])
+                    .presentationDetents([.medium, .large])
                     .presentationCornerRadius(theme.radius.card)
             }
         }

@@ -11,7 +11,8 @@ struct YuiTheme: Codable, Equatable, Sendable {
     var spacing: Spacing
     var type: Typography
     var motion: Motion
-    /// Agent name (lowercased) -> palette token for its avatar chip, e.g. "urza": "lavender".
+    /// Agent handle -> palette token override for its avatar chip. Empty by default:
+    /// each agent's color comes from the registry (yui_agents.color).
     var agents: [String: String]
 
     struct Palette: Codable, Equatable, Sendable {
@@ -87,7 +88,7 @@ extension YuiTheme {
         spacing: Spacing(xs: 4, s: 8, m: 12, l: 16, xl: 24),
         type: Typography(design: "rounded", body: 17, caption: 13, title: 20, display: 28),
         motion: Motion(springResponse: 0.35, springDamping: 0.55, bounceScale: 1.18),
-        agents: ["urza": "lavender", "arnold": "mint"]
+        agents: [:]
     )
 }
 

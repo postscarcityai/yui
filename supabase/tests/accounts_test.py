@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""YUI-6 account-layer tests against PROOF (live).
+"""YUI-6 account-layer tests against PROOF (live), extended by YUI-15.
 
 Negative RLS: anon/authenticated cannot touch yui_* tables, yui_user cannot
 touch any portal table. Cross-user isolation. Edge function rejections. Then a
@@ -14,8 +14,8 @@ import base64, hashlib, hmac, json, os, subprocess, sys, time, urllib.request, u
 REF = "ewzzaoperdpxqxkshynx"
 BASE = f"https://{REF}.supabase.co"
 YUI_TABLES = ["yui_users", "yui_apple_tokens", "yui_sessions", "yui_devices",
-              "yui_agents", "yui_pairings", "yui_messages"]
-SERVER_ONLY = ["yui_apple_tokens", "yui_sessions", "yui_waitlist"]
+              "yui_agents", "yui_pairings", "yui_messages", "yui_connectors", "yui_mgmt_tokens"]
+SERVER_ONLY = ["yui_apple_tokens", "yui_sessions", "yui_waitlist", "yui_mgmt_tokens", "yui_pair_attempts"]
 
 def access_token():
     t = os.environ.get("SUPABASE_ACCESS_TOKEN")
@@ -113,7 +113,7 @@ check("token signed with the wrong secret refused", s == 401, f"{s}")
 print("\n== Cross-user isolation")
 sql(f"""insert into yui_users(id, apple_sub) values ('{A}','test.{A}'),('{B}','test.{B}');
         insert into yui_messages(user_id, sender, body) values ('{A}','user','hi from A'),('{B}','user','hi from B');
-        insert into yui_agents(user_id, name) values ('{B}','b-agent');""")
+        insert into yui_agents(user_id, name, handle) values ('{B}','b-agent','b-agent');""")
 b_agent = sql(f"select id from yui_agents where user_id='{B}'")[0]["id"]
 try:
     s, r = rest("GET", "yui_messages?select=user_id,body", tokA)
@@ -130,8 +130,10 @@ try:
     check("A cannot rewrite its own apple_sub", s in (401, 403), f"{s}")
     s, r = rest("POST", "yui_messages", tokA, {"user_id": A, "agent_id": b_agent, "sender": "user", "body": "to B's agent"})
     check("A cannot attach a message to B's agent", s in (400, 403, 409), f"{s} {r.get('code') if isinstance(r, dict) else r}")
-    s, r = rest("POST", "yui_pairings", tokA, {"user_id": A, "agent_id": b_agent})
-    check("A cannot pair with B's agent", s in (400, 403, 409), f"{s} {r.get('code') if isinstance(r, dict) else r}")
+    s, r = rest("POST", "yui_pairings", tokA, {"user_id": A, "agent_id": b_agent, "code_hash": "x"})
+    check("A cannot write a pairing code directly (codes are server-minted)", s in (401, 403), f"{s} {r.get('code') if isinstance(r, dict) else r}")
+    s, r = fn("yui-agents", {"action": "pair_code", "agent_id": b_agent}, tokA)
+    check("A cannot mint a pairing code for B's agent", s == 404, f"{s} {r}")
     check("B's message untouched", sql(f"select body from yui_messages where user_id='{B}'")[0]["body"] == "hi from B")
 finally:
     sql(f"delete from yui_users where id in ('{A}','{B}')")
@@ -155,10 +157,14 @@ sql(f"""insert into yui_users(id, apple_sub, email) values ('{T}', 'test.{T}', '
         insert into yui_sessions(user_id, refresh_hash, expires_at) values ('{T}', '{rh}', now() + interval '1 day');""")
 tokT = mint(T)
 s, dev = rest("POST", "yui_devices", tokT, {"user_id": T, "name": "test iPhone"}, prefer="return=representation")
-s2, ag = rest("POST", "yui_agents", tokT, {"user_id": T, "name": "urza"}, prefer="return=representation")
-s3, _ = rest("POST", "yui_pairings", tokT, {"user_id": T, "agent_id": ag[0]["id"]}, prefer="return=representation")
-s4, _ = rest("POST", "yui_messages", tokT, {"user_id": T, "agent_id": ag[0]["id"], "sender": "user", "body": "hello"}, prefer="return=representation")
-check("test user writes its own devices/agents/pairings/messages", (s, s2, s3, s4) == (201, 201, 201, 201), f"{(s, s2, s3, s4)}")
+# Agents, pairing codes, connectors and management tokens are made through
+# the registry functions, the way the app and a host make them.
+s2, ag = fn("yui-agents", {"action": "create", "name": "Test agent", "pair": True}, tokT)
+s3, pr = fn("yui-connect", {"action": "pair", "code": ag["pairing"]["code"], "remote_ref": "test", "host_name": "test host"})
+s5, mt = fn("yui-agents", {"action": "token_create", "name": "test"}, tokT)
+s4, _ = rest("POST", "yui_messages", tokT, {"user_id": T, "agent_id": ag["agent"]["id"], "sender": "user", "body": "hello"}, prefer="return=representation")
+check("test user makes its own device/agent/pairing/connector/token/message", (s, s2, s3, s5, s4) == (201, 200, 200, 200, 201), f"{(s, s2, s3, s5, s4)}")
+connector_token = pr.get("connector_token")
 
 s, r = fn("yui-auth", {"grant_type": "refresh", "refresh_token": rt})
 check("refresh rotates: new access + refresh token", s == 200 and r.get("refresh_token") not in (None, rt) and r.get("expires_in") == 900, f"{s}")
@@ -184,6 +190,10 @@ s, r = rest("GET", "yui_messages?select=*", new_access)
 check("the deleted user's token now sees nothing", s == 200 and r == [], f"{s} {r}")
 s, r = fn("yui-delete", {}, new_access)
 check("deleting twice is a 404, not a crash", s == 404, f"{s} {r}")
+s, r = fn("yui-agents", {"action": "list"}, mt["token"])
+check("the deleted user's management token is dead", s == 401, f"{s} {r}")
+s, r = fn("yui-connect", {"action": "heartbeat"}, connector_token)
+check("the deleted user's host connector is dead", s == 401, f"{s} {r}")
 
 print(f"\n{sum(results)}/{len(results)} passed")
 sys.exit(0 if all(results) else 1)

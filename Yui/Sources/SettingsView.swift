@@ -26,27 +26,88 @@ struct SettingsView: View {
                 .padding(theme.spacing.l)
                 .background(c.surface, in: .rect(cornerRadius: theme.radius.card))
                 .overlay(RoundedRectangle(cornerRadius: theme.radius.card).stroke(c.outline, lineWidth: 1.5))
-                VStack(alignment: .leading, spacing: theme.spacing.m) {
-                    Text("Your agents").font(theme.font(theme.type.caption, .bold)).foregroundStyle(c.inkSoft)
-                    HStack(spacing: theme.spacing.l) {
-                        ForEach(["Urza", "Arnold"], id: \.self) { name in
-                            HStack(spacing: theme.spacing.s) {
-                                AgentAvatar(name: name, size: 36)
-                                Text(name).font(theme.font(theme.type.body, .bold)).foregroundStyle(c.ink)
-                            }
-                        }
-                        Spacer(minLength: 0)
-                    }
-                }
-                .padding(theme.spacing.l)
-                .background(c.surface, in: .rect(cornerRadius: theme.radius.card))
-                .overlay(RoundedRectangle(cornerRadius: theme.radius.card).stroke(c.outline, lineWidth: 1.5))
+                AgentAccessSection()
                 AccountSection()
             }
             .padding(theme.spacing.xl)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(c.background)
+    }
+}
+
+/// Settings > Agent access: management tokens that let an agent (say, your chief of staff)
+/// add and manage your agents for you. Shown once, stored hashed, revocable,
+/// and they can never read your messages. Spec: yuigui/spec/AGENTS.md.
+private struct AgentAccessSection: View {
+    @Environment(AgentStore.self) private var store
+    @Environment(\.yuiTheme) private var theme
+    @Environment(\.colorScheme) private var scheme
+    @State private var fresh: String?
+    @State private var working = false
+    @State private var error: String?
+
+    var body: some View {
+        let c = theme.swatch(scheme)
+        VStack(alignment: .leading, spacing: theme.spacing.m) {
+            Text("Agent access").font(theme.font(theme.type.caption, .bold)).foregroundStyle(c.inkSoft)
+            Text("Let one of your agents add and manage agents for you. It can't read your messages.")
+                .font(theme.font(theme.type.body)).foregroundStyle(c.ink)
+                .fixedSize(horizontal: false, vertical: true)
+            if let fresh {
+                VStack(alignment: .leading, spacing: theme.spacing.s) {
+                    Text("Copy this now. Yui won't show it again.")
+                        .font(theme.font(theme.type.caption, .bold)).foregroundStyle(c.accent)
+                    HStack {
+                        Text(fresh).font(.system(size: 13, weight: .medium, design: .monospaced))
+                            .foregroundStyle(c.ink).lineLimit(1).truncationMode(.middle)
+                            .textSelection(.enabled)
+                        Spacer(minLength: 0)
+                        Button("Copy", systemImage: "doc.on.doc") { UIPasteboard.general.string = fresh }
+                            .labelStyle(.iconOnly).tint(c.inkSoft)
+                    }
+                    .padding(theme.spacing.m)
+                    .background(c.background, in: .rect(cornerRadius: theme.radius.bubble))
+                }
+            }
+            ForEach(store.tokens) { token in
+                HStack {
+                    Image(systemName: "key.fill").foregroundStyle(c.inkSoft)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(token.name).font(theme.font(theme.type.body, .bold)).foregroundStyle(c.ink)
+                        Text(token.lastUsedAt.map { "Used \($0.formatted(.relative(presentation: .named)))" } ?? "Never used")
+                            .font(theme.font(theme.type.caption)).foregroundStyle(c.inkSoft)
+                    }
+                    Spacer(minLength: 0)
+                    Button("Revoke") { Task { await store.revokeToken(token) } }
+                        .font(theme.font(theme.type.caption, .bold)).tint(.red)
+                }
+            }
+            Button {
+                Task {
+                    working = true
+                    do {
+                        let t = try await store.createToken(name: "Agent access \(store.tokens.count + 1)")
+                        withAnimation(theme.spring) { fresh = t }
+                    } catch { self.error = error.localizedDescription }
+                    working = false
+                }
+            } label: {
+                Label("Create access token", systemImage: "plus")
+                    .font(theme.font(theme.type.body, .bold)).foregroundStyle(c.ink)
+                    .frame(maxWidth: .infinity).padding(.vertical, theme.spacing.m)
+                    .background(c.background, in: .rect(cornerRadius: theme.radius.bubble))
+            }
+            .buttonStyle(BounceButtonStyle())
+            .disabled(working)
+            if let error {
+                Text(error).font(theme.font(theme.type.caption, .semibold)).foregroundStyle(.red)
+            }
+        }
+        .padding(theme.spacing.l)
+        .background(c.surface, in: .rect(cornerRadius: theme.radius.card))
+        .overlay(RoundedRectangle(cornerRadius: theme.radius.card).stroke(c.outline, lineWidth: 1.5))
+        .task { await store.refreshTokens() }
     }
 }
 
