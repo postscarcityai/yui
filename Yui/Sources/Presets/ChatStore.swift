@@ -152,10 +152,17 @@ final class ChatStore {
         }
     }
 
-    func send(_ text: String) {
+    /// A sent bubble's lift into the thread: quick, under 300 ms, whatever the agent's look.
+    static let sendSpring: Animation = .spring(response: 0.28, dampingFraction: 0.72)
+
+    /// False when it can't go out (no agent or session yet): nothing is added, the caller keeps the text.
+    @discardableResult
+    func send(_ text: String) -> Bool {
+        guard client != nil, agent != nil, account?.session?.userID != nil else { return false }
         let m = ChatMessage(id: UUID().uuidString.lowercased(), text: text, fromUser: true)
-        withAnimation(spring) { messages.append(m) }
+        withAnimation(Self.sendSpring) { messages.append(m) }
         post(id: m.id, body: text, kind: "text", meta: nil)
+        return true
     }
 
     /// Into the outbox first (on disk), then out: a dropped network or a killed

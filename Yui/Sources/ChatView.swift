@@ -10,6 +10,9 @@ struct ChatView: View {
     @Environment(PushCenter.self) private var push
     @Environment(\.agentStyle) private var agentStyle
     @State private var draft = ""
+    /// Bumped on every send: a fresh text field. Clearing `draft` alone can leave
+    /// the sent words drawn in the field (TestFlight feedback APthnqcdHvqEP).
+    @State private var composerID = 0
     @State private var store = ChatStore(messages: ChatView.seed)
     @State private var outbox = Outbox.shared
     @State private var showSettings = ProcessInfo.processInfo.arguments.contains("-yuiSettings")
@@ -206,7 +209,9 @@ struct ChatView: View {
                 .foregroundStyle(c.ink)
                 .lineLimit(1...5)
                 .focused($focused)
+                .accessibilityIdentifier("composer")
                 .onSubmit(send)
+                .id(composerID)
                 .padding(.horizontal, theme.spacing.l)
                 .padding(.vertical, theme.spacing.m)
                 .background(c.surface, in: .rect(cornerRadius: theme.radius.pill))
@@ -231,19 +236,27 @@ struct ChatView: View {
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
         if account.session?.userID != "demo" {
-            guard store.agent != nil else { return }
-            store.send(text)
-            draft = ""
+            // Not sent (no agent, no session): the words stay in the field.
+            guard store.agent != nil, store.send(text) else { return }
+            clearComposer()
             return
         }
-        withAnimation(theme.spring) { store.messages.append(ChatMessage(text: text, fromUser: true)) }
-        draft = ""
+        withAnimation(ChatStore.sendSpring) { store.messages.append(ChatMessage(text: text, fromUser: true)) }
+        clearComposer()
         Task {
             try? await Task.sleep(for: .milliseconds(700))
             withAnimation(theme.spring) {
                 store.messages.append(ChatMessage(text: ChatView.replies.randomElement()!, fromUser: false))
             }
         }
+    }
+
+    /// Empties the field and swaps in a new one, keeping the keyboard up.
+    private func clearComposer() {
+        draft = ""
+        composerID += 1
+        // The new field mounts on the next pass; focus it then so the keyboard stays.
+        Task { @MainActor in focused = true }
     }
 
     /// The demo account's canned answers (screenshots only; real accounts never see them).
@@ -325,8 +338,11 @@ private struct Bubble: View {
             if !message.fromUser { Spacer(minLength: 48) }
         }
         .animation(.easeInOut(duration: 0.3), value: pending)
-        .transition(.scale(scale: 0.85, anchor: message.fromUser ? .bottomTrailing : .bottomLeading)
-            .combined(with: .opacity))
+        .transition(message.fromUser
+            // Sent: lifts off the composer and floats up into the thread.
+            ? .asymmetric(insertion: .offset(y: 56).combined(with: .scale(scale: 0.8, anchor: .bottomTrailing))
+                .combined(with: .opacity), removal: .opacity)
+            : .scale(scale: 0.85, anchor: .bottomLeading).combined(with: .opacity))
     }
 }
 
