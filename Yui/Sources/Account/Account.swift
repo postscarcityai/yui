@@ -35,6 +35,11 @@ final class Account {
     private static let keychainKey = "session"
     /// Raw nonce for the Apple request in flight; Apple only sees its SHA-256.
     private var pendingNonce: String?
+    /// The refresh in flight. Every caller waits on it: spending one refresh
+    /// token twice trips yui-auth's reuse check, which ends every session.
+    private var refreshing: Task<String, Error>?
+    /// Runs before sign out, while the session still works (push unregister).
+    var willSignOut: (() async -> Void)?
 
     init() {
         #if DEBUG
@@ -99,17 +104,24 @@ final class Account {
     func validAccessToken() async throws -> String {
         guard let s = session else { throw AccountError.signedOut }
         if s.accessExpiry.timeIntervalSinceNow > 60 { return s.accessToken }
-        do {
-            let reply: TokenReply = try await post("yui-auth", ["grant_type": "refresh", "refresh_token": s.refreshToken])
-            store(reply, appleUserID: s.appleUserID)
-            return reply.access_token
-        } catch AccountError.server("invalid_grant") {
-            clear()
-            throw AccountError.signedOut
+        if let refreshing { return try await refreshing.value }
+        let task = Task { () async throws -> String in
+            do {
+                let reply: TokenReply = try await post("yui-auth", ["grant_type": "refresh", "refresh_token": s.refreshToken])
+                store(reply, appleUserID: s.appleUserID)
+                return reply.access_token
+            } catch AccountError.server("invalid_grant") {
+                clear()
+                throw AccountError.signedOut
+            }
         }
+        refreshing = task
+        defer { refreshing = nil }
+        return try await task.value
     }
 
     func signOut() async {
+        await willSignOut?()
         if let token = session?.refreshToken, !token.isEmpty {
             let _: OKReply? = try? await post("yui-auth", ["grant_type": "sign_out", "refresh_token": token])
         }

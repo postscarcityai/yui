@@ -24,6 +24,8 @@ targets:
       path: Yui/Yui.entitlements
       properties:
         com.apple.developer.applesignin: [Default]
+        # Xcode signs Debug with development; archive/export for TestFlight turns it into production.
+        aps-environment: development
     info:
       path: Yui/Info.plist
       properties:
@@ -31,6 +33,10 @@ targets:
         UILaunchScreen: {}
         ITSAppUsesNonExemptEncryption: false
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
+        # yui://agent/<id>/thread opens that agent's thread (push taps, links from other channels).
+        CFBundleURLTypes:
+          - CFBundleURLName: com.yuigui.app
+            CFBundleURLSchemes: [yui]
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.yuigui.app

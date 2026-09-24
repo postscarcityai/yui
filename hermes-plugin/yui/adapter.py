@@ -20,6 +20,12 @@ Transport: the gateway dials OUT to Supabase (PROOF). No inbound ports.
      key=value ...` (what the agent reads) and whose meta holds the
      structured event.
   5. A heartbeat every 45 s keeps the agent "connected" in the app.
+  6. Every agent message is pushed to the user's phones (yui-push
+     action=notify): "<Agent> has something for you in Yui" for handoffs,
+     a text preview for replies. The tap opens yui://agent/<id>/thread.
+     Any profile with this plugin can hand off from another channel
+     (send_message target "yui"), even one with no Yui agent of its own:
+     it lands in the user's first agent's thread, signed with its name.
 
 The channel guide (CHANNEL.md, synced verbatim from yuigui/spec/CHANNEL.md by
 ../sync_channel.py) is this platform's system-prompt hint, so it is in the
@@ -62,6 +68,7 @@ REST = f"{connector.SUPABASE_URL}/rest/v1"
 REALTIME = (connector.SUPABASE_URL.replace("https://", "wss://")
             + f"/realtime/v1/websocket?apikey={connector.PUBLISHABLE}&vsn=1.0.0")
 HEARTBEAT_SECONDS = 45
+HANDOFF_AFTER_SECONDS = 15 * 60  # no inbound this long: a send is a handoff, not a reply
 POLL_SECONDS = 20            # catch-up poll while Realtime is healthy
 POLL_SECONDS_DEGRADED = 3    # while Realtime is down
 REFRESH_MARGIN_SECONDS = 10 * 60
@@ -121,6 +128,8 @@ class YuiAdapter(BasePlatformAdapter):
         self._token_exp: float = 0.0
         self._user_id: str = ""
         self._agents: Dict[str, dict] = {}      # agent id -> {id, name, handle, remote_ref}
+        self._all_agents: List[dict] = []       # every agent on this machine's connector (outbound)
+        self._last_inbound: Dict[str, float] = {}
         self._realtime_ok = False
         self._fetch_lock = asyncio.Lock()
         self._inbound = asyncio.Event()
@@ -222,6 +231,7 @@ class YuiAdapter(BasePlatformAdapter):
         return data
 
     def _set_agents(self, agents: list) -> None:
+        self._all_agents = list(agents)
         mine = {a["id"]: a for a in agents if a.get("remote_ref") == self._remote_ref}
         added = set(mine) - set(self._agents)
         self._agents = mine
@@ -320,6 +330,7 @@ class YuiAdapter(BasePlatformAdapter):
             message_id=row["id"],
             timestamp=_parse_ts(row.get("created_at")),
         )
+        self._last_inbound[row["agent_id"]] = time.time()
         logger.info("[yui] inbound %s %s: %s", row.get("kind"), row["id"][:8], row["body"][:80])
         await self.handle_message(event)
 
@@ -383,7 +394,7 @@ class YuiAdapter(BasePlatformAdapter):
 
     # -- outbound -------------------------------------------------------------
 
-    async def _insert(self, agent_id: str, body: str) -> SendResult:
+    async def _insert(self, agent_id: str, body: str, sender: Optional[str] = None) -> SendResult:
         if not self._client:
             return SendResult(success=False, error="not connected")
         body = body.strip()
@@ -401,23 +412,36 @@ class YuiAdapter(BasePlatformAdapter):
             return SendResult(success=False, error=f"HTTP {r.status_code}: {r.text[:200]}")
         mid = (r.json() or [{}])[0].get("id")
         logger.info("[yui] outbound %s: %s", (mid or "")[:8], body[:80].replace("\n", " | "))
+        if mid:
+            handoff = bool(sender) or time.time() - self._last_inbound.get(agent_id, 0) > HANDOFF_AFTER_SECONDS
+            self._tasks.append(asyncio.create_task(self._notify(mid, sender, handoff)))
+            self._tasks = [t for t in self._tasks if not t.done()]
         return SendResult(success=True, message_id=mid)
 
-    def _agent_for(self, chat_id: str) -> Optional[str]:
-        if chat_id in self._agents:
-            return chat_id
-        # Home-channel style targets: the profile name or the agent handle.
-        for aid, a in self._agents.items():
-            if chat_id in (a.get("handle"), a.get("remote_ref"), a.get("name")):
-                return aid
-        return next(iter(self._agents), None) if not chat_id else None
+    async def _notify(self, message_id: str, sender: Optional[str], handoff: bool) -> None:
+        """Push the message to the user's phones. Best effort: the thread has it either way."""
+        try:
+            r = await self._client.post(connector.PUSH, json=connector.notify_body(message_id, sender, handoff),
+                                        headers={"apikey": connector.PUBLISHABLE,
+                                                 "authorization": f"Bearer {connector.load().get('token', '')}"})
+            data = r.json() if r.content else {}
+            logger.info("[yui] push %s: %s/%s phones%s", message_id[:8], data.get("delivered", 0),
+                        data.get("devices", 0), f" ({r.status_code} {data.get('error')})" if r.status_code >= 300 else "")
+        except Exception as e:
+            logger.warning("[yui] push %s failed: %s", message_id[:8], e)
+
+    def _agent_for(self, chat_id: str) -> tuple[Optional[str], Optional[str]]:
+        """(agent id, sending profile's name when the thread is another agent's)."""
+        agents = self._all_agents or list(self._agents.values())
+        a, sender = connector.pick_agent(agents, self._remote_ref, chat_id)
+        return (a["id"] if a else None), sender
 
     async def send(self, chat_id: str, content: str, reply_to: Optional[str] = None,
                    metadata: Optional[Dict[str, Any]] = None) -> SendResult:
-        aid = self._agent_for(chat_id)
+        aid, sender = self._agent_for(chat_id)
         if not aid:
-            return SendResult(success=False, error=f"no Yui agent {chat_id!r} on profile {self._remote_ref}")
-        return await self._insert(aid, content)
+            return SendResult(success=False, error=f"no Yui agent {chat_id!r} for profile {self._remote_ref}")
+        return await self._insert(aid, content, sender)
 
     async def send_image(self, chat_id: str, image_url: str, caption: Optional[str] = None,
                          reply_to: Optional[str] = None, metadata: Optional[Dict[str, Any]] = None) -> SendResult:
@@ -429,7 +453,7 @@ class YuiAdapter(BasePlatformAdapter):
         return None
 
     async def get_chat_info(self, chat_id: str) -> Dict[str, Any]:
-        a = self._agents.get(chat_id, {})
+        a = next((x for x in self._all_agents if x.get("id") == chat_id), self._agents.get(chat_id, {}))
         return {"name": f"Yui: {a.get('name', chat_id)}", "type": "dm", "chat_id": chat_id}
 
 
@@ -448,9 +472,7 @@ async def _standalone_send(pconfig, chat_id: str, message: str, *, thread_id: Op
         if r.status_code >= 300:
             return {"error": f"yui session: HTTP {r.status_code}"}
         s = r.json()
-        agents = [a for a in s.get("agents") or [] if a.get("remote_ref") == ref]
-        target = next((a for a in agents if chat_id in (a["id"], a.get("handle"), a.get("remote_ref"))),
-                      agents[0] if agents and not chat_id else None)
+        target, sender = connector.pick_agent(s.get("agents") or [], ref, chat_id)
         if not target:
             return {"error": f"yui: no agent {chat_id!r} for profile {ref}"}
         r = await c.post(f"{REST}/yui_messages", json={
@@ -460,7 +482,15 @@ async def _standalone_send(pconfig, chat_id: str, message: str, *, thread_id: Op
                      "prefer": "return=representation"})
         if r.status_code >= 300:
             return {"error": f"yui send: HTTP {r.status_code}: {r.text[:200]}"}
-        return {"success": True, "platform": "yui", "chat_id": target["id"], "message_id": r.json()[0]["id"]}
+        mid = r.json()[0]["id"]
+        # Out of process (cron, another channel's session): always a handoff.
+        p = await c.post(connector.PUSH, json=connector.notify_body(mid, sender, True),
+                         headers={"apikey": connector.PUBLISHABLE, "authorization": f"Bearer {token}"})
+        pushed = p.json() if p.content else {}
+        logger.info("[yui] standalone send %s, push %s/%s phones", mid[:8], pushed.get("delivered", 0),
+                    pushed.get("devices", 0))
+        return {"success": True, "platform": "yui", "chat_id": target["id"], "message_id": mid,
+                "pushed_to": pushed.get("delivered", 0)}
 
 
 # -- CLI: hermes -p <profile> yui pair|add|heartbeat|status ---------------------
@@ -495,6 +525,12 @@ def register(ctx) -> None:
         allow_update_command=False,
         platform_hint=platform_hint(),
     )
+    from . import handoff
+    ctx.register_hook("pre_gateway_dispatch", handoff.rewrite_slash)
+    ctx.register_hook("pre_llm_call", handoff.inject_howto)
+    ctx.register_command("yui", handoff.slash_command,
+                         description="Hand what we're doing to the Yui app, with a push to your phone",
+                         args_hint="[note]")
     ctx.register_cli_command(
         name="yui",
         help="Yui app: pair this profile, add it, check the connection",

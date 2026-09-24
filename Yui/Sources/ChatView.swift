@@ -7,6 +7,7 @@ struct ChatView: View {
     @Environment(\.colorScheme) private var scheme
     @Environment(Account.self) private var account
     @Environment(AgentStore.self) private var agents
+    @Environment(PushCenter.self) private var push
     @State private var draft = ""
     @State private var store = ChatStore(messages: ChatView.seed)
     @State private var showSettings = ProcessInfo.processInfo.arguments.contains("-yuiSettings")
@@ -94,6 +95,16 @@ struct ChatView: View {
             // The demo account keeps the local demo chat.
             guard account.session?.userID != "demo" else { return }
             store.attach(agents.selected, account: account)
+        }
+        .onChange(of: store.agent?.id, initial: true) { push.visibleAgentID = store.agent?.id }
+        // A notification tap or yui://agent/<id>/thread: straight to that thread.
+        .onChange(of: push.pendingAgentID, initial: true) {
+            guard let id = push.pendingAgentID else { return }
+            push.pendingAgentID = nil
+            showAgents = false
+            showSettings = false
+            agents.selectedID = id
+            if !agents.agents.contains(where: { $0.id == id }) { Task { await agents.refresh() } }
         }
         .tint(c.accent)
     }

@@ -7,6 +7,8 @@
 #
 # Symlinks, so a git pull updates every installed profile. Touches only the
 # profile's plugins dir and two config keys (plugins.enabled, platforms.yui).
+# A profile with no Yui agent of its own still gets handoffs ("send it to
+# Yui", /yui on Telegram): they land in the user's first agent's thread.
 set -euo pipefail
 P="${1:?usage: install.sh <hermes profile>}"
 SRC="$(cd "$(dirname "$0")" && pwd)/yui"
@@ -16,16 +18,25 @@ python3 "$(dirname "$0")/sync_channel.py" --check >/dev/null || echo "note: bund
 mkdir -p "$HOME_DIR/plugins"
 ln -sfn "$SRC" "$HOME_DIR/plugins/yui"
 # Direct YAML edit: `hermes plugins enable` waits on an interactive prompt.
-"$HOME/.hermes/hermes-agent/venv/bin/python" - "$HOME_DIR/config.yaml" <<'PY'
-import sys, yaml
+"$HOME/.hermes/hermes-agent/venv/bin/python" - "$HOME_DIR/config.yaml" "$P" <<'PY'
+import sys
+from ruamel.yaml import YAML  # round-trip: keeps the profile's comments and layout
+y = YAML()
+y.preserve_quotes = True
+y.indent(mapping=2, sequence=4, offset=2)
 p = sys.argv[1]
-cfg = yaml.safe_load(open(p)) or {}
+cfg = y.load(open(p)) or {}
 plugins = cfg.setdefault("plugins", {})
 enabled = plugins.setdefault("enabled", [])
 if "yui" not in enabled:
     enabled.append("yui")
-cfg.setdefault("platforms", {}).setdefault("yui", {})["enabled"] = True
-yaml.safe_dump(cfg, open(p, "w"), sort_keys=False, allow_unicode=True)
+yui = cfg.setdefault("platforms", {}).setdefault("yui", {})
+yui["enabled"] = True
+# Home channel = this profile: send_message(target="yui") with no chat id
+# lands in its own Yui thread, or the user's first agent if it has none.
+yui.setdefault("home_channel", {"platform": "yui", "chat_id": sys.argv[2], "name": "Yui"})
+with open(p, "w") as f:
+    y.dump(cfg, f)
 PY
 echo "installed yui plugin in profile $P ($HOME_DIR/plugins/yui -> $SRC)"
 echo "next: hermes -p $P yui status   and   hermes -p $P gateway restart"

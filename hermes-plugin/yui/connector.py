@@ -107,6 +107,47 @@ def add(profile: str, name: str | None = None, color: str | None = None) -> tupl
     return call(body, token)
 
 
+def pick_agent(agents: list, ref: str, chat_id: str | None) -> tuple[dict | None, str | None]:
+    """Which Yui thread a send from profile `ref` lands in, and who it is from.
+
+    Own agents first (remote_ref == ref), then any agent on this machine by id,
+    handle, profile or name. A bare target or the profile's own name (its home
+    channel) falls back to the user's first agent when the profile has no Yui
+    agent of its own: Urza on Telegram can still hand something to the phone.
+    The second value names the sending profile when the thread is another
+    agent's, so the push reads "Urza has something for you in Yui".
+    """
+    mine = [a for a in agents if a.get("remote_ref") == ref]
+    want = (chat_id or "").strip().lower()
+    if want:
+        for pool in (mine, agents):
+            for a in pool:
+                if want in {str(a.get(k) or "").lower() for k in ("id", "handle", "remote_ref", "name")}:
+                    return a, None if a.get("remote_ref") == ref else nice_name(ref)
+    if not want or want in (ref.lower(), "home", "default"):
+        if mine:
+            return mine[0], None
+        if agents:
+            return agents[0], nice_name(ref)
+    return None, None
+
+
+def nice_name(ref: str) -> str:
+    """"urza" -> "Urza", "sean-rush" -> "Sean Rush" (same rule as yui-connect)."""
+    return " ".join(w[:1].upper() + w[1:] for w in ref.replace("_", "-").replace(".", "-").split("-") if w)[:40] or "Agent"
+
+
+PUSH = f"{SUPABASE_URL}/functions/v1/yui-push"
+
+
+def notify_body(message_id: str, sender: str | None, handoff: bool) -> dict:
+    """Body for yui-push action=notify (the host just wrote `message_id`)."""
+    body = {"action": "notify", "message_id": message_id, "handoff": handoff}
+    if sender:
+        body["from"] = sender
+    return body
+
+
 def heartbeat() -> tuple[int, dict]:
     token = load().get("token")
     if not token:
