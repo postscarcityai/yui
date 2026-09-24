@@ -39,7 +39,7 @@ def current_profile() -> str | None:
         return os.environ["HERMES_PROFILE"]
     home = os.environ.get("HERMES_HOME")
     if not home:
-        return None
+        return "default"  # plain `hermes` with no -p runs the default profile
     p = Path(home)
     return p.name if p.parent.name == "profiles" else "default"
 
@@ -76,10 +76,12 @@ def call(body: dict, token: str | None = None) -> tuple[int, dict]:
 
 
 def host_name() -> str:
-    try:
-        return subprocess.check_output(["/usr/sbin/scutil", "--get", "ComputerName"], text=True).strip()
-    except (OSError, subprocess.CalledProcessError):
-        return socket.gethostname().split(".")[0]
+    if sys.platform == "darwin":  # "Chris's Mac mini" reads better than the DNS name
+        try:
+            return subprocess.check_output(["/usr/sbin/scutil", "--get", "ComputerName"], text=True).strip()
+        except (OSError, subprocess.CalledProcessError):
+            pass
+    return socket.gethostname().split(".")[0]
 
 
 def show(agent: dict) -> str:
@@ -175,6 +177,10 @@ def cmd_pair(args) -> int:
         print(f"pair failed: {r.get('error', s)}", file=sys.stderr)
         return 1
     print(f"paired: {show(r['agent'])} on {r['connector']['name']}")
+    prof = r["agent"].get("remote_ref")
+    flag = "" if prof in (None, "default") else f" -p {prof}"
+    print(f"next: start the gateway so it answers in the app: hermes{flag} gateway restart"
+          f"  (or run it in the foreground: hermes{flag} gateway run)")
     return 0
 
 
