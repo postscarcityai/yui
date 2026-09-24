@@ -15,6 +15,9 @@ struct Vector: Sendable, CustomTestStringConvertible {
     let error: Bool
     let chunks: [String]?
     let emits: [[YLValue]]?
+    /// Ids of the adds that open on the stage under `style` (spec section 5).
+    let stage: [String]?
+    let style: [String: String]
     var testDescription: String { "\(file) :: \(name)" }
 }
 
@@ -36,7 +39,9 @@ enum Vectors {
                 expected: v["expected"]!.array!,
                 error: v["error"]?.bool ?? false,
                 chunks: v["chunks"]?.array?.map { $0.string! },
-                emits: v["emits"]?.array?.map { $0.array! }
+                emits: v["emits"]?.array?.map { $0.array! },
+                stage: v["stage"]?.array?.map { $0.string! },
+                style: v["style"]?.object?.compactMapValues { $0.string } ?? [:]
             )
         }
     }
@@ -76,6 +81,11 @@ func conformance(_ v: Vector) {
         var got = chunks.map { s.push($0).map(comparable) }
         got.append(s.flush().map(comparable))
         #expect(got == emits, "stream by chunk: \(json(got))")
+    }
+
+    if let stage = v.stage {
+        let staged = YuiLines.parse(v.input).filter { YuiLines.opensOnStage($0, style: v.style) }.compactMap(\.id)
+        #expect(staged == stage, "stage: \(staged)")
     }
 
     #expect(v.expected.contains { $0["op"] == "error" } == v.error, "`error` flag does not match expected")

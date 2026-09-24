@@ -8,6 +8,7 @@ struct ChatView: View {
     @Environment(Account.self) private var account
     @Environment(AgentStore.self) private var agents
     @Environment(PushCenter.self) private var push
+    @Environment(\.agentStyle) private var agentStyle
     @State private var draft = ""
     @State private var store = ChatStore(messages: ChatView.seed)
     @State private var showSettings = ProcessInfo.processInfo.arguments.contains("-yuiSettings")
@@ -18,6 +19,7 @@ struct ChatView: View {
 
     var body: some View {
         let c = theme.swatch(scheme)
+        ZStack {
         NavigationStack {
             Group {
                 if store.messages.isEmpty && !store.waiting {
@@ -28,7 +30,11 @@ struct ChatView: View {
                         // so VoiceOver and UI tests saw only the plain bubbles.
                         VStack(spacing: theme.spacing.m) {
                             ForEach(store.messages) { m in
-                                if let yl = m.yl { YLReply(screen: yl, agent: store.agent) } else { Bubble(message: m, agent: store.agent) }
+                                if let yl = m.yl {
+                                    YLReply(screen: yl, scope: m.id, agent: store.agent, style: agentStyle) { store.openStage(m.id) }
+                                } else {
+                                    Bubble(message: m, agent: store.agent)
+                                }
                             }
                             if store.waiting { TypingDots(agent: store.agent).id("typing") }
                             if let error = store.error {
@@ -88,7 +94,20 @@ struct ChatView: View {
                     .presentationCornerRadius(theme.radius.card)
             }
         }
+        // The chat steps back a little while the stage is up (YUI-13).
+        .mask { RoundedRectangle(cornerRadius: store.stageOpen ? 38 : 0).ignoresSafeArea() }
+        .scaleEffect(store.stageOpen ? 0.92 : 1)
+        .background(Color.black.ignoresSafeArea())
+        if let m = store.stageMessage, let yl = m.yl, !yl.staged(agentStyle).isEmpty {
+            StageView(components: yl.staged(agentStyle), scope: m.id, agent: store.agent, open: store.stageOpen,
+                      close: store.closeStage)
+                .id(m.id)
+                .transition(.opacity)
+        }
+        }
         .environment(\.ylEmit, store.emit)
+        .environment(\.ylTimers, store.timers)
+        .onChange(of: agentStyle, initial: true) { store.style = agentStyle }
         .onAppear {
             store.spring = theme.spring
             // A `theme` line in a reply restyles that agent, and the app with it.
@@ -193,19 +212,50 @@ struct ChatView: View {
 }
 
 /// An agent reply in Yui Lines: the presets in line order, errors underneath.
+/// Components that open on the stage show here as one pill that reopens it.
 private struct YLReply: View {
     let screen: YLScreen
+    let scope: String
     var agent: YuiAgent?
+    var style: [String: String] = [:]
+    let openStage: () -> Void
     @Environment(\.yuiTheme) private var theme
+
+    /// Inline components as they are; each run of staged ones as one pill.
+    private enum Item: Identifiable {
+        case inline(YLComponent)
+        case pill([YLComponent])
+        var id: String {
+            switch self {
+            case .inline(let c): "c\(c.serial)"
+            case .pill(let cs): "p\(cs[0].serial)"
+            }
+        }
+    }
+
+    private var items: [Item] {
+        var out: [Item] = []
+        for c in screen.components {
+            if !c.onStage(style) { out.append(.inline(c)); continue }
+            if case .pill(let run) = out.last { out[out.count - 1] = .pill(run + [c]) } else { out.append(.pill([c])) }
+        }
+        return out
+    }
 
     var body: some View {
         HStack(alignment: .top, spacing: theme.spacing.s) {
             AgentFace(agent: agent)
             VStack(alignment: .leading, spacing: theme.spacing.m) {
-                ForEach(screen.components) { PresetView(component: $0) }
+                ForEach(items) { item in
+                    switch item {
+                    case .inline(let c): PresetView(component: c)
+                    case .pill(let cs): StagePill(components: cs, scope: scope, open: openStage)
+                    }
+                }
                 ForEach(Array(screen.errors.enumerated()), id: \.offset) { YLErrorRow(node: $1) }
                 ForEach(Array(screen.looks.enumerated()), id: \.offset) { _ in LookNote(agent: agent) }
             }
+            .environment(\.ylScope, scope)
         }
         .transition(.opacity)
     }

@@ -16,6 +16,8 @@ public struct YLNode: Codable, Equatable, Sendable {
         case focus
         /// Restyle the agent's look: `props` (a named set in `props.name`). No id, no event.
         case theme
+        /// `close` or bare `>chat`: close the stage; later lines go to screen 1. Screen is `full`.
+        case close
         /// The line was rejected: `message`. Every other line still renders.
         case error
     }

@@ -54,12 +54,15 @@ public struct YLParser: Sendable {
             var j = 1
             while j < body.count, isWordish(body[j]) { j += 1 }
             if j > 1, j == body.count || isSpace(body[j]) {
-                screen = String(body[1..<j])
+                // `chat` is screen 1 (spec section 1); a bare `>chat` closes the stage.
+                let name = String(body[1..<j])
+                screen = name == "chat" ? "1" : name
                 while j < body.count, isSpace(body[j]) { j += 1 }
                 body = Array(body[j...])
                 if body.isEmpty || isComment(body) {
                     self.screen = screen
-                    return YLNode(op: .focus, screen: screen, line: line)
+                    return name == "chat" ? YLNode(op: .close, screen: "full", line: line)
+                        : YLNode(op: .focus, screen: screen, line: line)
                 }
             }
         }
@@ -98,6 +101,13 @@ public struct YLParser: Sendable {
             return YLNode(op: head == "save" ? .save : .show, screen: screen, name: name, line: line)
         }
         if head == "clear" { return YLNode(op: .clear, screen: screen, line: line) }
+        if head == "close" {
+            guard tokens.isEmpty else {
+                return YLNode(op: .error, screen: screen, message: "close: takes nothing else", line: line)
+            }
+            self.screen = "1"
+            return YLNode(op: .close, screen: "full", line: line)
+        }
         if head == "theme" { return YLNode(op: .theme, screen: screen, props: parseArgs("theme", tokens), line: line) }
 
         // ^([a-z]+)(?:@([\w-]+))?$

@@ -22,6 +22,41 @@ final class ChatStore {
     /// An agent reply carried a `theme` line: (agent id, props, message time).
     var onLook: (@MainActor (String, [String: String], String) -> Void)?
 
+    // MARK: Stage (YUI-13, spec YL.md section 5)
+
+    /// The open agent's style profile: decides what opens on the stage.
+    var style: [String: String] = [:]
+    /// The reply on the stage, and whether the stage is up or swiped away.
+    private(set) var stageID: String?
+    private(set) var stageOpen = false
+    /// Timer clocks for the whole thread, shared by the stage and the pills.
+    let timers = TimerRuns()
+
+    var stageMessage: ChatMessage? { stageID.flatMap { id in messages.first { $0.id == id } } }
+
+    func openStage(_ id: String) {
+        withAnimation(spring) {
+            stageID = id
+            stageOpen = true
+        }
+    }
+
+    func closeStage() {
+        withAnimation(spring) { stageOpen = false }
+    }
+
+    /// A reply grew (a streamed line, a new row): open the stage for new staged
+    /// components, close it when the agent said `close`.
+    private func stageUpdate(_ id: String, before: YLScreen?) {
+        guard let yl = messages.first(where: { $0.id == id })?.yl else { return }
+        let wanted = yl.wantsStage(style)
+        if wanted, yl.staged(style).count > (before?.staged(style).count ?? 0) {
+            openStage(id)
+        } else if !wanted, yl.closedAt > (before?.closedAt ?? 0), stageID == id {
+            closeStage()
+        }
+    }
+
     /// The agent this thread talks to, when there is one.
     private(set) var agent: YuiAgent?
     /// The agent owes a reply: shows the typing dots.
@@ -70,6 +105,8 @@ final class ChatStore {
         self.agent = agent
         client = agent.map { ThreadClient(account: account, agentID: $0.id) }
         messages = []
+        stageID = nil
+        stageOpen = false
         seen = []
         cursor = nil
         waiting = false
@@ -144,6 +181,8 @@ final class ChatStore {
         }
         guard !new.isEmpty else { return }
         withAnimation(loaded ? spring : nil) { messages.append(contentsOf: new) }
+        // Live replies can take the stage; history loading on open never does.
+        if loaded { for m in new where m.yl != nil { stageUpdate(m.id, before: nil) } }
     }
 
     /// Adds an agent reply and feeds it through the stream parser a line at a
@@ -163,9 +202,11 @@ final class ChatStore {
 
     private func apply(_ nodes: [YLNode], to id: String) {
         guard !nodes.isEmpty, let i = messages.firstIndex(where: { $0.id == id }) else { return }
+        let before = messages[i].yl
         withAnimation(spring) {
             for n in nodes { messages[i].yl?.apply(n) }
         }
+        stageUpdate(id, before: before)
         // Demo streams restyle live too, stamped now.
         for n in nodes where n.op == .theme {
             guard let agentID = agent?.id else { continue }

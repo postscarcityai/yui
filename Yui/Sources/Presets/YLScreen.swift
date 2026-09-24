@@ -25,6 +25,9 @@ struct YLScreen: Equatable, Sendable {
     private(set) var looks: [[String: String]] = []
     private var saved: [String: [YLComponent]] = [:]
     private var serial = 0
+    /// The component count when the last `close` line landed. Staged components
+    /// at or under it arrived before the agent closed the stage (spec section 5).
+    private(set) var closedAt = 0
 
     init() {}
 
@@ -64,6 +67,8 @@ struct YLScreen: Equatable, Sendable {
             }
         case .focus:
             break
+        case .close:
+            closedAt = serial
         case .theme:
             looks.append((node.props ?? [:]).compactMapValues { v in v.string ?? v.number.map(YLComponent.format) })
         case .error:
@@ -72,6 +77,11 @@ struct YLScreen: Equatable, Sendable {
     }
 
     var isEmpty: Bool { components.isEmpty && errors.isEmpty && looks.isEmpty }
+
+    /// Something on the stage the agent has not closed again.
+    func wantsStage(_ style: [String: String]) -> Bool {
+        components.contains { $0.serial > closedAt && $0.onStage(style) }
+    }
 }
 
 /// One interaction going back to the agent: `{id, preset, ...value}` (spec section 7).

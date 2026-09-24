@@ -4,23 +4,22 @@ import YuiLines
 
 /// `timer`: work/rest rounds on a progress ring, or a stopwatch with `+up`.
 /// Beeps on the last 3 seconds of a phase and on every phase change.
+/// The clock lives in `TimerRuns` when the chat hosts it, so the same timer
+/// keeps its time between the stage and the chat (YUI-13).
 struct TimerPreset: View {
     let c: YLComponent
-    @State private var banked: TimeInterval = 0
-    @State private var since: Date?
+    @State private var local = TimerRun()
     @State private var now = Date.now
-    @State private var started = false
-    @State private var finished = false
+    @Environment(\.ylTimers) private var timers
+    @Environment(\.ylScope) private var scope
     @Environment(\.yuiTheme) private var theme
     @Environment(\.colorScheme) private var scheme
     @Environment(\.ylEmit) private var emit
 
-    private var plan: TimerPlan {
-        TimerPlan(work: c.number("work") ?? 60, rest: c.number("rest") ?? 0,
-                  rounds: max(1, Int(c.number("rounds") ?? 1)), up: c.flag("up"))
-    }
-    private var running: Bool { since != nil }
-    private var elapsed: TimeInterval { banked + (since.map { now.timeIntervalSince($0) } ?? 0) }
+    private var run: TimerRun { timers?.run(scope, c) ?? local }
+    private var plan: TimerPlan { c.timerPlan }
+    private var running: Bool { run.running }
+    private var elapsed: TimeInterval { run.elapsed(at: now) }
 
     var body: some View {
         let s = theme.swatch(scheme)
@@ -80,16 +79,26 @@ struct TimerPreset: View {
                 try? await Task.sleep(for: .milliseconds(100))
             }
         }
-        .onAppear { if c.flag("auto"), !started { toggle() } }
+        .onAppear {
+            now = .now
+            // It ran out while no view was watching: finish it now, once.
+            if running, plan.state(at: elapsed).done, !run.finished {
+                run.banked = elapsed
+                run.since = nil
+                run.finished = true
+                emit(c.event(["done": .bool(true), "rounds": .number(Double(plan.rounds))]))
+            }
+            if c.flag("auto"), !run.started { toggle() }
+        }
         .onChange(of: st.beepKey) { old, new in
             guard running, old != new else { return }
             beep(new.phase != old.phase)
         }
         .onChange(of: st.done) { _, done in
-            guard done, running, !finished else { return }
-            banked = elapsed
-            since = nil
-            finished = true
+            guard done, running, !run.finished else { return }
+            run.banked = elapsed
+            run.since = nil
+            run.finished = true
             emit(c.event(["done": .bool(true), "rounds": .number(Double(plan.rounds))]))
         }
         .sensoryFeedback(.impact(weight: .medium), trigger: st.beepKey.phase)
@@ -98,14 +107,14 @@ struct TimerPreset: View {
     private func toggle() {
         withAnimation(theme.spring) {
             if plan.state(at: elapsed).done { reset() }
-            if let since {
-                banked += Date.now.timeIntervalSince(since)
-                self.since = nil
+            if let since = run.since {
+                run.banked += Date.now.timeIntervalSince(since)
+                run.since = nil
             } else {
                 now = .now
-                since = now
-                if !started {
-                    started = true
+                run.since = now
+                if !run.started {
+                    run.started = true
                     emit(c.event(["started": .bool(true)]))
                 }
             }
@@ -114,9 +123,9 @@ struct TimerPreset: View {
 
     private func reset() {
         withAnimation(theme.spring) {
-            since = nil
-            banked = 0
-            finished = false
+            run.since = nil
+            run.banked = 0
+            run.finished = false
         }
     }
 
@@ -125,8 +134,10 @@ struct TimerPreset: View {
         AudioServicesPlaySystemSound(phaseChange ? 1005 : 1103)
     }
 
-    private func clock(_ t: TimeInterval) -> String {
-        let n = Int(t.rounded(plan.up ? .down : .up))
+    private func clock(_ t: TimeInterval) -> String { Self.clock(t, up: plan.up) }
+
+    static func clock(_ t: TimeInterval, up: Bool) -> String {
+        let n = Int(t.rounded(up ? .down : .up))
         return n >= 3600 ? String(format: "%d:%02d:%02d", n / 3600, n / 60 % 60, n % 60)
             : String(format: "%d:%02d", n / 60, n % 60)
     }
