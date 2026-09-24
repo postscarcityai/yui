@@ -66,6 +66,8 @@ Without Hermes loaded, `python3 hermes-plugin/yui/connector.py pair <code> --pro
 
 A live round trip test (type, get a Yui Lines screen, tap, get a timer) runs against a real session and a running gateway: `TEST_RUNNER_YUI_RT=<refresh token> TEST_RUNNER_YUI_USER=<uuid> xcodebuild test -scheme Yui -only-testing:YuiUITests`. Without those it skips. Mint a fresh `yui_sessions` row for every run: yui-auth rotates refresh tokens, and replaying a spent one reads as a leak and signs the account out on every device.
 
+Demo clips for the site and social: `python3 scripts/demo_clips.py [timer chart ...]` plays a scripted reply per preset on the demo account (`YuiUITests/YuiDemoTests`) while the simulator records, then cuts a 9:16 and a 16:9 MP4 with the caption burned in, plus a poster and a `clips.json` manifest, into `yuigui/site/public/demo/clips/`. No network, no real account. A new preset gets a test method there and a caption in the script.
+
 ## Backend notes
 
 - Sign in with Apple only. Users never enter Supabase Auth: `yui-auth` verifies Apple's identity token and mints a 15-minute JWT with role `yui_user`, which can reach only `yui_*` rows keyed to that user. `yui-delete` revokes the Apple token and deletes the account. Every `yui_*` table cascades from `yui_users`.

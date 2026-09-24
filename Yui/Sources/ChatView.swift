@@ -150,8 +150,19 @@ struct ChatView: View {
         .onChange(of: theme) { store.spring = theme.spring }
         #if DEBUG
         // -yuiThemeDemo "say Autumn it is.\ntheme autumn": the agent restyles itself, live, for screenshots.
+        // -yuiDemoPrompt "Tabata tonight?" puts the person's message above it, after
+        // -yuiDemoDelay seconds [1.5] (demo clips wait for the recording to catch up).
         .task {
             guard let text = UserDefaults.standard.string(forKey: "yuiThemeDemo") else { return }
+            if let prompt = UserDefaults.standard.string(forKey: "yuiDemoPrompt") {
+                let delay = UserDefaults.standard.object(forKey: "yuiDemoDelay") == nil
+                    ? 1.5 : UserDefaults.standard.double(forKey: "yuiDemoDelay")
+                try? await Task.sleep(for: .seconds(delay))
+                withAnimation(theme.spring) { store.messages.append(ChatMessage(text: prompt, fromUser: true)) }
+                try? await Task.sleep(for: .seconds(1.2))
+                store.stream(text.replacingOccurrences(of: "\\n", with: "\n"))
+                return
+            }
             try? await Task.sleep(for: .seconds(2.5))
             store.stream(text.replacingOccurrences(of: "\\n", with: "\n"))
         }
