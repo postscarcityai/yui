@@ -566,7 +566,7 @@ final class Narrator: NSObject, AVSpeechSynthesizerDelegate {
     }
 
     /// `voice=agent` is the agent's own voice: one stable pick per agent among
-    /// the installed voices for the language. Else a voice by name or language.
+    /// the most natural installed voices for the language. Else a voice by name or language.
     static func voice(_ name: String?, lang: String?, agent: String) -> AVSpeechSynthesisVoice? {
         let voices = AVSpeechSynthesisVoice.speechVoices()
         let language = lang ?? AVSpeechSynthesisVoice.currentLanguageCode()
@@ -574,10 +574,43 @@ final class Narrator: NSObject, AVSpeechSynthesizerDelegate {
             if let v = voices.first(where: { $0.name.caseInsensitiveCompare(name) == .orderedSame }) { return v }
             if let v = voices.first(where: { $0.language.caseInsensitiveCompare(name) == .orderedSame }) { return v }
         }
-        let pool = voices.filter { $0.language == language }.sorted { ($0.quality.rawValue, $0.identifier) > ($1.quality.rawValue, $1.identifier) }
-        let best = pool.filter { $0.quality == pool.first?.quality }
-        guard !best.isEmpty else { return AVSpeechSynthesisVoice(language: language) }
-        return best[agent.unicodeScalars.reduce(0) { $0 &+ Int($1.value) } % best.count]
+        let infos = voices.map { VoiceInfo(id: $0.identifier, language: $0.language, quality: $0.quality.rawValue,
+                                           novelty: $0.voiceTraits.contains(.isNoveltyVoice),
+                                           personal: $0.voiceTraits.contains(.isPersonalVoice)) }
+        if let id = pick(infos, language: language, agent: agent), let v = AVSpeechSynthesisVoice(identifier: id) { return v }
+        return AVSpeechSynthesisVoice(language: language)
+    }
+
+    struct VoiceInfo: Equatable {
+        let id: String
+        let language: String
+        let quality: Int
+        var novelty = false
+        var personal = false
+
+        /// The old MacinTalk voices (Fred, Zarvox, Bad News) and the Eloquence
+        /// set (Eddy, Grandpa, Reed) ship on every device at default quality
+        /// and read as robots (TestFlight: "sounds like Stephen Hawking").
+        var robotic: Bool {
+            novelty || id.contains(".speech.synthesis.voice.") || id.contains(".eloquence.")
+        }
+
+        /// Premium, then enhanced, then the Siri and compact voices.
+        var rank: Int {
+            let siri = id.contains(".siri") || id.contains(".voice.compact.") || id.contains(".voice.super-compact.")
+            return quality * 10 + (siri ? 1 : 0)
+        }
+    }
+
+    /// Never a robot or the person's own Personal Voice. The best tier for the
+    /// language wins; the agent's name picks within it so agents differ when
+    /// several good voices are installed. Nil when nothing natural is installed.
+    static func pick(_ voices: [VoiceInfo], language: String, agent: String) -> String? {
+        let pool = voices.filter { $0.language == language && !$0.robotic && !$0.personal }
+            .sorted { ($0.rank, $0.id) > ($1.rank, $1.id) }
+        let best = pool.filter { $0.rank == pool.first?.rank }
+        guard !best.isEmpty else { return nil }
+        return best[agent.unicodeScalars.reduce(0) { $0 &+ Int($1.value) } % best.count].id
     }
 }
 
