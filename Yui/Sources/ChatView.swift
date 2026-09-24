@@ -11,6 +11,7 @@ struct ChatView: View {
     @Environment(\.agentStyle) private var agentStyle
     @State private var draft = ""
     @State private var store = ChatStore(messages: ChatView.seed)
+    @State private var outbox = Outbox.shared
     @State private var showSettings = ProcessInfo.processInfo.arguments.contains("-yuiSettings")
     @State private var settingsDetent: PresentationDetent =
         ProcessInfo.processInfo.arguments.contains("-yuiSettingsLarge") ? .large : .medium
@@ -41,10 +42,19 @@ struct ChatView: View {
                                 if let yl = m.yl {
                                     YLReply(screen: yl, scope: m.id, agent: store.agent, style: agentStyle) { store.openStage(m.id) }
                                 } else {
-                                    Bubble(message: m, agent: store.agent)
+                                    Bubble(message: m, agent: store.agent, pending: outbox.isPending(m.id))
                                 }
                             }
-                            if store.waiting {
+                            if let agent = store.agent, outbox.offline, !outbox.pending(agentID: agent.id).isEmpty {
+                                // On the phone, not on Yui yet: it sends itself when the connection is back.
+                                QuietNote(text: "Not sent yet. It goes the moment you're back online.", icon: "clock")
+                            } else if store.waiting, let agent = store.agent, agent.liveness != .online {
+                                // Delivered, but the agent's computer is away: say so instead of fake dots.
+                                QuietNote(text: agent.liveness == .asleep
+                                          ? "\(agent.name) is asleep. It gets this when its computer wakes."
+                                          : "\(agent.name) is offline. It gets this when its gateway starts again.",
+                                          icon: agent.liveness == .asleep ? "moon.zzz" : "powersleep")
+                            } else if store.waiting {
                                 TypingDots(agent: store.agent).id("typing")
                                 SlowReplyHint(agent: store.agent, since: store.waitingSince)
                             }
@@ -79,11 +89,12 @@ struct ChatView: View {
                                 Text(agent.name)
                                     .font(theme.font(theme.type.body, theme.strong))
                                     .foregroundStyle(c.ink)
-                                Circle().fill(agent.status == .connected ? c.mint : c.outline).frame(width: 8, height: 8)
+                                Circle().fill(agent.liveness == .online ? c.mint : agent.liveness == .asleep ? c.lavender : c.outline)
+                                    .frame(width: 8, height: 8)
                             }
                         }
                         .buttonStyle(.plain)
-                        .accessibilityLabel("Talking to \(agent.name), \(agent.status == .connected ? "online" : "offline")")
+                        .accessibilityLabel("Talking to \(agent.name), \(agent.liveness == .pending ? "offline" : agent.liveness.rawValue)")
                     } else {
                         Wordmark(height: 26)
                     }
@@ -145,7 +156,13 @@ struct ChatView: View {
             store.stream(text.replacingOccurrences(of: "\\n", with: "\n"))
         }
         #endif
-        .task { await agents.refresh() }
+        .task {
+            // Presence changes on its own (a Mac falls asleep): keep it honest while the chat is up.
+            while !Task.isCancelled {
+                await agents.refresh()
+                try? await Task.sleep(for: .seconds(30))
+            }
+        }
         .onChange(of: agents.selected?.id, initial: true) {
             // The demo account keeps the local demo chat, with the agent's face on it.
             if account.session?.userID == "demo" { store.demo(agents.selected); return }
@@ -270,6 +287,8 @@ private struct YLReply: View {
 private struct Bubble: View {
     let message: ChatMessage
     var agent: YuiAgent?
+    /// Still in the outbox: on the phone, not on Yui yet.
+    var pending = false
     @Environment(\.yuiTheme) private var theme
     @Environment(\.colorScheme) private var scheme
 
@@ -290,8 +309,11 @@ private struct Bubble: View {
                 .padding(.vertical, theme.spacing.m)
                 .background(message.fromUser ? c.userBubble : c.agentBubble, in: shape)
                 .overlay(shape.stroke(message.fromUser ? .clear : c.outline, lineWidth: 1.5))
+                .opacity(pending ? 0.6 : 1)
+                .accessibilityLabel(pending ? "\(message.text), not sent yet" : message.text)
             if !message.fromUser { Spacer(minLength: 48) }
         }
+        .animation(.easeInOut(duration: 0.3), value: pending)
         .transition(.scale(scale: 0.85, anchor: message.fromUser ? .bottomTrailing : .bottomLeading)
             .combined(with: .opacity))
     }
@@ -320,6 +342,23 @@ private struct AgentFace: View {
     var agent: YuiAgent?
     var body: some View {
         if let agent { AgentBadge(agent: agent, size: 34) } else { YuiAvatar(size: 34) }
+    }
+}
+
+/// One quiet status line in the thread: not sent yet, the agent is asleep.
+private struct QuietNote: View {
+    let text: String
+    let icon: String
+    @Environment(\.yuiTheme) private var theme
+    @Environment(\.colorScheme) private var scheme
+
+    var body: some View {
+        Label(text, systemImage: icon)
+            .font(theme.font(theme.type.caption, .semibold))
+            .foregroundStyle(theme.swatch(scheme).inkSoft)
+            .frame(maxWidth: .infinity, alignment: .trailing)
+            .transition(.opacity)
+            .accessibilityIdentifier("quiet-note")
     }
 }
 
@@ -371,7 +410,9 @@ private struct EmptyChat: View {
                     .font(theme.font(theme.type.display, theme.strong))
                     .foregroundStyle(c.ink)
                     .multilineTextAlignment(.center)
-                Text(agent.status == .offline ?
+                Text(agent.liveness == .asleep ?
+                        "\(agent.name) is asleep right now. Messages wait and arrive when its computer wakes." :
+                        agent.liveness == .offline ?
                         "\(agent.name) is offline right now. Messages wait until it's back.\nTo wake it, run hermes gateway restart on its computer." :
                         "Same agent as everywhere else,\nnow with buttons.")
                     .font(theme.font(theme.type.body))

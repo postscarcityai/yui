@@ -142,6 +142,7 @@ final class Account {
     private func clear() {
         Keychain.delete(key: Self.keychainKey)
         session = nil
+        Outbox.shared.clear()  // unsent messages belonged to that account
     }
 
     private func store(_ reply: TokenReply, appleUserID: String) {

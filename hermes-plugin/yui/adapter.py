@@ -11,15 +11,22 @@ Transport: the gateway dials OUT to Supabase (PROOF). No inbound ports.
      that role read the user's messages and write agent replies, only in
      threads of agents bound to this connector. Never the service key.
   2. Realtime (postgres_changes on yui_messages) wakes the adapter; it then
-     reads new user rows over REST past a saved cursor. A slow poll covers
-     Realtime gaps and restarts, so nothing is lost or handled twice.
+     reads the person's rows the agent has not finished (handled_at is null),
+     oldest first. A slow poll covers Realtime gaps. Each row is marked
+     delivered_at when it goes to the agent and handled_at when the agent's
+     turn on it completes (YUI-28), so a gateway killed mid-turn gets the
+     message again on restart, and a turn that already answered is not run
+     twice (replies carry meta.turn, the rows they answer).
   3. Replies are inserted as sender='agent'. Text outside ```yui fences is a
      chat bubble; each ```yui block is Yui Lines the app renders as presets.
-     The adapter never parses or rewrites them.
+     The adapter never parses or rewrites them. Each reply gets its id here;
+     one that cannot be written (network down, Mac waking) waits in
+     outbox.py's file and goes out in order when Yui is reachable again.
   4. Taps arrive as kind='event' rows whose body is `[yui] <id> <preset>
      key=value ...` (what the agent reads) and whose meta holds the
      structured event.
-  5. A heartbeat every 45 s keeps the agent "connected" in the app.
+  5. A heartbeat every 45 s keeps the agent "online" in the app. A clean stop
+     says goodbye (action=bye), so the app shows offline, not asleep.
   6. Every agent message is pushed to the user's phones (yui-push
      action=notify): "<Agent> has something for you in Yui" for handoffs,
      a text preview for replies. The tap opens yui://agent/<id>/thread.
@@ -45,6 +52,7 @@ import logging
 import os
 import random
 import time
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -64,9 +72,10 @@ except ImportError:  # pragma: no cover
     WEBSOCKETS_AVAILABLE = False
 
 from gateway.config import Platform, PlatformConfig
-from gateway.platforms.base import BasePlatformAdapter, MessageEvent, MessageType, SendResult
+from gateway.platforms.base import (BasePlatformAdapter, MessageEvent, MessageType, ProcessingOutcome,
+                                    SendResult)
 
-from . import connector, media
+from . import connector, media, outbox
 
 logger = logging.getLogger(__name__)
 
@@ -81,6 +90,9 @@ POLL_SECONDS_DEGRADED = 3    # while Realtime is down
 REFRESH_MARGIN_SECONDS = 10 * 60
 PHX_HEARTBEAT_SECONDS = 25
 MAX_MESSAGE_LENGTH = 32000   # matches the yui_messages body check; never split a ```yui fence
+OUTBOX_BACKOFF_MAX = 60      # seconds between resends while Yui is unreachable
+FAILURE_ACK_SECONDS = 5      # a failed turn is acked only if the gateway is still up after this
+TURN_TIMEOUT_SECONDS = 30 * 60  # a turn that never reports back stops holding the queue
 
 
 def load_guide() -> tuple[str, str]:
@@ -152,6 +164,11 @@ class YuiAdapter(BasePlatformAdapter):
     def __init__(self, config: PlatformConfig):
         super().__init__(config=config, platform=Platform("yui"))
         extra = config.extra or {}
+        # "Gateway shutting down, your task will be interrupted" is not true on
+        # Yui: an interrupted turn is replayed after the restart (YUI-28). Off
+        # unless the profile's YAML sets it.
+        if "gateway_restart_notification" not in extra:
+            config.gateway_restart_notification = False
         # Which Yui agents this gateway serves: the ones whose remote_ref is
         # this profile's name (override with platforms.yui.extra.remote_ref).
         self._remote_ref: str = (extra.get("remote_ref") or os.getenv("YUI_REMOTE_REF")
@@ -167,9 +184,20 @@ class YuiAdapter(BasePlatformAdapter):
         self._realtime_ok = False
         self._fetch_lock = asyncio.Lock()
         self._inbound = asyncio.Event()
-        self._seen: Dict[str, float] = {}
+        # Delivery (YUI-28). The cursor is only a floor now: a new agent starts
+        # from the moment it was added, not from old history.
         self._cursor_file = self._state_dir() / "cursor.json"
         self._cursor: Dict[str, str] = {}
+        # One turn at a time per agent: rows that arrive while it works wait
+        # here and go in together as the next turn, in order. Hermes' own busy
+        # handling would interrupt the turn and keep only the newest message.
+        self._dispatched: set = set()                 # row ids this process has taken
+        self._queue: Dict[str, List[dict]] = {}       # agent id -> rows waiting for the next turn
+        self._busy: Dict[str, tuple] = {}             # agent id -> (row ids of the running turn, started)
+        self._turns: Dict[int, tuple] = {}            # id(event) -> (agent id, row ids)
+        self._acks: set = set()                       # handled, not yet written
+        self._outbox = outbox.Outbox(self._state_dir() / "outbox.jsonl")
+        self._outbox_wake = asyncio.Event()
 
     # Inbound is authorized upstream: RLS on yui_messages only ever shows this
     # connector the threads of its own paired user.
@@ -208,6 +236,10 @@ class YuiAdapter(BasePlatformAdapter):
                                   f"then `hermes -p {self._remote_ref} yui pair <code>`.", retryable=False)
             return False
         self._client = httpx.AsyncClient(timeout=httpx.Timeout(20.0))
+        # Load the floors BEFORE the session: it registers the agents, and an
+        # agent that looks new gets "now", which would skip everything sent
+        # while this gateway was down.
+        self._load_cursor()
         try:
             await self._refresh_session()
         except Exception as e:
@@ -215,7 +247,6 @@ class YuiAdapter(BasePlatformAdapter):
             await self._client.aclose()
             self._client = None
             return False
-        self._load_cursor()
         now = datetime.now(tz=timezone.utc).isoformat()
         for aid in self._agents:
             # First run for an agent: start from now, don't replay old history.
@@ -225,6 +256,7 @@ class YuiAdapter(BasePlatformAdapter):
         self._tasks = [
             asyncio.create_task(self._heartbeat_loop()),
             asyncio.create_task(self._poll_loop()),
+            asyncio.create_task(self._outbox_loop()),
         ]
         if WEBSOCKETS_AVAILABLE:
             self._tasks.append(asyncio.create_task(self._realtime_loop()))
@@ -235,6 +267,11 @@ class YuiAdapter(BasePlatformAdapter):
     async def disconnect(self) -> None:
         self._running = False
         self._mark_disconnected()
+        if self._client:
+            try:  # goodbye: the app shows offline at once instead of asleep
+                await asyncio.wait_for(self._connect_call({"action": "bye"}), 5)
+            except Exception as e:
+                logger.info("[yui] goodbye not sent: %s", e)
         for t in self._tasks:
             t.cancel()
         for t in self._tasks:
@@ -282,6 +319,7 @@ class YuiAdapter(BasePlatformAdapter):
         self._token_exp = _parse_ts(data["expires_at"]).timestamp()
         self._user_id = data["user_id"]
         self._set_agents(data.get("agents") or [])
+        save_session_cache(data)
 
     async def _heartbeat_loop(self) -> None:
         while self._running:
@@ -325,29 +363,119 @@ class YuiAdapter(BasePlatformAdapter):
 
     async def _fetch_new(self) -> None:
         async with self._fetch_lock:
+            await self._flush_acks()
             for aid in list(self._agents):
-                since = self._cursor.get(aid) or datetime.now(tz=timezone.utc).isoformat()
+                floor = self._cursor.get(aid) or datetime.now(tz=timezone.utc).isoformat()
                 r = await self._client.get(f"{REST}/yui_messages", headers=self._rest_headers(), params={
-                    "select": "id,user_id,agent_id,sender,body,kind,meta,created_at",
-                    "agent_id": f"eq.{aid}", "sender": "eq.user",
-                    "created_at": f"gt.{since}", "order": "created_at.asc", "limit": "50",
+                    "select": "id,user_id,agent_id,sender,body,kind,meta,created_at,delivered_at",
+                    "agent_id": f"eq.{aid}", "sender": "eq.user", "handled_at": "is.null",
+                    "created_at": f"gt.{floor}", "order": "created_at.asc,id.asc", "limit": "200",
                 })
                 if r.status_code == 401:
                     await self._refresh_session()
                     return
                 r.raise_for_status()
                 for row in r.json():
-                    self._cursor[aid] = row["created_at"]
-                    self._save_cursor()
-                    if row["id"] in self._seen:
+                    if row["id"] in self._dispatched:
+                        continue  # queued or in the running turn
+                    self._dispatched.add(row["id"])
+                    if row.get("delivered_at") and await self._answered(row):
+                        # An earlier run answered it and died before the ack.
+                        logger.info("[yui] %s was answered before a restart, not replaying", row["id"][:8])
+                        self._acks.add(row["id"])
                         continue
-                    self._seen[row["id"]] = time.time()
-                    await self._dispatch(row)
-            if len(self._seen) > 2000:
-                cutoff = time.time() - 3600
-                self._seen = {k: v for k, v in self._seen.items() if v > cutoff}
+                    self._queue.setdefault(aid, []).append(row)
+                await self._pump(aid)
+            await self._flush_acks()
+            if len(self._dispatched) > 5000:
+                live = {r["id"] for rows in self._queue.values() for r in rows}
+                live |= {i for ids, _ in self._busy.values() for i in ids}
+                self._dispatched = live | self._acks
 
-    async def _dispatch(self, row: dict) -> None:
+    async def _pump(self, aid: str) -> None:
+        """Start the agent's next turn with everything waiting, unless it is mid-turn."""
+        busy = self._busy.get(aid)
+        if busy and time.time() - busy[1] > TURN_TIMEOUT_SECONDS:
+            logger.warning("[yui] turn on %s never finished, moving on", ", ".join(i[:8] for i in busy[0]))
+            self._busy.pop(aid, None)
+            busy = None
+        waiting = self._queue.get(aid) or []
+        if not waiting:
+            return
+        # Commands (/stop, /new) go straight in, even mid-turn, and never replay.
+        commands = [r for r in waiting if r.get("kind") == "text" and r["body"].lstrip().startswith("/")]
+        for row in commands:
+            waiting.remove(row)
+            self._acks.add(row["id"])
+            await self._mark([row["id"]], "delivered_at")
+            await self._dispatch([row])
+        if busy or not waiting:
+            return
+        rows, self._queue[aid] = list(waiting), []
+        ids = [r["id"] for r in rows]
+        self._busy[aid] = (ids, time.time())
+        await self._mark(ids, "delivered_at")
+        await self._dispatch(rows)
+
+    async def _answered(self, row: dict) -> bool:
+        """True when an agent reply already names this row in its meta.turn:
+        written, or still waiting in the outbox."""
+        waiting = await asyncio.to_thread(self._outbox.items)
+        if any(row["id"] in ((i["row"].get("meta") or {}).get("turn") or []) for i in waiting):
+            return True
+        r = await self._client.get(f"{REST}/yui_messages", headers=self._rest_headers(), params={
+            "select": "id", "agent_id": f"eq.{row['agent_id']}", "sender": "eq.agent",
+            "meta->turn": f'cs.["{row["id"]}"]', "limit": "1",
+        })
+        return r.status_code == 200 and bool(r.json())
+
+    async def _mark(self, ids: List[str], column: str) -> bool:
+        """Set delivered_at or handled_at on the person's rows. Best effort."""
+        params = {"id": f"in.({','.join(ids)})"}
+        if column == "delivered_at":
+            params["delivered_at"] = "is.null"  # keep the first pickup time
+        try:
+            r = await self._client.patch(f"{REST}/yui_messages", params=params,
+                                         json={column: datetime.now(tz=timezone.utc).isoformat()},
+                                         headers={**self._rest_headers(), "prefer": "return=minimal"})
+            if r.status_code >= 300:
+                logger.warning("[yui] mark %s: %s %s", column, r.status_code, r.text[:120])
+            return r.status_code < 300
+        except Exception as e:
+            logger.warning("[yui] mark %s: %s", column, e)
+            return False
+
+    async def _flush_acks(self) -> None:
+        if not self._acks or not self._client:
+            return
+        ids = sorted(self._acks)
+        if await self._mark(ids, "handled_at"):
+            self._acks.difference_update(ids)
+
+    async def on_processing_complete(self, event: MessageEvent, outcome: ProcessingOutcome) -> None:
+        aid, ids = self._turns.pop(id(event), (None, []))
+        if not aid:
+            return
+        if self._busy.get(aid, ((),))[0] == ids:
+            self._busy.pop(aid, None)
+        if outcome == ProcessingOutcome.SUCCESS:
+            self._acks.update(ids)
+            await self._flush_acks()
+        else:
+            # Shutdown cancels a running turn (as cancelled or failed). Ack only
+            # if the gateway is still up a moment later, so a restart replays it.
+            self._spawn(self._ack_later(ids))
+        self._poke()  # rows that waited for this turn go next
+
+    async def _ack_later(self, ids: List[str]) -> None:
+        await asyncio.sleep(FAILURE_ACK_SECONDS)
+        if self._running:
+            self._acks.update(ids)
+            await self._flush_acks()
+
+    async def _dispatch(self, rows: List[dict]) -> None:
+        """One turn for these rows (oldest first): a backlog reads as one message, line by line."""
+        row = rows[-1]
         agent = self._agents.get(row["agent_id"], {})
         source = self.build_source(
             chat_id=row["agent_id"],
@@ -356,23 +484,31 @@ class YuiAdapter(BasePlatformAdapter):
             user_id=row["user_id"],
             user_name="Yui user",
         )
-        text, photos, types = row["body"], [], []
-        if media.USER_PATH.search(row["body"] + json.dumps(row.get("meta") or {})):
-            text, photos, types = await asyncio.to_thread(media.localize, row["body"], row.get("meta") or {},
-                                                          self._token, logger)
+        texts, photos, types = [], [], []
+        for r in rows:
+            text = r["body"]
+            if media.USER_PATH.search(r["body"] + json.dumps(r.get("meta") or {})):
+                text, p, t = await asyncio.to_thread(media.localize, r["body"], r.get("meta") or {},
+                                                     self._token, logger)
+                photos += p
+                types += t
+            texts.append(text)
         event = MessageEvent(
-            text=text,
+            text="\n".join(texts),
             message_type=MessageType.PHOTO if photos else MessageType.TEXT,
             media_urls=photos,
             media_types=types,
             source=source,
-            raw_message=row,
+            raw_message=row if len(rows) == 1 else rows,
             message_id=row["id"],
             timestamp=_parse_ts(row.get("created_at")),
             channel_prompt=look_prompt(agent),
         )
         self._last_inbound[row["agent_id"]] = time.time()
-        logger.info("[yui] inbound %s %s: %s", row.get("kind"), row["id"][:8], row["body"][:80])
+        for r in rows:
+            logger.info("[yui] inbound %s %s: %s", r.get("kind"), r["id"][:8], r["body"][:80])
+        if not event.is_command():
+            self._turns[id(event)] = (row["agent_id"], [r["id"] for r in rows])
         await self.handle_message(event)
 
     async def _realtime_loop(self) -> None:
@@ -443,22 +579,88 @@ class YuiAdapter(BasePlatformAdapter):
             return SendResult(success=True, message_id=None)
         if len(body) > MAX_MESSAGE_LENGTH:
             body = body[:MAX_MESSAGE_LENGTH]
-        if self._token_exp - time.time() < 60:
-            await self._refresh_session()
         body = await asyncio.to_thread(media.rewrite, body, lambda src: self._host(agent_id, src), logger)
-        row = {"user_id": self._user_id, "agent_id": agent_id, "sender": "agent", "body": body, "kind": "text"}
-        r = await self._client.post(f"{REST}/yui_messages", json=row, headers={
-            **self._rest_headers(), "prefer": "return=representation"})
-        if r.status_code >= 300:
-            logger.warning("[yui] send failed %s: %s", r.status_code, r.text[:200])
-            return SendResult(success=False, error=f"HTTP {r.status_code}: {r.text[:200]}")
-        mid = (r.json() or [{}])[0].get("id")
-        logger.info("[yui] outbound %s: %s", (mid or "")[:8], body[:80].replace("\n", " | "))
-        if mid:
-            handoff = bool(sender) or time.time() - self._last_inbound.get(agent_id, 0) > HANDOFF_AFTER_SECONDS
-            self._tasks.append(asyncio.create_task(self._notify(mid, sender, handoff)))
-            self._tasks = [t for t in self._tasks if not t.done()]
+        row = {"id": str(uuid.uuid4()), "user_id": self._user_id, "agent_id": agent_id, "sender": "agent",
+               "body": body, "kind": "text"}
+        turn = (self._busy.get(agent_id) or (None,))[0]
+        if turn and not sender:
+            row["meta"] = {"turn": turn}  # the rows this reply answers (restart dedupe)
+        handoff = bool(sender) or time.time() - self._last_inbound.get(agent_id, 0) > HANDOFF_AFTER_SECONDS
+        mid = row["id"]
+        # Older replies still waiting go first: never overtake them.
+        queued = await asyncio.to_thread(len, self._outbox)
+        result = "retry" if queued else await self._write_row(row)
+        if result == "drop":
+            return SendResult(success=False, error="Yui refused the reply")
+        if result == "retry":
+            await asyncio.to_thread(self._outbox.add, row, sender, handoff)
+            self._outbox_wake.set()
+            logger.info("[yui] outbound %s queued (%s waiting): %s", mid[:8], queued + 1,
+                        body[:80].replace("\n", " | "))
+            return SendResult(success=True, message_id=mid)
+        logger.info("[yui] outbound %s: %s", mid[:8], body[:80].replace("\n", " | "))
+        self._spawn(self._notify(mid, sender, handoff))
         return SendResult(success=True, message_id=mid)
+
+    def _spawn(self, coro) -> None:
+        self._tasks.append(asyncio.create_task(coro))
+        self._tasks = [t for t in self._tasks if not t.done()]
+
+    async def _write_row(self, row: dict) -> str:
+        """"sent" (or already there), "retry" (try again later) or "drop" (Yui refused it)."""
+        try:
+            if self._token_exp - time.time() < 60:
+                await self._refresh_session()
+            for attempt in (1, 2):
+                r = await self._client.post(f"{REST}/yui_messages", json=row, headers={
+                    **self._rest_headers(), "prefer": "return=minimal"})
+                if r.status_code < 300 or r.status_code == 409:
+                    return "sent"  # 409: an earlier try got through before its answer was lost
+                if r.status_code == 401 and attempt == 1:
+                    await self._refresh_session()
+                    continue
+                if r.status_code in (401, 408, 425, 429) or r.status_code >= 500:
+                    logger.warning("[yui] send %s: %s, will retry", row["id"][:8], r.status_code)
+                    return "retry"
+                logger.warning("[yui] send %s refused %s: %s", row["id"][:8], r.status_code, r.text[:200])
+                return "drop"
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            logger.warning("[yui] send %s: %s, will retry", row["id"][:8], e)
+        return "retry"
+
+    async def _outbox_loop(self) -> None:
+        """Deliver queued replies oldest first, backing off quietly while Yui is unreachable."""
+        backoff = 1.0
+        while self._running:
+            try:
+                item = await asyncio.to_thread(self._outbox.peek)
+                if not item:
+                    backoff = 1.0
+                    self._outbox_wake.clear()
+                    try:  # out-of-process senders append without waking us: look again soon
+                        await asyncio.wait_for(self._outbox_wake.wait(), 15)
+                    except asyncio.TimeoutError:
+                        pass
+                    continue
+                row = item["row"]
+                result = await self._write_row(row)
+                if result == "retry":
+                    await asyncio.sleep(backoff + random.random())
+                    backoff = min(backoff * 2, OUTBOX_BACKOFF_MAX)
+                    continue
+                await asyncio.to_thread(self._outbox.pop, row["id"])
+                backoff = 1.0
+                if result == "sent":
+                    logger.info("[yui] outbound %s delivered from the outbox after %.0fs", row["id"][:8],
+                                time.time() - item.get("queued_at", time.time()))
+                    self._spawn(self._notify(row["id"], item.get("sender"), item.get("handoff", False)))
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:
+                logger.warning("[yui] outbox: %s", e)
+                await asyncio.sleep(5)
 
     def _host(self, agent_id: str, src: str) -> str:
         return media.host(self._token, self._user_id, agent_id, src)
@@ -511,6 +713,26 @@ class YuiAdapter(BasePlatformAdapter):
         return {"name": f"Yui: {a.get('name', chat_id)}", "type": "dm", "chat_id": chat_id}
 
 
+def save_session_cache(session: dict) -> None:
+    """Who this host serves (no tokens), so a send while Yui is unreachable can queue."""
+    try:
+        path = outbox.state_dir() / "session.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        agents = [{k: a.get(k) for k in ("id", "name", "handle", "remote_ref")} for a in session.get("agents") or []]
+        tmp = path.with_suffix(".tmp")
+        tmp.write_text(json.dumps({"user_id": session.get("user_id"), "agents": agents}))
+        os.replace(tmp, path)
+    except OSError:
+        pass
+
+
+def load_session_cache() -> dict:
+    try:
+        return json.loads((outbox.state_dir() / "session.json").read_text())
+    except (FileNotFoundError, ValueError):
+        return {}
+
+
 def media_fence(preset: str, src: str, caption: Optional[str] = None) -> str:
     src = src.replace(" ", "%20") if src.startswith(("http://", "https://")) else src
     line = f"{preset} {src}" + (f" {json.dumps(caption)}" if caption else "")
@@ -527,11 +749,27 @@ async def _standalone_send(pconfig, chat_id: str, message: str, *, thread_id: Op
     ref = ((getattr(pconfig, "extra", None) or {}).get("remote_ref") or os.getenv("YUI_REMOTE_REF")
            or connector.current_profile() or "default")
     async with httpx.AsyncClient(timeout=20.0) as c:
-        r = await c.post(connector.BASE, json={"action": "session"},
-                         headers={"apikey": connector.PUBLISHABLE, "authorization": f"Bearer {token}"})
-        if r.status_code >= 300:
-            return {"error": f"yui session: HTTP {r.status_code}"}
-        s = r.json()
+        try:
+            r = await c.post(connector.BASE, json={"action": "session"},
+                             headers={"apikey": connector.PUBLISHABLE, "authorization": f"Bearer {token}"})
+            s = r.json() if r.status_code < 300 else None
+            if r.status_code in (401, 403):
+                return {"error": f"yui session: HTTP {r.status_code}"}
+        except httpx.HTTPError:
+            s = None
+        if s is None:
+            # Yui unreachable (the Mac just woke, the network is down): queue it
+            # for this profile's gateway, which delivers it when Yui is back.
+            cache = load_session_cache()
+            target, sender = connector.pick_agent(cache.get("agents") or [], ref, chat_id)
+            if not target or not cache.get("user_id") or media_files:
+                return {"error": "yui: unreachable, try again when online"}
+            mid = str(uuid.uuid4())
+            outbox.Outbox().add({"id": mid, "user_id": cache["user_id"], "agent_id": target["id"],
+                                 "sender": "agent", "body": message.strip()[:MAX_MESSAGE_LENGTH], "kind": "text"},
+                                sender, True)
+            return {"success": True, "platform": "yui", "chat_id": target["id"], "message_id": mid, "queued": True}
+        save_session_cache(s)
         target, sender = connector.pick_agent(s.get("agents") or [], ref, chat_id)
         if not target:
             return {"error": f"yui: no agent {chat_id!r} for profile {ref}"}
@@ -541,14 +779,21 @@ async def _standalone_send(pconfig, chat_id: str, message: str, *, thread_id: Op
             for f in files if f.lower().rsplit(".", 1)[-1] in media.TYPES]).strip()
         body = await asyncio.to_thread(
             media.rewrite, body, lambda src: media.host(s["access_token"], s["user_id"], target["id"], src), logger)
-        r = await c.post(f"{REST}/yui_messages", json={
-            "user_id": s["user_id"], "agent_id": target["id"], "sender": "agent",
-            "body": body[:MAX_MESSAGE_LENGTH], "kind": "text"},
-            headers={"apikey": connector.PUBLISHABLE, "authorization": f"Bearer {s['access_token']}",
-                     "prefer": "return=representation"})
-        if r.status_code >= 300:
-            return {"error": f"yui send: HTTP {r.status_code}: {r.text[:200]}"}
-        mid = r.json()[0]["id"]
+        row = {"id": str(uuid.uuid4()), "user_id": s["user_id"], "agent_id": target["id"], "sender": "agent",
+               "body": body[:MAX_MESSAGE_LENGTH], "kind": "text"}
+        mid = row["id"]
+        try:
+            r = await c.post(f"{REST}/yui_messages", json=row,
+                             headers={"apikey": connector.PUBLISHABLE, "authorization": f"Bearer {s['access_token']}",
+                                      "prefer": "return=minimal"})
+            status = r.status_code
+        except httpx.HTTPError:
+            status = 0
+        if status == 0 or status >= 500 or status == 429:
+            outbox.Outbox().add(row, sender, True)
+            return {"success": True, "platform": "yui", "chat_id": target["id"], "message_id": mid, "queued": True}
+        if status >= 300 and status != 409:
+            return {"error": f"yui send: HTTP {status}: {r.text[:200]}"}
         # Out of process (cron, another channel's session): always a handoff.
         p = await c.post(connector.PUSH, json=connector.notify_body(mid, sender, True),
                          headers={"apikey": connector.PUBLISHABLE, "authorization": f"Bearer {token}"})

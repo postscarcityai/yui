@@ -114,6 +114,8 @@ struct ThreadClient {
     let agentID: String
 
     /// The newest `limit` rows, oldest first; or everything after `since`.
+    /// Pass a `since` a little before the last row seen (`YuiTime.before`):
+    /// a row can commit after a later one, and ids dedupe the overlap.
     func fetch(since: String?, limit: Int = 100) async throws -> [ThreadRow] {
         var items = [
             URLQueryItem(name: "select", value: "id,sender,body,kind,meta,created_at"),
@@ -121,7 +123,7 @@ struct ThreadClient {
         ]
         if let since {
             items += [URLQueryItem(name: "created_at", value: "gt.\(since)"),
-                      URLQueryItem(name: "order", value: "created_at.asc")]
+                      URLQueryItem(name: "order", value: "created_at.asc,id.asc")]
         } else {
             items += [URLQueryItem(name: "order", value: "created_at.desc"),
                       URLQueryItem(name: "limit", value: String(limit))]
@@ -149,6 +151,12 @@ struct ThreadClient {
     }
 
     private func request(_ r: URLRequest) async throws -> Data {
+        #if DEBUG
+        // `-yuiOfflineFlag <path>`: while that file exists the network is "down" (YUI-28 tests).
+        if let flag = UserDefaults.standard.string(forKey: "yuiOfflineFlag"), FileManager.default.fileExists(atPath: flag) {
+            throw URLError(.notConnectedToInternet)
+        }
+        #endif
         var req = r
         req.setValue(YuiBackend.publishableKey, forHTTPHeaderField: "apikey")
         req.setValue("Bearer \(try await account.validAccessToken())", forHTTPHeaderField: "Authorization")
@@ -157,5 +165,20 @@ struct ThreadClient {
             throw AccountError.server("http_\((response as? HTTPURLResponse)?.statusCode ?? 0)")
         }
         return data
+    }
+}
+
+/// Server timestamps (`2026-09-24T10:47:09.714466+00:00`).
+enum YuiTime {
+    /// `ts` moved `seconds` earlier, for an overlapping poll. Unparseable: `ts` as is.
+    static func before(_ ts: String, seconds: TimeInterval) -> String {
+        var base = ts
+        var zone = ""
+        if let z = base.range(of: #"(Z|[+-]\d\d:\d\d)$"#, options: .regularExpression) {
+            zone = String(base[z]); base.removeSubrange(z)
+        }
+        if let dot = base.firstIndex(of: ".") { base = String(base[..<dot]) }
+        guard let date = try? Date(base + (zone.isEmpty ? "Z" : zone), strategy: .iso8601) else { return ts }
+        return date.addingTimeInterval(-seconds).formatted(.iso8601)
     }
 }

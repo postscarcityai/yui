@@ -64,6 +64,7 @@ final class ChatStore {
     private(set) var loaded = false
     var error: String?
     private var client: ThreadClient?
+    private weak var account: Account?
     private var poll: Task<Void, Never>?
     private var cursor: String?
     private var seen = Set<String>()
@@ -88,11 +89,12 @@ final class ChatStore {
             try? out.close()
         }
         #endif
+        let id = UUID().uuidString.lowercased()
         if let echo = e.echo {
-            withAnimation(spring) { messages.append(ChatMessage(text: echo, fromUser: true)) }
+            withAnimation(spring) { messages.append(ChatMessage(id: id, text: echo, fromUser: true)) }
         }
         guard client != nil, e.relays else { return }
-        post(body: e.line, kind: "event", meta: e.meta)
+        post(id: id, body: e.line, kind: "event", meta: e.meta)
     }
 
     /// `show` for the environment, made once: a fresh closure on every render
@@ -130,6 +132,7 @@ final class ChatStore {
         poll?.cancel()
         self.agent = agent
         client = agent.map { ThreadClient(account: account, agentID: $0.id) }
+        self.account = account
         messages = []
         stageID = nil
         stageOpen = false
@@ -148,45 +151,65 @@ final class ChatStore {
     }
 
     func send(_ text: String) {
-        let m = ChatMessage(text: text, fromUser: true)
+        let m = ChatMessage(id: UUID().uuidString.lowercased(), text: text, fromUser: true)
         withAnimation(spring) { messages.append(m) }
         post(id: m.id, body: text, kind: "text", meta: nil)
     }
 
-    private func post(id: String = UUID().uuidString, body: String, kind: String, meta: YLValue?) {
-        guard let client else { return }
+    /// Into the outbox first (on disk), then out: a dropped network or a killed
+    /// app never loses it, and it sends itself when the connection is back.
+    private func post(id: String = UUID().uuidString.lowercased(), body: String, kind: String, meta: YLValue?) {
+        guard client != nil, let agentID = agent?.id, let user = account?.session?.userID else { return }
         seen.insert(id.lowercased())
         waiting = true
         waitingSince = .now
-        Task {
-            do {
-                try await client.post(id: id, body: body, kind: kind, meta: meta)
-                error = nil
-            } catch {
-                waiting = false
-                self.error = "Couldn't send that. Check your connection and try again."
+        Outbox.shared.add(.init(id: id.lowercased(), userID: user, agentID: agentID, body: body, kind: kind,
+                                meta: meta, queuedAt: .now))
+    }
+
+    /// Messages still in the outbox for this thread, after the history: they
+    /// were sent last. Shown as not sent yet until they land.
+    private func restorePending() {
+        guard let agentID = agent?.id else { return }
+        var new: [ChatMessage] = []
+        for item in Outbox.shared.pending(agentID: agentID) where seen.insert(item.id).inserted {
+            if item.kind == "event" {
+                if let echo = item.meta?.object?["echo"]?.string { new.append(ChatMessage(id: item.id, text: echo, fromUser: true)) }
+            } else {
+                new.append(ChatMessage(id: item.id, text: item.body, fromUser: true))
             }
         }
+        guard !new.isEmpty else { return }
+        messages.append(contentsOf: new)
+        waiting = true
+        waitingSince = .now
     }
 
     func refresh() async {
         guard let client, let agentID = agent?.id else { return }
+        let first = !loaded
         do {
-            let rows = try await client.fetch(since: cursor)
+            // Overlap the last poll by 10 s: a row can commit after a later one.
+            let rows = try await client.fetch(since: cursor.map { YuiTime.before($0, seconds: 10) })
             guard agent?.id == agentID else { return }
             for row in rows { add(row) }
-            if let last = rows.last { cursor = last.createdAt }
+            if let last = rows.last?.createdAt, last > (cursor ?? "") { cursor = last }
             loaded = true
-            if let since = waitingSince, Date.now.timeIntervalSince(since) > 180 { waiting = false }
+            // Dots give up after 3 minutes for an agent that is online; one that is
+            // asleep keeps its "waiting" note until the answer comes.
+            if let since = waitingSince, Date.now.timeIntervalSince(since) > 180,
+               agent?.liveness == .online, Outbox.shared.pending(agentID: agentID).isEmpty { waiting = false }
         } catch {
             loaded = true
         }
+        if first { restorePending() }
     }
 
     private func add(_ row: ThreadRow) {
         let id = row.id.lowercased()
-        if row.sender == "agent" { waiting = false }
+        // Polls overlap: only a row not seen before can end the wait.
         guard seen.insert(id).inserted else { return }
+        if row.sender == "agent" { waiting = false }
         var new: [ChatMessage] = []
         if row.sender == "user" {
             if row.kind == "event" {

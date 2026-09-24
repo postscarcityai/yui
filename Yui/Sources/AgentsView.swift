@@ -179,20 +179,22 @@ struct StatusLine: View {
     }
 
     private func dot(_ c: Swatch) -> Color {
-        switch agent.status {
-        case .connected: .green
+        switch agent.liveness {
+        case .online: .green
+        case .asleep: c.lavender
         case .offline: c.inkSoft.opacity(0.5)
         case .pending: c.butter
         }
     }
 
+    /// Straight from the host's heartbeat (YUI-28), never guessed.
     private var text: String {
-        switch agent.status {
-        case .connected: return "Online"
+        let seen = agent.lastSeenAt.map { ", seen \($0.formatted(.relative(presentation: .named)))" } ?? ""
+        switch agent.liveness {
+        case .online: return "Online"
         case .pending: return "Waiting to connect"
-        case .offline:
-            guard let seen = agent.lastSeenAt else { return "Offline" }
-            return "Offline, seen \(seen.formatted(.relative(presentation: .named)))"
+        case .asleep: return "Asleep" + seen
+        case .offline: return "Offline" + seen
         }
     }
 }

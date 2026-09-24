@@ -4,7 +4,18 @@ import Observation
 /// One of the user's agents, as the `yui-agents` registry API returns it.
 /// Spec: yuigui/spec/AGENTS.md.
 struct YuiAgent: Codable, Identifiable, Equatable, Sendable {
-    enum Status: String, Codable, Sendable { case pending, connected, offline }
+    enum Status: String, Codable, Sendable {
+        case pending, connected, offline
+        /// A value this build doesn't know reads offline instead of failing the whole list.
+        init(from decoder: Decoder) throws {
+            self = Status(rawValue: try decoder.singleValueContainer().decode(String.self)) ?? .offline
+        }
+    }
+
+    /// What the host's heartbeat says (YUI-28). `asleep`: it went quiet without
+    /// saying goodbye (the computer slept or lost its network); `offline`: its
+    /// gateway stopped, or it was removed.
+    enum Liveness: String, Sendable { case online, asleep, offline, pending }
 
     let id: String
     var name: String
@@ -23,17 +34,27 @@ struct YuiAgent: Codable, Identifiable, Equatable, Sendable {
     var theme: AgentLook? = nil
     /// Its answers don't push to this person's phones (YUI-24). Nil from older servers.
     var pushMuted: Bool? = nil
+    /// online / asleep / offline / pending (YUI-28). Nil from older servers.
+    var presence: String? = nil
 
     enum CodingKeys: String, CodingKey {
         case id, name, handle, color, avatar, kind, status, sort, theme
         case connectorID = "connector_id", connectorName = "connector_name", remoteRef = "remote_ref"
-        case lastSeenAt = "last_seen_at", isDefault = "is_default", pushMuted = "push_muted"
+        case lastSeenAt = "last_seen_at", isDefault = "is_default", pushMuted = "push_muted", presence
     }
 }
 
 extension YuiAgent {
     var isYui: Bool { avatar == "yui" }
     var muted: Bool { pushMuted ?? false }
+    var liveness: Liveness {
+        if let p = presence.flatMap(Liveness.init(rawValue:)) { return p }
+        switch status {
+        case .connected: return .online
+        case .pending: return .pending
+        case .offline: return .offline
+        }
+    }
     /// The whole app wears this while its thread is open.
     var yuiTheme: YuiTheme { AgentLook.theme(theme, name: handle.isEmpty ? name : handle, isYui: isYui) }
 }

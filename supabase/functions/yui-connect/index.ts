@@ -14,6 +14,9 @@
 //       Trades the connector token for a 60-minute database token (role
 //       yui_connector) for Realtime and REST on the threads it serves, plus
 //       the current channel guide. Heartbeats too.
+//   {action: "bye"}                                      Bearer yui_ct_...
+//       The host is stopping cleanly (YUI-28): its agents read offline at
+//       once instead of asleep. The next heartbeat or session clears it.
 //   {action: "guide"}                                    no auth
 //       The current channel guide {version, body}: the text any agent gets
 //       on the Yui channel (yuigui/spec/CHANNEL.md).
@@ -64,6 +67,8 @@ Deno.serve(async (req) => {
         return await heartbeat(req);
       case "session":
         return await session(req);
+      case "bye":
+        return await bye(req);
       case "guide":
         return json({ guide: await guide(admin()) });
       default:
@@ -181,10 +186,19 @@ async function heartbeat(req: Request): Promise<Response> {
   const connector = await connectorFor(db, req);
   if (!connector) return json({ error: "unauthorized" }, 401);
   const now = new Date().toISOString();
-  await db.from("yui_connectors").update({ last_seen_at: now }).eq("id", connector.id);
+  await db.from("yui_connectors").update({ last_seen_at: now, stopped_at: null }).eq("id", connector.id);
   const { data: agents } = await db.from("yui_agents").select("id, name, handle, remote_ref, theme")
     .eq("connector_id", connector.id).order("sort");
   return json({ connector: { id: connector.id, name: connector.name }, seen_at: now, agents: agents ?? [] });
+}
+
+async function bye(req: Request): Promise<Response> {
+  const db = admin();
+  const connector = await connectorFor(db, req);
+  if (!connector) return json({ error: "unauthorized" }, 401);
+  const now = new Date().toISOString();
+  await db.from("yui_connectors").update({ last_seen_at: now, stopped_at: now }).eq("id", connector.id);
+  return json({ stopped_at: now });
 }
 
 // deno-lint-ignore no-explicit-any
@@ -199,7 +213,8 @@ async function session(req: Request): Promise<Response> {
   const connector = await connectorFor(db, req);
   if (!connector) return json({ error: "unauthorized" }, 401);
   const now = new Date();
-  await db.from("yui_connectors").update({ last_seen_at: now.toISOString() }).eq("id", connector.id);
+  await db.from("yui_connectors").update({ last_seen_at: now.toISOString(), stopped_at: null })
+    .eq("id", connector.id);
   const { data: agents } = await db.from("yui_agents").select("id, name, handle, remote_ref, theme")
     .eq("connector_id", connector.id).order("sort");
   return json({

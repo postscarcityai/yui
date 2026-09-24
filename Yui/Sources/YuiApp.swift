@@ -34,9 +34,17 @@ struct YuiApp: App {
                 account.willSignOut = { await PushCenter.shared.stop() }
                 await PushCenter.shared.start(account: account)
             }
+            // Messages that didn't make it out (no network, app killed) go now (YUI-28).
+            .task(id: account.session?.userID ?? "") {
+                guard account.isSignedIn, account.session?.userID != "demo" else { return }
+                Outbox.shared.start(account: account)
+            }
             .onOpenURL { PushCenter.shared.open($0) }
             // Open on a thread: its answers show there, no push (YUI-24).
-            .onChange(of: scenePhase, initial: true) { PushCenter.shared.setForeground(scenePhase == .active) }
+            .onChange(of: scenePhase, initial: true) {
+                PushCenter.shared.setForeground(scenePhase == .active)
+                if scenePhase == .active { Outbox.shared.kick() }
+            }
         }
     }
 }
