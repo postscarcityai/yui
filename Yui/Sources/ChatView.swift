@@ -43,10 +43,7 @@ struct ChatView: View {
                         .tint(c.inkSoft)
                 }
                 ToolbarItem(placement: .principal) {
-                    HStack(spacing: theme.spacing.s) {
-                        MascotAvatar(size: 30)
-                        Wordmark(height: 24)
-                    }
+                    Wordmark(height: 26)
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Settings", systemImage: "gearshape.fill") { showSettings = true }
@@ -141,7 +138,7 @@ private struct YLReply: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: theme.spacing.s) {
-            MascotAvatar(size: 34)
+            YuiAvatar(size: 34)
             VStack(alignment: .leading, spacing: theme.spacing.m) {
                 ForEach(screen.components) { PresetView(component: $0) }
                 ForEach(Array(screen.errors.enumerated()), id: \.offset) { YLErrorRow(node: $1) }
@@ -165,7 +162,7 @@ private struct Bubble: View {
             bottomTrailingRadius: message.fromUser ? r.bubbleTail : r.bubble,
             topTrailingRadius: r.bubble)
         HStack(alignment: .bottom, spacing: theme.spacing.s) {
-            if message.fromUser { Spacer(minLength: 48) } else { MascotAvatar(size: 34) }
+            if message.fromUser { Spacer(minLength: 48) } else { YuiAvatar(size: 34) }
             Text(message.text)
                 .font(theme.font(theme.type.body, .medium))
                 .foregroundStyle(message.fromUser ? c.userInk : c.agentInk)
@@ -187,17 +184,14 @@ private struct EmptyChat: View {
     var body: some View {
         let c = theme.swatch(scheme)
         VStack(spacing: theme.spacing.l) {
-            MascotAvatar(size: 132)
+            Wordmark(height: 110)
                 .phaseAnimator([false, true]) { view, up in
-                    view.offset(y: up ? -8 : 0)
+                    view.offset(y: up ? -6 : 0)
                 } animation: { _ in .easeInOut(duration: 1.1) }
-            HStack(alignment: .lastTextBaseline, spacing: theme.spacing.s) {
-                Wordmark(height: 52)
-                Text("is here!")
-                    .font(theme.font(theme.type.display, .heavy))
-                    .foregroundStyle(c.ink)
-            }
-            .accessibilityElement(children: .combine)
+            Text("is here, and happy to see you!")
+                .font(theme.font(theme.type.display, .heavy))
+                .foregroundStyle(c.ink)
+                .multilineTextAlignment(.center)
             Text("Say hi, ask a question, or tell me\nwhat you want to get done.")
                 .font(theme.font(theme.type.body))
                 .foregroundStyle(c.inkSoft)

@@ -11,6 +11,8 @@ struct YuiTheme: Codable, Equatable, Sendable {
     var spacing: Spacing
     var type: Typography
     var motion: Motion
+    /// Agent name (lowercased) -> palette token for its avatar chip, e.g. "urza": "lavender".
+    var agents: [String: String]
 
     struct Palette: Codable, Equatable, Sendable {
         /// Hex strings, "#RRGGBB" or "#RRGGBBAA".
@@ -84,7 +86,8 @@ extension YuiTheme {
         radius: Radii(bubble: 22, bubbleTail: 8, pill: 26, card: 28, avatar: 18),
         spacing: Spacing(xs: 4, s: 8, m: 12, l: 16, xl: 24),
         type: Typography(design: "rounded", body: 17, caption: 13, title: 20, display: 28),
-        motion: Motion(springResponse: 0.35, springDamping: 0.55, bounceScale: 1.18)
+        motion: Motion(springResponse: 0.35, springDamping: 0.55, bounceScale: 1.18),
+        agents: ["urza": "lavender", "arnold": "mint"]
     )
 }
 
@@ -106,6 +109,13 @@ extension YuiTheme {
 
     func font(_ size: Double, _ weight: Font.Weight = .regular) -> Font {
         .system(size: size, weight: weight, design: fontDesign)
+    }
+
+    /// Unmapped agents get a stable pastel picked from their name.
+    func agentColorToken(for name: String) -> String {
+        if let token = agents[name.lowercased()] { return token }
+        let pastels = ["mint", "lavender", "butter"]
+        return pastels[name.lowercased().unicodeScalars.reduce(0) { $0 + Int($1.value) } % pastels.count]
     }
 
     var spring: Animation {
@@ -156,6 +166,22 @@ struct Swatch {
         lavender = Color(hex: p.lavender); butter = Color(hex: p.butter)
         userBubble = Color(hex: p.userBubble); userInk = Color(hex: p.userInk)
         agentBubble = Color(hex: p.agentBubble); agentInk = Color(hex: p.agentInk)
+    }
+}
+
+extension Swatch {
+    /// Looks up a color by its palette token name. Unknown names fall back to `lavender`.
+    func color(token: String) -> Color {
+        switch token {
+        case "brand": brand
+        case "accent": accent
+        case "mint": mint
+        case "butter": butter
+        case "userBubble": userBubble
+        case "agentBubble": agentBubble
+        case "surface": surface
+        default: lavender
+        }
     }
 }
 

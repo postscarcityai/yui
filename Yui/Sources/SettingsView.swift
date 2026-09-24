@@ -9,9 +9,8 @@ struct SettingsView: View {
         let c = theme.swatch(scheme)
         VStack(spacing: theme.spacing.xl) {
             VStack(spacing: theme.spacing.s) {
-                MascotAvatar(size: 72)
-                Wordmark(height: 40)
-                Text("Settings").font(theme.font(theme.type.title, .heavy)).foregroundStyle(c.inkSoft)
+                Wordmark(height: 56)
+                Text("Make Yui feel like yours.").font(theme.font(theme.type.body, .semibold)).foregroundStyle(c.inkSoft)
             }
             VStack(alignment: .leading, spacing: theme.spacing.m) {
                 Text("Appearance").font(theme.font(theme.type.caption, .bold)).foregroundStyle(c.inkSoft)
@@ -21,6 +20,21 @@ struct SettingsView: View {
                             withAnimation(theme.spring) { appearance = option }
                         }
                     }
+                }
+            }
+            .padding(theme.spacing.l)
+            .background(c.surface, in: .rect(cornerRadius: theme.radius.card))
+            .overlay(RoundedRectangle(cornerRadius: theme.radius.card).stroke(c.outline, lineWidth: 1.5))
+            VStack(alignment: .leading, spacing: theme.spacing.m) {
+                Text("Your agents").font(theme.font(theme.type.caption, .bold)).foregroundStyle(c.inkSoft)
+                HStack(spacing: theme.spacing.l) {
+                    ForEach(["Urza", "Arnold"], id: \.self) { name in
+                        HStack(spacing: theme.spacing.s) {
+                            AgentAvatar(name: name, size: 36)
+                            Text(name).font(theme.font(theme.type.body, .bold)).foregroundStyle(c.ink)
+                        }
+                    }
+                    Spacer(minLength: 0)
                 }
             }
             .padding(theme.spacing.l)
