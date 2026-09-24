@@ -200,6 +200,7 @@ struct StagePill: View {
         case "timer": c.flag("up") ? "Stopwatch" : "Timer"
         case "camera": "Camera"
         case "mic": "Voice note"
+        case "plan": "Plan"
         default: c.preset.capitalized
         }
         return c.string("label") ?? c.string("title") ?? c.string("q") ?? c.string("prompt") ?? c.string("text") ?? named
@@ -211,6 +212,7 @@ struct StagePill: View {
         case "camera": "camera.fill"
         case "mic": "mic.fill"
         case "deck": "rectangle.stack.fill"
+        case "plan": "list.bullet.clipboard.fill"
         case "gallery": "photo.on.rectangle"
         default: "arrow.up.left.and.arrow.down.right"
         }

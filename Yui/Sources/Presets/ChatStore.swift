@@ -164,6 +164,8 @@ final class ChatStore {
         }
         #endif
         let id = UUID().uuidString.lowercased()
+        // A sent plan is done with the whole phone: back to the chat, where its answers land (YUI-51).
+        if e.preset == "plan", e.value["plan"] != nil, stageOpen { closeStage() }
         if let echo = e.echo {
             withAnimation(spring) { messages.append(ChatMessage(id: id, text: echo, fromUser: true)) }
         }

@@ -282,10 +282,9 @@ final class PresetFamiliesTests: XCTestCase {
         let retry = events().last { $0["preset"] as? String == "choose" }
         XCTAssertEqual(retry?["correct"] as? Bool, false)
         XCTAssertEqual(retry?["changed"] as? Bool, true)
-        close.tap()
-        sleep(1)
 
-        // plan: choose moves on by itself, pick, review, submit.
+        // plan: on the same stage under the deck (YUI-51). choose moves on by
+        // itself, pick, review, submit, and the stage closes on its own.
         let shop = app.buttons["Shop"]
         scrollTo(shop)
         sleep(1)
@@ -305,6 +304,7 @@ final class PresetFamiliesTests: XCTestCase {
         let plan = waitEvent("plan", "plan")?["plan"] as? [String: Any]
         XCTAssertEqual(plan?["kind"] as? String, "Shop")
         XCTAssertEqual(plan?["pages"] as? [String], ["Home", "Contact"])
+        XCTAssertTrue(close.waitForNonExistence(timeout: 4) || !close.isHittable, "sending the plan did not close the stage")
         sleep(1)
         shot("7-plan-sent")
 
@@ -325,6 +325,67 @@ final class PresetFamiliesTests: XCTestCase {
         shot("9-narrate-speaking")
         let finished = waitEvent("narrate", "done", timeout: 40)
         XCTAssertEqual(finished?["steps"] as? Int, 2)
+        attachEvents()
+    }
+
+    /// YUI-51: findings then questions in one full-screen flow, one Send, and
+    /// the answers fold back into the chat as the person's own message.
+    func testPlanFoldsBack() throws {
+        launch("fold", [
+            #"say "Here is what the last build fixed, then two picks for next.""#,
+            #"plan@review "Build review" submit="Send picks""#,
+            #"page "What broke" "Two buttons only took taps on their icon, so the gallery X felt dead and the Done pill hid under a tile." points="Gallery X: now a full 44pt target|Done pill: no tile covers it anymore""#,
+            #"page "What is new" "Hold any reply to react. Your reaction goes to the agent as one turn, with the message quoted." points="Six reactions|The badge stays on the bubble""#,
+            #"choose@next "What should the composer get next?" Files|"Voice notes as audio" +other"#,
+            #"pick@where "Where should it show up first?" "The app"|"The site""#,
+        ], appearance: "dark")
+        let close = app.buttons["Close full screen"]
+        XCTAssertTrue(close.waitForExistence(timeout: 20), "the plan did not take the stage")
+        XCTAssertTrue(app.staticTexts["What broke"].waitForExistence(timeout: 5))
+        sleep(2)
+        shot("1-page")
+        app.buttons["Next"].tap(); sleep(1)
+        XCTAssertTrue(app.staticTexts["What is new"].exists)
+        app.buttons["Next"].tap(); sleep(1)
+        shot("2-question")
+        app.buttons["Files"].tap()
+        let appPick = app.buttons["The app"]
+        XCTAssertTrue(appPick.waitForExistence(timeout: 3))
+        sleep(1)
+        appPick.tap()
+        app.buttons["The site"].tap()
+        app.buttons["Done"].tap()
+        XCTAssertTrue(events().isEmpty || !events().contains { ["choose", "pick"].contains($0["preset"] as? String) },
+                      "a plan step sent its own event")
+        app.buttons["Review"].tap(); sleep(1)
+        shot("3-review")
+        app.buttons["Send picks"].tap()
+
+        // One event with every answer, pages not keyed.
+        let plan = waitEvent("plan", "plan")?["plan"] as? [String: Any]
+        XCTAssertEqual(plan?["next"] as? String, "Files")
+        XCTAssertEqual(plan?["where"] as? [String], ["The app", "The site"])
+        XCTAssertEqual(plan?.count, 2)
+        XCTAssertEqual(events().filter { $0["preset"] as? String == "plan" }.count, 1)
+
+        // The stage closes; the answers are the person's own message.
+        XCTAssertTrue(close.waitForNonExistence(timeout: 4) || !close.isHittable, "sending did not close the stage")
+        let mine = "What should the composer get next? Files\nWhere should it show up first? The app, The site"
+        XCTAssertTrue(app.staticTexts[mine].waitForExistence(timeout: 4), "the answers did not fold back as a message")
+        sleep(1)
+        shot("4-folded")
+
+        // The record: title and what it held, expands to the pages, reopens the flow.
+        let record = app.buttons["Build review, sent, 2 pages, 2 answers"]
+        XCTAssertTrue(record.waitForExistence(timeout: 3), "no plan record in the chat")
+        record.tap(); sleep(1)
+        app.buttons["What broke"].tap(); sleep(1)
+        shot("5-record-open")
+        app.buttons["Open the flow"].tap()
+        XCTAssertTrue(close.waitForExistence(timeout: 4))
+        XCTAssertTrue(app.buttons["Edit answers"].waitForExistence(timeout: 4), "the reopened flow lost its answers")
+        sleep(1)
+        shot("6-reopened")
         attachEvents()
     }
 }

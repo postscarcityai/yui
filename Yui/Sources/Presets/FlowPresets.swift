@@ -40,6 +40,18 @@ extension YLComponent {
     var prompt: String {
         string("q") ?? string("label") ?? string("title") ?? string("prompt") ?? preset.capitalized
     }
+
+    /// A sent plan as the person's own message (spec: plan, folding back):
+    /// one line per answered question, in step order. "Next? Files", "Budget: 5".
+    static func foldText(_ steps: [YLComponent], _ answers: [String: YLValue]) -> String {
+        let lines = steps.filter { $0.preset != "page" }.compactMap { step -> String? in
+            guard let v = answers[step.ylID] else { return nil }
+            let q = step.prompt
+            let sep = q.hasSuffix("?") || q.hasSuffix(":") ? " " : ": "
+            return q + sep + (step.preset == "camera" ? "Photo" : answerText(v))
+        }
+        return lines.isEmpty ? "Sent" : lines.joined(separator: "\n")
+    }
 }
 
 /// Graded quiz feedback under an ask, choose or pick with `answer=`.
@@ -319,8 +331,10 @@ private struct DeckBody: View {
 
 // MARK: - plan
 
-/// `plan [title] submit= review=off`, then one question per step. Members send
-/// nothing themselves; the plan emits `{plan: {id: answer}}` on submit.
+/// `plan [title] submit= review=off`, then one step per line: pages to read,
+/// then questions (YUI-51). Members send nothing themselves; the plan emits
+/// `{plan: {id: answer}}` on submit, and the chat keeps the answers as the
+/// person's own message.
 struct PlanPreset: View {
     let c: YLComponent
     @State private var at = 0
@@ -328,6 +342,8 @@ struct PlanPreset: View {
     @State private var reviewing = false
     @State private var submitted = false
     @Environment(\.ylComponents) private var all
+    @Environment(\.ylAnswers) private var sent
+    @Environment(\.ylScope) private var scope
     @Environment(\.ylEmit) private var emit
     @Environment(\.yuiTheme) private var theme
     @Environment(\.colorScheme) private var scheme
@@ -354,13 +370,17 @@ struct PlanPreset: View {
                 // Every step stays mounted so its answer survives Back and Edit.
                 VStack(spacing: 0) {
                     ForEach(Array(steps.enumerated()), id: \.element.serial) { i, step in
-                        PresetView(component: step)
-                            .environment(\.ylEmit, relay(emit, pass: false) { e in record(e, step: step, i: i, steps: steps, review: review) })
-                            .frame(height: i == cur ? nil : 0, alignment: .top)
-                            .clipped()
-                            .opacity(i == cur ? 1 : 0)
-                            .allowsHitTesting(i == cur)
-                            .accessibilityHidden(i != cur)
+                        Group {
+                            // A page is a step to read: full size, no answer, Next moves on.
+                            if step.preset == "page" { PagePreset(c: step).padding(.vertical, theme.spacing.s) }
+                            else { PresetView(component: step) }
+                        }
+                        .environment(\.ylEmit, relay(emit, pass: false) { e in record(e, step: step, i: i, steps: steps, review: review) })
+                        .frame(height: i == cur ? nil : 0, alignment: .top)
+                        .clipped()
+                        .opacity(i == cur ? 1 : 0)
+                        .allowsHitTesting(i == cur)
+                        .accessibilityHidden(i != cur)
                     }
                 }
                 HStack(spacing: theme.spacing.s) {
@@ -377,6 +397,14 @@ struct PlanPreset: View {
                 }
             }
         }
+        .onAppear(perform: restore)
+    }
+
+    /// Reopened after a send (a relaunch, a scroll back): come back sent, answers filled in.
+    private func restore() {
+        guard answers.isEmpty, let plan = sent(scope, c.ylID)?["plan"]?.object else { return }
+        answers = plan
+        submitted = true
     }
 
     private func record(_ e: YLEvent, step: YLComponent, i: Int, steps: [YLComponent], review: Bool) {
@@ -396,7 +424,7 @@ struct PlanPreset: View {
 
     private func reviewList(_ steps: [YLComponent], _ s: Swatch) -> some View {
         VStack(alignment: .leading, spacing: theme.spacing.m) {
-            ForEach(Array(steps.enumerated()), id: \.element.serial) { i, step in
+            ForEach(Array(steps.enumerated()).filter { $0.element.preset != "page" }, id: \.element.serial) { i, step in
                 HStack(alignment: .top) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(step.prompt).font(theme.font(theme.type.caption, .heavy)).foregroundStyle(s.inkSoft)
@@ -421,7 +449,7 @@ struct PlanPreset: View {
         VStack(alignment: .leading, spacing: theme.spacing.s) {
             Label("Sent", systemImage: "checkmark.circle.fill").font(theme.font(theme.type.body, .heavy))
                 .foregroundStyle(ChartPalette.good(scheme))
-            ForEach(steps.filter { answers[$0.ylID] != nil }, id: \.serial) { step in
+            ForEach(steps.filter { $0.preset != "page" && answers[$0.ylID] != nil }, id: \.serial) { step in
                 Text("\(step.prompt): \(YLComponent.answerText(answers[step.ylID]))")
                     .font(theme.font(theme.type.caption, .semibold)).foregroundStyle(s.ink)
             }
@@ -433,9 +461,101 @@ struct PlanPreset: View {
 
     private func submit(_ steps: [YLComponent]) {
         var plan: [String: YLValue] = [:]
-        for step in steps { if let v = answers[step.ylID] { plan[step.ylID] = v } }
-        emit(c.event(["plan": .object(plan)], echo: c.string("title").map { "Plan sent: \($0)" } ?? "Plan sent"))
+        for step in steps where step.preset != "page" { if let v = answers[step.ylID] { plan[step.ylID] = v } }
+        // The echo is the fold-back: the chat shows it as the person's own message.
+        emit(c.event(["plan": .object(plan)], echo: YLComponent.foldText(steps, answers)))
         withAnimation(theme.spring) { submitted = true; reviewing = false }
+    }
+}
+
+// MARK: - plan record
+
+/// A sent plan in the chat (spec: plan, folding back): its title and what it
+/// held, folded. Tap to see the pages it showed; Open brings the flow back.
+struct PlanRecord: View {
+    let plan: YLComponent
+    let open: () -> Void
+    @State private var expanded = false
+    @State private var page: Int?
+    @Environment(\.ylComponents) private var all
+    @Environment(\.yuiTheme) private var theme
+    @Environment(\.colorScheme) private var scheme
+
+    var body: some View {
+        let s = theme.swatch(scheme)
+        let steps = all.members(of: plan)
+        let pages = steps.filter { $0.preset == "page" }
+        let asked = steps.count - pages.count
+        let held = [pages.isEmpty ? nil : "\(pages.count) page\(pages.count == 1 ? "" : "s")",
+                    "\(asked) answer\(asked == 1 ? "" : "s")"].compactMap { $0 }.joined(separator: ", ")
+        VStack(alignment: .leading, spacing: theme.spacing.s) {
+            Button { withAnimation(theme.spring) { expanded.toggle() } } label: {
+                HStack(spacing: theme.spacing.s) {
+                    Image(systemName: "checkmark")
+                        .font(theme.font(theme.type.caption, .black))
+                        .foregroundStyle(s.onAccent)
+                        .frame(width: 26, height: 26)
+                        .background(s.accent, in: Circle())
+                    VStack(alignment: .leading, spacing: 0) {
+                        Text(plan.string("title") ?? "Plan").font(theme.font(theme.type.body, .bold)).foregroundStyle(s.ink)
+                            .lineLimit(1)
+                        Text(held).font(theme.font(theme.type.caption, .semibold)).foregroundStyle(s.inkSoft)
+                    }
+                    Spacer(minLength: theme.spacing.s)
+                    Image(systemName: expanded ? "chevron.up" : "chevron.down")
+                        .font(theme.font(theme.type.caption, .heavy)).foregroundStyle(s.inkSoft)
+                }
+                .contentShape(.rect)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("\(plan.string("title") ?? "Plan"), sent, \(held)")
+            .accessibilityHint(expanded ? "Hides what it showed" : "Shows what it showed")
+            if expanded {
+                ForEach(Array(pages.enumerated()), id: \.element.serial) { i, p in
+                    VStack(alignment: .leading, spacing: theme.spacing.xs) {
+                        Button { withAnimation(theme.spring) { page = page == i ? nil : i } } label: {
+                            HStack {
+                                Text(p.string("title") ?? "Page \(i + 1)").font(theme.font(theme.type.body, .semibold))
+                                    .foregroundStyle(s.ink).multilineTextAlignment(.leading)
+                                Spacer()
+                                Image(systemName: page == i ? "minus" : "plus")
+                                    .font(theme.font(theme.type.caption, .heavy)).foregroundStyle(s.inkSoft)
+                            }
+                            .contentShape(.rect)
+                        }
+                        .buttonStyle(.plain)
+                        if page == i {
+                            if let b = p.string("body") {
+                                Text(b).font(theme.font(theme.type.caption, .medium)).foregroundStyle(s.inkSoft)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                            ForEach(Array((p.strings("points") ?? []).enumerated()), id: \.offset) { _, t in
+                                Label(t, systemImage: "circle.fill").labelStyle(PointLabel())
+                                    .font(theme.font(theme.type.caption, .medium)).foregroundStyle(s.inkSoft)
+                            }
+                        }
+                    }
+                    .padding(.top, theme.spacing.xs)
+                    .overlay(alignment: .top) { Rectangle().fill(s.outline).frame(height: 1) }
+                }
+                OptionPill(text: "Open the flow", fill: s.lavender) { open() }
+            }
+        }
+        .padding(theme.spacing.m)
+        .frame(maxWidth: 320, alignment: .leading)
+        .background(s.surface, in: .rect(cornerRadius: theme.radius.bubble))
+        .overlay(RoundedRectangle(cornerRadius: theme.radius.bubble).stroke(s.outline, lineWidth: 1.5))
+        .transition(.scale(scale: 0.9, anchor: .leading).combined(with: .opacity))
+    }
+}
+
+/// A small dot before a point, the text wrapping under itself.
+private struct PointLabel: LabelStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+            configuration.icon.font(.system(size: 5))
+            configuration.title.fixedSize(horizontal: false, vertical: true)
+        }
     }
 }
 

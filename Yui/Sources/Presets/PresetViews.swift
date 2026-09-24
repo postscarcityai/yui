@@ -24,13 +24,22 @@ struct YLItemsView: View {
     let items: [YLItem]
     var openStage: () -> Void = {}
     @Environment(\.ylScope) private var scope
+    @Environment(\.ylAnswers) private var answers
 
     var body: some View {
         ForEach(items) { item in
             switch item {
             case .one(let c): PresetView(component: c)
             case .steps(let cs): StepperPreset(steps: cs)
-            case .pill(let cs): StagePill(components: cs, scope: scope, open: openStage)
+            case .pill(let cs):
+                // A sent plan leaves a record instead of a pill (YUI-51).
+                if let plan = cs.first(where: { $0.preset == "plan" }), answers(scope, plan.ylID)?["plan"] != nil {
+                    PlanRecord(plan: plan, open: openStage)
+                    let rest = cs.filter { $0.serial != plan.serial }
+                    if !rest.isEmpty { StagePill(components: rest, scope: scope, open: openStage) }
+                } else {
+                    StagePill(components: cs, scope: scope, open: openStage)
+                }
             }
         }
     }
