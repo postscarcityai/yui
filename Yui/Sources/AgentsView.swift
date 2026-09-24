@@ -55,10 +55,11 @@ struct AgentsView: View {
         List {
             Section {
                 ForEach(store.agents) { agent in
+                    // Each row wears its agent's own look, whatever thread is open.
                     AgentRow(agent: agent, selected: agent.id == store.selected?.id) { editing = agent }
+                        .environment(\.yuiTheme, agent.yuiTheme)
                         .contentShape(.rect)
                         .onTapGesture { store.selectedID = agent.id; dismiss() }
-                        .listRowBackground(c.surface)
                         .swipeActions(edge: .trailing) {
                             Button("Edit", systemImage: "slider.horizontal.3") { editing = agent }.tint(c.inkSoft)
                         }
@@ -87,17 +88,21 @@ struct AgentsView: View {
     }
 }
 
-/// Avatar for any agent: Yui's own mark, or an initial chip in the agent's color.
+/// Avatar for any agent, always in that agent's own look (whatever thread is open):
+/// Yui's mark, or an initial chip in the agent's accent.
 struct AgentBadge: View {
     let agent: YuiAgent
     var size: Double
 
     var body: some View {
-        if agent.avatar == "yui" {
-            YuiAvatar(size: size)
-        } else {
-            AgentAvatar(name: agent.name, colorToken: agent.color, size: size)
+        Group {
+            if agent.isYui {
+                YuiAvatar(size: size)
+            } else {
+                AgentAvatar(name: agent.name, size: size)
+            }
         }
+        .environment(\.yuiTheme, agent.yuiTheme)
     }
 }
 
@@ -114,7 +119,7 @@ private struct AgentRow: View {
             AgentBadge(agent: agent, size: 44)
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: theme.spacing.s) {
-                    Text(agent.name).font(theme.font(theme.type.body, .bold)).foregroundStyle(c.ink)
+                    Text(agent.name).font(theme.font(theme.type.body, theme.strong)).foregroundStyle(c.ink)
                     if agent.isDefault {
                         Text("Default")
                             .font(theme.font(11, .bold)).foregroundStyle(c.inkSoft)
@@ -140,6 +145,12 @@ private struct AgentRow: View {
         .padding(.vertical, theme.spacing.xs)
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(selected ? .isSelected : [])
+        .listRowBackground(
+            HStack(spacing: 0) {
+                Rectangle().fill(c.accent).frame(width: 5)
+                c.background
+            }
+        )
     }
 }
 
@@ -189,7 +200,7 @@ private struct EmptyAgents: View {
                 .font(.system(size: 44, weight: .bold, design: .rounded))
                 .foregroundStyle(c.accent)
             Text("Add your first agent")
-                .font(theme.font(theme.type.display, .heavy)).foregroundStyle(c.ink)
+                .font(theme.font(theme.type.display, theme.strong)).foregroundStyle(c.ink)
             Text("Connect an agent that runs on your computer, like a Hermes profile. It takes a minute.")
                 .font(theme.font(theme.type.body)).foregroundStyle(c.inkSoft)
                 .multilineTextAlignment(.center)
@@ -215,14 +226,14 @@ struct PillButton: View {
         Button(action: action) {
             Group {
                 if working {
-                    ProgressView().tint(c.userInk)
+                    ProgressView().tint(c.onAccent)
                 } else if let systemImage {
                     Label(title, systemImage: systemImage)
                 } else {
                     Text(title)
                 }
             }
-            .font(theme.font(theme.type.body, .bold)).foregroundStyle(c.userInk)
+            .font(theme.font(theme.type.body, .bold)).foregroundStyle(c.onAccent)
             .frame(maxWidth: .infinity).padding(.vertical, theme.spacing.m)
             .background(c.accent, in: .rect(cornerRadius: theme.radius.pill))
         }
@@ -231,39 +242,55 @@ struct PillButton: View {
     }
 }
 
-/// Color tokens an agent can wear. Matches the server's allowed list.
-let agentColors = ["lavender", "mint", "butter", "brand"]
-
-struct ColorPickerRow: View {
-    @Binding var color: String
+/// The looks a person can pick for an agent: its own (seeded from its name) first,
+/// then every named set. Each chip is drawn in the look it stands for.
+struct LookPickerRow: View {
+    let name: String
+    var isYui = false
+    @Binding var look: String?
     @Environment(\.yuiTheme) private var theme
     @Environment(\.colorScheme) private var scheme
 
     var body: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: theme.spacing.m) {
+                chip(nil, label: "Own")
+                ForEach(AgentLook.sets.map(\.name), id: \.self) { chip($0, label: $0 == "r0ss" ? "R0SS" : $0.capitalized) }
+            }
+            .padding(.horizontal, 4)
+            .padding(.vertical, 6)
+        }
+    }
+
+    private func chip(_ preset: String?, label: String) -> some View {
         let c = theme.swatch(scheme)
-        HStack(spacing: theme.spacing.m) {
-            ForEach(agentColors, id: \.self) { token in
-                Button { withAnimation(theme.spring) { color = token } } label: {
-                    Circle().fill(c.color(token: token))
-                        .frame(width: 36, height: 36)
-                        .overlay(Circle().stroke(token == color ? c.ink : .clear, lineWidth: 3).padding(-4))
+        let s = AgentLook.theme(AgentLook(preset: preset), name: name.isEmpty ? "agent" : name, isYui: isYui).swatch(scheme)
+        let on = look == preset
+        return Button { withAnimation(theme.spring) { look = preset } } label: {
+            VStack(spacing: 4) {
+                ZStack {
+                    Circle().fill(s.background)
+                    Circle().fill(s.accent).padding(10)
                 }
-                .buttonStyle(BounceButtonStyle())
-                .accessibilityLabel(token)
-                .accessibilityAddTraits(token == color ? .isSelected : [])
+                .frame(width: 44, height: 44)
+                .overlay(Circle().stroke(on ? c.ink : c.outline, lineWidth: on ? 3 : 1))
+                Text(label).font(theme.font(11, .bold)).foregroundStyle(on ? c.ink : c.inkSoft)
             }
         }
+        .buttonStyle(BounceButtonStyle())
+        .accessibilityLabel("\(label) look")
+        .accessibilityAddTraits(on ? .isSelected : [])
     }
 }
 
-/// Add agent: name it, pick a color, get a code, run one command on the host.
+/// Add agent: name it, pick a look, get a code, run one command on the host.
 private struct AddAgentSheet: View {
     @Environment(AgentStore.self) private var store
     @Environment(\.dismiss) private var dismiss
     @Environment(\.yuiTheme) private var theme
     @Environment(\.colorScheme) private var scheme
     @State private var name = ProcessInfo.processInfo.arguments.contains("-yuiAddAgent") ? "Monk" : ""
-    @State private var color = "mint"
+    @State private var look: String?
     @State private var pending: (agent: YuiAgent, code: PairingCode)?
     @State private var working = false
     @State private var error: String?
@@ -301,7 +328,8 @@ private struct AddAgentSheet: View {
         VStack(alignment: .leading, spacing: theme.spacing.l) {
             HStack {
                 Spacer()
-                AgentAvatar(name: name.isEmpty ? "?" : name, colorToken: color, size: 72)
+                AgentAvatar(name: name.isEmpty ? "?" : name, size: 72)
+                    .environment(\.yuiTheme, AgentLook.theme(AgentLook(preset: look), name: name.isEmpty ? "agent" : name))
                 Spacer()
             }
             Text("What should we call them?")
@@ -314,8 +342,8 @@ private struct AddAgentSheet: View {
                 .padding(theme.spacing.m)
                 .background(c.surface, in: .rect(cornerRadius: theme.radius.bubble))
                 .overlay(RoundedRectangle(cornerRadius: theme.radius.bubble).stroke(c.outline, lineWidth: 1.5))
-            Text("Color").font(theme.font(theme.type.caption, .bold)).foregroundStyle(c.inkSoft)
-            ColorPickerRow(color: $color)
+            Text("Look").font(theme.font(theme.type.caption, .bold)).foregroundStyle(c.inkSoft)
+            LookPickerRow(name: name, look: $look)
             if let error {
                 Text(error).font(theme.font(theme.type.caption, .semibold)).foregroundStyle(.red)
             }
@@ -334,7 +362,8 @@ private struct AddAgentSheet: View {
         working = true
         defer { working = false }
         do {
-            let (agent, code) = try await store.add(name: trimmed, color: color)
+            let (agent, code) = try await store.add(name: trimmed, color: "mint")
+            if look != nil { await store.setLook(agent, preset: look) }
             withAnimation(theme.spring) { pending = (agent, code) }
         } catch {
             self.error = error.localizedDescription
@@ -370,7 +399,7 @@ private struct PairingStep: View {
                     Image(systemName: "checkmark.circle.fill")
                         .font(.system(size: 56, weight: .bold)).foregroundStyle(.green)
                     Text("\(agent.name) is connected!")
-                        .font(theme.font(theme.type.display, .heavy)).foregroundStyle(c.ink)
+                        .font(theme.font(theme.type.display, theme.strong)).foregroundStyle(c.ink)
                     if let host = agent.connectorName {
                         Text("Running on \(host).").font(theme.font(theme.type.body)).foregroundStyle(c.inkSoft)
                     }
@@ -435,17 +464,27 @@ private struct PairingStep: View {
     }
 }
 
-/// Rename, recolor, make default, new pairing code, remove.
+/// Rename, pick a look (the sheet previews it live), make default, new pairing code, remove.
 private struct EditAgentSheet: View {
     let agent: YuiAgent
     @Environment(AgentStore.self) private var store
     @Environment(\.dismiss) private var dismiss
-    @Environment(\.yuiTheme) private var theme
     @Environment(\.colorScheme) private var scheme
     @State private var name = ""
-    @State private var color = "lavender"
+    @State private var look: String?
     @State private var confirmRemove = false
     @State private var code: PairingCode?
+
+    /// The agent as it will look once saved.
+    private var preview: YuiAgent {
+        var a = agent
+        if !name.trimmingCharacters(in: .whitespaces).isEmpty { a.name = name }
+        if look != agent.theme?.preset { a.theme = AgentLook(preset: look, style: agent.theme?.style) }
+        return a
+    }
+
+    /// The sheet wears the look being picked, so the choice previews itself.
+    private var theme: YuiTheme { preview.yuiTheme }
 
     var body: some View {
         let c = theme.swatch(scheme)
@@ -466,8 +505,8 @@ private struct EditAgentSheet: View {
                     Button("Save") {
                         let n = name.trimmingCharacters(in: .whitespacesAndNewlines)
                         Task {
-                            await store.update(agent, name: n.isEmpty || n == agent.name ? nil : n,
-                                               color: color == agent.color ? nil : color)
+                            if n != agent.name, !n.isEmpty { await store.update(agent, name: n) }
+                            if look != agent.theme?.preset { await store.setLook(agent, preset: look) }
                             dismiss()
                         }
                     }
@@ -482,7 +521,24 @@ private struct EditAgentSheet: View {
                 Text("This deletes your whole conversation with \(agent.name). The agent itself keeps running on your computer.")
             }
         }
-        .onAppear { name = agent.name; color = agent.color }
+        .environment(\.yuiTheme, theme)
+        .animation(theme.spring, value: theme)
+        .onAppear { name = agent.name; look = agent.theme?.preset }
+    }
+
+    /// "full screen, stacked buttons": the agent's style profile in words.
+    static func prefs(_ style: [String: String]?) -> String? {
+        guard let style, !style.isEmpty else { return nil }
+        let words: [String] = ["screen", "buttons", "gallery", "chart"].compactMap { k in
+            guard let v = style[k] else { return nil }
+            return switch k {
+            case "screen": v == "full" ? "full screen" : "chat screens"
+            case "buttons": v == "stack" ? "stacked buttons" : "buttons in a row"
+            case "gallery": "\(v) galleries"
+            default: "\(v) charts"
+            }
+        }
+        return words.isEmpty ? nil : words.joined(separator: ", ")
     }
 
     private func form(_ c: Swatch) -> some View {
@@ -490,9 +546,7 @@ private struct EditAgentSheet: View {
             HStack {
                 Spacer()
                 VStack(spacing: theme.spacing.s) {
-                    AgentBadge(agent: YuiAgent(id: agent.id, name: name.isEmpty ? agent.name : name, handle: agent.handle,
-                                               color: color, avatar: agent.avatar, kind: agent.kind, status: agent.status,
-                                               isDefault: agent.isDefault, sort: agent.sort), size: 72)
+                    AgentBadge(agent: preview, size: 72)
                     StatusLine(agent: agent)
                 }
                 Spacer()
@@ -503,9 +557,14 @@ private struct EditAgentSheet: View {
                 .padding(theme.spacing.m)
                 .background(c.surface, in: .rect(cornerRadius: theme.radius.bubble))
                 .overlay(RoundedRectangle(cornerRadius: theme.radius.bubble).stroke(c.outline, lineWidth: 1.5))
-            if agent.avatar != "yui" {
-                Text("Color").font(theme.font(theme.type.caption, .bold)).foregroundStyle(c.inkSoft)
-                ColorPickerRow(color: $color)
+            Text("Look").font(theme.font(theme.type.caption, .bold)).foregroundStyle(c.inkSoft)
+            LookPickerRow(name: agent.handle, isYui: agent.isYui, look: $look)
+            if let prefs = Self.prefs(agent.theme?.style) {
+                Text("Prefers \(prefs). \(agent.name) can change its look itself: ask it.")
+                    .font(theme.font(theme.type.caption)).foregroundStyle(c.inkSoft)
+            } else {
+                Text("\(agent.name) can change its look itself: ask it.")
+                    .font(theme.font(theme.type.caption)).foregroundStyle(c.inkSoft)
             }
             if let host = agent.connectorName, let ref = agent.remoteRef {
                 Text("Runs on \(host) as the \(ref) profile.")

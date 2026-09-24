@@ -19,12 +19,20 @@ struct YuiAgent: Codable, Identifiable, Equatable, Sendable {
     var lastSeenAt: Date?
     var isDefault: Bool
     var sort: Int
+    /// Its look (`yui_agents.theme`): colors, shape, type, motion, preferred screens.
+    var theme: AgentLook? = nil
 
     enum CodingKeys: String, CodingKey {
-        case id, name, handle, color, avatar, kind, status, sort
+        case id, name, handle, color, avatar, kind, status, sort, theme
         case connectorID = "connector_id", connectorName = "connector_name", remoteRef = "remote_ref"
         case lastSeenAt = "last_seen_at", isDefault = "is_default"
     }
+}
+
+extension YuiAgent {
+    var isYui: Bool { avatar == "yui" }
+    /// The whole app wears this while its thread is open.
+    var yuiTheme: YuiTheme { AgentLook.theme(theme, name: handle.isEmpty ? name : handle, isYui: isYui) }
 }
 
 /// A 6-digit code the host types into `hermes -p <profile> yui pair`.
@@ -70,7 +78,10 @@ final class AgentStore {
         selectedID = UserDefaults.standard.string(forKey: "selectedAgent")
         #if DEBUG
         if ProcessInfo.processInfo.arguments.contains("-yuiDemoAccount") {
-            agents = ProcessInfo.processInfo.arguments.contains("-yuiNoAgents") ? [] : Self.demo
+            let args = ProcessInfo.processInfo.arguments
+            agents = args.contains("-yuiNoAgents") ? [] : args.contains("-yuiDemoAgents") ? Self.demoCrew : Self.demo
+            // -yuiAgent <handle> opens that agent's thread.
+            if let h = UserDefaults.standard.string(forKey: "yuiAgent") { selectedID = agents.first { $0.handle == h }?.id }
             loaded = true
         }
         #endif
@@ -117,9 +128,12 @@ final class AgentStore {
         return try await call(["action": "pair_code", "agent_id": agent.id])
     }
 
-    func update(_ agent: YuiAgent, name: String? = nil, color: String? = nil, makeDefault: Bool = false) async {
+    func update(_ agent: YuiAgent, name: String? = nil, color: String? = nil, theme: AgentLook? = nil,
+                makeDefault: Bool = false) async {
+        guard let i = agents.firstIndex(where: { $0.id == agent.id }) else { return }
+        // The look shows at once; the server write follows.
+        if let theme { agents[i].theme = theme }
         if isDemo {
-            guard let i = agents.firstIndex(of: agent) else { return }
             if let name { agents[i].name = name }
             if let color { agents[i].color = color }
             if makeDefault { for j in agents.indices { agents[j].isDefault = j == i } }
@@ -128,6 +142,8 @@ final class AgentStore {
         var body: [String: Any] = ["action": "update", "id": agent.id]
         if let name { body["name"] = name }
         if let color { body["color"] = color }
+        if let theme, let data = try? JSONEncoder().encode(theme),
+           let json = try? JSONSerialization.jsonObject(with: data) { body["theme"] = json }
         if makeDefault { body["is_default"] = true }
         do {
             let _: AgentReply = try await call(body)
@@ -135,6 +151,35 @@ final class AgentStore {
         } catch {
             self.error = error.localizedDescription
         }
+    }
+
+    /// An agent restyled itself with a YL `theme` line (spec YL.md, "theme").
+    /// `at` is the message's time: a line older than the current look (say, a
+    /// pick the person made since) never wins, so replaying history is safe.
+    func applyThemeLine(agentID: String, props: [String: String], at: String) async {
+        guard let agent = agents.first(where: { $0.id == agentID }) else { return }
+        if let current = agent.theme?.at, let old = Self.instant(current), let new = Self.instant(at), new <= old { return }
+        let look = (agent.theme ?? AgentLook()).applying(props, at: at, by: "agent")
+        await update(agent, theme: look)
+    }
+
+    /// The person picked a look in the agent's settings.
+    func setLook(_ agent: YuiAgent, preset: String?) async {
+        var look = AgentLook(preset: preset, style: agent.theme?.style)
+        look.at = Date.now.formatted(.iso8601)
+        look.by = "user"
+        await update(agent, theme: look)
+    }
+
+    /// Postgres or ISO-8601 time, any number of fraction digits.
+    static func instant(_ s: String) -> Date? {
+        var frac = 0.0
+        var base = s
+        if let r = s.range(of: #"\.\d+"#, options: .regularExpression) {
+            frac = Double("0" + s[r]) ?? 0
+            base.removeSubrange(r)
+        }
+        return (try? Date(base, strategy: .iso8601))?.addingTimeInterval(frac)
     }
 
     /// Removes the agent and, on the server, its whole conversation.
@@ -245,6 +290,21 @@ final class AgentStore {
         YuiAgent(id: "demo-yui", name: "Yui", handle: "yui", color: "brand", avatar: "yui", kind: "hermes",
                  connectorName: "Mac mini", remoteRef: "yui", status: .connected, lastSeenAt: .now,
                  isDefault: true, sort: 0),
+    ]
+    /// `-yuiDemoAgents`: a few agents, each in its own look, for screenshots.
+    static let demoCrew = demo + [
+        YuiAgent(id: "demo-arnold", name: "Arnold", handle: "arnold", color: "butter", kind: "hermes",
+                 connectorName: "Mac mini", remoteRef: "arnold", status: .connected, lastSeenAt: .now,
+                 isDefault: false, sort: 1, theme: AgentLook(style: ["screen": "full", "buttons": "stack"])),
+        YuiAgent(id: "demo-urza", name: "Urza", handle: "urza", color: "lavender", kind: "hermes",
+                 connectorName: "Mac mini", remoteRef: "urza", status: .connected, lastSeenAt: .now,
+                 isDefault: false, sort: 2),
+        YuiAgent(id: "demo-r0ss", name: "R0SS", handle: "r0ss", color: "mint", kind: "hermes",
+                 connectorName: "Mac mini", remoteRef: "r0ss", status: .offline, lastSeenAt: .now,
+                 isDefault: false, sort: 3),
+        YuiAgent(id: "demo-nova", name: "Nova", handle: "nova", color: "mint", kind: "hermes",
+                 connectorName: "Mac mini", remoteRef: "nova", status: .connected, lastSeenAt: .now,
+                 isDefault: false, sort: 4),
     ]
     static let demoCode = PairingCode(code: "482913", expiresAt: .now.addingTimeInterval(600))
 }

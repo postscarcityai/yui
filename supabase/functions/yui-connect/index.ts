@@ -182,7 +182,7 @@ async function heartbeat(req: Request): Promise<Response> {
   if (!connector) return json({ error: "unauthorized" }, 401);
   const now = new Date().toISOString();
   await db.from("yui_connectors").update({ last_seen_at: now }).eq("id", connector.id);
-  const { data: agents } = await db.from("yui_agents").select("id, name, handle, remote_ref")
+  const { data: agents } = await db.from("yui_agents").select("id, name, handle, remote_ref, theme")
     .eq("connector_id", connector.id).order("sort");
   return json({ connector: { id: connector.id, name: connector.name }, seen_at: now, agents: agents ?? [] });
 }
@@ -200,7 +200,7 @@ async function session(req: Request): Promise<Response> {
   if (!connector) return json({ error: "unauthorized" }, 401);
   const now = new Date();
   await db.from("yui_connectors").update({ last_seen_at: now.toISOString() }).eq("id", connector.id);
-  const { data: agents } = await db.from("yui_agents").select("id, name, handle, remote_ref")
+  const { data: agents } = await db.from("yui_agents").select("id, name, handle, remote_ref, theme")
     .eq("connector_id", connector.id).order("sort");
   return json({
     access_token: await mintConnectorToken(connector.user_id, connector.id),

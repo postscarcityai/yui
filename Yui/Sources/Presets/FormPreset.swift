@@ -22,7 +22,7 @@ struct FormPreset: View {
             ForEach(fields) { f in
                 FieldRow(field: f, value: Binding(get: { values[f.key] ?? f.initial }, set: { values[f.key] = $0 }))
             }
-            OptionPill(text: sent ? "Sent" : c.string("submit") ?? "Submit", fill: s.accent, on: ready && !sent,
+            OptionPill(text: sent ? "Sent" : c.string("submit") ?? "Submit", fill: s.accent, ink: s.onAccent, on: ready && !sent,
                        grow: true) {
                 var out: [String: YLValue] = [:]
                 for f in fields {
@@ -131,7 +131,7 @@ private struct FieldRow: View {
         case "choice":
             FlowLayout(spacing: theme.spacing.s) {
                 ForEach(Array(field.options.enumerated()), id: \.offset) { i, o in
-                    OptionPill(text: o, fill: s.candy[i % 4], on: value.string == o) {
+                    OptionPill(text: o, fill: s.candy[i % 4], ink: s.candyInk(i), on: value.string == o) {
                         withAnimation(theme.spring) { value = .string(o) }
                     }
                 }

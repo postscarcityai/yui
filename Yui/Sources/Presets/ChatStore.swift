@@ -19,6 +19,8 @@ final class ChatStore {
     var messages: [ChatMessage]
     private(set) var events: [YLEvent] = []
     var spring: Animation = .default
+    /// An agent reply carried a `theme` line: (agent id, props, message time).
+    var onLook: (@MainActor (String, [String: String], String) -> Void)?
 
     /// The agent this thread talks to, when there is one.
     private(set) var agent: YuiAgent?
@@ -46,6 +48,20 @@ final class ChatStore {
     }
 
     // MARK: Thread
+
+    /// Same agent, new fields (a rename, a new look): swap it in, keep the thread.
+    func refreshAgent(_ fresh: YuiAgent?) {
+        guard let fresh, fresh.id == agent?.id, fresh != agent else { return }
+        agent = fresh
+    }
+
+    /// The demo account: show `agent`'s face on the local demo chat, no thread.
+    func demo(_ agent: YuiAgent?) {
+        poll?.cancel()
+        client = nil
+        self.agent = agent
+        loaded = true
+    }
 
     /// Switches to `agent`'s thread and keeps it fresh. nil detaches.
     func attach(_ agent: YuiAgent?, account: Account) {
@@ -119,7 +135,10 @@ final class ChatStore {
             for (i, seg) in YuiFence.split(row.body).enumerated() {
                 switch seg {
                 case .text(let t): new.append(ChatMessage(id: "\(id)#\(i)", text: t, fromUser: false))
-                case .yl(let y): new.append(ChatMessage(id: "\(id)#\(i)", text: "", fromUser: false, yl: YLScreen(y)))
+                case .yl(let y):
+                    let screen = YLScreen(y)
+                    if let agentID = agent?.id { for look in screen.looks { onLook?(agentID, look, row.createdAt) } }
+                    new.append(ChatMessage(id: "\(id)#\(i)", text: "", fromUser: false, yl: screen))
                 }
             }
         }
@@ -146,6 +165,12 @@ final class ChatStore {
         guard !nodes.isEmpty, let i = messages.firstIndex(where: { $0.id == id }) else { return }
         withAnimation(spring) {
             for n in nodes { messages[i].yl?.apply(n) }
+        }
+        // Demo streams restyle live too, stamped now.
+        for n in nodes where n.op == .theme {
+            guard let agentID = agent?.id else { continue }
+            onLook?(agentID, (n.props ?? [:]).compactMapValues { v in v.string ?? v.number.map(YLComponent.format) },
+                    Date.now.formatted(.iso8601))
         }
     }
 }

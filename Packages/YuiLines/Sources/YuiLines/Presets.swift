@@ -124,6 +124,10 @@ private func positional(_ preset: String, _ pos: [Token]) -> Props {
     case "say":
         o["text"] = .string(joinText(pos))
 
+    case "theme":
+        // theme [named set] key=value...: the positional text is the set's name.
+        if !pos.isEmpty { o["name"] = .string(joinText(pos)) }
+
     default:
         break
     }

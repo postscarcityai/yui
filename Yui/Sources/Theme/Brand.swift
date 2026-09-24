@@ -36,24 +36,23 @@ struct YuiAvatar: View {
     }
 }
 
-/// Any agent's avatar: its initial in heavy rounded type on a pastel chip.
-/// Pure data in, so per-agent themes can restyle it later.
+/// Any agent's avatar: its initial on a chip in the theme's accent, in the theme's
+/// type. Wrap it in the agent's theme (`AgentBadge` does) and it wears that agent's look.
 struct AgentAvatar: View {
     var name: String
-    /// A palette token name ("mint", "lavender", ...). Nil falls back to the theme's `agents` map.
-    var colorToken: String? = nil
     var size: Double
     @Environment(\.yuiTheme) private var theme
     @Environment(\.colorScheme) private var scheme
 
     var body: some View {
         let c = theme.swatch(scheme)
-        let token = colorToken ?? theme.agentColorToken(for: name)
+        // The chip's corner follows the theme's shape: square looks get square chips.
+        let corner = size * min(0.5, max(0.18, theme.radius.avatar / 50))
         Text(name.prefix(1).uppercased())
-            .font(.system(size: size * 0.5, weight: .heavy, design: .rounded))
-            .foregroundStyle(Color(hex: theme.light.ink))
+            .font(.system(size: size * 0.5, weight: theme.strong, design: theme.fontDesign))
+            .foregroundStyle(c.onAccent)
             .frame(width: size, height: size)
-            .background(c.color(token: token), in: .rect(cornerRadius: size * 0.36))
+            .background(c.accent, in: .rect(cornerRadius: corner))
             .accessibilityLabel(name)
     }
 }

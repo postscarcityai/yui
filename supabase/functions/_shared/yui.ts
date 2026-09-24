@@ -125,6 +125,48 @@ export function nameFromRef(ref: string): string {
     .map((w) => w[0].toUpperCase() + w.slice(1)).join(" ").slice(0, 40) || "Agent";
 }
 
+// An agent's look (yui_agents.theme, spec yuigui/spec/AGENTS.md "Look"). The
+// app compiles it into colors and enforces contrast; the server only keeps the
+// shape honest: known keys, known words, hex colors, small.
+const LOOK_WORDS: Record<string, RegExp> = {
+  preset: /^[a-z0-9-]{1,24}$/,
+  accent: /^#[0-9A-Fa-f]{6}$/,
+  bg: /^#[0-9A-Fa-f]{6}$/,
+  radius: /^(round|soft|square|\d{1,2}(\.\d+)?)$/,
+  font: /^(rounded|default|serif|mono)$/,
+  weight: /^(regular|bold|heavy)$/,
+  motion: /^(bouncy|calm|snappy)$/,
+  at: /^[0-9T:.+\-Z ]{10,40}$/,
+  by: /^(agent|user)$/,
+};
+const LOOK_STYLE: Record<string, RegExp> = {
+  screen: /^(chat|full)$/,
+  gallery: /^(row|feed|row3d|grid)$/,
+  chart: /^(line|bar|area|scatter|pie|donut)$/,
+  buttons: /^(row|stack)$/,
+};
+
+// Returns the cleaned look, or null when it is not an object. Unknown keys and
+// bad values are dropped, not rejected: an old app never breaks a newer look.
+export function cleanLook(v: unknown): Record<string, unknown> | null {
+  if (typeof v !== "object" || v === null || Array.isArray(v)) return null;
+  const out: Record<string, unknown> = {};
+  for (const [k, re] of Object.entries(LOOK_WORDS)) {
+    const x = (v as Record<string, unknown>)[k];
+    if (typeof x === "string" && re.test(x)) out[k] = x;
+  }
+  const style = (v as Record<string, unknown>).style;
+  if (typeof style === "object" && style !== null && !Array.isArray(style)) {
+    const s: Record<string, string> = {};
+    for (const [k, re] of Object.entries(LOOK_STYLE)) {
+      const x = (style as Record<string, unknown>)[k];
+      if (typeof x === "string" && re.test(x)) s[k] = x;
+    }
+    if (Object.keys(s).length) out.style = s;
+  }
+  return out;
+}
+
 // Stable pastel per name, same rule as the app's YuiTheme.agentColorToken.
 export function defaultColor(name: string): string {
   const pastels = ["mint", "lavender", "butter"];

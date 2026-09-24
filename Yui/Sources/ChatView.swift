@@ -60,7 +60,7 @@ struct ChatView: View {
                             HStack(spacing: theme.spacing.s) {
                                 AgentBadge(agent: agent, size: 26)
                                 Text(agent.name)
-                                    .font(theme.font(theme.type.body, .heavy))
+                                    .font(theme.font(theme.type.body, theme.strong))
                                     .foregroundStyle(c.ink)
                                 Circle().fill(agent.status == .connected ? c.mint : c.outline).frame(width: 8, height: 8)
                             }
@@ -89,13 +89,27 @@ struct ChatView: View {
             }
         }
         .environment(\.ylEmit, store.emit)
-        .onAppear { store.spring = theme.spring }
+        .onAppear {
+            store.spring = theme.spring
+            // A `theme` line in a reply restyles that agent, and the app with it.
+            store.onLook = { id, props, at in Task { await agents.applyThemeLine(agentID: id, props: props, at: at) } }
+        }
+        .onChange(of: theme) { store.spring = theme.spring }
+        #if DEBUG
+        // -yuiThemeDemo "say Autumn it is.\ntheme autumn": the agent restyles itself, live, for screenshots.
+        .task {
+            guard let text = UserDefaults.standard.string(forKey: "yuiThemeDemo") else { return }
+            try? await Task.sleep(for: .seconds(2.5))
+            store.stream(text.replacingOccurrences(of: "\\n", with: "\n"))
+        }
+        #endif
         .task { await agents.refresh() }
         .onChange(of: agents.selected?.id, initial: true) {
-            // The demo account keeps the local demo chat.
-            guard account.session?.userID != "demo" else { return }
+            // The demo account keeps the local demo chat, with the agent's face on it.
+            if account.session?.userID == "demo" { store.demo(agents.selected); return }
             store.attach(agents.selected, account: account)
         }
+        .onChange(of: agents.selected) { store.refreshAgent(agents.selected) }
         .onChange(of: store.agent?.id, initial: true) { push.visibleAgentID = store.agent?.id }
         // A notification tap or yui://agent/<id>/thread: straight to that thread.
         .onChange(of: push.pendingAgentID, initial: true) {
@@ -124,7 +138,7 @@ struct ChatView: View {
             Button(action: send) {
                 Image(systemName: "arrow.up")
                     .font(theme.font(theme.type.title, .black))
-                    .foregroundStyle(c.userInk)
+                    .foregroundStyle(draft.isEmpty ? c.inkSoft : c.onAccent)
                     .frame(width: 46, height: 46)
                     .background(draft.isEmpty ? c.outline : c.accent, in: Circle())
             }
@@ -140,7 +154,7 @@ struct ChatView: View {
     private func send() {
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
-        if store.agent != nil {
+        if store.agent != nil, account.session?.userID != "demo" {
             store.send(text)
             draft = ""
             return
@@ -190,6 +204,7 @@ private struct YLReply: View {
             VStack(alignment: .leading, spacing: theme.spacing.m) {
                 ForEach(screen.components) { PresetView(component: $0) }
                 ForEach(Array(screen.errors.enumerated()), id: \.offset) { YLErrorRow(node: $1) }
+                ForEach(Array(screen.looks.enumerated()), id: \.offset) { _ in LookNote(agent: agent) }
             }
         }
         .transition(.opacity)
@@ -223,6 +238,24 @@ private struct Bubble: View {
         }
         .transition(.scale(scale: 0.85, anchor: message.fromUser ? .bottomTrailing : .bottomLeading)
             .combined(with: .opacity))
+    }
+}
+
+/// A `theme` line landed: one quiet line, the new look does the talking.
+private struct LookNote: View {
+    var agent: YuiAgent?
+    @Environment(\.yuiTheme) private var theme
+    @Environment(\.colorScheme) private var scheme
+
+    var body: some View {
+        let c = theme.swatch(scheme)
+        Label("\(agent?.name ?? "Yui") changed its look", systemImage: "paintbrush.pointed.fill")
+            .font(theme.font(theme.type.caption, .bold))
+            .foregroundStyle(c.inkSoft)
+            .padding(.horizontal, theme.spacing.m)
+            .padding(.vertical, theme.spacing.s)
+            .background(c.surface, in: Capsule())
+            .overlay(Capsule().stroke(c.outline, lineWidth: 1))
     }
 }
 
@@ -277,7 +310,7 @@ private struct EmptyChat: View {
             VStack(spacing: theme.spacing.l) {
                 AgentBadge(agent: agent, size: 96)
                 Text("Say hi to \(agent.name)!")
-                    .font(theme.font(theme.type.display, .heavy))
+                    .font(theme.font(theme.type.display, theme.strong))
                     .foregroundStyle(c.ink)
                     .multilineTextAlignment(.center)
                 Text(agent.status == .connected ? "Same agent as everywhere else,\nnow with buttons." :
@@ -299,7 +332,7 @@ private struct EmptyChat: View {
                     view.offset(y: up ? -6 : 0)
                 } animation: { _ in .easeInOut(duration: 1.1) }
             Text("is here, and happy to see you!")
-                .font(theme.font(theme.type.display, .heavy))
+                .font(theme.font(theme.type.display, theme.strong))
                 .foregroundStyle(c.ink)
                 .multilineTextAlignment(.center)
             Text("Say hi, ask a question, or tell me\nwhat you want to get done.")

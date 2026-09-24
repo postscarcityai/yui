@@ -15,6 +15,7 @@ import {
   AGENT_COLUMNS,
   agentView,
   bearer,
+  cleanLook,
   cleanName,
   defaultColor,
   insertAgent,
@@ -173,7 +174,7 @@ const ACTIONS: Record<string, Action> = {
     },
   },
 
-  // {id, name?, color?, sort?, is_default?, remote_ref?}
+  // {id, name?, color?, theme?, sort?, is_default?, remote_ref?}
   update: {
     async run(userId, b) {
       const db = admin();
@@ -187,6 +188,11 @@ const ACTIONS: Record<string, Action> = {
       if (b.color !== undefined) {
         if (!AGENT_COLORS.includes(b.color)) throw new HttpError(400, "invalid_color");
         patch.color = b.color;
+      }
+      if (b.theme !== undefined) {
+        const look = cleanLook(b.theme);
+        if (!look) throw new HttpError(400, "invalid_theme");
+        patch.theme = look;
       }
       if (b.sort !== undefined) {
         if (!Number.isInteger(b.sort)) throw new HttpError(400, "invalid_sort");

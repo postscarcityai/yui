@@ -3,10 +3,19 @@
 # from here. Apply migrations by hand.
 project_id = "ewzzaoperdpxqxkshynx"
 
-# Both functions verify their own tokens: the gateway would expect a
+# Every Yui function verifies its own tokens: the gateway would expect a
 # Supabase Auth JWT, and Yui users are not Supabase Auth users.
 [functions.yui-auth]
 verify_jwt = false
 
 [functions.yui-delete]
+verify_jwt = false
+
+[functions.yui-agents]
+verify_jwt = false
+
+[functions.yui-connect]
+verify_jwt = false
+
+[functions.yui-push]
 verify_jwt = false

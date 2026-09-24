@@ -48,7 +48,7 @@ struct TimerPreset: View {
                     .rotationEffect(.degrees(-90))
                 VStack(spacing: theme.spacing.xs) {
                     Text(clock(st.shown))
-                        .font(theme.font(theme.type.display * 1.7, .heavy).monospacedDigit())
+                        .font(theme.font(theme.type.display * 1.7, theme.strong).monospacedDigit())
                         .foregroundStyle(s.ink)
                         .contentTransition(.numericText(countsDown: !plan.up))
                     Text(st.done ? "Done!" : plan.up ? (running ? "Going" : "Ready") : st.resting ? "Rest" : "Work")
@@ -62,7 +62,7 @@ struct TimerPreset: View {
             .padding(.vertical, theme.spacing.s)
             HStack(spacing: theme.spacing.s) {
                 OptionPill(text: st.done ? "Again" : running ? "Pause" : elapsed > 0 ? "Resume" : "Start",
-                           fill: running ? s.lavender : s.accent, grow: true, action: toggle)
+                           fill: running ? s.lavender : s.accent, ink: running ? s.userInk : s.onAccent, grow: true, action: toggle)
                 Button("Reset", systemImage: "arrow.counterclockwise", action: reset)
                     .labelStyle(.iconOnly)
                     .font(theme.font(theme.type.body, .black))

@@ -32,6 +32,8 @@ struct YuiTheme: Codable, Equatable, Sendable {
         var userInk: String
         var agentBubble: String
         var agentInk: String
+        /// Text and icons drawn on an `accent` fill (send button, primary buttons).
+        var onAccent: String
     }
 
     struct Radii: Codable, Equatable, Sendable {
@@ -57,6 +59,8 @@ struct YuiTheme: Codable, Equatable, Sendable {
         var caption: Double
         var title: Double
         var display: Double
+        /// Headings and names: "regular" | "bold" | "heavy"
+        var weight: String
     }
 
     struct Motion: Codable, Equatable, Sendable {
@@ -75,18 +79,18 @@ extension YuiTheme {
     static let yui = YuiTheme(
         name: "yui",
         light: Palette(
-            background: "#FFF9F0", surface: "#FFFFFF", ink: "#3A3340", inkSoft: "#8C8294",
+            background: "#FFF9F0", surface: "#FFFFFF", ink: "#3A3340", inkSoft: "#6E6478",
             outline: "#F0E4D6", brand: "#FF7E8A", accent: "#FF7E8A", mint: "#BDEBD6",
             lavender: "#D9CCF7", butter: "#FFE8A3", userBubble: "#FFA8B0", userInk: "#3A3340",
-            agentBubble: "#FFFFFF", agentInk: "#3A3340"),
+            agentBubble: "#FFFFFF", agentInk: "#3A3340", onAccent: "#3A3340"),
         dark: Palette(
             background: "#231D33", surface: "#2F2842", ink: "#F6EEF7", inkSoft: "#A99FB8",
             outline: "#3D3452", brand: "#FF7E8A", accent: "#FF7E8A", mint: "#9FCDB9",
             lavender: "#B8ABDD", butter: "#E6D08F", userBubble: "#F28D97", userInk: "#2A2238",
-            agentBubble: "#352D4A", agentInk: "#F6EEF7"),
+            agentBubble: "#352D4A", agentInk: "#F6EEF7", onAccent: "#2A2238"),
         radius: Radii(bubble: 22, bubbleTail: 8, pill: 26, card: 28, avatar: 18),
         spacing: Spacing(xs: 4, s: 8, m: 12, l: 16, xl: 24),
-        type: Typography(design: "rounded", body: 17, caption: 13, title: 20, display: 28),
+        type: Typography(design: "rounded", body: 17, caption: 13, title: 20, display: 28, weight: "heavy"),
         motion: Motion(springResponse: 0.35, springDamping: 0.55, bounceScale: 1.18),
         agents: [:]
     )
@@ -94,8 +98,17 @@ extension YuiTheme {
 
 // MARK: - SwiftUI bridges
 
+// A plain key, not `@Entry`: the macro needs Xcode's plugin, and
+// scripts/check_themes.sh compiles this file with bare swiftc.
+private struct YuiThemeKey: EnvironmentKey {
+    static let defaultValue = YuiTheme.yui
+}
+
 extension EnvironmentValues {
-    @Entry var yuiTheme: YuiTheme = .yui
+    var yuiTheme: YuiTheme {
+        get { self[YuiThemeKey.self] }
+        set { self[YuiThemeKey.self] = newValue }
+    }
 }
 
 extension YuiTheme {
@@ -110,6 +123,15 @@ extension YuiTheme {
 
     func font(_ size: Double, _ weight: Font.Weight = .regular) -> Font {
         .system(size: size, weight: weight, design: fontDesign)
+    }
+
+    /// The heading weight this theme wears (agent names, titles).
+    var strong: Font.Weight {
+        switch type.weight {
+        case "regular": .semibold
+        case "bold": .bold
+        default: .heavy
+        }
     }
 
     /// Unmapped agents get a stable pastel picked from their name.
@@ -158,7 +180,7 @@ enum Appearance: String, CaseIterable, Identifiable {
 /// A palette resolved to SwiftUI colors for the current scheme.
 struct Swatch {
     let background, surface, ink, inkSoft, outline, brand, accent, mint, lavender, butter: Color
-    let userBubble, userInk, agentBubble, agentInk: Color
+    let userBubble, userInk, agentBubble, agentInk, onAccent: Color
 
     init(_ p: YuiTheme.Palette) {
         background = Color(hex: p.background); surface = Color(hex: p.surface)
@@ -167,6 +189,7 @@ struct Swatch {
         lavender = Color(hex: p.lavender); butter = Color(hex: p.butter)
         userBubble = Color(hex: p.userBubble); userInk = Color(hex: p.userInk)
         agentBubble = Color(hex: p.agentBubble); agentInk = Color(hex: p.agentInk)
+        onAccent = Color(hex: p.onAccent)
     }
 }
 

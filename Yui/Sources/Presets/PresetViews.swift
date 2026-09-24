@@ -47,7 +47,7 @@ struct PresetTitle: View {
 
     var body: some View {
         Text(text)
-            .font(theme.font(theme.type.title, .heavy))
+            .font(theme.font(theme.type.title, theme.strong))
             .foregroundStyle(theme.swatch(scheme).ink)
             .fixedSize(horizontal: false, vertical: true)
     }
@@ -56,12 +56,15 @@ struct PresetTitle: View {
 extension Swatch {
     /// Pastel fills options cycle through, so a row of buttons reads as candy, not a form.
     var candy: [Color] { [accent, mint, lavender, butter] }
+    /// The ink that reads on `candy[i]`: the accent carries its own.
+    func candyInk(_ i: Int) -> Color { i % 4 == 0 ? onAccent : userInk }
 }
 
 /// A tappable pastel pill. `on` fills it, `dim` fades it once a choice is locked.
 struct OptionPill: View {
     let text: String
     var fill: Color
+    var ink: Color? = nil
     var on = true
     var dim = false
     var check = false
@@ -78,7 +81,7 @@ struct OptionPill: View {
                 Text(text).fixedSize(horizontal: false, vertical: true)
             }
             .font(theme.font(theme.type.body, .bold))
-            .foregroundStyle(on ? c.userInk : c.ink)
+            .foregroundStyle(on ? ink ?? c.userInk : c.ink)
             .padding(.horizontal, theme.spacing.l)
             .padding(.vertical, theme.spacing.m)
             .frame(maxWidth: grow ? .infinity : nil)
@@ -95,6 +98,7 @@ struct OptionPill: View {
 struct AskPreset: View {
     let c: YLComponent
     @State private var answer: String?
+    @Environment(\.agentStyle) private var style
     @Environment(\.yuiTheme) private var theme
     @Environment(\.colorScheme) private var scheme
     @Environment(\.ylEmit) private var emit
@@ -105,14 +109,21 @@ struct AskPreset: View {
         PresetCard {
             PresetTitle(text: c.string("q") ?? "Continue?")
             let buttons = ForEach(Array(options.enumerated()), id: \.offset) { i, o in
-                OptionPill(text: o, fill: s.candy[i % 4], on: answer == nil || answer == o,
+                OptionPill(text: o, fill: s.candy[i % 4], ink: s.candyInk(i), on: answer == nil || answer == o,
                            dim: answer != nil && answer != o, grow: true) {
                     guard answer == nil else { return }
                     withAnimation(theme.spring) { answer = o }
                     emit(c.event(["answer": .string(o)], echo: o))
                 }
             }
-            if options.count <= 2 {
+            // Two options sit side by side unless the agent prefers stacked buttons
+            // (or a row of up to three).
+            let row = switch style["buttons"] {
+            case "stack": false
+            case "row": options.count <= 3
+            default: options.count <= 2
+            }
+            if row {
                 HStack(spacing: theme.spacing.s) { buttons }
             } else {
                 VStack(spacing: theme.spacing.s) { buttons }
@@ -133,6 +144,7 @@ struct ChoosePreset: View {
     @State private var other = ""
     @State private var sent = false
     @FocusState private var otherFocused: Bool
+    @Environment(\.agentStyle) private var style
     @Environment(\.yuiTheme) private var theme
     @Environment(\.colorScheme) private var scheme
     @Environment(\.ylEmit) private var emit
@@ -146,10 +158,14 @@ struct ChoosePreset: View {
             if multi, let cap {
                 Text("Pick up to \(cap)").font(theme.font(theme.type.caption, .semibold)).foregroundStyle(s.inkSoft)
             }
-            FlowLayout(spacing: theme.spacing.s) {
+            let stack = style["buttons"] == "stack"
+            let layout = stack ? AnyLayout(VStackLayout(alignment: .leading, spacing: theme.spacing.s))
+                               : AnyLayout(FlowLayout(spacing: theme.spacing.s))
+            layout {
                 ForEach(Array((options + picked.filter { !options.contains($0) }).enumerated()), id: \.offset) { i, o in
                     let on = picked.contains(o)
-                    OptionPill(text: o, fill: s.candy[i % 4], on: on, dim: sent && !on, check: multi) {
+                    OptionPill(text: o, fill: s.candy[i % 4], ink: s.candyInk(i), on: on, dim: sent && !on, check: multi,
+                               grow: stack) {
                         tap(o, cap: cap)
                     }
                 }
@@ -162,7 +178,7 @@ struct ChoosePreset: View {
             }
             if typing, !sent { otherField(s) }
             if multi, !sent {
-                OptionPill(text: c.string("submit") ?? "Done", fill: s.accent, on: !picked.isEmpty, grow: true) {
+                OptionPill(text: c.string("submit") ?? "Done", fill: s.accent, ink: s.onAccent, on: !picked.isEmpty, grow: true) {
                     sent = true
                     emit(c.event(["picked": .array(picked.map(YLValue.string))], echo: picked.joined(separator: ", ")))
                 }
@@ -281,7 +297,7 @@ struct ListPreset: View {
         } else if c.flag("num") {
             Text("\(i + 1)")
                 .font(theme.font(theme.type.caption, .heavy))
-                .foregroundStyle(s.userInk)
+                .foregroundStyle(s.candyInk(i))
                 .frame(width: 24, height: 24)
                 .background(s.candy[i % 4], in: Circle())
         } else {

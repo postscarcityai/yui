@@ -98,6 +98,7 @@ public struct YLParser: Sendable {
             return YLNode(op: head == "save" ? .save : .show, screen: screen, name: name, line: line)
         }
         if head == "clear" { return YLNode(op: .clear, screen: screen, line: line) }
+        if head == "theme" { return YLNode(op: .theme, screen: screen, props: parseArgs("theme", tokens), line: line) }
 
         // ^([a-z]+)(?:@([\w-]+))?$
         let h = Scalars(head.unicodeScalars)

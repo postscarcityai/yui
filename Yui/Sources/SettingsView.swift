@@ -240,7 +240,7 @@ private struct AppearanceOption: View {
                 Image(systemName: icon).font(theme.font(theme.type.title, .bold))
                 Text(option.label).font(theme.font(theme.type.caption, .bold))
             }
-            .foregroundStyle(selected ? c.userInk : c.ink)
+            .foregroundStyle(selected ? c.onAccent : c.ink)
             .frame(maxWidth: .infinity)
             .padding(.vertical, theme.spacing.m)
             .background(selected ? c.accent : c.background, in: .rect(cornerRadius: theme.radius.bubble))

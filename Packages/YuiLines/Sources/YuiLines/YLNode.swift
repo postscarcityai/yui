@@ -14,6 +14,8 @@ public struct YLNode: Codable, Equatable, Sendable {
         case clear
         /// Bare `>S`: later lines go to `screen`.
         case focus
+        /// Restyle the agent's look: `props` (a named set in `props.name`). No id, no event.
+        case theme
         /// The line was rejected: `message`. Every other line still renders.
         case error
     }

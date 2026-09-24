@@ -89,6 +89,33 @@ def platform_hint() -> str:
     return f"Yui channel guide {version}\n\n{body}"
 
 
+STYLE_WORDS = {
+    "screen": {"full": "full-screen layouts", "chat": "compact in-chat screens"},
+    "buttons": {"stack": "stacked buttons", "row": "buttons in a row"},
+}
+
+
+def look_prompt(agent: dict) -> str:
+    """Per-turn note on this agent's own look (YUI-20). The app wears it while the
+    person is in this thread; `theme` lines change it (spec YL.md, "theme")."""
+    look = agent.get("theme") or {}
+    parts = []
+    if look.get("preset"):
+        parts.append(f"set {look['preset']}")
+    for k in ("accent", "bg", "radius", "font", "weight", "motion"):
+        if look.get(k):
+            parts.append(f"{k}={look[k]}")
+    desc = ", ".join(parts) if parts else "your own default (seeded from your name)"
+    lines = [f"Your look in Yui: {desc}. Change it with a `theme` line only when asked."]
+    style = look.get("style") or {}
+    if style:
+        prefs = []
+        for k, v in style.items():
+            prefs.append(STYLE_WORDS.get(k, {}).get(v) or f"{v} {'galleries' if k == 'gallery' else k + 's'}")
+        lines.append("Screens you prefer (use them as your defaults): " + ", ".join(prefs) + ".")
+    return "\n".join(lines)
+
+
 def _parse_ts(s: str | None) -> datetime:
     if not s:
         return datetime.now(tz=timezone.utc)
@@ -329,6 +356,7 @@ class YuiAdapter(BasePlatformAdapter):
             raw_message=row,
             message_id=row["id"],
             timestamp=_parse_ts(row.get("created_at")),
+            channel_prompt=look_prompt(agent),
         )
         self._last_inbound[row["agent_id"]] = time.time()
         logger.info("[yui] inbound %s %s: %s", row.get("kind"), row["id"][:8], row["body"][:80])

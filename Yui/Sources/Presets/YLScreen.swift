@@ -21,6 +21,8 @@ struct YLComponent: Identifiable, Equatable, Sendable {
 struct YLScreen: Equatable, Sendable {
     private(set) var components: [YLComponent] = []
     private(set) var errors: [YLNode] = []
+    /// `theme` lines in this reply, in order. They restyle the agent, not the screen.
+    private(set) var looks: [[String: String]] = []
     private var saved: [String: [YLComponent]] = [:]
     private var serial = 0
 
@@ -62,12 +64,14 @@ struct YLScreen: Equatable, Sendable {
             }
         case .focus:
             break
+        case .theme:
+            looks.append((node.props ?? [:]).compactMapValues { v in v.string ?? v.number.map(YLComponent.format) })
         case .error:
             errors.append(node)
         }
     }
 
-    var isEmpty: Bool { components.isEmpty && errors.isEmpty }
+    var isEmpty: Bool { components.isEmpty && errors.isEmpty && looks.isEmpty }
 }
 
 /// One interaction going back to the agent: `{id, preset, ...value}` (spec section 7).
