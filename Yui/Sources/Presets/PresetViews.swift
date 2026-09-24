@@ -14,6 +14,7 @@ struct PresetView: View {
         case "ask": AskPreset(c: component)
         case "choose": ChoosePreset(c: component, multi: false)
         case "pick": ChoosePreset(c: component, multi: true)
+        case "slide": SlidePreset(c: component)
         case "form": FormPreset(c: component)
         case "list": ListPreset(c: component)
         case "timer": TimerPreset(c: component)
@@ -111,9 +112,10 @@ struct AskPreset: View {
             let buttons = ForEach(Array(options.enumerated()), id: \.offset) { i, o in
                 OptionPill(text: o, fill: s.candy[i % 4], ink: s.candyInk(i), on: answer == nil || answer == o,
                            dim: answer != nil && answer != o, grow: true) {
-                    guard answer == nil else { return }
+                    guard answer != o else { return }
+                    let changed = answer != nil
                     withAnimation(theme.spring) { answer = o }
-                    emit(c.event(["answer": .string(o)], echo: o))
+                    emit(c.answer(["answer": .string(o)], echo: o, changed: changed))
                 }
             }
             // Two options sit side by side unless the agent prefers stacked buttons
@@ -129,20 +131,23 @@ struct AskPreset: View {
                 VStack(spacing: theme.spacing.s) { buttons }
             }
         }
-        .disabled(answer != nil)
+        .disabled(c.locked)
     }
 }
 
 // MARK: - choose / pick
 
 /// `choose` (one answer, sent on tap) and `pick` (many, sent with the submit button).
+/// Answers stay open: a new tap (or a new submit) sends the new answer with
+/// `changed: true`, until the agent locks the component with `+lock`.
 struct ChoosePreset: View {
     let c: YLComponent
     let multi: Bool
     @State private var picked: [String] = []
     @State private var typing = false
     @State private var other = ""
-    @State private var sent = false
+    /// What went back to the agent last, or nil before the first answer.
+    @State private var sent: [String]?
     @FocusState private var otherFocused: Bool
     @Environment(\.agentStyle) private var style
     @Environment(\.yuiTheme) private var theme
@@ -164,28 +169,33 @@ struct ChoosePreset: View {
             layout {
                 ForEach(Array((options + picked.filter { !options.contains($0) }).enumerated()), id: \.offset) { i, o in
                     let on = picked.contains(o)
-                    OptionPill(text: o, fill: s.candy[i % 4], ink: s.candyInk(i), on: on, dim: sent && !on, check: multi,
+                    OptionPill(text: o, fill: s.candy[i % 4], ink: s.candyInk(i), on: on, dim: sent != nil && !on, check: multi,
                                grow: stack) {
                         tap(o, cap: cap)
                     }
                 }
-                if c.flag("other"), !sent {
+                if c.flag("other"), !c.locked {
                     OptionPill(text: "Type your own", fill: s.lavender, on: typing) {
                         withAnimation(theme.spring) { typing.toggle() }
                         otherFocused = typing
                     }
                 }
             }
-            if typing, !sent { otherField(s) }
-            if multi, !sent {
-                OptionPill(text: c.string("submit") ?? "Done", fill: s.accent, ink: s.onAccent, on: !picked.isEmpty, grow: true) {
-                    sent = true
-                    emit(c.event(["picked": .array(picked.map(YLValue.string))], echo: picked.joined(separator: ", ")))
+            if typing, !c.locked { otherField(s) }
+            if multi, !c.locked {
+                // After the first send the button reads "Sent" until the picks change again.
+                let fresh = !picked.isEmpty && picked != sent
+                OptionPill(text: sent != nil && !fresh ? "Sent" : c.string("submit") ?? "Done", fill: s.accent, ink: s.onAccent,
+                           on: fresh, grow: true) {
+                    let changed = sent != nil
+                    sent = picked
+                    emit(c.answer(["picked": .array(picked.map(YLValue.string))], echo: picked.joined(separator: ", "),
+                                  changed: changed))
                 }
-                .disabled(picked.isEmpty)
+                .disabled(!fresh)
             }
         }
-        .disabled(sent)
+        .disabled(c.locked)
     }
 
     private func otherField(_ s: Swatch) -> some View {
@@ -214,9 +224,11 @@ struct ChoosePreset: View {
     private func tap(_ o: String, cap: Int?) {
         withAnimation(theme.spring) {
             if !multi {
+                guard sent != [o] else { return }
+                let changed = sent != nil
                 picked = [o]
-                sent = true
-                emit(c.event(["choice": .string(o)], echo: o))
+                sent = [o]
+                emit(c.answer(["choice": .string(o)], echo: o, changed: changed))
             } else if let i = picked.firstIndex(of: o) {
                 picked.remove(at: i)
             } else if cap.map({ picked.count < $0 }) ?? true {
@@ -234,11 +246,56 @@ struct ChoosePreset: View {
             if multi {
                 if !picked.contains(t) { picked.append(t) }
             } else {
+                let changed = sent != nil
                 picked = [t]
-                sent = true
-                emit(c.event(["choice": .string(t), "other": .bool(true)], echo: t))
+                sent = [t]
+                emit(c.answer(["choice": .string(t), "other": .bool(true)], echo: t, changed: changed))
             }
         }
+    }
+}
+
+// MARK: - slide
+
+/// A slider that sends `{value}` on release. It stays movable: every later
+/// release with a new value sends again with `changed: true`.
+struct SlidePreset: View {
+    let c: YLComponent
+    @State private var value: Double?
+    @State private var sent: Double?
+    @Environment(\.yuiTheme) private var theme
+    @Environment(\.colorScheme) private var scheme
+    @Environment(\.ylEmit) private var emit
+
+    var body: some View {
+        let s = theme.swatch(scheme)
+        let lo = c.number("min") ?? 1
+        let hi = max(c.number("max") ?? 5, lo + 1)
+        let step = max(c.number("step") ?? 1, 0.0001)
+        let v = value ?? c.number("value") ?? (lo + ((hi - lo) / 2 / step).rounded() * step)
+        PresetCard {
+            if let label = c.string("label") { PresetTitle(text: label) }
+            Text(YLComponent.format(v) + (c.string("unit").map { " \($0)" } ?? ""))
+                .font(theme.font(theme.type.title, .black))
+                .foregroundStyle(s.ink)
+                .contentTransition(.numericText())
+            Slider(value: Binding(get: { v }, set: { value = $0 }), in: lo...hi, step: step) { editing in
+                guard !editing, v != sent else { return }
+                let changed = sent != nil
+                sent = v
+                let text = YLComponent.format(v) + (c.string("unit").map { " \($0)" } ?? "")
+                emit(c.answer(["value": .number(v)], echo: text, changed: changed))
+            }
+            .tint(s.accent)
+            HStack {
+                Text(c.string("lo") ?? YLComponent.format(lo))
+                Spacer()
+                Text(c.string("hi") ?? YLComponent.format(hi))
+            }
+            .font(theme.font(theme.type.caption, .semibold))
+            .foregroundStyle(s.inkSoft)
+        }
+        .disabled(c.locked)
     }
 }
 

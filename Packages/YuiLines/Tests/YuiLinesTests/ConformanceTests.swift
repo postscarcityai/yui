@@ -134,11 +134,16 @@ func conformance(_ v: Vector) {
     #expect(try YLValue.parseJSON(pair) == .string("\u{1F4AA}"))
 }
 
+/// Hub areas this parser has not taken on yet (media, data and science, decks
+/// and plans). Keep in step with `scripts/sync-vectors.sh`; drop a name here
+/// once the parser passes that file.
+let notYetInApp: Set<String> = ["16-media.json", "17-data-science.json", "18-flows.json"]
+
 /// When the hub repo sits next to this one, the copied vectors must match it.
 @Test(.enabled(if: FileManager.default.fileExists(atPath: hubVectors.path)))
 func vectorsMatchHubRepo() throws {
     let hub = try FileManager.default.contentsOfDirectory(atPath: hubVectors.path)
-        .filter { $0.range(of: #"^\d\d-.*\.json$"#, options: .regularExpression) != nil }.sorted()
+        .filter { $0.range(of: #"^\d\d-.*\.json$"#, options: .regularExpression) != nil && !notYetInApp.contains($0) }.sorted()
     #expect(hub == Vectors.files, "run scripts/sync-vectors.sh")
     for f in hub {
         let a = try Data(contentsOf: hubVectors.appendingPathComponent(f))

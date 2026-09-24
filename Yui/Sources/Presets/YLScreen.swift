@@ -78,6 +78,11 @@ struct YLScreen: Equatable, Sendable {
 
     var isEmpty: Bool { components.isEmpty && errors.isEmpty && looks.isEmpty }
 
+    /// Whether a patch aimed at `target` (an id or a preset name) lands here.
+    func has(_ target: String) -> Bool {
+        components.contains { $0.ylID == target || $0.preset == target }
+    }
+
     /// Something on the stage the agent has not closed again.
     func wantsStage(_ style: [String: String]) -> Bool {
         components.contains { $0.serial > closedAt && $0.onStage(style) }
@@ -119,6 +124,17 @@ extension YLComponent {
     func event(_ value: [String: YLValue], echo: String? = nil) -> YLEvent {
         YLEvent(id: ylID, preset: preset, value: value, echo: echo)
     }
+
+    /// An answer event. Answers can change (spec section 7): every one after the
+    /// first carries `changed: true`, and the agent treats the newest as the answer.
+    func answer(_ value: [String: YLValue], echo: String, changed: Bool) -> YLEvent {
+        var value = value
+        if changed { value["changed"] = .bool(true) }
+        return event(value, echo: echo)
+    }
+
+    /// `+lock`: the agent froze this component. The answer shown stays, taps do nothing.
+    var locked: Bool { flag("lock") }
 
     static func format(_ n: Double) -> String {
         n.rounded() == n && abs(n) < 1e15 ? String(Int64(n)) : String(n)

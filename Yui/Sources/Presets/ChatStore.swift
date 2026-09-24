@@ -75,6 +75,18 @@ final class ChatStore {
 
     func receive(_ e: YLEvent) {
         events.insert(e, at: 0)
+        #if DEBUG
+        // `-yuiEventLog <path>`: UI tests read back the events a tap sent.
+        if let path = UserDefaults.standard.string(forKey: "yuiEventLog"),
+           let out = FileHandle(forWritingAtPath: path) ?? {
+               FileManager.default.createFile(atPath: path, contents: nil)
+               return FileHandle(forWritingAtPath: path)
+           }() {
+            out.seekToEndOfFile()
+            out.write(Data((e.json + "\n").utf8))
+            try? out.close()
+        }
+        #endif
         if let echo = e.echo {
             withAnimation(spring) { messages.append(ChatMessage(text: echo, fromUser: true)) }
         }
@@ -173,7 +185,17 @@ final class ChatStore {
                 switch seg {
                 case .text(let t): new.append(ChatMessage(id: "\(id)#\(i)", text: t, fromUser: false))
                 case .yl(let y):
-                    let screen = YLScreen(y)
+                    var screen = YLScreen()
+                    for node in YuiLines.parse(y) {
+                        // A patch for something an earlier reply drew (`~choose +lock`
+                        // after the booking is confirmed) lands on the newest match.
+                        if node.op == .patch, let t = node.target, !screen.has(t),
+                           let j = messages.lastIndex(where: { $0.yl?.has(t) == true }) {
+                            messages[j].yl?.apply(node)
+                        } else {
+                            screen.apply(node)
+                        }
+                    }
                     if let agentID = agent?.id { for look in screen.looks { onLook?(agentID, look, row.createdAt) } }
                     new.append(ChatMessage(id: "\(id)#\(i)", text: "", fromUser: false, yl: screen))
                 }
