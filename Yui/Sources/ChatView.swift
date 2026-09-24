@@ -8,6 +8,8 @@ struct ChatView: View {
     @State private var draft = ""
     @State private var store = ChatStore(messages: ChatView.seed)
     @State private var showSettings = ProcessInfo.processInfo.arguments.contains("-yuiSettings")
+    @State private var settingsDetent: PresentationDetent =
+        ProcessInfo.processInfo.arguments.contains("-yuiSettingsLarge") ? .large : .medium
     @State private var showPaste = ProcessInfo.processInfo.arguments.contains("-yuiPaste")
     @FocusState private var focused: Bool
 
@@ -53,7 +55,7 @@ struct ChatView: View {
             .toolbarBackground(c.background, for: .navigationBar)
             .sheet(isPresented: $showSettings) {
                 SettingsView()
-                    .presentationDetents([.medium])
+                    .presentationDetents([.medium, .large], selection: $settingsDetent)
                     .presentationCornerRadius(theme.radius.card)
             }
             .sheet(isPresented: $showPaste) {

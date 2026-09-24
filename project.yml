@@ -20,6 +20,10 @@ targets:
     sources: [Yui/Sources, Yui/Resources]
     dependencies:
       - package: YuiLines
+    entitlements:
+      path: Yui/Yui.entitlements
+      properties:
+        com.apple.developer.applesignin: [Default]
     info:
       path: Yui/Info.plist
       properties:
