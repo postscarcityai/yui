@@ -11,6 +11,8 @@ struct YLComponent: Identifiable, Equatable, Sendable {
     var screen: String
     var props: [String: YLValue]
     var line: String
+    /// The group head's YL id when this add joined a deck, plan or narrate.
+    var inGroup: String? = nil
 
     var id: Int { serial }
 }
@@ -40,7 +42,8 @@ struct YLScreen: Equatable, Sendable {
         case .add:
             serial += 1
             components.append(YLComponent(serial: serial, ylID: node.id ?? "n\(serial)", preset: node.preset ?? "say",
-                                          screen: node.screen, props: node.props ?? [:], line: node.line))
+                                          screen: node.screen, props: node.props ?? [:], line: node.line,
+                                          inGroup: node.inGroup))
         case .patch:
             let target = node.target ?? ""
             guard let i = components.lastIndex(where: { $0.ylID == target || $0.preset == target }) else {
@@ -62,10 +65,12 @@ struct YLScreen: Equatable, Sendable {
             components.removeAll { $0.screen == node.screen }
             for var c in shot {
                 serial += 1
-                c = YLComponent(serial: serial, ylID: c.ylID, preset: c.preset, screen: node.screen, props: c.props, line: c.line)
+                c = YLComponent(serial: serial, ylID: c.ylID, preset: c.preset, screen: node.screen, props: c.props, line: c.line,
+                                inGroup: c.inGroup)
                 components.append(c)
             }
-        case .focus:
+        case .focus, .end:
+            // Group membership rides on each add (`inGroup`), so `end` has nothing left to do here.
             break
         case .close:
             closedAt = serial
@@ -85,7 +90,70 @@ struct YLScreen: Equatable, Sendable {
 
     /// Something on the stage the agent has not closed again.
     func wantsStage(_ style: [String: String]) -> Bool {
-        components.contains { $0.serial > closedAt && $0.onStage(style) }
+        top.contains { $0.serial > closedAt && $0.onStage(style) }
+    }
+
+    /// Components drawn on their own: everything but group members, which their
+    /// head draws (a page inside its deck). A member whose head is gone stands alone.
+    var top: [YLComponent] { components.filter { head(of: $0) == nil } }
+
+    /// The group head `c` joined: the newest head before it with that id.
+    func head(of c: YLComponent) -> YLComponent? {
+        guard let g = c.inGroup else { return nil }
+        return components.last { $0.serial < c.serial && $0.ylID == g && YLComponent.groupHeads.contains($0.preset) }
+    }
+}
+
+extension YLComponent {
+    static let groupHeads: Set<String> = ["deck", "plan", "narrate"]
+}
+
+extension Array where Element == YLComponent {
+    /// The members of group head `head`, in line order.
+    func members(of head: YLComponent) -> [YLComponent] {
+        let next = first { $0.serial > head.serial && $0.ylID == head.ylID && $0.preset == head.preset }?.serial ?? .max
+        return filter { $0.inGroup == head.ylID && $0.serial > head.serial && $0.serial < next }
+    }
+
+    /// The newest inline table called `id` (by YL id or by name), for `chart data=id`.
+    func table(_ id: String) -> YLComponent? {
+        last { $0.preset == "table" && ($0.ylID == id || $0.string("name") == id) && $0.props["cols"] != nil }
+    }
+}
+
+/// How a reply lays out: components alone, consecutive `step` lines as one
+/// stepper (spec: step), and on the chat side each run of staged ones as one pill.
+enum YLItem: Identifiable {
+    case one(YLComponent)
+    case steps([YLComponent])
+    case pill([YLComponent])
+
+    var id: String {
+        switch self {
+        case .one(let c): "c\(c.serial)"
+        case .steps(let cs): "s\(cs[0].serial)"
+        case .pill(let cs): "p\(cs[0].serial)"
+        }
+    }
+
+    /// `pills` nil lays everything out in place (the stage); with a style,
+    /// staged components fold into pills (the chat).
+    static func layout(_ components: [YLComponent], pills style: [String: String]?) -> [YLItem] {
+        var out: [YLItem] = []
+        for c in components {
+            if let style, c.onStage(style) {
+                if case .pill(let run) = out.last { out[out.count - 1] = .pill(run + [c]) } else { out.append(.pill([c])) }
+            } else if c.preset == "step" {
+                if case .steps(let run) = out.last, run.last?.screen == c.screen {
+                    out[out.count - 1] = .steps(run + [c])
+                } else {
+                    out.append(.steps([c]))
+                }
+            } else {
+                out.append(.one(c))
+            }
+        }
+        return out
     }
 }
 

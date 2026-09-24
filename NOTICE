@@ -2,3 +2,8 @@ Yui
 Copyright 2026 PostScarcity AI
 
 This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+The app uses SwiftMath (https://github.com/mgriebling/SwiftMath), MIT
+License, Copyright (c) 2023 Computer Inspirations, to typeset TeX. It bundles
+the Latin Modern Math and other OpenType math fonts under their own licenses
+(GUST Font License, SIL Open Font License).

@@ -54,6 +54,7 @@ func comparable(_ n: YLNode) -> YLValue {
     if let v = n.id { o["id"] = .string(v) }
     if let v = n.target { o["target"] = .string(v) }
     if let v = n.name { o["name"] = .string(v) }
+    if let v = n.inGroup { o["in"] = .string(v) }
     if let v = n.props { o["props"] = .object(v) }
     return .object(o)
 }
@@ -134,10 +135,9 @@ func conformance(_ v: Vector) {
     #expect(try YLValue.parseJSON(pair) == .string("\u{1F4AA}"))
 }
 
-/// Hub areas this parser has not taken on yet (media, data and science, decks
-/// and plans). Keep in step with `scripts/sync-vectors.sh`; drop a name here
-/// once the parser passes that file.
-let notYetInApp: Set<String> = ["16-media.json", "17-data-science.json", "18-flows.json"]
+/// Hub areas this parser has not taken on yet. Keep in step with
+/// `scripts/sync-vectors.sh`; drop a name here once the parser passes that file.
+let notYetInApp: Set<String> = []
 
 /// When the hub repo sits next to this one, the copied vectors must match it.
 @Test(.enabled(if: FileManager.default.fileExists(atPath: hubVectors.path)))

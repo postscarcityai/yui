@@ -52,7 +52,8 @@ extension YLComponent {
 }
 
 extension YLScreen {
-    func staged(_ style: [String: String]) -> [YLComponent] { components.filter { $0.onStage(style) } }
+    /// Staged components (members ride inside their head).
+    func staged(_ style: [String: String]) -> [YLComponent] { top.filter { $0.onStage(style) } }
 }
 
 /// The full-screen layer. Mounted as long as there is something on it, open or
@@ -75,7 +76,7 @@ struct StageView: View {
                 header(c)
                 ScrollView {
                     VStack(spacing: theme.spacing.l) {
-                        ForEach(components) { PresetView(component: $0) }
+                        YLItemsView(items: YLItem.layout(components, pills: nil))
                     }
                     .padding(.horizontal, theme.spacing.l)
                     .padding(.bottom, theme.spacing.xl)
@@ -84,6 +85,7 @@ struct StageView: View {
                 .scrollBounceBehavior(.basedOnSize)
             }
             .environment(\.ylScope, scope)
+            .environment(\.ylOnStage, true)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(c.background.ignoresSafeArea())
             .mask { RoundedRectangle(cornerRadius: drag > 0 ? 38 : 0).ignoresSafeArea() }

@@ -3,6 +3,35 @@ import YuiLines
 
 extension EnvironmentValues {
     @Entry var ylEmit = YLEmit()
+    /// Every component in the reply: group heads find their members here, and
+    /// `chart data=id` its table.
+    @Entry var ylComponents: [YLComponent] = []
+    /// Puts a saved screen back (`project open=name`).
+    @Entry var ylShow = YLShow()
+}
+
+/// `(reply scope, screen, saved name)`: the host applies `show name` to that reply.
+struct YLShow: Sendable {
+    var run: @MainActor @Sendable (String, String, String) -> Void = { _, _, _ in }
+    @MainActor func callAsFunction(scope: String, screen: String, name: String) { run(scope, screen, name) }
+    init(_ run: @escaping @MainActor @Sendable (String, String, String) -> Void = { _, _, _ in }) { self.run = run }
+}
+
+/// A reply's components laid out: one view each, steps as one stepper, staged runs as pills.
+struct YLItemsView: View {
+    let items: [YLItem]
+    var openStage: () -> Void = {}
+    @Environment(\.ylScope) private var scope
+
+    var body: some View {
+        ForEach(items) { item in
+            switch item {
+            case .one(let c): PresetView(component: c)
+            case .steps(let cs): StepperPreset(steps: cs)
+            case .pill(let cs): StagePill(components: cs, scope: scope, open: openStage)
+            }
+        }
+    }
 }
 
 /// Renders one YL component. Every look comes from `YuiTheme` tokens.
@@ -22,6 +51,21 @@ struct PresetView: View {
         case "image": ImagePreset(c: component)
         case "video": VideoPreset(c: component)
         case "camera": CameraPreset(c: component)
+        case "card": CardPreset(c: component)
+        case "table": TablePreset(c: component)
+        case "gallery": GalleryPreset(c: component)
+        case "compare": ComparePreset(c: component)
+        case "storyboard": StoryboardPreset(c: component)
+        case "chart": ChartPreset(c: component)
+        case "stat": StatPreset(c: component)
+        case "math": MathPreset(c: component)
+        case "step": StepperPreset(steps: [component])
+        case "calc": CalcPreset(c: component)
+        case "deck": DeckPreset(c: component)
+        case "page": PagePreset(c: component, standalone: true)
+        case "plan": PlanPreset(c: component)
+        case "project": ProjectPreset(c: component)
+        case "narrate": NarratePreset(c: component)
         default: LaterPreset(c: component)
         }
     }
@@ -118,7 +162,9 @@ struct AskPreset: View {
                     guard answer != o else { return }
                     let changed = answer != nil
                     withAnimation(theme.spring) { answer = o }
-                    emit(c.answer(["answer": .string(o)], echo: o, changed: changed))
+                    var v: [String: YLValue] = ["answer": .string(o)]
+                    if let right = c.quizAnswer { v["correct"] = .bool(right.contains(o)) }
+                    emit(c.answer(v, echo: o, changed: changed))
                 }
             }
             // Two options sit side by side unless the agent prefers stacked buttons
@@ -132,6 +178,9 @@ struct AskPreset: View {
                 HStack(spacing: theme.spacing.s) { buttons }
             } else {
                 VStack(spacing: theme.spacing.s) { buttons }
+            }
+            if let answer, let right = c.quizAnswer {
+                QuizMark(right: right.contains(answer), answer: right, why: c.string("why"))
             }
         }
         .disabled(c.locked)
@@ -185,6 +234,9 @@ struct ChoosePreset: View {
                 }
             }
             if typing, !c.locked { otherField(s) }
+            if let sent, let right = c.quizAnswer {
+                QuizMark(right: multi ? Set(right) == Set(sent) : right == sent, answer: right, why: c.string("why"))
+            }
             if multi, !c.locked {
                 // After the first send the button reads "Sent" until the picks change again.
                 let fresh = !picked.isEmpty && picked != sent
@@ -192,8 +244,9 @@ struct ChoosePreset: View {
                            on: fresh, grow: true) {
                     let changed = sent != nil
                     sent = picked
-                    emit(c.answer(["picked": .array(picked.map(YLValue.string))], echo: picked.joined(separator: ", "),
-                                  changed: changed))
+                    var v: [String: YLValue] = ["picked": .array(picked.map(YLValue.string))]
+                    if let right = c.quizAnswer { v["correct"] = .bool(Set(right) == Set(picked)) }
+                    emit(c.answer(v, echo: picked.joined(separator: ", "), changed: changed))
                 }
                 .disabled(!fresh)
             }
@@ -231,7 +284,9 @@ struct ChoosePreset: View {
                 let changed = sent != nil
                 picked = [o]
                 sent = [o]
-                emit(c.answer(["choice": .string(o)], echo: o, changed: changed))
+                var v: [String: YLValue] = ["choice": .string(o)]
+                if let right = c.quizAnswer { v["correct"] = .bool(right.contains(o)) }
+                emit(c.answer(v, echo: o, changed: changed))
             } else if let i = picked.firstIndex(of: o) {
                 picked.remove(at: i)
             } else if cap.map({ picked.count < $0 }) ?? true {

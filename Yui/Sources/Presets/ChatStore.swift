@@ -94,6 +94,19 @@ final class ChatStore {
         post(body: e.line, kind: "event", meta: e.meta)
     }
 
+    /// `show` for the environment, made once: a fresh closure on every render
+    /// changes the environment each timer tick and swallows taps on the stage.
+    @ObservationIgnored private(set) lazy var ylShow = YLShow { [weak self] scope, screen, name in
+        self?.show(name, screen: screen, in: scope)
+    }
+
+    /// `project open=name`: put the saved screen `name` back, the same as the
+    /// agent sending `show name` in reply `id` (spec: project).
+    func show(_ name: String, screen: String, in id: String) {
+        guard let i = messages.firstIndex(where: { $0.id == id }) else { return }
+        withAnimation(spring) { messages[i].yl?.apply(YLNode(op: .show, screen: screen, name: name, line: "show \(name)")) }
+    }
+
     // MARK: Thread
 
     /// Same agent, new fields (a rename, a new look): swap it in, keep the thread.

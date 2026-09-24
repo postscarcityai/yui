@@ -40,11 +40,39 @@ public struct YLParser: Sendable {
     public private(set) var screen = "1"
     private var ids: [String: String] = [:]
     private var auto = 0
+    /// Open groups, innermost last.
+    private var open: [(id: String, preset: String, screen: String)] = []
 
     public init() {}
 
     /// Parses one line (no `\n`). Returns nil for blank and comment lines.
-    public mutating func line(_ src: String) -> YLNode? {
+    public mutating func line(_ src: String) -> YLNode? { group(parseLine(src)) }
+
+    /// Group bookkeeping for one parsed node. Errors (and nil) leave groups open.
+    private mutating func group(_ node: YLNode?) -> YLNode? {
+        // A theme line restyles the app, not the screen: it leaves groups alone.
+        guard var node, node.op != .error, node.op != .theme else { return node }
+        // Closing the stage ends whatever group was open on it, like `>2` would.
+        if node.op == .close { open = []; return node }
+        if node.op == .end {
+            guard let g = open.popLast() else {
+                return YLNode(op: .error, screen: node.screen, message: "end: no open deck, plan or narrate", line: node.line)
+            }
+            node.target = g.id
+            return node
+        }
+        func joins(_ g: (id: String, preset: String, screen: String)) -> Bool {
+            node.op == .add && node.screen == g.screen && groups[g.preset]!.contains(node.preset ?? "")
+        }
+        while let g = open.last, !joins(g) { open.removeLast() }
+        if let g = open.last { node.inGroup = g.id }
+        if node.op == .add, let p = node.preset, groups[p] != nil, let id = node.id {
+            open.append((id, p, node.screen))
+        }
+        return node
+    }
+
+    private mutating func parseLine(_ src: String) -> YLNode? {
         let line = src.hasSuffix("\r") ? String(src.unicodeScalars.dropLast()) : src
         var body = trimJS(Scalars(line.unicodeScalars))
         if body.isEmpty || isComment(body) { return nil }
@@ -91,7 +119,8 @@ public struct YLParser: Sendable {
             if preset == "custom" {
                 return YLNode(op: .error, screen: screen, message: "patch: custom blocks are replaced, not patched", line: line)
             }
-            return YLNode(op: .patch, screen: screen, target: target, props: parseArgs(preset, tokens), line: line)
+            let props = rawPresets.contains(preset) ? rawArgs(preset, rest(body, head)) : parseArgs(preset, tokens)
+            return YLNode(op: .patch, screen: screen, target: target, props: props, line: line)
         }
 
         if head == "save" || head == "show" {
@@ -101,6 +130,7 @@ public struct YLParser: Sendable {
             return YLNode(op: head == "save" ? .save : .show, screen: screen, name: name, line: line)
         }
         if head == "clear" { return YLNode(op: .clear, screen: screen, line: line) }
+        if head == "end" { return YLNode(op: .end, screen: screen, line: line) }
         if head == "close" {
             guard tokens.isEmpty else {
                 return YLNode(op: .error, screen: screen, message: "close: takes nothing else", line: line)
@@ -125,7 +155,13 @@ public struct YLParser: Sendable {
         }
         let id = explicit ?? { auto += 1; return "n\(auto)" }()
         ids[id] = preset
-        return YLNode(op: .add, screen: screen, preset: preset, id: id, props: parseArgs(preset, tokens), line: line)
+        let props = rawPresets.contains(preset) ? rawArgs(preset, rest(body, head)) : parseArgs(preset, tokens)
+        return YLNode(op: .add, screen: screen, preset: preset, id: id, props: props, line: line)
+    }
+
+    /// The body after its head token, untokenized (raw TeX presets).
+    private func rest(_ body: Scalars, _ head: String) -> String {
+        String(body.dropFirst(head.unicodeScalars.count))
     }
 
     /// `^#(\s|$)`

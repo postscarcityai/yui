@@ -4,7 +4,7 @@ import SwiftUI
 import YuiLines
 
 // `image`, `video` and `camera` (spec yuigui/spec/YL.md). Gallery, compare,
-// storyboard and image edit are YUI-19; they reuse RemoteImage.
+// storyboard and image edit live in MediaSetPresets.swift and reuse RemoteImage.
 
 /// A picture from a YL URL, re-signed when its link has expired.
 struct RemoteImage: View {
@@ -45,7 +45,9 @@ struct ImagePreset: View {
     var body: some View {
         let s = theme.swatch(scheme)
         let caption = c.string("caption") ?? c.string("alt")
-        if let src = YLMediaURL.url(c.string("src")) {
+        if c.flag("edit"), YLMediaURL.url(c.string("src")) != nil {
+            ImageEditPreset(c: c)
+        } else if let src = YLMediaURL.url(c.string("src")) {
             VStack(alignment: .leading, spacing: theme.spacing.s) {
                 RemoteImage(src: src, fit: c.string("fit") == "contain" ? .fit : .fill)
                     .frame(maxWidth: .infinity)
@@ -99,11 +101,15 @@ private struct ZoomedImage: View {
     }
 }
 
-/// `video URL [caption] [+loop] [+auto] [+mute]`.
+/// `video URL [caption] [+loop] [+auto] [+mute] [poster=URL]`. Emits
+/// `{played: true}` the first time it plays and `{ended: true}` at the end.
 struct VideoPreset: View {
     let c: YLComponent
     @State private var player: AVPlayer?
     @State private var looper: Any?
+    @State private var ender: Any?
+    @State private var played = false
+    @Environment(\.ylEmit) private var emit
     @Environment(\.yuiMedia) private var media
     @Environment(\.yuiTheme) private var theme
     @Environment(\.colorScheme) private var scheme
@@ -115,6 +121,16 @@ struct VideoPreset: View {
             if src != nil {
                 Group {
                     if let player { VideoPlayer(player: player) } else { s.background.overlay(ProgressView().tint(s.accent)) }
+                }
+                .overlay {
+                    if !played, let poster = YLMediaURL.url(c.string("poster")) {
+                        RemoteImage(src: poster)
+                            .overlay(Image(systemName: "play.circle.fill").font(.system(size: 54)).foregroundStyle(s.onAccent, s.accent))
+                            .contentShape(.rect)
+                            .onTapGesture { player?.play() }
+                            .accessibilityLabel("Play video")
+                            .accessibilityAddTraits(.isButton)
+                    }
                 }
                 .aspectRatio(16 / 9, contentMode: .fit)
                 .clipShape(.rect(cornerRadius: theme.radius.card))
@@ -142,8 +158,20 @@ struct VideoPreset: View {
                     Task { @MainActor in p.seek(to: .zero); p.play() }
                 }
             }
+            ender = NotificationCenter.default.addObserver(forName: AVPlayerItem.didPlayToEndTimeNotification,
+                                                           object: p.currentItem, queue: .main) { _ in
+                Task { @MainActor in emit(c.event(["ended": .bool(true)])) }
+            }
             player = p
             if c.flag("auto") { p.play() }
+            // First play, from the controls, the poster or +auto.
+            for await status in p.publisher(for: \.timeControlStatus).values where status == .playing {
+                if !played {
+                    played = true
+                    emit(c.event(["played": .bool(true)]))
+                }
+                break
+            }
         }
         .onDisappear { player?.pause() }
     }

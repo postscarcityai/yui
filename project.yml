@@ -6,6 +6,10 @@ options:
 packages:
   YuiLines:
     path: Packages/YuiLines
+  # Native LaTeX (CoreText) for math, step and calc. MIT.
+  SwiftMath:
+    url: https://github.com/mgriebling/SwiftMath
+    from: 1.7.3
 settings:
   base:
     MARKETING_VERSION: "0.1.0"
@@ -20,6 +24,7 @@ targets:
     sources: [Yui/Sources, Yui/Resources]
     dependencies:
       - package: YuiLines
+      - package: SwiftMath
     entitlements:
       path: Yui/Yui.entitlements
       properties:

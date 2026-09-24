@@ -14,6 +14,8 @@ public struct YLNode: Codable, Equatable, Sendable {
         case clear
         /// Bare `>S`: later lines go to `screen`.
         case focus
+        /// `end`: close the open group (deck, plan, narrate); `target` is its id.
+        case end
         /// Restyle the agent's look: `props` (a named set in `props.name`). No id, no event.
         case theme
         /// `close` or bare `>chat`: close the stage; later lines go to screen 1. Screen is `full`.
@@ -28,20 +30,28 @@ public struct YLNode: Codable, Equatable, Sendable {
     public var id: String?
     public var target: String?
     public var name: String?
+    /// The open group this add joined (a page under a deck): the group's id.
+    public var inGroup: String?
     /// Only what the line said. Defaults are the renderer's job.
     public var props: [String: YLValue]?
     public var message: String?
     /// The source line, for logs.
     public var line: String
 
+    enum CodingKeys: String, CodingKey {
+        case op, screen, preset, id, target, name, inGroup = "in", props, message, line
+    }
+
     public init(op: Op, screen: String, preset: String? = nil, id: String? = nil, target: String? = nil,
-                name: String? = nil, props: [String: YLValue]? = nil, message: String? = nil, line: String) {
+                name: String? = nil, inGroup: String? = nil, props: [String: YLValue]? = nil,
+                message: String? = nil, line: String) {
         self.op = op
         self.screen = screen
         self.preset = preset
         self.id = id
         self.target = target
         self.name = name
+        self.inGroup = inGroup
         self.props = props
         self.message = message
         self.line = line

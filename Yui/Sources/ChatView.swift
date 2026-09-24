@@ -101,11 +101,13 @@ struct ChatView: View {
         if let m = store.stageMessage, let yl = m.yl, !yl.staged(agentStyle).isEmpty {
             StageView(components: yl.staged(agentStyle), scope: m.id, agent: store.agent, open: store.stageOpen,
                       close: store.closeStage)
+                .environment(\.ylComponents, yl.components)
                 .id(m.id)
                 .transition(.opacity)
         }
         }
         .environment(\.ylEmit, store.emit)
+        .environment(\.ylShow, store.ylShow)
         .environment(\.yuiMedia, store.agent.flatMap { a in account.session?.userID == "demo" ? nil : YuiMedia(account: account, agentID: a.id) })
         .environment(\.ylTimers, store.timers)
         .onChange(of: agentStyle, initial: true) { store.style = agentStyle }
@@ -222,41 +224,16 @@ private struct YLReply: View {
     let openStage: () -> Void
     @Environment(\.yuiTheme) private var theme
 
-    /// Inline components as they are; each run of staged ones as one pill.
-    private enum Item: Identifiable {
-        case inline(YLComponent)
-        case pill([YLComponent])
-        var id: String {
-            switch self {
-            case .inline(let c): "c\(c.serial)"
-            case .pill(let cs): "p\(cs[0].serial)"
-            }
-        }
-    }
-
-    private var items: [Item] {
-        var out: [Item] = []
-        for c in screen.components {
-            if !c.onStage(style) { out.append(.inline(c)); continue }
-            if case .pill(let run) = out.last { out[out.count - 1] = .pill(run + [c]) } else { out.append(.pill([c])) }
-        }
-        return out
-    }
-
     var body: some View {
         HStack(alignment: .top, spacing: theme.spacing.s) {
             AgentFace(agent: agent)
             VStack(alignment: .leading, spacing: theme.spacing.m) {
-                ForEach(items) { item in
-                    switch item {
-                    case .inline(let c): PresetView(component: c)
-                    case .pill(let cs): StagePill(components: cs, scope: scope, open: openStage)
-                    }
-                }
+                YLItemsView(items: YLItem.layout(screen.top, pills: style), openStage: openStage)
                 ForEach(Array(screen.errors.enumerated()), id: \.offset) { YLErrorRow(node: $1) }
                 ForEach(Array(screen.looks.enumerated()), id: \.offset) { _ in LookNote(agent: agent) }
             }
             .environment(\.ylScope, scope)
+            .environment(\.ylComponents, screen.components)
         }
         .transition(.opacity)
     }
