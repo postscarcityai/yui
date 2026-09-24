@@ -9,6 +9,12 @@ export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer YUI_TEAM_ID
 KEY=~/.appstoreconnect/private_keys/AuthKey_${ASC_KEY_ID}.p8
 AUTH=(-allowProvisioningUpdates -authenticationKeyPath "$KEY" -authenticationKeyID "$ASC_KEY_ID" -authenticationKeyIssuerID "$ASC_ISSUER_ID")
 BUILD=$(git rev-list --count HEAD)
+# App Store Connect can be ahead of the commit count (rebuilds of one commit):
+# never reuse a build number, it fails the upload as a timeout.
+LATEST=$(python3 scripts/asc.py GET "/v1/builds?filter[app]=6815454240&sort=-uploadedDate&limit=50&fields[builds]=version" 2>/dev/null \
+  | python3 -c 'import json,sys; print(max([int(b["attributes"]["version"]) for b in json.load(sys.stdin)["data"]] or [0]))' 2>/dev/null || echo 0)
+[ "${LATEST:-0}" -ge "$BUILD" ] 2>/dev/null && BUILD=$((LATEST + 1))
+BUILD=${YUI_BUILD:-$BUILD}
 
 xcodegen generate --quiet
 rm -rf build && mkdir build
