@@ -72,24 +72,31 @@ extension AgentLook {
         var motion = "bouncy"
     }
 
-    /// Named sets, in picker order. The last six are personality sets (a coach, a wizard,
-    /// a lawyer...); an agent whose handle matches a set name starts in that set.
+    /// Named sets, in picker order: the colors around the hue wheel, then the six
+    /// personality sets (a coach, a wizard, a lawyer...). An agent whose handle
+    /// matches a set name starts in that set.
     static let sets: [(name: String, recipe: Recipe)] = [
         ("yui", Recipe(accent: "#FF7E8A", bg: "#FFF9F0", radius: "yui")),
+        ("candy", Recipe(accent: "#FF5FAE", bg: "#FFF1F7", radius: "round", motion: "bouncy")),
+        ("berry", Recipe(accent: "#B8336A", bg: "#FCF2F6", radius: "soft", weight: "bold")),
+        ("cherry", Recipe(accent: "#D7263D", bg: "#FFF3F3", radius: "round", motion: "snappy")),
         ("coral", Recipe(accent: "#FF6F7D", bg: "#FFF6F4", radius: "round")),
-        ("peach", Recipe(accent: "#FF9466", bg: "#FFF7F1", radius: "round")),
         ("sunset", Recipe(accent: "#F2663A", bg: "#FFF4EC", radius: "soft", motion: "snappy")),
+        ("peach", Recipe(accent: "#FF9466", bg: "#FFF7F1", radius: "round")),
         ("autumn", Recipe(accent: "#C8642B", bg: "#F7F0E6", radius: "soft", font: "serif", weight: "bold", motion: "calm")),
+        ("honey", Recipe(accent: "#D98E04", bg: "#FFF8EC", radius: "round", motion: "calm")),
         ("lemon", Recipe(accent: "#E5B800", bg: "#FFFBEA", radius: "round")),
+        ("lime", Recipe(accent: "#8CC63F", bg: "#F7FBEF", radius: "round", motion: "snappy")),
         ("matcha", Recipe(accent: "#7FA650", bg: "#F6F8EF", radius: "round", motion: "calm")),
         ("forest", Recipe(accent: "#2F7D4F", bg: "#F2F6F1", radius: "soft", font: "default", weight: "bold", motion: "calm")),
         ("mint", Recipe(accent: "#2FB58C", bg: "#F0FAF6", radius: "round")),
-        ("ocean", Recipe(accent: "#1E86C8", bg: "#F1F7FC", radius: "soft", font: "default", weight: "bold", motion: "calm")),
+        ("teal", Recipe(accent: "#0E9AA7", bg: "#EFF9FA", radius: "soft")),
         ("sky", Recipe(accent: "#4AA8F0", bg: "#F2F8FF", radius: "round")),
-        ("lavender", Recipe(accent: "#9B87F5", bg: "#F7F4FF", radius: "round")),
-        ("berry", Recipe(accent: "#B8336A", bg: "#FCF2F6", radius: "soft", weight: "bold")),
-        ("candy", Recipe(accent: "#FF5FAE", bg: "#FFF1F7", radius: "round", motion: "bouncy")),
+        ("ocean", Recipe(accent: "#1E86C8", bg: "#F1F7FC", radius: "soft", font: "default", weight: "bold", motion: "calm")),
         ("midnight", Recipe(accent: "#5B6CFF", bg: "#F1F2FF", radius: "soft", font: "default", weight: "bold", motion: "snappy")),
+        ("lavender", Recipe(accent: "#9B87F5", bg: "#F7F4FF", radius: "round")),
+        ("grape", Recipe(accent: "#8E44C8", bg: "#F8F2FD", radius: "round", weight: "bold")),
+        ("slate", Recipe(accent: "#56657F", bg: "#F3F5F8", radius: "soft", font: "default", weight: "bold", motion: "calm")),
         ("mono", Recipe(accent: "#4A4A4A", bg: "#FFFFFF", radius: "square", font: "default", weight: "bold", motion: "snappy")),
         ("wizard", Recipe(accent: "#7B5CFF", bg: "#F6F4FF", radius: "soft", font: "serif", weight: "bold", motion: "calm")),
         ("coach", Recipe(accent: "#FF5A36", bg: "#FFF6F2", radius: "square", font: "default", weight: "heavy", motion: "snappy")),

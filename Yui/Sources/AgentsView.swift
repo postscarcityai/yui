@@ -256,7 +256,8 @@ struct PillButton: View {
 }
 
 /// The looks a person can pick for an agent: its own (seeded from its name) first,
-/// then every named set. Each chip is drawn in the look it stands for.
+/// then every named set, all on screen in a wrapping grid (a sideways row hid all
+/// but the first few warm ones). Each chip is drawn in the look it stands for.
 struct LookPickerRow: View {
     let name: String
     var isYui = false
@@ -265,14 +266,11 @@ struct LookPickerRow: View {
     @Environment(\.colorScheme) private var scheme
 
     var body: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: theme.spacing.m) {
-                chip(nil, label: "Own")
-                ForEach(AgentLook.sets.map(\.name), id: \.self) { chip($0, label: $0.capitalized) }
-            }
-            .padding(.horizontal, 4)
-            .padding(.vertical, 6)
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: 56), spacing: theme.spacing.s)], spacing: theme.spacing.m) {
+            chip(nil, label: "Own")
+            ForEach(AgentLook.sets.map(\.name), id: \.self) { chip($0, label: $0.capitalized) }
         }
+        .padding(.vertical, 6)
     }
 
     private func chip(_ preset: String?, label: String) -> some View {
