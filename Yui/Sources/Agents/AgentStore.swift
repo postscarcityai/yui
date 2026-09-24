@@ -293,14 +293,14 @@ final class AgentStore {
     ]
     /// `-yuiDemoAgents`: a few agents, each in its own look, for screenshots.
     static let demoCrew = demo + [
-        YuiAgent(id: "demo-arnold", name: "Arnold", handle: "arnold", color: "butter", kind: "hermes",
-                 connectorName: "Mac mini", remoteRef: "arnold", status: .connected, lastSeenAt: .now,
+        YuiAgent(id: "demo-coach", name: "Coach", handle: "coach", color: "butter", kind: "hermes",
+                 connectorName: "Mac mini", remoteRef: "coach", status: .connected, lastSeenAt: .now,
                  isDefault: false, sort: 1, theme: AgentLook(style: ["screen": "full", "buttons": "stack"])),
-        YuiAgent(id: "demo-urza", name: "Urza", handle: "urza", color: "lavender", kind: "hermes",
-                 connectorName: "Mac mini", remoteRef: "urza", status: .connected, lastSeenAt: .now,
+        YuiAgent(id: "demo-wizard", name: "Wizard", handle: "wizard", color: "lavender", kind: "hermes",
+                 connectorName: "Mac mini", remoteRef: "wizard", status: .connected, lastSeenAt: .now,
                  isDefault: false, sort: 2),
-        YuiAgent(id: "demo-r0ss", name: "R0SS", handle: "r0ss", color: "mint", kind: "hermes",
-                 connectorName: "Mac mini", remoteRef: "r0ss", status: .offline, lastSeenAt: .now,
+        YuiAgent(id: "demo-counsel", name: "Counsel", handle: "counsel", color: "mint", kind: "hermes",
+                 connectorName: "Mac mini", remoteRef: "counsel", status: .offline, lastSeenAt: .now,
                  isDefault: false, sort: 3),
         YuiAgent(id: "demo-nova", name: "Nova", handle: "nova", color: "mint", kind: "hermes",
                  connectorName: "Mac mini", remoteRef: "nova", status: .connected, lastSeenAt: .now,

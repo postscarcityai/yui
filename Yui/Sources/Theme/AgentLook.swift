@@ -72,8 +72,8 @@ extension AgentLook {
         var motion = "bouncy"
     }
 
-    /// Named sets, in picker order. The agent sets (urza, arnold, ...) are what those
-    /// agents wear by default when a person adds them under that name.
+    /// Named sets, in picker order. The last six are personality sets (a coach, a wizard,
+    /// a lawyer...); an agent whose handle matches a set name starts in that set.
     static let sets: [(name: String, recipe: Recipe)] = [
         ("yui", Recipe(accent: "#FF7E8A", bg: "#FFF9F0", radius: "yui")),
         ("coral", Recipe(accent: "#FF6F7D", bg: "#FFF6F4", radius: "round")),
@@ -91,12 +91,12 @@ extension AgentLook {
         ("candy", Recipe(accent: "#FF5FAE", bg: "#FFF1F7", radius: "round", motion: "bouncy")),
         ("midnight", Recipe(accent: "#5B6CFF", bg: "#F1F2FF", radius: "soft", font: "default", weight: "bold", motion: "snappy")),
         ("mono", Recipe(accent: "#4A4A4A", bg: "#FFFFFF", radius: "square", font: "default", weight: "bold", motion: "snappy")),
-        ("urza", Recipe(accent: "#7B5CFF", bg: "#F6F4FF", radius: "soft", font: "serif", weight: "bold", motion: "calm")),
-        ("arnold", Recipe(accent: "#FF5A36", bg: "#FFF6F2", radius: "square", font: "default", weight: "heavy", motion: "snappy")),
-        ("monk", Recipe(accent: "#4E9A6B", bg: "#F5F8F2", radius: "round", font: "serif", weight: "regular", motion: "calm")),
-        ("hank", Recipe(accent: "#2F7BFF", bg: "#F3F7FF", radius: "round", font: "rounded", weight: "heavy", motion: "bouncy")),
-        ("luna", Recipe(accent: "#8A7CF0", bg: "#F7F5FF", radius: "round", font: "serif", weight: "bold", motion: "calm")),
-        ("r0ss", Recipe(accent: "#1F3A68", bg: "#FAF8F3", radius: "square", font: "serif", weight: "bold", motion: "calm")),
+        ("wizard", Recipe(accent: "#7B5CFF", bg: "#F6F4FF", radius: "soft", font: "serif", weight: "bold", motion: "calm")),
+        ("coach", Recipe(accent: "#FF5A36", bg: "#FFF6F2", radius: "square", font: "default", weight: "heavy", motion: "snappy")),
+        ("zen", Recipe(accent: "#4E9A6B", bg: "#F5F8F2", radius: "round", font: "serif", weight: "regular", motion: "calm")),
+        ("studio", Recipe(accent: "#2F7BFF", bg: "#F3F7FF", radius: "round", font: "rounded", weight: "heavy", motion: "bouncy")),
+        ("night", Recipe(accent: "#8A7CF0", bg: "#F7F5FF", radius: "round", font: "serif", weight: "bold", motion: "calm")),
+        ("counsel", Recipe(accent: "#1F3A68", bg: "#FAF8F3", radius: "square", font: "serif", weight: "bold", motion: "calm")),
     ]
 
     static func recipe(_ name: String) -> Recipe? { sets.first { $0.name == name.lowercased() }?.recipe }

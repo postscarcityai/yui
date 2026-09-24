@@ -255,7 +255,7 @@ struct LookPickerRow: View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: theme.spacing.m) {
                 chip(nil, label: "Own")
-                ForEach(AgentLook.sets.map(\.name), id: \.self) { chip($0, label: $0 == "r0ss" ? "R0SS" : $0.capitalized) }
+                ForEach(AgentLook.sets.map(\.name), id: \.self) { chip($0, label: $0.capitalized) }
             }
             .padding(.horizontal, 4)
             .padding(.vertical, 6)

@@ -38,7 +38,7 @@ struct YuiApp: App {
 }
 
 /// The whole app wears the look of the agent you are talking to (YUI-20):
-/// open Arnold's thread and everything, sheets included, turns Arnold.
+/// open a coach agent's thread and everything, sheets included, turns coach.
 /// No agent (signed out, the demo chat): Yui's own look.
 struct AgentThemed<Content: View>: View {
     @Environment(AgentStore.self) private var agents
