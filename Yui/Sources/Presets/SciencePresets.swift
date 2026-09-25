@@ -228,10 +228,11 @@ struct MathPreset: View {
 
 // MARK: - card
 
-/// `card title [body] sub= tag= img= cta=`. The button emits `{cta}`.
+/// `card title [body] sub= tag= img= cta= url=`. The button emits `{cta}`.
 struct CardPreset: View {
     let c: YLComponent
     @Environment(\.ylEmit) private var emit
+    @Environment(\.openURL) private var openURL
     @Environment(\.yuiTheme) private var theme
     @Environment(\.colorScheme) private var scheme
 
@@ -253,13 +254,22 @@ struct CardPreset: View {
             if let b = c.string("body") {
                 Text(b).font(theme.font(theme.type.body)).foregroundStyle(s.ink).fixedSize(horizontal: false, vertical: true)
             }
-            if let cta = c.string("cta") {
+            if let cta = c.string("cta") ?? (link == nil ? nil : "Open") {
                 OptionPill(text: cta, fill: s.accent, ink: s.onAccent, grow: true) {
+                    if let link { openURL(link) }
                     emit(c.event(["cta": .string(cta)], echo: cta))
                 }
             }
         }
         .disabled(c.locked)
+    }
+
+    /// `url=` makes the button open a web page or install a test build
+    /// (`itms-services:`) as well as emit `{cta}`. Other schemes are ignored.
+    private var link: URL? {
+        guard let raw = c.string("url"), let u = URL(string: raw),
+              ["https", "itms-services"].contains(u.scheme?.lowercased() ?? "") else { return nil }
+        return u
     }
 }
 

@@ -12,6 +12,9 @@ grace period and no message ever referenced it (an upload whose send failed,
 or a message the person deleted). The rule lives in SQL:
 public.yui_media_orphans(grace), migration 20260924040000_yui_media.sql.
 
+Test builds (YUI-55): everything in the private `yui-builds` bucket older than
+8 days goes too. Its signed links last 7 days, so nothing live is removed.
+
     media_sweep.py            # dry run: count and list
     media_sweep.py --delete   # apply retention, then remove orphans
     media_sweep.py --grace '6 hours'
@@ -68,18 +71,27 @@ def main() -> int:
     print(f"{len(names)} orphaned object(s) in yui-media (grace {grace})")
     for n in names[:20]:
         print("  " + n)
-    if not names or not args.delete:
+    s, rows = http("POST", f"https://api.supabase.com/v1/projects/{REF}/database/query", mgmt,
+                   {"query": "select name from storage.objects where bucket_id = 'yui-builds'"
+                             " and created_at < now() - interval '8 days'"})
+    if s >= 300:
+        print(f"builds query failed: {s} {rows}", file=sys.stderr)
+        return 1
+    builds = [r["name"] for r in rows]
+    print(f"{len(builds)} old test build file(s) in yui-builds")
+    if not args.delete or not (names or builds):
         return 0
     s, keys = http("GET", f"https://api.supabase.com/v1/projects/{REF}/api-keys?reveal=true", mgmt)
     secret = next(k["api_key"] for k in keys if k["type"] == "secret")
     removed = 0
-    for i in range(0, len(names), 1000):
-        s, r = http("DELETE", f"{BASE}/storage/v1/object/yui-media",
-                    {"apikey": secret, "authorization": f"Bearer {secret}"}, {"prefixes": names[i:i + 1000]})
-        if s >= 300:
-            print(f"remove failed: {s} {r}", file=sys.stderr)
-            return 1
-        removed += len(r or [])
+    for bucket, objs in (("yui-media", names), ("yui-builds", builds)):
+        for i in range(0, len(objs), 1000):
+            s, r = http("DELETE", f"{BASE}/storage/v1/object/{bucket}",
+                        {"apikey": secret, "authorization": f"Bearer {secret}"}, {"prefixes": objs[i:i + 1000]})
+            if s >= 300:
+                print(f"remove failed: {s} {r}", file=sys.stderr)
+                return 1
+            removed += len(r or [])
     print(f"removed {removed}")
     return 0
 

@@ -22,7 +22,7 @@ This repo holds the native SwiftUI app, the Swift Yui Lines parser, the Supabase
 | `adapters/openclaw/` | Yui channel plugin for OpenClaw: an OpenClaw agent talks in Yui like a Hermes agent |
 | `adapters/webhook/` | Webhook bridge, Python and Node: any agent that answers an HTTP POST |
 | `supabase/` | Migrations, edge functions and live tests for accounts and agents |
-| `scripts/` | TestFlight upload and App Store Connect helpers |
+| `scripts/` | TestFlight upload, test builds by link and App Store Connect helpers |
 
 ## Run the app
 
@@ -116,6 +116,22 @@ Rates are token buckets: `burst` requests at once, refilled at `per minute`. A p
 **Retention.** `public.yui_retention()` deletes messages older than 90 days, plus expired pairing codes and sessions, old pairing attempts and idle rate buckets. The daily sweep (`supabase/scripts/media_sweep.py --delete`) runs it first, then removes pictures no remaining message uses.
 
 **Isolation.** `yui_user` and `yui_connector` hold no privilege on any table outside `yui_*` (plus the `yui-media` bucket in Storage), can run no non-Yui security-definer function, and no non-Yui policy applies to them. PROOF Auth keeps signups disabled; Yui accounts never enter it. `strangers_test.py` proves all of this on every run.
+
+## Test builds
+
+Skip TestFlight when you only want to try main on your own phone. `scripts/devbuild.sh` archives a clean worktree of `origin/main` as an ad hoc build (build number `<commit count>.<n>`, so it never collides with a TestFlight number), puts the `.ipa` and its install manifest in a private Storage bucket behind 7-day signed links, and sends a card with an Install button into your Yui thread. Tap it on the phone and iOS installs the build over the one you have; your sign-in and threads stay. Pushes keep working: ad hoc builds use the same production APNs as TestFlight.
+
+```sh
+scripts/devbuild.sh --force      # build now and send the card
+scripts/devbuild.sh              # only if main has app changes and the last link is 3 hours old
+scripts/devbuild.sh --no-send    # build and host, print the link, send nothing
+```
+
+- Ad hoc builds install only on iPhones registered to your Apple developer account, so a forwarded link installs nowhere else. Register the phone once in the developer portal; `-allowProvisioningUpdates` puts it in the profile on the next build.
+- No upload to Apple, so no daily upload limit.
+- The card's button is a Yui Lines `card` with `url=`. An app from before that button existed can't open it: open the `page` link from the script's output (`yuigui.com/install.html#...`) in Safari instead. The link rides in the URL fragment, which never reaches the server.
+- The bucket (`yui-builds`, migration `20260924100000_yui_builds.sql`) has no policies: only the service role reads or writes it. `supabase/scripts/media_sweep.py` removes builds older than 8 days.
+- Needs the same App Store Connect key as `testflight.sh`, a Supabase access token, and `hermes` for the send.
 
 ## TestFlight
 
