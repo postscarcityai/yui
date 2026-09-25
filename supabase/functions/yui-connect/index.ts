@@ -13,7 +13,9 @@
 //   {action: "session", serving?}                        Bearer yui_ct_...
 //       Trades the connector token for a 60-minute database token (role
 //       yui_connector) for Realtime and REST on the threads it serves, plus
-//       the current channel guide. Heartbeats too.
+//       the current channel guide. Heartbeats too. app_build: the oldest
+//       app build among the user's phones seen in the last 14 days (null when
+//       none has said), so the host sends only presets that build can draw.
 //   {action: "bye", serving?}                            Bearer yui_ct_...
 //       The host is stopping cleanly (YUI-28): its agents read offline at
 //       once instead of asleep. The next heartbeat or session clears it.
@@ -296,6 +298,16 @@ async function guide(db: DB): Promise<any> {
   return data;
 }
 
+const APP_BUILD_WINDOW_MS = 14 * 24 * 3600_000;
+
+/** Oldest build among the user's phones seen lately (yui-push records it), or null. */
+async function appBuild(db: DB, userId: string): Promise<number | null> {
+  const since = new Date(Date.now() - APP_BUILD_WINDOW_MS).toISOString();
+  const { data } = await db.from("yui_devices").select("app_build").eq("user_id", userId)
+    .gte("app_build_at", since).not("app_build", "is", null).order("app_build").limit(1).maybeSingle();
+  return data?.app_build ?? null;
+}
+
 async function session(req: Request, b: Body): Promise<Response> {
   const db = admin();
   const connector = await connectorFor(db, req);
@@ -313,5 +325,6 @@ async function session(req: Request, b: Body): Promise<Response> {
     connector: { id: connector.id, name: connector.name },
     agents: agents ?? [],
     guide: await guide(db),
+    app_build: await appBuild(db, connector.user_id),
   });
 }

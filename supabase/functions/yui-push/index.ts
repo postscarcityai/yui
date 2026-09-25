@@ -11,6 +11,9 @@
 //       The app is open (active: true) on agent_id's thread, or it just went
 //       to the background (active: false). Sent on every change and once a
 //       minute while open. Stale after PRESENCE_MS: a killed app is closed.
+//   register and presence also note the phone's app build (`build`, or the
+//   "Yui/<build> CFNetwork" user agent every build sends), so hosts can skip
+//   presets that build cannot draw (yui-connect session: app_build).
 //
 // Host side, Bearer yui_ct_... connector token:
 //   {action: "notify", message_id, from?, handoff?}
@@ -75,6 +78,7 @@ Deno.serve(async (req) => {
         } catch {
           return json({ error: "unauthorized" }, 401);
         }
+        body.build = appBuild(req, body);
         if (body.action === "presence") return await presence(userId, body);
         return body.action === "register" ? await register(userId, body) : await unregister(userId, body);
       }
@@ -88,6 +92,18 @@ Deno.serve(async (req) => {
   }
 });
 
+/** The phone's app build: `build` in the body, else URLSession's "Yui/112 CFNetwork/..." (devbuilds say 112.1). */
+function appBuild(req: Request, b: Body): number | null {
+  const n = typeof b.build === "number" ? b.build : typeof b.build === "string" ? parseInt(b.build, 10) : NaN;
+  if (Number.isInteger(n) && n > 0 && n < 1_000_000) return n;
+  const m = /^Yui\/(\d{1,6})(?:\.\d+)?\s+CFNetwork\//.exec(req.headers.get("user-agent") ?? "");
+  return m ? parseInt(m[1], 10) : null;
+}
+
+function built(b: Body): Record<string, unknown> {
+  return b.build ? { app_build: b.build, app_build_at: new Date().toISOString() } : {};
+}
+
 async function register(userId: string, b: Body): Promise<Response> {
   const token = typeof b.token === "string" ? b.token.toLowerCase() : "";
   if (!TOKEN.test(token)) return json({ error: "invalid_token" }, 400);
@@ -100,6 +116,7 @@ async function register(userId: string, b: Body): Promise<Response> {
     name: cleanName(b.name),
     updated_at: new Date().toISOString(),
     last_error: null,
+    ...built(b),
   }, { onConflict: "apns_token" });
   if (error) throw error;
   return json({ ok: true });
@@ -125,6 +142,7 @@ async function presence(userId: string, b: Body): Promise<Response> {
   const { data, error } = await admin().from("yui_devices").update({
     active_at: b.active ? new Date().toISOString() : null,
     active_agent_id: agentId,
+    ...built(b),
   }).eq("apns_token", token).eq("user_id", userId).select("id");
   if (error) throw error;
   // Not registered (yet): nothing to track. The app registers first.

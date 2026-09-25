@@ -68,6 +68,25 @@ try:
     s, r = rest("GET", "yui_devices?select=apns_token", ctA)
     check("host cannot read device tokens", s in (401, 403) or r == [], f"{s} {r}")
 
+    print("== App build (beta feedback ANJPrtB7CHynwGR5mqNVPSM: a sketch on build 96)")
+    check("session says no build before any phone has", host({"action": "session"}, a_ct)[1].get("app_build") is None)
+    ua = {"apikey": PUBLISHABLE, "authorization": f"Bearer {tokA}", "user-agent": "Yui/96 CFNetwork/3860.100.1 Darwin/25.0.0"}
+    s, r = http("POST", f"{BASE}/functions/v1/yui-push", ua, {"action": "presence", "token": FAKE, "active": True})
+    rows = sql(f"select app_build from yui_devices where apns_token = '{FAKE}'")
+    check("presence reads the build from the app's user agent", s == 200 and rows == [{"app_build": 96}], f"{s} {rows}")
+    s, sa = host({"action": "session"}, a_ct)
+    check("session hands the host the phone's build", s == 200 and sa.get("app_build") == 96, f"{s} {sa.get('app_build')}")
+    OTHER = "cd" * 32
+    s, r = push({"action": "register", "token": OTHER, "environment": "sandbox", "name": "New phone", "build": "112.1"}, tokA)
+    check("register takes an explicit build (devbuild 112.1 is 112)", s == 200
+          and sql(f"select app_build from yui_devices where apns_token = '{OTHER}'") == [{"app_build": 112}], f"{s} {r}")
+    check("session gives the oldest of the user's phones", host({"action": "session"}, a_ct)[1].get("app_build") == 96)
+    sql(f"update yui_devices set app_build_at = now() - interval '15 days' where apns_token = '{FAKE}'")
+    check("a phone not seen in 14 days no longer holds it back", host({"action": "session"}, a_ct)[1].get("app_build") == 112)
+    check("another user's host never sees these builds", host({"action": "session"}, b_ct)[1].get("app_build") is None)
+    sql(f"delete from yui_devices where apns_token = '{OTHER}'")
+    sql(f"update yui_devices set app_build = null, app_build_at = null where apns_token = '{FAKE}'")
+
     print("== Notify (connector token)")
     s, r = rest("POST", "yui_messages", ctA, {"user_id": A, "agent_id": a_agent, "sender": "agent",
                 "body": "Pick one\n```yui\nchoose ship \"Ship it?\" [Yes, Not yet]\n```", "kind": "text"},

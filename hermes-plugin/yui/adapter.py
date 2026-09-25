@@ -74,6 +74,12 @@ Transport: the gateway dials OUT to Supabase (PROOF). No inbound ports.
      count, never its text, in <profile home>/yui/textbombs.jsonl, with a
      warning in the gateway log. The app folds it into "Read as pages".
 
+ 13. Builds (compat.py, beta feedback ANJPrtB7CHynwGR5mqNVPSM): the session
+     carries app_build, the oldest build among the person's phones. A preset
+     that build cannot draw (sketch before 104, ...) goes out as plain words,
+     or a page of points inside a deck or plan, and each turn on the channel
+     gets a note naming what to skip.
+
 The channel guide (CHANNEL.md, synced verbatim from yuigui/spec/CHANNEL.md by
 ../sync_channel.py) is this platform's system-prompt hint, so it is in the
 system prompt on every turn on the Yui channel, and only there.
@@ -108,7 +114,7 @@ from gateway.config import Platform, PlatformConfig
 from gateway.platforms.base import (BasePlatformAdapter, MessageEvent, MessageType, ProcessingOutcome,
                                     SendResult)
 
-from . import board, connector, flywheel, media, mentions, needs, outbox, textbomb
+from . import board, compat, connector, flywheel, media, mentions, needs, outbox, textbomb
 from . import commands as slash
 
 logger = logging.getLogger(__name__)
@@ -367,6 +373,7 @@ class YuiAdapter(BasePlatformAdapter):
         self._token_exp = _parse_ts(data["expires_at"]).timestamp()
         self._user_id = data["user_id"]
         self._set_agents(data.get("agents") or [])
+        compat.seen(data)  # the oldest app build among the person's phones
         save_session_cache(data)
 
     async def _heartbeat_loop(self) -> None:
@@ -743,6 +750,7 @@ class YuiAdapter(BasePlatformAdapter):
             body = body[:MAX_MESSAGE_LENGTH]
         flywheel.record(body, connector.current_profile())  # custom shapes only, off unless yui.flywheel
         textbomb.record(body, connector.current_profile(), "handoff" if sender else "reply", logger)
+        body = compat.downgrade(body, compat.PHONE["build"])  # what the phone can't draw: words
         body = await asyncio.to_thread(media.rewrite, body, lambda src: self._host(agent_id, src), logger)
         row = {"id": str(uuid.uuid4()), "user_id": self._user_id, "agent_id": agent_id, "sender": "agent",
                "body": body, "kind": "text"}
@@ -935,8 +943,9 @@ async def _standalone_send(pconfig, chat_id: str, message: str, *, thread_id: Op
             if not target or not cache.get("user_id") or media_files:
                 return {"error": "yui: unreachable, try again when online"}
             mid = str(uuid.uuid4())
+            text = compat.downgrade(message.strip(), cache.get("app_build"))
             outbox.Outbox().add({"id": mid, "user_id": cache["user_id"], "agent_id": target["id"],
-                                 "sender": "agent", "body": message.strip()[:MAX_MESSAGE_LENGTH], "kind": "text"},
+                                 "sender": "agent", "body": text[:MAX_MESSAGE_LENGTH], "kind": "text"},
                                 sender, True)
             return {"success": True, "platform": "yui", "chat_id": target["id"], "message_id": mid, "queued": True}
         save_session_cache(s)
@@ -949,6 +958,7 @@ async def _standalone_send(pconfig, chat_id: str, message: str, *, thread_id: Op
             for f in files if f.lower().rsplit(".", 1)[-1] in media.TYPES]).strip()
         flywheel.record(body, connector.current_profile())
         textbomb.record(body, connector.current_profile(), "out-of-process", logger)
+        body = compat.downgrade(body, s.get("app_build"))
         body = await asyncio.to_thread(
             media.rewrite, body, lambda src: media.host(s["access_token"], s["user_id"], target["id"], src), logger)
         row = {"id": str(uuid.uuid4()), "user_id": s["user_id"], "agent_id": target["id"], "sender": "agent",
@@ -1014,6 +1024,7 @@ def register(ctx) -> None:
     from . import handoff
     ctx.register_hook("pre_gateway_dispatch", handoff.rewrite_slash)
     ctx.register_hook("pre_llm_call", handoff.inject_howto)
+    ctx.register_hook("pre_llm_call", compat.turn_note)
     ctx.register_command("yui", handoff.slash_command,
                          description="Hand what we're doing to the Yui app, with a push to your phone",
                          args_hint="[note]")
