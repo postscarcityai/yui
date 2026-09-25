@@ -16,14 +16,16 @@ so /usr/bin/python3 in a cron script can run it.
     python3 yui_report.py --fold "Title" < long.txt   # any long text as a line plus pages
 
 Page bodies are cut to whole sentences near PAGE_WORDS; a body that runs
-longer becomes more pages under the same title ("INT-18 (2/3)").
+longer goes on to more pages with no title of their own, so the headline is
+said once and the story carries on (YUI-82: no "INT-18 (2/3)" counters). A
+line that must stop short stops after a whole clause, then "…".
 """
 
 import json
 import re
 import sys
 
-PAGE_WORDS = 60     # a page is read on a phone in a few seconds
+PAGE_WORDS = 45     # one idea per page, read on a phone in a glance
 LINE_WORDS = 25     # the chat line above the card
 MAX_PAGES = 12
 SENTENCE = re.compile(r"(?<=[.!?;])\s+(?=[A-Z0-9(\"'])")
@@ -48,7 +50,11 @@ def clip(s: str, n: int) -> str:
     end = max(head.rfind(". "), head.rfind("; "), head.rfind(": "))
     if end > len(head) // 2:
         return head[:end + 1].rstrip(";:") if head[end] != "." else head[:end + 1]
-    return head.rstrip(",;:") + "…"
+    # Never "with the…": back up to the last whole clause when there is one.
+    comma = max(head.rfind(", "), head.rfind(" ("), head.rfind(" - "))
+    if comma > len(head) // 3:
+        head = head[:comma]
+    return head.rstrip(",;: ") + "…"
 
 
 def sentences(text: str) -> list:
@@ -84,8 +90,7 @@ def pages(items) -> list:
             continue
         parts = chunks(it.get("body", "")) or [""]
         for i, part in enumerate(parts):
-            t = title if len(parts) == 1 else f"{title} ({i + 1}/{len(parts)})"
-            out.append({"title": t, "body": part, "img": it.get("img") if i == 0 else None})
+            out.append({"title": title if i == 0 else "", "body": part, "img": it.get("img") if i == 0 else None})
     return out[:MAX_PAGES]
 
 
@@ -93,7 +98,8 @@ def page_line(p: dict) -> str:
     if p.get("points"):
         return f"page {q(p['title'])} points=" + "|".join(q(x.replace("|", "/")) for x in p["points"])
     img = f" img={p['img']}" if p.get("img") else ""
-    return f"page {q(p['title'])} body={q(p['body'])}{img}"
+    title = f" {q(p['title'])}" if p.get("title") else ""
+    return f"page{title} body={q(p['body'])}{img}"
 
 
 def render(r: dict) -> str:

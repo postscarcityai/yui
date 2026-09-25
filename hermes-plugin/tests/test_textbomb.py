@@ -118,7 +118,8 @@ class Report(unittest.TestCase):
     def test_pages_are_short_and_whole(self):
         ps = report.pages([{"title": "INT-18", "body": INT18}])
         self.assertGreater(len(ps), 1)
-        self.assertEqual(ps[0]["title"], f"INT-18 (1/{len(ps)})")
+        self.assertEqual(ps[0]["title"], "INT-18")                     # said once, no (1/3) counters
+        self.assertTrue(all(p["title"] == "" for p in ps[1:]))
         for p in ps:
             self.assertLessEqual(report.words(p["body"]), report.PAGE_WORDS * 3 // 2)
         self.assertEqual(" ".join(p["body"] for p in ps).split(), INT18.split())   # nothing lost
@@ -127,6 +128,11 @@ class Report(unittest.TestCase):
         ps = report.chunks("word " * 400)
         self.assertTrue(all(report.words(c) <= report.PAGE_WORDS * 3 // 2 for c in ps))
         self.assertEqual(sum(report.words(c) for c in ps), 400)
+
+    def test_clip_stops_after_a_clause(self):
+        s = "I've carded it as YUI-81 (backlog), with the other Yui app cards, next to YUI-79 (no text bombs)"
+        self.assertEqual(report.clip(s, 8), "I've carded it as YUI-81 (backlog)…")
+        self.assertEqual(report.clip("one two three four five six", 3), "one two three…")
 
     def test_quotes_escape(self):
         self.assertEqual(report.q('say "hi" \\ there\n now'), '"say \\"hi\\" \\\\ there now"')

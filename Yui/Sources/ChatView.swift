@@ -1022,6 +1022,30 @@ struct ChatView: View {
         Details on [yuigui.com](https://www.yuigui.com).
         """
 
+    /// The message from TestFlight feedback on build 96 (YUI-82): a card-it answer
+    /// with a list, word for word, so the pages it folds into can be shot before and after.
+    static let cardedAnswer = """
+        I've carded it as YUI-81 (backlog), with the other Yui app cards, next to YUI-79 (no text bombs). It fixes the pages in the "What's in build" deck:
+
+        - Each page gets a real title, like "Hold menu fits".
+        - Each page says in plain words what you can do now. No card or feedback ids.
+        - Changes that only matter to people building on Yui share one page.
+        - Nothing gets cut off mid-sentence.
+
+        It's done when a test run on build 96's changes gives pages you can read at a glance, with before and after shown. It waits its turn like any other backlog card.
+        """
+
+    /// A build-ready ping as yui_build_ping.py writes it (YUI-82), without the pictures
+    /// so a run with no network draws the same pages.
+    static let buildReady = """
+        card "Build 96" body="3 changes: the hold menu fits, answers read clean and 1 more" cta="Open TestFlight" url=https://testflight.apple.com/join/ykrYHwet
+        deck "What's in build 96" +inline
+        page "The hold menu fits any message" body="Reactions on top, the message, the menu underneath. All on screen, never touching."
+        page "Agent answers read clean" body="Bold, code, lists, headings and links draw the way they were written."
+        page "For builders" body="Outside the app: n8n workflows, LangGraph agents, Meta's Muse Spark and Grok. How to set them up is on yuigui.com."
+        end
+        """
+
     /// `-yuiDemo` seeds a chat; `-yuiYL <sample>` seeds one YL reply (see `YLSamples`).
     static var seed: [ChatMessage] {
         if UserDefaults.standard.string(forKey: "yuiReactDemo") != nil {
@@ -1065,6 +1089,14 @@ struct ChatView: View {
                                 fromUser: false),
                     ChatMessage(text: "Yes, all of it", fromUser: true),
                     ChatMessage(text: longReport, fromUser: false)]
+        }
+        // -yuiDemoPages: the build 96 feedback message that folds, and a build-ready deck (YUI-82).
+        if ProcessInfo.processInfo.arguments.contains("-yuiDemoPages") {
+            return [ChatMessage(text: "Can the build pages read better?", fromUser: true),
+                    ChatMessage(text: cardedAnswer, fromUser: false),
+                    ChatMessage(text: "And the build ping?", fromUser: true),
+                    ChatMessage(text: "Yui build 96 is ready in TestFlight.", fromUser: false),
+                    ChatMessage(text: "", fromUser: false, yl: YLScreen(buildReady))]
         }
         if let name = UserDefaults.standard.string(forKey: "yuiYL"), let text = YLSamples.text(name) {
             return [ChatMessage(text: "Show me the \(name) one", fromUser: true),
@@ -1210,7 +1242,7 @@ private struct Bubble: View {
                     // Copy and Select text still get every word.
                     VStack(alignment: .leading, spacing: theme.spacing.s) {
                         text
-                        ReadAsPages(pages: LongText.pages(message.plain).count, action: read)
+                        ReadAsPages(pages: LongText.story(message.plain).count, action: read)
                     }
                 } else if !message.text.isEmpty {
                     text

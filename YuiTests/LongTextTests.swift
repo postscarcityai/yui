@@ -94,10 +94,55 @@ final class LongTextTests: XCTestCase {
         XCTAssertEqual(deck.preset, "deck")
         XCTAssertEqual(deck.string("title"), "A2A bridge")
         let pages = yl.components.members(of: deck)
-        XCTAssertEqual(pages.map(\.preset), Array(repeating: "page", count: LongText.pages(Self.report).count))
-        XCTAssertEqual(pages.first?.string("body"), LongText.pages(Self.report).first)
+        let story = LongText.story(Self.report)
+        XCTAssertEqual(pages.map(\.preset), Array(repeating: "page", count: story.count))
+        XCTAssertEqual(pages.first?.string("title"), story.first?.title)
+        XCTAssertEqual(pages.first?.string("body"), story.first?.body)
         XCTAssertFalse(yl.staged([:]).isEmpty, "it opens on the stage")
         XCTAssertFalse(yl.staged(["screen": "chat"]).isEmpty, "even for an agent that keeps things in the chat")
+    }
+
+    /// The message from TestFlight feedback on build 96 (YUI-82): a list split
+    /// across three pages under a title cut at "with the…". Now one idea a page.
+    func testTheCardedAnswerTellsAStory() {
+        let want: [LongText.Page] = [
+            .init(title: nil, body: "I've carded it as YUI-81 (backlog), with the other Yui app cards, next to YUI-79 (no text bombs). "
+                  + "It fixes the pages in the \"What's in build\" deck…"),
+            .init(title: nil, body: "Each page gets a real title, like \"Hold menu fits\"."),
+            .init(title: "Each page says in plain words what you can do now", body: "No card or feedback ids."),
+            .init(title: nil, body: "Changes that only matter to people building on Yui share one page."),
+            .init(title: nil, body: "Nothing gets cut off mid-sentence."),
+            .init(title: nil, body: "It's done when a test run on build 96's changes gives pages you can read at a glance, "
+                  + "with before and after shown."),
+            .init(title: nil, body: "It waits its turn like any other backlog card."),
+        ]
+        XCTAssertEqual(LongText.story(ChatView.cardedAnswer), want)
+        // The bubble's plain words carry "•" for the list marks: the same story.
+        XCTAssertEqual(LongText.story(ChatMessage(text: ChatView.cardedAnswer, fromUser: false).plain), want)
+        XCTAssertEqual(LongText.title(ChatView.cardedAnswer), "I've carded it as YUI-81 (backlog)…")
+    }
+
+    func testStoryPagesHeadThemselves() {
+        XCTAssertEqual(LongText.story("Tests are green. All 108 passed on the sim, light and dark."),
+                       [.init(title: "Tests are green", body: "All 108 passed on the sim, light and dark.")])
+        XCTAssertEqual(LongText.story("1. Hold menu: it fits any message\n2) Markdown — bubbles draw it"),
+                       [.init(title: "Hold menu", body: "It fits any message"), .init(title: "Markdown", body: "Bubbles draw it")])
+        XCTAssertNil(LongText.listItem("2026 was a year"))
+        XCTAssertNil(LongText.listItem("1.0 wins"))
+        // Every word of the report is on a page, in order, and no page runs long.
+        let story = LongText.story(Self.report)
+        let words = story.flatMap { [$0.title, $0.body].compactMap { $0 } }.joined(separator: " ")
+        XCTAssertEqual(words.split(separator: " ").count, LongText.wordCount(Self.report))
+        for p in story {
+            XCTAssertLessThanOrEqual(LongText.wordCount(p.body ?? ""), LongText.hugeWords, p.body ?? "")
+        }
+    }
+
+    func testTitlesEndOnAWholeClause() {
+        let long = "I've carded it as YUI-81 (backlog), with the other Yui app cards, next to YUI-79 (no text bombs)."
+        XCTAssertEqual(LongText.title(long), "I've carded it as YUI-81 (backlog)…")
+        XCTAssertEqual(LongText.firstClause("Pages fit - the story reads"), "Pages fit")
+        XCTAssertNil(LongText.firstClause("No stops here"))
     }
 
     func testReadAsPagesOpensTheDeckOnTheStage() throws {

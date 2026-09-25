@@ -74,15 +74,23 @@ struct StageView: View {
             let height = geo.size.height + geo.safeAreaInsets.top + geo.safeAreaInsets.bottom
             VStack(spacing: 0) {
                 header(c)
-                ScrollView {
-                    VStack(spacing: theme.spacing.l) {
-                        YLItemsView(items: YLItem.layout(components, pills: nil))
+                if immersive {
+                    // A deck, plan or walkthrough alone is the screen: it pages itself (YUI-82).
+                    YLItemsView(items: YLItem.layout(components, pills: nil))
+                        .padding(.horizontal, theme.spacing.l)
+                        .padding(.bottom, theme.spacing.s)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else {
+                    ScrollView {
+                        VStack(spacing: theme.spacing.l) {
+                            YLItemsView(items: YLItem.layout(components, pills: nil))
+                        }
+                        .padding(.horizontal, theme.spacing.l)
+                        .padding(.bottom, theme.spacing.xl)
+                        .frame(minHeight: geo.size.height - 90, alignment: .center)
                     }
-                    .padding(.horizontal, theme.spacing.l)
-                    .padding(.bottom, theme.spacing.xl)
-                    .frame(minHeight: geo.size.height - 90, alignment: .center)
+                    .scrollBounceBehavior(.basedOnSize)
                 }
-                .scrollBounceBehavior(.basedOnSize)
             }
             .environment(\.ylScope, scope)
             .environment(\.ylOnStage, true)
@@ -96,6 +104,11 @@ struct StageView: View {
             .accessibilityHidden(!open)
             .accessibilityAddTraits(open ? .isModal : [])
         }
+    }
+
+    /// One deck, plan or narrate and nothing else: it gets the whole height.
+    private var immersive: Bool {
+        components.count == 1 && ["deck", "plan", "narrate"].contains(components[0].preset)
     }
 
     private func header(_ c: Swatch) -> some View {

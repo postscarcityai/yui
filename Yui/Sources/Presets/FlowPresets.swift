@@ -179,8 +179,9 @@ struct DeckPreset: View {
     @Environment(\.colorScheme) private var scheme
 
     var body: some View {
+        // On the stage the deck is the full screen already: no card around it (YUI-82).
         DeckBody(c: c, pages: all.members(of: c), at: $at, seen: $seen, notes: notes ?? c.flag("notes"),
-                 toggleNotes: { notes = !(notes ?? c.flag("notes")) }, full: full,
+                 toggleNotes: { notes = !(notes ?? c.flag("notes")) }, full: onStage,
                  openFull: onStage ? nil : { full = true }, emit: pageEmit)
             .onChange(of: at) { seen.insert(at); checkDone() }
             .onAppear { if c.flag("full"), !onStage { full = true } }
@@ -234,9 +235,92 @@ private struct DeckBody: View {
     @Environment(\.colorScheme) private var scheme
 
     var body: some View {
+        if full { story } else { card }
+    }
+
+    /// Full screen (the stage, or the deck's own cover): the page is the screen.
+    /// No card, a thin bar per page on top, the deck's title as a small kicker
+    /// when page one doesn't already say it, story pages that fill the height,
+    /// and the arrows underneath (YUI-82).
+    private var story: some View {
         let s = theme.swatch(scheme)
         let hasNotes = pages.contains { $0.string("notes") != nil }
-        VStack(alignment: .leading, spacing: theme.spacing.m) {
+        return VStack(alignment: .leading, spacing: theme.spacing.m) {
+            HStack(spacing: 4) {
+                ForEach(pages.indices, id: \.self) { i in
+                    Capsule().fill(i <= at ? s.accent : s.outline).frame(height: 4)
+                }
+            }
+            .accessibilityElement()
+            .accessibilityLabel("Page \(at + 1) of \(pages.count)")
+            HStack(spacing: theme.spacing.s) {
+                if let t = kicker {
+                    Text(t)
+                        .font(theme.font(theme.type.caption, .heavy))
+                        .foregroundStyle(s.inkSoft)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 0)
+                if hasNotes {
+                    small(notes ? "Hide notes" : "Notes", "note.text", on: notes, action: toggleNotes)
+                }
+                if let close { small("Close", "xmark", action: close) }
+            }
+            if pages.isEmpty {
+                Text("Pages are on their way.").font(theme.font(theme.type.body, .medium)).foregroundStyle(s.inkSoft)
+                    .frame(maxHeight: .infinity)
+            } else if c.string("layout") == "scroll" {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: theme.spacing.xl) {
+                        ForEach(Array(pages.enumerated()), id: \.element.serial) { i, p in
+                            page(p).onAppear { seen.insert(i) }
+                        }
+                    }
+                }
+            } else {
+                TabView(selection: $at) {
+                    ForEach(Array(pages.enumerated()), id: \.element.serial) { i, p in
+                        Group {
+                            if p.preset == "page" {
+                                StoryPage(c: p, active: i == at, showNotes: notes)
+                            } else {
+                                ScrollView { PresetView(component: p).padding(.vertical, theme.spacing.xl) }
+                                    .scrollBounceBehavior(.basedOnSize)
+                            }
+                        }
+                        .tag(i)
+                    }
+                }
+                .tabViewStyle(.page(indexDisplayMode: .never))
+                .frame(maxHeight: .infinity)
+                HStack {
+                    arrow("chevron.left", "Previous page", disabled: at == 0) { at -= 1 }
+                    Spacer()
+                    arrow("chevron.right", "Next page", disabled: at >= pages.count - 1) { at += 1 }
+                }
+            }
+        }
+        .padding(.horizontal, close == nil ? theme.spacing.s : theme.spacing.l + theme.spacing.s)
+        .padding(.vertical, theme.spacing.s)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .background(close == nil ? .clear : s.background)
+        .environment(\.ylEmit, emit)
+        .animation(theme.spring, value: at)
+    }
+
+    /// The deck's title over its pages, unless the first page starts with the same words.
+    private var kicker: String? {
+        guard let t = c.string("title"), !t.isEmpty else { return nil }
+        let head = t.hasSuffix("…") ? String(t.dropLast()) : t
+        let first = pages.first.map { [$0.string("title"), $0.string("body")].compactMap { $0 }.joined(separator: " ") } ?? ""
+        return first.hasPrefix(head) ? nil : t
+    }
+
+    /// In the chat: a card with the deck in it.
+    private var card: some View {
+        let s = theme.swatch(scheme)
+        let hasNotes = pages.contains { $0.string("notes") != nil }
+        return VStack(alignment: .leading, spacing: theme.spacing.m) {
             HStack(spacing: theme.spacing.s) {
                 if let t = c.string("title") { PresetTitle(text: t).lineLimit(2) }
                 Spacer(minLength: 0)
@@ -264,7 +348,7 @@ private struct DeckBody: View {
                     }
                 }
                 .tabViewStyle(.page(indexDisplayMode: .never))
-                .frame(minHeight: full ? 480 : 380, maxHeight: full ? .infinity : 440)
+                .frame(minHeight: 380, maxHeight: 440)
                 HStack {
                     arrow("chevron.left", "Previous page", disabled: at == 0) { at -= 1 }
                     Spacer()
@@ -282,10 +366,9 @@ private struct DeckBody: View {
             }
         }
         .padding(theme.spacing.l)
-        .frame(maxWidth: .infinity, maxHeight: full ? .infinity : nil, alignment: .top)
-        .background(s.surface, in: .rect(cornerRadius: full ? 0 : theme.radius.card))
-        .overlay(RoundedRectangle(cornerRadius: full ? 0 : theme.radius.card).stroke(full ? .clear : s.outline, lineWidth: 1.5))
-        .background(full ? s.surface : .clear)
+        .frame(maxWidth: .infinity, alignment: .top)
+        .background(s.surface, in: .rect(cornerRadius: theme.radius.card))
+        .overlay(RoundedRectangle(cornerRadius: theme.radius.card).stroke(s.outline, lineWidth: 1.5))
         .environment(\.ylEmit, emit)
         .animation(theme.spring, value: at)
     }
@@ -345,6 +428,7 @@ struct PlanPreset: View {
     @Environment(\.ylAnswers) private var sent
     @Environment(\.ylScope) private var scope
     @Environment(\.ylEmit) private var emit
+    @Environment(\.ylOnStage) private var onStage
     @Environment(\.yuiTheme) private var theme
     @Environment(\.colorScheme) private var scheme
 
@@ -352,7 +436,8 @@ struct PlanPreset: View {
         let s = theme.swatch(scheme)
         let steps = all.members(of: c)
         let review = c.props["review"]?.bool != false
-        PresetCard {
+        // On the stage the plan is the screen, not a card on it (YUI-82).
+        PresetCard(flat: onStage) {
             if let t = c.string("title") { PresetTitle(text: t) }
             if submitted {
                 summary(steps, s)
@@ -372,7 +457,8 @@ struct PlanPreset: View {
                     ForEach(Array(steps.enumerated()), id: \.element.serial) { i, step in
                         Group {
                             // A page is a step to read: full size, no answer, Next moves on.
-                            if step.preset == "page" { PagePreset(c: step).padding(.vertical, theme.spacing.s) }
+                            if step.preset == "page", onStage { StoryPage(c: step, active: i == cur) }
+                            else if step.preset == "page" { PagePreset(c: step).padding(.vertical, theme.spacing.s) }
                             else { PresetView(component: step) }
                         }
                         .environment(\.ylEmit, relay(emit, pass: false) { e in record(e, step: step, i: i, steps: steps, review: review) })
@@ -383,6 +469,7 @@ struct PlanPreset: View {
                         .accessibilityHidden(i != cur)
                     }
                 }
+                .frame(maxHeight: onStage ? .infinity : nil, alignment: .top)
                 HStack(spacing: theme.spacing.s) {
                     OptionPill(text: "Back", fill: s.lavender, on: cur > 0, grow: true) {
                         withAnimation(theme.spring) { at = max(0, cur - 1) }
@@ -753,7 +840,8 @@ struct NarratePreset: View {
 
     var body: some View {
         let steps = self.steps
-        stage(steps, full: false)
+        // On the stage the walkthrough is the screen, no card (YUI-82).
+        stage(steps, full: onStage)
             .fullScreenCover(isPresented: $full) {
                 stage(steps, full: true)
                     .environment(\.ylComponents, all)
@@ -813,7 +901,7 @@ struct NarratePreset: View {
                 Image(systemName: "waveform").foregroundStyle(s.accent).symbolEffect(.variableColor, isActive: narrator.speaking)
                 if let t = c.string("title") { PresetTitle(text: t).lineLimit(2) }
                 Spacer(minLength: 0)
-                if full {
+                if full, self.full {
                     control("Close", "xmark") { self.full = false }
                 } else if !onStage {
                     control("Full screen", "arrow.up.left.and.arrow.down.right") { self.full = true }
@@ -829,11 +917,11 @@ struct NarratePreset: View {
             .accessibilityElement()
             .accessibilityLabel("Step \(cur + 1) of \(steps.count)")
             if let step {
-                shown(step, index: cur)
-                    .frame(maxWidth: .infinity, alignment: .topLeading)
+                shown(step, index: cur, full: full)
+                    .frame(maxWidth: .infinity, maxHeight: full ? .infinity : nil, alignment: .topLeading)
                     .id(cur)
                     .transition(.asymmetric(insertion: .move(edge: .trailing).combined(with: .opacity), removal: .opacity))
-                if c.props["captions"]?.bool != false, !step.say.isEmpty { caption(step.say, s) }
+                if c.props["captions"]?.bool != false, !step.say.isEmpty { caption(step.say, s, full: full) }
             } else {
                 Text("The walkthrough is on its way.").font(theme.font(theme.type.body, .medium)).foregroundStyle(s.inkSoft)
             }
@@ -851,18 +939,18 @@ struct NarratePreset: View {
             }
             .frame(maxWidth: .infinity)
         }
-        .padding(theme.spacing.l)
+        .padding(full ? theme.spacing.s : theme.spacing.l)
         .frame(maxWidth: .infinity, maxHeight: full ? .infinity : nil, alignment: .top)
-        .background(s.surface, in: .rect(cornerRadius: full ? 0 : theme.radius.card))
-        .overlay(RoundedRectangle(cornerRadius: full ? 0 : theme.radius.card).stroke(full ? .clear : s.outline, lineWidth: 1.5))
-        .background(full ? s.surface : .clear)
+        .background(full ? .clear : s.surface, in: .rect(cornerRadius: theme.radius.card))
+        .overlay(RoundedRectangle(cornerRadius: theme.radius.card).stroke(full ? .clear : s.outline, lineWidth: 1.5))
+        .background(self.full && full ? s.background : .clear)
         .animation(theme.spring, value: at)
     }
 
     /// The step's member, as it looks on its own; a deck shows one page, a
     /// storyboard one frame, a gallery one item.
     @ViewBuilder
-    private func shown(_ step: NarrateStep, index: Int) -> some View {
+    private func shown(_ step: NarrateStep, index: Int, full: Bool) -> some View {
         let s = theme.swatch(scheme)
         let m = step.member
         switch (m.preset, step.part) {
@@ -870,7 +958,7 @@ struct NarratePreset: View {
             let pages = all.members(of: m)
             if i < pages.count {
                 if pages[i].preset == "page" {
-                    PagePreset(c: pages[i])
+                    if full { StoryPage(c: pages[i]) } else { PagePreset(c: pages[i]) }
                 } else {
                     PresetView(component: pages[i])
                         .environment(\.ylEmit, relay(emit, pass: true) { _ in questionAnswered(index) })
@@ -886,13 +974,13 @@ struct NarratePreset: View {
                     .frame(maxWidth: .infinity, minHeight: 160)
             }
         case ("page", _):
-            PagePreset(c: m)
+            if full { StoryPage(c: m) } else { PagePreset(c: m) }
         default:
             PresetView(component: m)
         }
     }
 
-    private func caption(_ text: String, _ s: Swatch) -> some View {
+    private func caption(_ text: String, _ s: Swatch, full: Bool) -> some View {
         var a = AttributedString(text)
         a.foregroundColor = s.inkSoft
         if let r = narrator.word, let range = Range(r, in: text), let ar = Range(range, in: a) {
@@ -904,7 +992,7 @@ struct NarratePreset: View {
             .fixedSize(horizontal: false, vertical: true)
             .padding(theme.spacing.m)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(s.background, in: .rect(cornerRadius: theme.radius.bubble))
+            .background(full ? s.surface : s.background, in: .rect(cornerRadius: theme.radius.bubble))
             .accessibilityLabel(text)
     }
 

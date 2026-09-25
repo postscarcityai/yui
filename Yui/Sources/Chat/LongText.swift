@@ -4,7 +4,7 @@ import YuiLines
 /// A long plain answer is never a wall in the thread (YUI-79, TestFlight build 82:
 /// "I don't want these text bombs"). Past `foldWords` an agent's bubble shows its
 /// first sentences and "Read as pages"; the pages are a deck made from the text,
-/// split at paragraphs, then sentences, so each one reads in a glance.
+/// one idea per page (YUI-82): list items apart, prose a sentence or two at a time.
 enum LongText {
     /// An agent message longer than this folds.
     static let foldWords = 60
@@ -44,7 +44,8 @@ enum LongText {
     }
 
     /// The deck's title: the first sentence, or the words before its colon
-    /// ("A2A bridge: add any ..." is "A2A bridge"). Never empty.
+    /// ("A2A bridge: add any ..." is "A2A bridge"). A long sentence gives its first
+    /// whole clause and "…", never a cut phrase ("with the…", YUI-82). Never empty.
     static func title(_ text: String) -> String {
         guard let first = sentences(text.trimmingCharacters(in: .whitespacesAndNewlines)).first else { return "Message" }
         if let colon = first.firstIndex(of: ":"), (1...6).contains(wordCount(String(first[..<colon]))) {
@@ -52,7 +53,131 @@ enum LongText {
         }
         let words = first.split(whereSeparator: \.isWhitespace)
         if words.count <= 12 { return trimEnd(first) }
+        if let clause = firstClause(first), (2...9).contains(wordCount(clause)) { return clause + "…" }
         return trimEnd(words.prefix(8).joined(separator: " ")) + "…"
+    }
+
+    /// The words before a sentence's first comma, semicolon or dash.
+    static func firstClause(_ sentence: String) -> String? {
+        let stops = [", ", "; ", " — ", " – ", " - "].compactMap { sentence.range(of: $0)?.lowerBound }
+        guard let cut = stops.min() else { return nil }
+        let head = String(sentence[..<cut]).trimmingCharacters(in: .whitespaces)
+        return head.isEmpty ? nil : head
+    }
+
+    // MARK: Story
+
+    /// One page of a story: a headline and the quieter words under it. A page
+    /// with no title is a statement: its words are the headline.
+    struct Page: Equatable {
+        var title: String?
+        var body: String?
+    }
+
+    /// About this many words on a story page: one idea, read in a glance.
+    static let storyWords = 30
+    /// A first sentence this short heads its page (a list item's, up to `itemHeadWords`).
+    static let headWords = 8
+    static let itemHeadWords = 12
+
+    /// The text as a story (YUI-82, TestFlight build 96: "we're telling a story
+    /// visually with the letters"), one idea per page: each list item is its own
+    /// page, prose goes a sentence or two at a time. A short first sentence, or
+    /// the words before an item's colon, heads the page; otherwise the words are
+    /// the headline. Nothing is cut: a lead-in that ends in a colon ends in "…"
+    /// and the next page picks it up.
+    static func story(_ text: String) -> [Page] {
+        var out: [Page] = []
+        for p in paragraphs(text) {
+            var prose: [String] = []
+            func flush() {
+                guard !prose.isEmpty else { return }
+                out += storyProse(prose.joined(separator: " "))
+                prose = []
+            }
+            for line in p.components(separatedBy: "\n") {
+                let l = line.trimmingCharacters(in: .whitespaces)
+                if let item = listItem(l) {
+                    flush()
+                    out.append(itemPage(item))
+                } else if !l.isEmpty {
+                    prose.append(l)
+                }
+            }
+            flush()
+        }
+        return out
+    }
+
+    /// Prose as pages of a sentence or two, broken only between sentences
+    /// (a huge sentence at its clauses).
+    static func storyProse(_ text: String) -> [Page] {
+        let all = sentences(text).flatMap { wordCount($0) > hugeWords ? clauses($0) : [$0] }
+        var groups: [[String]] = []
+        var n = 0
+        for s in all {
+            let w = wordCount(s)
+            if let last = groups.last, !last.isEmpty, n + w <= storyWords {
+                groups[groups.count - 1].append(s)
+                n += w
+            } else {
+                groups.append([s])
+                n = w
+            }
+        }
+        return groups.map { ss in
+            if ss.count > 1, wordCount(ss[0]) <= headWords, !ss[0].hasSuffix(":") {
+                return Page(title: headline(ss[0]), body: lead(ss.dropFirst().joined(separator: " ")))
+            }
+            return Page(title: nil, body: lead(ss.joined(separator: " ")))
+        }
+    }
+
+    /// A list item's page: "Head: the rest" and a short first sentence head it.
+    static func itemPage(_ item: String) -> Page {
+        for sep in [": ", " — ", " – "] {
+            if let r = item.range(of: sep) {
+                let head = String(item[..<r.lowerBound]), rest = String(item[r.upperBound...])
+                if (1...6).contains(wordCount(head)), wordCount(rest) > 0 {
+                    return Page(title: head.trimmingCharacters(in: .whitespaces), body: lead(capitalized(rest)))
+                }
+            }
+        }
+        let ss = sentences(item)
+        if ss.count > 1, wordCount(ss[0]) <= itemHeadWords {
+            return Page(title: headline(ss[0]), body: lead(ss.dropFirst().joined(separator: " ")))
+        }
+        return Page(title: nil, body: lead(item))
+    }
+
+    /// The words of a list line ("- a", "•  a", "1. a", "2) a"), or nil for prose.
+    static func listItem(_ line: String) -> String? {
+        for mark in ["- ", "* ", "+ ", "• "] where line.hasPrefix(mark) {
+            return line.dropFirst(mark.count).trimmingCharacters(in: .whitespaces)
+        }
+        let digits = line.prefix(while: \.isNumber)
+        guard (1...2).contains(digits.count) else { return nil }
+        let rest = line.dropFirst(digits.count)
+        guard let mark = rest.first, ".)".contains(mark), rest.dropFirst().first == " " else { return nil }
+        return rest.dropFirst(2).trimmingCharacters(in: .whitespaces)
+    }
+
+    /// A sentence set as a headline: no closing period (a question keeps its mark).
+    private static func headline(_ s: String) -> String {
+        var s = s.trimmingCharacters(in: .whitespaces)
+        if s.hasSuffix("."), !s.hasSuffix("..") { s.removeLast() }
+        return s
+    }
+
+    /// Words that lead into the next page ("... deck:") end in "…" instead.
+    private static func lead(_ s: String) -> String {
+        let t = s.trimmingCharacters(in: .whitespaces)
+        return t.hasSuffix(":") ? String(t.dropLast()) + "…" : t
+    }
+
+    private static func capitalized(_ s: String) -> String {
+        let t = s.trimmingCharacters(in: .whitespaces)
+        return t.prefix(1).uppercased() + t.dropFirst()
     }
 
     /// The text as pages of about `pageWords`: paragraphs stay together when they
@@ -84,13 +209,17 @@ enum LongText {
 
     /// The deck the pages open as: the same `deck` and `page` components an agent
     /// would send, on the full screen, so the stage, swipe, dots and the X come with it.
+    /// One page per idea of the story (YUI-82), each with its own headline.
     static func deck(_ text: String) -> YLScreen {
         var s = YLScreen()
         s.apply(YLNode(op: .add, screen: "full", preset: "deck", id: "pages",
                        props: ["title": .string(title(text))], line: "deck"))
-        for (i, p) in pages(text).enumerated() {
+        for (i, p) in story(text).enumerated() {
+            var props: [String: YLValue] = [:]
+            if let t = p.title { props["title"] = .string(t) }
+            if let b = p.body { props["body"] = .string(b) }
             s.apply(YLNode(op: .add, screen: "full", preset: "page", id: "page\(i + 1)", inGroup: "pages",
-                           props: ["body": .string(p)], line: "page"))
+                           props: props, line: "page"))
         }
         return s
     }

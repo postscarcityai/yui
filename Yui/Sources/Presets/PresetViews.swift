@@ -96,18 +96,27 @@ struct PresetView: View {
 
 /// The rounded paper card every preset sits on.
 struct PresetCard<Content: View>: View {
+    /// Full screen: no card, the content fills the screen (YUI-82).
+    var flat = false
     @ViewBuilder var content: Content
     @Environment(\.yuiTheme) private var theme
     @Environment(\.colorScheme) private var scheme
 
     var body: some View {
         let c = theme.swatch(scheme)
-        VStack(alignment: .leading, spacing: theme.spacing.m) { content }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(theme.spacing.l)
-            .background(c.surface, in: .rect(cornerRadius: theme.radius.card))
-            .overlay(RoundedRectangle(cornerRadius: theme.radius.card).stroke(c.outline, lineWidth: 1.5))
-            .transition(.scale(scale: 0.9, anchor: .topLeading).combined(with: .opacity))
+        if flat {
+            VStack(alignment: .leading, spacing: theme.spacing.m) { content }
+                .padding(.horizontal, theme.spacing.s)
+                .padding(.vertical, theme.spacing.s)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        } else {
+            VStack(alignment: .leading, spacing: theme.spacing.m) { content }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(theme.spacing.l)
+                .background(c.surface, in: .rect(cornerRadius: theme.radius.card))
+                .overlay(RoundedRectangle(cornerRadius: theme.radius.card).stroke(c.outline, lineWidth: 1.5))
+                .transition(.scale(scale: 0.9, anchor: .topLeading).combined(with: .opacity))
+        }
     }
 }
 
