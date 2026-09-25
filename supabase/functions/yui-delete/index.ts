@@ -29,7 +29,7 @@ Deno.serve(async (req) => {
   try {
     const db = admin();
     const { data: tok } = await db.from("yui_apple_tokens")
-      .select("refresh_token").eq("user_id", userId).maybeSingle();
+      .select("refresh_token, client_id").eq("user_id", userId).maybeSingle();
 
     let appleRevoked = false;
     if (tok?.refresh_token) {
@@ -37,8 +37,9 @@ Deno.serve(async (req) => {
         method: "POST",
         headers: { "content-type": "application/x-www-form-urlencoded" },
         body: new URLSearchParams({
-          client_id: appleClientId(),
-          client_secret: await appleClientSecret(),
+          // A Yui Dev sign-in's token is revoked as Yui Dev (YUI-91).
+          client_id: tok.client_id ?? appleClientId(),
+          client_secret: await appleClientSecret(tok.client_id ?? appleClientId()),
           token: tok.refresh_token,
           token_type_hint: "refresh_token",
         }),

@@ -11,6 +11,8 @@
 //       The app is open (active: true) on agent_id's thread, or it just went
 //       to the background (active: false). Sent on every change and once a
 //       minute while open. Stale after PRESENCE_MS: a killed app is closed.
+//   register also notes which app the token is for (YUI-91): `bundle`, or a
+//   test build's "Yui/<n>.<m>" user agent means Yui Dev (<topic>.dev).
 //   register and presence also note the phone's app build (`build`, or the
 //   "Yui/<build> CFNetwork" user agent every build sends), so hosts can skip
 //   presets that build cannot draw (yui-connect session: app_build).
@@ -28,7 +30,8 @@
 //       answer already shows. Phones open on another thread still get it.
 //
 // APNs: token auth (ES256, the APNs key), HTTP/2 straight to Apple. Secrets:
-// YUI_APNS_P8, YUI_APNS_KEY_ID, YUI_APPLE_TEAM_ID, YUI_APNS_TOPIC.
+// YUI_APNS_P8, YUI_APNS_KEY_ID, YUI_APPLE_TEAM_ID, YUI_APNS_TOPIC. Yui Dev
+// phones push to YUI_APNS_TOPIC + ".dev" with the same key (yui_devices.topic).
 import { importPKCS8, SignJWT } from "npm:jose@5";
 import {
   admin,
@@ -80,7 +83,9 @@ Deno.serve(async (req) => {
         }
         body.build = appBuild(req, body);
         if (body.action === "presence") return await presence(userId, body);
-        return body.action === "register" ? await register(userId, body) : await unregister(userId, body);
+        return body.action === "register"
+          ? await register(userId, body, topicFor(req, body))
+          : await unregister(userId, body);
       }
       case "notify":
         return await notify(req, body);
@@ -100,11 +105,19 @@ function appBuild(req: Request, b: Body): number | null {
   return m ? parseInt(m[1], 10) : null;
 }
 
+/** The APNs topic for this token: null for the main app, "<topic>.dev" for Yui Dev. */
+function topicFor(req: Request, b: Body): string | null {
+  const main = env("YUI_APNS_TOPIC");
+  if (typeof b.bundle === "string") return b.bundle === `${main}.dev` ? b.bundle : null;
+  // Test builds by link are numbered <commit count>.<n>; TestFlight builds never have a dot.
+  return /^Yui\/\d{1,6}\.\d+\s+CFNetwork\//.test(req.headers.get("user-agent") ?? "") ? `${main}.dev` : null;
+}
+
 function built(b: Body): Record<string, unknown> {
   return b.build ? { app_build: b.build, app_build_at: new Date().toISOString() } : {};
 }
 
-async function register(userId: string, b: Body): Promise<Response> {
+async function register(userId: string, b: Body, topic: string | null): Promise<Response> {
   const token = typeof b.token === "string" ? b.token.toLowerCase() : "";
   if (!TOKEN.test(token)) return json({ error: "invalid_token" }, 400);
   const environment = b.environment ?? "production";
@@ -113,6 +126,7 @@ async function register(userId: string, b: Body): Promise<Response> {
     user_id: userId,
     apns_token: token,
     environment,
+    topic,
     name: cleanName(b.name),
     updated_at: new Date().toISOString(),
     last_error: null,
@@ -198,7 +212,7 @@ async function notify(req: Request, b: Body): Promise<Response> {
     url: `yui://agent/${agent.id}/thread`,
   };
 
-  const { data: all } = await db.from("yui_devices").select("id, apns_token, environment, active_at, active_agent_id")
+  const { data: all } = await db.from("yui_devices").select("id, apns_token, environment, topic, active_at, active_agent_id")
     .eq("user_id", msg.user_id).not("apns_token", "is", null);
   // Open on this thread right now: the answer is already on screen.
   const watching = (d: DB) =>
@@ -229,13 +243,13 @@ async function providerToken(): Promise<string> {
   return jwt;
 }
 
-async function push(db: DB, d: DB, payload: unknown) {
+async function send(d: DB, topic: string, payload: unknown) {
   const host = HOSTS[d.environment as keyof typeof HOSTS] ?? HOSTS.production;
   const r = await fetch(`${host}/3/device/${d.apns_token}`, {
     method: "POST",
     headers: {
       authorization: `bearer ${await providerToken()}`,
-      "apns-topic": env("YUI_APNS_TOPIC"),
+      "apns-topic": topic,
       "apns-push-type": "alert",
       "apns-priority": "10",
       "content-type": "application/json",
@@ -243,6 +257,23 @@ async function push(db: DB, d: DB, payload: unknown) {
     body: JSON.stringify(payload),
   });
   const reason = r.status === 200 ? null : ((await r.json().catch(() => ({}))).reason ?? `http_${r.status}`);
+  return { r, reason };
+}
+
+async function push(db: DB, d: DB, payload: unknown) {
+  const main = env("YUI_APNS_TOPIC");
+  let topic: string = d.topic ?? main;
+  let { r, reason } = await send(d, topic, payload);
+  if (reason === "DeviceTokenNotForTopic") {
+    // The token is the other app's (Yui vs Yui Dev, YUI-91): try that once and remember it.
+    const other = topic === main ? `${main}.dev` : main;
+    const again = await send(d, other, payload);
+    if (again.reason !== "DeviceTokenNotForTopic") {
+      ({ r, reason } = again);
+      topic = other;
+      await db.from("yui_devices").update({ topic: other === main ? null : other }).eq("id", d.id);
+    }
+  }
   const apnsId = r.headers.get("apns-id");
   if (r.status === 410 || reason === "Unregistered") {
     // App deleted or notifications reset: forget the token.
@@ -252,5 +283,5 @@ async function push(db: DB, d: DB, payload: unknown) {
       reason ? { last_error: reason } : { last_push_at: new Date().toISOString(), last_error: null },
     ).eq("id", d.id);
   }
-  return { device: d.id, environment: d.environment, ok: r.status === 200, status: r.status, reason, apns_id: apnsId };
+  return { device: d.id, environment: d.environment, topic, ok: r.status === 200, status: r.status, reason, apns_id: apnsId };
 }

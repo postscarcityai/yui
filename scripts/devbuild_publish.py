@@ -22,7 +22,7 @@ from xml.sax.saxutils import escape
 REF = "ewzzaoperdpxqxkshynx"
 BASE = f"https://{REF}.supabase.co"
 BUCKET = "yui-builds"
-BUNDLE = "com.yuigui.app"
+BUNDLE = "com.yuigui.app.dev"  # Yui Dev, installs beside TestFlight Yui (YUI-91)
 TTL = 7 * 24 * 3600
 
 
@@ -81,7 +81,7 @@ def manifest(ipa_url: str, version: str, build: str) -> bytes:
     <key>bundle-identifier</key><string>{BUNDLE}</string>
     <key>bundle-version</key><string>{escape(version)}</string>
     <key>kind</key><string>software</string>
-    <key>title</key><string>Yui {escape(build)}</string>
+    <key>title</key><string>Yui Dev {escape(build)}</string>
   </dict>
 </dict></array></dict></plist>
 """.encode()
@@ -142,7 +142,7 @@ def main() -> int:
     if a.send:
         msg = (f"Test build {a.build} is ready. Tap Install on your phone.\n"
                "```yui\n"
-               f"card {yl('Yui ' + a.build)} body={yl(changed)} sub={yl('Test build, straight from main. Link works 7 days.')} "
+               f"card {yl('Yui Dev ' + a.build)} body={yl(changed)} sub={yl('Installs as Yui Dev next to TestFlight Yui. Sign in once. Link works 7 days.')} "
                f"cta=Install url={yl(page_url)}\n"
                "```\n")
         with tempfile.NamedTemporaryFile("w", suffix=".txt", delete=False) as f:

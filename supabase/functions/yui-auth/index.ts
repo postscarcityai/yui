@@ -15,6 +15,7 @@ import {
   admin,
   APPLE_ISSUER,
   appleClientId,
+  appleClientIds,
   appleClientSecret,
   assertActive,
   failure,
@@ -75,7 +76,7 @@ async function signInWithApple(body: Body): Promise<Response> {
   try {
     ({ payload: claims } = await jwtVerify(body.identity_token, appleKeys, {
       issuer: APPLE_ISSUER,
-      audience: appleClientId(),
+      audience: appleClientIds(),
       algorithms: ["RS256"],
     }));
   } catch {
@@ -103,14 +104,16 @@ async function signInWithApple(body: Body): Promise<Response> {
   if (error) throw error;
   await assertActive(db, user.id);
 
-  // Keep Apple's refresh token so account deletion can revoke it.
+  // Keep Apple's refresh token so account deletion can revoke it. The code
+  // is redeemed as the app it came from (Yui or Yui Dev, the token's aud).
+  const clientId = appleClientIds().includes(claims.aud as string) ? claims.aud as string : appleClientId();
   if (body.authorization_code) {
     const res = await fetch(`${APPLE_ISSUER}/auth/token`, {
       method: "POST",
       headers: { "content-type": "application/x-www-form-urlencoded" },
       body: new URLSearchParams({
-        client_id: appleClientId(),
-        client_secret: await appleClientSecret(),
+        client_id: clientId,
+        client_secret: await appleClientSecret(clientId),
         code: body.authorization_code,
         grant_type: "authorization_code",
       }),
@@ -120,6 +123,7 @@ async function signInWithApple(body: Body): Promise<Response> {
       const { error: e2 } = await db.from("yui_apple_tokens").upsert({
         user_id: user.id,
         refresh_token: tok.refresh_token,
+        client_id: clientId === appleClientId() ? null : clientId,
         updated_at: new Date().toISOString(),
       });
       if (e2) throw e2;

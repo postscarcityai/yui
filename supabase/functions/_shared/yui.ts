@@ -82,12 +82,13 @@ export function randomToken(): string {
 }
 
 // Sign in with Apple client secret (ES256, signed with the SIWA key).
-export async function appleClientSecret(): Promise<string> {
+// `clientId`: the app the token came from (Yui Dev signs in as its own client, YUI-91).
+export async function appleClientSecret(clientId = appleClientId()): Promise<string> {
   const key = await importPKCS8(env("YUI_SIWA_P8"), "ES256");
   return new SignJWT({})
     .setProtectedHeader({ alg: "ES256", kid: env("YUI_SIWA_KEY_ID") })
     .setIssuer(env("YUI_APPLE_TEAM_ID"))
-    .setSubject(env("YUI_SIWA_CLIENT_ID"))
+    .setSubject(clientId)
     .setAudience(APPLE_ISSUER)
     .setIssuedAt()
     .setExpirationTime("5m")
@@ -96,6 +97,12 @@ export async function appleClientSecret(): Promise<string> {
 
 export function appleClientId(): string {
   return env("YUI_SIWA_CLIENT_ID");
+}
+
+// Test builds by link install as Yui Dev, bundle "<app>.dev" (YUI-91). Its
+// Sign in with Apple tokens carry that bundle as their audience.
+export function appleClientIds(): string[] {
+  return [appleClientId(), `${appleClientId()}.dev`];
 }
 
 // Opaque bearer secrets that are not JWTs. Only their SHA-256 is stored.

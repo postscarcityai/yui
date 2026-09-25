@@ -87,6 +87,29 @@ try:
     sql(f"delete from yui_devices where apns_token = '{OTHER}'")
     sql(f"update yui_devices set app_build = null, app_build_at = null where apns_token = '{FAKE}'")
 
+    print("== Yui Dev topic (YUI-91: test builds install beside TestFlight Yui)")
+    topic = lambda t: sql(f"select topic from yui_devices where apns_token = '{t}'")
+    check("TestFlight phone (Yui/96 user agent) keeps the main topic", topic(FAKE) == [{"topic": None}], f"{topic(FAKE)}")
+    DEV = "ef" * 32
+    dev_ua = {**ua, "user-agent": "Yui/119.1 CFNetwork/3860.100.1 Darwin/25.0.0"}
+    s, r = http("POST", f"{BASE}/functions/v1/yui-push", dev_ua, {"action": "register", "token": DEV, "environment": "sandbox"})
+    dev_topic = (topic(DEV) or [{}])[0].get("topic") or ""
+    check("test build's user agent (Yui/119.1) registers for the .dev topic", s == 200 and dev_topic.endswith(".dev"), f"{s} {r} {dev_topic}")
+    main = dev_topic.removesuffix(".dev")
+    s, r = push({"action": "register", "token": DEV, "environment": "sandbox", "bundle": main}, tokA)
+    check("an explicit main bundle wins over the user agent", s == 200 and topic(DEV) == [{"topic": None}], f"{s} {topic(DEV)}")
+    s, r = push({"action": "register", "token": DEV, "environment": "sandbox", "bundle": "com.evil.app"}, tokA)
+    check("a stranger's bundle is never a topic", s == 200 and topic(DEV) == [{"topic": None}], f"{s} {topic(DEV)}")
+    s, r = push({"action": "register", "token": DEV, "environment": "sandbox", "bundle": dev_topic}, tokA)
+    check("an explicit .dev bundle is stored", s == 200 and topic(DEV) == [{"topic": dev_topic}], f"{s} {topic(DEV)}")
+    s, r = rest("POST", "yui_messages", ctA, {"user_id": A, "agent_id": a_agent, "sender": "agent",
+                "body": "dev topic", "kind": "text"}, prefer="return=representation")
+    s, r = push({"action": "notify", "message_id": r[0]["id"]}, a_ct)
+    dev_res = [x for x in (r or {}).get("results", []) if x.get("topic") == dev_topic]
+    check("notify sends the Yui Dev phone on its own topic, Apple takes the provider token", s == 200
+          and len(dev_res) == 1 and dev_res[0].get("reason") == "BadDeviceToken", f"{s} {r}")
+    sql(f"delete from yui_devices where apns_token = '{DEV}'")
+
     print("== Notify (connector token)")
     s, r = rest("POST", "yui_messages", ctA, {"user_id": A, "agent_id": a_agent, "sender": "agent",
                 "body": "Pick one\n```yui\nchoose ship \"Ship it?\" [Yes, Not yet]\n```", "kind": "text"},

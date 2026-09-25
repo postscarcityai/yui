@@ -1,6 +1,7 @@
 #!/bin/bash
 # Test build by link (YUI-55): archive origin/main as an ad hoc build, host it
-# privately and send a tap-to-install card into the yui agent's thread.
+# privately and send a tap-to-install card into the yui agent's thread. It
+# installs as "Yui Dev" (com.yuigui.app.dev, YUI-91) beside TestFlight Yui.
 # No TestFlight, no upload limit. Ad hoc builds install only on devices
 # registered to the developer account, so the link works on the owner's phone
 # and nowhere else.
@@ -63,6 +64,24 @@ git -C "$REPO" worktree prune
 git -C "$REPO" worktree add -q --detach "$WT" "$SHA"
 cd "$WT"
 echo "building $BUILD from ${SHA:0:7}"
+# Yui Dev (YUI-91): its own bundle id, name and icon, so it installs next to
+# TestFlight Yui instead of being refused as "already installed". Only this
+# worktree's project.yml changes. Starts with its own empty data; the backend
+# takes its Sign in with Apple and push topic (<bundle>.dev).
+python3 - <<'PY'
+import re
+p = "project.yml"; s = open(p).read()
+subs = [(r"(PRODUCT_BUNDLE_IDENTIFIER: )com\.yuigui\.app\n", r"\1com.yuigui.app.dev\n", 1),
+        (r"(PRODUCT_BUNDLE_IDENTIFIER: )com\.yuigui\.app\.widgets\n", r"\1com.yuigui.app.dev.widgets\n", 1),
+        (r"(CFBundleURLName: )com\.yuigui\.app\n", r"\1com.yuigui.app.dev\n", 1),
+        (r"(CFBundleDisplayName: )Yui\n", r"\1Yui Dev\n", 2)]
+for pat, rep, want in subs:
+    s, n = re.subn(pat, rep, s)
+    if n != want:
+        raise SystemExit(f"project.yml: {pat} matched {n}, want {want}")
+open(p, "w").write(s)
+PY
+swift "$REPO/scripts/devbuild_icon.swift" Yui/Resources/Assets.xcassets/AppIcon.appiconset/icon-1024.png
 xcodegen generate --quiet
 rm -rf build && mkdir build
 xcodebuild -project Yui.xcodeproj -scheme Yui -destination 'generic/platform=iOS' \
