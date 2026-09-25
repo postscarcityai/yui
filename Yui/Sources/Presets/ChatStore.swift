@@ -58,6 +58,15 @@ final class ChatStore {
     /// The pages are for reading: a deck of them tells the agent nothing.
     static let quiet = YLEmit()
 
+    /// What the stage holds: the staged part of its reply, empty when that reply
+    /// is gone or nothing in it opens on the stage any more (a new look said
+    /// `screen=chat`). The StageView is mounted only while this has something.
+    var stageComponents: [YLComponent] { stageMessage?.yl?.staged(style) ?? [] }
+
+    /// The stage is up with something on it. The chat steps back only then: an
+    /// open flag with nothing to show left it shrunk with no way back (YUI-80).
+    var stageShowing: Bool { stageOpen && !stageComponents.isEmpty }
+
     func openStage(_ id: String) {
         withAnimation(spring) {
             stageID = id
@@ -67,6 +76,12 @@ final class ChatStore {
 
     func closeStage() {
         withAnimation(spring) { stageOpen = false }
+    }
+
+    /// Open with nothing on it (its reply went, or its screens stopped being staged):
+    /// close it, so it can't pop back up later on its own (YUI-80).
+    func settleStage() {
+        if stageOpen, stageComponents.isEmpty { closeStage() }
     }
 
     /// A reply grew (a streamed line, a new row): open the stage for new staged

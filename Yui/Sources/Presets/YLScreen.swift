@@ -123,6 +123,11 @@ struct YLScreen: Equatable, Sendable {
     /// head draws (a page inside its deck). A member whose head is gone stands alone.
     var top: [YLComponent] { components.filter { head(of: $0) == nil } }
 
+    /// Nothing to draw in the thread: a reply of only patches, saves or a `close`,
+    /// or one whose screen `>N clear` emptied (every war room refresh). The chat
+    /// skips it instead of showing a face with no bubble (YUI-80).
+    var isBlank: Bool { top.isEmpty && errors.isEmpty && looks.isEmpty }
+
     /// The group head `c` joined: the newest head before it with that id.
     func head(of c: YLComponent) -> YLComponent? {
         guard let g = c.inGroup else { return nil }

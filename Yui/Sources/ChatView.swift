@@ -200,12 +200,27 @@ struct ChatView: View {
                     .presentationCornerRadius(theme.radius.card)
             }
         }
-        // The chat steps back a little while the stage is up (YUI-13).
-        .mask { RoundedRectangle(cornerRadius: store.stageOpen ? 38 : 0).ignoresSafeArea() }
-        .scaleEffect(store.stageOpen ? 0.92 : 1)
+        // Belt and braces (YUI-80): while the chat is stepped back, a tap or a swipe on it
+        // closes the stage. The stage covers it, so this only answers if the stage never drew.
+        .overlay {
+            if store.stageOpen {
+                Color.black.opacity(0.001)
+                    .ignoresSafeArea()
+                    .contentShape(.rect)
+                    .onTapGesture { store.closeStage() }
+                    .gesture(DragGesture(minimumDistance: 20).onEnded { _ in store.closeStage() })
+                    // Not for VoiceOver: the stage has its own close, and an element over
+                    // the whole chat hid the stage's text from the accessibility tree.
+                    .accessibilityHidden(true)
+            }
+        }
+        // The chat steps back a little while the stage is up (YUI-13), and only while
+        // it is actually on screen: the same test that mounts the StageView (YUI-80).
+        .mask { RoundedRectangle(cornerRadius: store.stageShowing ? 38 : 0).ignoresSafeArea() }
+        .scaleEffect(store.stageShowing ? 0.92 : 1)
         .background(Color.black.ignoresSafeArea())
-        if let m = store.stageMessage, let yl = m.yl, !yl.staged(agentStyle).isEmpty {
-            StageView(components: yl.staged(agentStyle), scope: m.id, agent: store.agent, open: store.stageOpen,
+        if let m = store.stageMessage, let yl = m.yl, !store.stageComponents.isEmpty {
+            StageView(components: store.stageComponents, scope: m.id, agent: store.agent, open: store.stageOpen,
                       close: store.closeStage)
                 .environment(\.ylEmit, m.id == store.reading?.id ? ChatStore.quiet : store.emit)
                 .environment(\.ylComponents, yl.components)
@@ -220,6 +235,8 @@ struct ChatView: View {
         .environment(\.yuiMedia, store.agent.flatMap { a in account.session?.userID == "demo" ? nil : YuiMedia(account: account, agentID: a.id) })
         .environment(\.ylTimers, store.timers)
         .onChange(of: agentStyle, initial: true) { store.style = agentStyle }
+        // The stage's reply went, or its screens stopped being staged: close it (YUI-80).
+        .onChange(of: store.stageShowing) { store.settleStage() }
         .onAppear {
             store.spring = theme.spring
             // A `theme` line in a reply restyles that agent, and the app with it.
@@ -335,7 +352,8 @@ struct ChatView: View {
                 // Not Lazy: LazyVStack drops preset cards from the accessibility tree (iOS 26/27),
                 // so VoiceOver and UI tests saw only the plain bubbles.
                 VStack(spacing: theme.spacing.m) {
-                    ForEach(store.messages) { m in
+                    // A reply with nothing left to draw gets no row, not a lone face (YUI-80).
+                    ForEach(store.messages.filter { $0.yl?.isBlank != true }) { m in
                         Group {
                             if let yl = m.yl {
                                 YLReply(screen: yl, scope: m.id, agent: store.agent, style: agentStyle,
