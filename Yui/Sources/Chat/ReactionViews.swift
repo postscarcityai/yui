@@ -12,6 +12,9 @@ struct ReactionAnchor: PreferenceKey {
 struct BubbleText: View {
     let text: String
     let fromUser: Bool
+    /// An agent's words are markdown (YUI-76); the person's, and a folded excerpt
+    /// (already plain), are drawn as written.
+    var markdown: Bool? = nil
     @Environment(\.yuiTheme) private var theme
     @Environment(\.colorScheme) private var scheme
 
@@ -23,13 +26,32 @@ struct BubbleText: View {
             bottomLeadingRadius: fromUser ? r.bubble : r.bubbleTail,
             bottomTrailingRadius: fromUser ? r.bubbleTail : r.bubble,
             topTrailingRadius: r.bubble)
-        Text(text)
+        styled(c)
             .font(theme.font(theme.type.body, .medium))
             .foregroundStyle(fromUser ? c.userInk : c.agentInk)
             .padding(.horizontal, theme.spacing.l)
             .padding(.vertical, theme.spacing.m)
             .background(fromUser ? c.userBubble : c.agentBubble, in: shape)
             .overlay(shape.stroke(fromUser ? .clear : c.outline, lineWidth: 1.5))
+    }
+
+    /// Bold and italic in the theme's own face (a rounded system font draws
+    /// neither from the intents alone); code sits on a soft tint of the outline.
+    private func styled(_ c: Swatch) -> Text {
+        guard markdown ?? !fromUser else { return Text(text) }
+        var a = BubbleMarkdown.attributed(text)
+        let size = theme.type.body
+        for run in a.runs {
+            guard let i = run.inlinePresentationIntent else { continue }
+            if i.contains(.code) {
+                a[run.range].backgroundColor = c.outline.opacity(0.45)
+            } else if i.contains(.stronglyEmphasized) {
+                a[run.range].font = i.contains(.emphasized) ? theme.font(size, .heavy).italic() : theme.font(size, .heavy)
+            } else if i.contains(.emphasized) {
+                a[run.range].font = theme.font(size, .medium).italic()
+            }
+        }
+        return Text(a)
     }
 }
 

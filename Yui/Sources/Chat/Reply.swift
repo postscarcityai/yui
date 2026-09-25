@@ -26,7 +26,7 @@ struct ReplyQuote: Equatable, Sendable {
 
     /// The quote for a bubble or a card. nil when there is nothing to quote.
     init?(_ m: ChatMessage) {
-        let text = m.yl.map(Self.title) ?? m.text
+        let text = m.yl.map(Self.title) ?? m.plain
         let line = Self.firstLine(text)
         guard !line.isEmpty || !m.photos.isEmpty else { return nil }
         self.init(msg: m.rowID, fromUser: m.fromUser,
@@ -118,7 +118,10 @@ struct ReplyQuote: Equatable, Sendable {
 
 extension ChatMessage {
     /// What Copy and Select text take: a bubble's words, a card's lines.
-    var words: String { yl.map(ReplyQuote.words) ?? text }
+    var words: String { yl.map(ReplyQuote.words) ?? plain }
+
+    /// The words as drawn: an agent's markdown marks come off (YUI-76), the person's stay.
+    var plain: String { fromUser ? text : BubbleMarkdown.plain(text) }
 }
 
 /// Above the composer while a reply is set: whose message, its first line, and an x.

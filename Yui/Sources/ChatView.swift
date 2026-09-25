@@ -132,7 +132,7 @@ struct ChatView: View {
                             if let yl = m.yl {
                                 YLReplyItems(screen: yl, scope: m.id, style: agentStyle).allowsHitTesting(false)
                             } else {
-                                BubbleText(text: Bubble.shown(m), fromUser: m.fromUser)
+                                Bubble.words(m)
                             }
                         }
                         .id(m.id)
@@ -953,6 +953,33 @@ struct ChatView: View {
     /// The INT-18 report as it landed on build 82: one wall of about 300 words (YUI-79).
     static let longReport = "A2A bridge: add any A2A agent to Yui by its Agent Card. node adapters/a2a/yui-a2a.ts pair <code> --card <url>, then run; add --card <url> puts more agents on the same machine. Runtime-neutral TypeScript client (src/a2a.ts + src/sse.ts, fetch and an SSE parser only, so the hosted step runs the same code in a Durable Object): A2A 1.0 SendMessage / SendStreamingMessage / SubscribeToTask / GetTask / CancelTask and 0.3 message/send, message/stream, tasks/resubscribe, tasks/get, one version-free shape for callers; 1.0 wins when a card lists both. The bridge keeps the relay's rules (delivered on pickup, handled after the answer, meta.turn, outbox on disk, one turn at a time per agent, a clean stop reads offline): contextId = the Yui agent, the channel guide rides as a context part on each new task, working states are the app's working row, text artifacts plus the final status message become the answer, input-required keeps the task open for the person's next message, failed/rejected/canceled say so. The running task's id is on disk, so a restart resubscribes (then GetTask) instead of sending the turn again; agents without streaming are sent returnImmediately and polled. Connector kind http, no server changes. Tests: client.test.ts 42/42 (SSE, both versions' shapes, errors, live against the scripted tests/echo-agent.ts in 1.0 and 0.3, resubscribe, GetTask polling); sdk_interop.test.ts 4/4 against the official a2a-sdk servers (1.1.5 and 0.3.26); a2a_e2e.py 66/66 live on throwaway accounts (1.0, 0.3, 1.0 without streaming: turns, a long task working then done, kill -9 mid-task resumes the same task and answers once, input-required, taps, failed) plus the phone run 6/6 with YuiUITests/A2ATests on the iPhone 18 Pro sim (working row, long answer, an A2A agent's screen and a tap, light; a question continuing the task, dark). No app binary change (INT-18)"
 
+    /// What the Hermes gateway answers /status with: markdown (YUI-76).
+    static let statusAnswer = """
+        📊 **Hermes Gateway Status**
+
+        **Session ID:** `20260925_051515_4f2a`
+        **Created:** 2026-09-25 05:15
+        **Model:** `claude-opus-5-5` (custom)
+        **Agent Running:** No
+
+        **Connected Platforms:** yui
+        """
+
+    /// One of each element a host sends: bold, italic, code, a block, lists, a link.
+    static let markdownSample = """
+        ## Build 92
+        **Bold**, *italic*, ~~gone~~ and `inline code`.
+        - Chat bubbles read markdown
+        - Copy takes the plain words
+          - nested items step in
+        1. Pull main
+        2. Run `xcodegen`
+        ```
+        swift test --filter BubbleMarkdown
+        ```
+        Details on [yuigui.com](https://www.yuigui.com).
+        """
+
     /// `-yuiDemo` seeds a chat; `-yuiYL <sample>` seeds one YL reply (see `YLSamples`).
     static var seed: [ChatMessage] {
         if UserDefaults.standard.string(forKey: "yuiReactDemo") != nil {
@@ -969,6 +996,13 @@ struct ChatView: View {
                                   fromUser: false)
                     : ChatMessage(text: "Message \(i)", fromUser: true)
             }
+        }
+        // -yuiDemoMarkdown: a /status answer and one of each markdown element, drawn (YUI-76).
+        if ProcessInfo.processInfo.arguments.contains("-yuiDemoMarkdown") {
+            return [ChatMessage(text: "/status", fromUser: true),
+                    ChatMessage(text: statusAnswer, fromUser: false),
+                    ChatMessage(text: "Show me **everything** you can format", fromUser: true),
+                    ChatMessage(text: markdownSample, fromUser: false)]
         }
         // -yuiDemoLong: a short answer, then the long report that folds into pages (YUI-79).
         if ProcessInfo.processInfo.arguments.contains("-yuiDemoLong") {
@@ -1071,10 +1105,16 @@ private struct Bubble: View {
     @Environment(\.yuiTheme) private var theme
 
     /// An agent's plain answer past `LongText.foldWords` folds: never a wall in the thread.
-    static func folds(_ m: ChatMessage) -> Bool { !m.fromUser && m.yl == nil && LongText.folds(m.text) }
+    /// Counted on the words as drawn, markdown marks off (YUI-76).
+    static func folds(_ m: ChatMessage) -> Bool { !m.fromUser && m.yl == nil && LongText.folds(m.plain) }
 
     /// What the bubble shows: the words, or a folded answer's first sentences.
-    static func shown(_ m: ChatMessage) -> String { folds(m) ? LongText.excerpt(m.text) : m.text }
+    static func shown(_ m: ChatMessage) -> String { folds(m) ? LongText.excerpt(m.plain) : m.text }
+
+    /// The bubble for what shows: an agent's markdown drawn, an excerpt already plain.
+    static func words(_ m: ChatMessage) -> BubbleText {
+        BubbleText(text: shown(m), fromUser: m.fromUser, markdown: !m.fromUser && !folds(m))
+    }
 
     var body: some View {
         if message.from != nil, let agent {
@@ -1087,10 +1127,10 @@ private struct Bubble: View {
 
     /// The words in their bubble, holdable. VoiceOver reads what shows.
     private var text: some View {
-        let shown = Self.shown(message)
-        return BubbleText(text: shown, fromUser: message.fromUser)
+        let shown = Self.folds(message) ? Self.shown(message) : message.plain
+        return Self.words(message)
             .accessibilityLabel(pending ? "\(shown), not sent yet" : shown)
-            .modifier(Reactable(text: message.text, reacts: !message.fromUser, reaction: reaction,
+            .modifier(Reactable(text: message.words, reacts: !message.fromUser, reaction: reaction,
                                 lifted: lifted, open: open, react: react, select: select, reply: reply))
     }
 
@@ -1113,7 +1153,7 @@ private struct Bubble: View {
                     // Copy and Select text still get every word.
                     VStack(alignment: .leading, spacing: theme.spacing.s) {
                         text
-                        ReadAsPages(pages: LongText.pages(message.text).count, action: read)
+                        ReadAsPages(pages: LongText.pages(message.plain).count, action: read)
                     }
                 } else if !message.text.isEmpty {
                     text

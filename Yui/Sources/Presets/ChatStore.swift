@@ -51,7 +51,7 @@ final class ChatStore {
     /// "Read as pages" on a folded bubble: its words as a deck, full screen.
     func readAsPages(_ m: ChatMessage) {
         let id = m.id + "#pages"
-        if reading?.id != id { reading = ChatMessage(id: id, text: "", fromUser: false, yl: LongText.deck(m.text)) }
+        if reading?.id != id { reading = ChatMessage(id: id, text: "", fromUser: false, yl: LongText.deck(m.plain)) }
         openStage(id)
     }
 
