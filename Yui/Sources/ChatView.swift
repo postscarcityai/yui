@@ -30,6 +30,16 @@ struct ChatView: View {
     @State private var shooting = false
     @State private var sending = false
     @State private var talk = PushToTalk()
+    /// Hold to talk: the finger's sideways travel while it is on the mic, nil when it is up.
+    @GestureState private var micPress: CGFloat?
+    @State private var micHeld = false
+    /// How far left the finger is, 0 or less. Past `cancelDistance` the trash is armed.
+    @State private var micDragX: CGFloat = 0
+    /// start() is still asking for the mic or warming up.
+    @State private var micStarting = false
+    @State private var holdStart: Task<Void, Never>?
+    private static let cancelDistance: CGFloat = 110
+    private var cancelArmed: Bool { talk.listening && micDragX <= -Self.cancelDistance }
     @State private var composerNote: String?
     /// The thread's scroll, and whether it is far enough up to offer the way back down (YUI-50).
     @State private var position = ScrollPosition(edge: .bottom)
@@ -406,6 +416,9 @@ struct ChatView: View {
             if let path = UserDefaults.standard.string(forKey: "yuiComposerPhoto"),
                let data = FileManager.default.contents(atPath: path) { add([data]) }
             if let words = UserDefaults.standard.string(forKey: "yuiPTTDemo") { talk.demo(words) }
+            // -yuiPTTDemoCancel: the demo, slid to the trash.
+            if ProcessInfo.processInfo.arguments.contains("-yuiPTTDemoCancel") { micDragX = -Self.cancelDistance - 30 }
+            talk.fakeWords = UserDefaults.standard.string(forKey: "yuiPTTFake")
         }
         #endif
     }
@@ -426,23 +439,46 @@ struct ChatView: View {
             .overlay(RoundedRectangle(cornerRadius: theme.radius.pill).stroke(c.outline, lineWidth: 1.5))
     }
 
-    /// Held down: what it hears, live, where the words would be.
+    /// Held down: what it hears, live, where the words would be, with the trash on the
+    /// left, a clock and the waveform. Slide the finger left to the trash to cancel.
     private func listeningField(_ c: Swatch) -> some View {
-        HStack(spacing: theme.spacing.s) {
-            Circle().fill(c.accent).frame(width: 10, height: 10)
-                .scaleEffect(1 + talk.level * 0.8)
-                .animation(.easeOut(duration: 0.12), value: talk.level)
-            Text(talk.transcript.isEmpty ? "Listening. Let go to send." : talk.transcript)
-                .font(theme.font(theme.type.body, talk.transcript.isEmpty ? .semibold : .regular))
-                .foregroundStyle(talk.transcript.isEmpty ? c.inkSoft : c.ink)
-                .lineLimit(1...5)
+        let armed = cancelArmed
+        return VStack(alignment: .leading, spacing: theme.spacing.xs) {
+            Text(armed ? "Let go to cancel"
+                 : talk.transcript.isEmpty ? "Let go to send. Slide left to cancel." : talk.transcript)
+                .font(theme.font(theme.type.body, armed || talk.transcript.isEmpty ? .semibold : .regular))
+                .foregroundStyle(armed ? c.accent : talk.transcript.isEmpty ? c.inkSoft : c.ink)
+                .lineLimit(1...4)
                 .frame(maxWidth: .infinity, alignment: .leading)
+                .contentTransition(.opacity)
+            HStack(spacing: theme.spacing.s) {
+                Image(systemName: armed ? "trash.fill" : "trash")
+                    .font(.system(size: 15, weight: .bold))
+                    .foregroundStyle(armed ? c.onAccent : c.inkSoft)
+                    .frame(width: 30, height: 30)
+                    .background(armed ? c.accent : .clear, in: Circle())
+                    .scaleEffect(armed && !reduceMotion ? 1.2 : 1)
+                    .accessibilityIdentifier(armed ? "talk-trash-armed" : "talk-trash")
+                if let start = talk.startedAt {
+                    TimelineView(.periodic(from: start, by: 1)) { ctx in
+                        let s = max(0, Int(ctx.date.timeIntervalSince(start)))
+                        Text(String(format: "%d:%02d", s / 60, s % 60))
+                            .font(theme.font(theme.type.caption, .semibold).monospacedDigit())
+                            .foregroundStyle(c.inkSoft)
+                    }
+                }
+                TalkWaveform(levels: talk.levels, level: talk.level,
+                             color: armed ? c.inkSoft.opacity(0.4) : c.accent,
+                             track: c.outline, reduceMotion: reduceMotion)
+            }
         }
         .padding(.horizontal, theme.spacing.l)
-        .padding(.vertical, theme.spacing.m)
+        .padding(.vertical, theme.spacing.s)
         .frame(minHeight: 46)
-        .background(c.surface, in: .rect(cornerRadius: theme.radius.pill))
-        .overlay(RoundedRectangle(cornerRadius: theme.radius.pill).stroke(c.accent, lineWidth: 2))
+        .background(c.surface, in: .rect(cornerRadius: theme.radius.bubble))
+        .overlay(RoundedRectangle(cornerRadius: theme.radius.bubble).stroke(armed ? c.inkSoft : c.accent, lineWidth: 2))
+        .animation(reduceMotion ? nil : theme.spring, value: armed)
+        .sensoryFeedback(.impact(weight: .medium), trigger: armed)
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier("listening")
     }
@@ -510,28 +546,67 @@ struct ChatView: View {
                 .disabled(sending)
                 .accessibilityLabel("Send")
             } else {
-                Image(systemName: talk.listening ? "waveform" : "mic.fill")
+                Image(systemName: cancelArmed ? "trash.fill" : talk.listening ? "waveform" : "mic.fill")
                     .font(theme.font(theme.type.title, .black))
                     .foregroundStyle(talk.listening ? c.onAccent : c.ink)
-                    .symbolEffect(.variableColor.iterative, isActive: talk.listening)
+                    .symbolEffect(.variableColor.iterative, isActive: talk.listening && !cancelArmed && !reduceMotion)
                     .frame(width: 46, height: 46)
-                    .background(talk.listening ? c.accent : c.surface, in: Circle())
+                    .background(talk.listening ? (cancelArmed ? c.inkSoft : c.accent) : c.surface, in: Circle())
                     .overlay(Circle().stroke(talk.listening ? .clear : c.outline, lineWidth: 1.5))
                     .scaleEffect(talk.listening ? 1.25 : 1)
                     .contentShape(Circle())
-                    .onLongPressGesture(minimumDuration: 0.25, maximumDistance: 120) {
-                        Task { await talk.start(); note(for: talk.phase) }
-                    } onPressingChanged: { pressing in
-                        if pressing { return }
-                        if talk.listening {
-                            Task { let words = await talk.stop(); if !words.isEmpty { draft = words; send() } }
-                        } else if talk.phase == .idle {
-                            flash("Hold the mic to talk, let go to send.")
-                        }
+                    // Follows the finger left, like a thumb pulling it to the trash.
+                    .offset(x: talk.listening ? max(micDragX, -Self.cancelDistance - 40) : 0)
+                    // Global space: the button moves under the finger, so its own space would jitter.
+                    .gesture(DragGesture(minimumDistance: 0, coordinateSpace: .global)
+                        .updating($micPress) { v, state, _ in state = v.translation.width })
+                    .onChange(of: micPress) { old, new in
+                        if old == nil, new != nil { micDown() }
+                        if let x = new { micDragX = min(0, x) }
+                        if old != nil, new == nil { micUp() }
                     }
+                    .sensoryFeedback(.impact(weight: .light), trigger: talk.listening) { _, now in now }
                     .accessibilityLabel(talk.listening ? "Listening" : "Hold to talk")
                     .accessibilityIdentifier("talk")
             }
+        }
+    }
+
+    /// Finger on the mic: after a short hold it starts listening. A quick tap only explains.
+    private func micDown() {
+        micHeld = true
+        micDragX = 0
+        holdStart?.cancel()
+        holdStart = Task {
+            try? await Task.sleep(for: .milliseconds(200))
+            guard !Task.isCancelled, micHeld else { return }
+            micStarting = true
+            await talk.start()
+            micStarting = false
+            // The first time, the system asks for the mic and the finger comes up while it does.
+            if talk.listening && !micHeld {
+                talk.cancel()
+                flash("Ready. Hold the mic to talk.")
+                return
+            }
+            note(for: talk.phase)
+        }
+    }
+
+    /// Finger up: send what it heard, or throw it away if it was slid to the trash.
+    private func micUp() {
+        micHeld = false
+        let cancel = cancelArmed
+        micDragX = 0
+        if talk.listening {
+            if cancel {
+                talk.cancel()
+            } else {
+                Task { let words = await talk.stop(); if !words.isEmpty { draft = words; send() } }
+            }
+        } else if !micStarting {
+            holdStart?.cancel()
+            if talk.phase == .idle { flash("Hold the mic to talk, let go to send.") }
         }
     }
 
@@ -657,12 +732,14 @@ struct ChatView: View {
         }
     }
 
-    /// Empties the field and swaps in a new one, keeping the keyboard up.
+    /// Empties the field and swaps in a new one, keeping the keyboard up if it was.
+    /// A hold-to-talk send leaves it down.
     private func clearComposer() {
+        let keep = focused
         draft = ""
         composerID += 1
         // The new field mounts on the next pass; focus it then so the keyboard stays.
-        Task { @MainActor in focused = true }
+        if keep { Task { @MainActor in focused = true } }
     }
 
     /// The demo account's canned answers (screenshots only; real accounts never see them).

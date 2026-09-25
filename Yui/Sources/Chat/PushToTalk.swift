@@ -5,6 +5,8 @@ import Speech
 /// Hold to talk (TestFlight feedback ABEd9FQg0MUy5hNiDKEy13Q): hold the mic,
 /// speak, let go and the words send as text. Recognition runs on the phone
 /// when it can, so no audio leaves it. First slice of YUI-14 (voice in, text out).
+/// Let go sends, slide left cancels, and a waveform follows your voice while it listens
+/// (TestFlight feedback AFxu7cyMxK1BmzLnKcwsPzw).
 @Observable @MainActor
 final class PushToTalk {
     enum Phase: Equatable { case idle, listening, denied, failed }
@@ -12,8 +14,16 @@ final class PushToTalk {
     private(set) var phase: Phase = .idle
     /// What it has heard so far.
     private(set) var transcript = ""
-    /// 0...1, the mic's loudness, for the listening pulse.
+    /// 0...1, the mic's loudness right now.
     private(set) var level: Double = 0
+    /// The last `bars` loudness peaks, oldest first, one every `barEvery` seconds: the waveform.
+    private(set) var levels: [Double] = []
+    /// When it started listening, for the clock.
+    private(set) var startedAt: Date?
+    static let bars = 36
+    static let barEvery: TimeInterval = 0.08
+    private var peak: Double = 0
+    private var lastBar = Date.distantPast
 
     private let engine = AVAudioEngine()
     private var request: SFSpeechAudioBufferRecognitionRequest?
@@ -23,18 +33,50 @@ final class PushToTalk {
     var listening: Bool { phase == .listening }
 
     #if DEBUG
+    /// `-yuiPTTFake "words"`: start() listens to nothing and hears these words, so UI tests
+    /// can drive the real hold, slide and let-go on a simulator with no mic.
+    var fakeWords: String?
+
     /// `-yuiPTTDemo "words"`: the listening state with those words, for screenshots (the simulator has no mic).
     func demo(_ words: String) {
         transcript = words
-        level = 0.6
+        startedAt = .now.addingTimeInterval(-4)
         phase = .listening
+        for i in 0..<Self.bars { levels.append(Self.fakeLevel(i)) }
+        Task {
+            var i = Self.bars
+            while phase == .listening, request == nil {
+                take(level: Self.fakeLevel(i)); i += 1
+                try? await Task.sleep(for: .milliseconds(40))
+            }
+        }
+    }
+
+    private static func fakeLevel(_ i: Int) -> Double {
+        let t = Double(i)
+        return min(max(0.45 + 0.3 * sin(t * 0.55) + 0.2 * sin(t * 1.9 + 1), 0.05), 1)
     }
     #endif
+
+    /// A new loudness from the mic. Keeps the loudest since the last bar and adds a bar every `barEvery`.
+    func take(level l: Double, at now: Date = .now) {
+        level = l
+        peak = max(peak, l)
+        guard now.timeIntervalSince(lastBar) >= Self.barEvery else { return }
+        levels.append(peak)
+        if levels.count > Self.bars { levels.removeFirst(levels.count - Self.bars) }
+        peak = 0
+        lastBar = now
+    }
 
     /// Starts listening. Asks for the mic and speech the first time.
     func start() async {
         guard phase != .listening else { return }
         transcript = ""
+        resetMeters()
+        #if DEBUG
+        if let fakeWords { demo(fakeWords); return }
+        #endif
         guard await Self.authorized() else { phase = .denied; return }
         guard let recognizer = SFSpeechRecognizer(), recognizer.isAvailable else { phase = .failed; return }
         do {
@@ -57,7 +99,7 @@ final class PushToTalk {
             }
             input.removeTap(onBus: 0)
             input.installTap(onBus: 0, bufferSize: 1024, format: format,
-                             block: Self.tap(req) { [weak self] level in self?.level = level })
+                             block: Self.tap(req) { [weak self] level in self?.take(level: level) })
             engine.prepare()
             try engine.start()
             task = recognizer.recognitionTask(with: req, resultHandler: Self.heard { [weak self] text, done in
@@ -65,6 +107,7 @@ final class PushToTalk {
                 if let text { self.transcript = text }
                 if done { self.finish?.resume(); self.finish = nil }
             })
+            startedAt = .now
             phase = .listening
         } catch {
             stopEngine()
@@ -76,7 +119,7 @@ final class PushToTalk {
     func stop() async -> String {
         guard phase == .listening else { return "" }
         #if DEBUG
-        if request == nil { phase = .idle; return transcript }  // demo
+        if request == nil { phase = .idle; resetMeters(); return transcript }  // demo
         #endif
         stopEngine()
         request?.endAudio()
@@ -91,9 +134,30 @@ final class PushToTalk {
         task = nil
         request = nil
         phase = .idle
-        level = 0
+        resetMeters()
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
         return transcript.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// Slid to the trash: stop at once and throw the words away.
+    func cancel() {
+        guard phase == .listening else { return }
+        if request != nil {
+            stopEngine()
+            request?.endAudio()
+            task?.cancel()
+            task = nil
+            request = nil
+            finish?.resume(); finish = nil
+            try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        }
+        transcript = ""
+        resetMeters()
+        phase = .idle
+    }
+
+    private func resetMeters() {
+        level = 0; peak = 0; levels = []; startedAt = nil; lastBar = .distantPast
     }
 
     /// Let go of the "can't listen" note.

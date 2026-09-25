@@ -42,4 +42,35 @@ final class PushToTalkTests: XCTestCase {
         }
         await fulfillment(of: [levelHeard, wordsHeard], timeout: 5)
     }
+
+    /// The waveform keeps the loudest peak per bar, one bar per `barEvery`, and only the last `bars`.
+    func testWaveformKeepsPeaksAndCaps() {
+        let ptt = PushToTalk()
+        let t0 = Date(timeIntervalSince1970: 1_000)
+        ptt.take(level: 0.2, at: t0)
+        ptt.take(level: 0.9, at: t0.addingTimeInterval(0.02))
+        ptt.take(level: 0.1, at: t0.addingTimeInterval(0.04))
+        XCTAssertEqual(ptt.levels, [0.2], "a bar too soon")
+        ptt.take(level: 0.3, at: t0.addingTimeInterval(PushToTalk.barEvery))
+        XCTAssertEqual(ptt.levels, [0.2, 0.9], "the new bar lost the peak in between")
+        for i in 0..<(PushToTalk.bars * 2) {
+            ptt.take(level: 0.5, at: t0.addingTimeInterval(PushToTalk.barEvery * Double(i + 2)))
+        }
+        XCTAssertEqual(ptt.levels.count, PushToTalk.bars)
+        XCTAssertEqual(ptt.level, 0.5)
+    }
+
+    /// Slide to the trash: the words are thrown away and the next hold starts clean.
+    func testCancelDiscards() async {
+        let ptt = PushToTalk()
+        ptt.demo("never mind")
+        XCTAssertTrue(ptt.listening)
+        ptt.cancel()
+        XCTAssertEqual(ptt.phase, .idle)
+        XCTAssertEqual(ptt.transcript, "")
+        XCTAssertTrue(ptt.levels.isEmpty)
+        XCTAssertNil(ptt.startedAt)
+        let words = await ptt.stop()
+        XCTAssertEqual(words, "", "stop after cancel still returned words")
+    }
 }

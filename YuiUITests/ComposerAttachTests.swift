@@ -7,15 +7,18 @@ import XCTest
 final class ComposerAttachTests: XCTestCase {
     private func launch(_ extra: [String] = []) -> XCUIApplication {
         let app = XCUIApplication()
-        app.launchArguments = ["-yuiDemoAccount", "-yuiDemo", "-appearance", "dark"] + extra
+        app.launchArguments = ["-yuiDemoAccount", "-yuiDemo", "-appearance", appearance] + extra
         app.launch()
         return app
     }
 
+    /// `TEST_RUNNER_YUI_APPEARANCE=light` for the light screenshots.
+    private var appearance: String { ProcessInfo.processInfo.environment["YUI_APPEARANCE"] ?? "dark" }
+
     private func shot(_ name: String) {
         guard let dir = ProcessInfo.processInfo.environment["YUI_SHOTS"] else { return }
         try? XCUIScreen.main.screenshot().pngRepresentation
-            .write(to: URL(fileURLWithPath: dir).appending(path: "\(name).png"))
+            .write(to: URL(fileURLWithPath: dir).appending(path: "\(name)-\(appearance).png"))
     }
 
     /// A photo on disk the app can read.
@@ -76,6 +79,51 @@ final class ComposerAttachTests: XCTestCase {
         XCTAssertFalse(app.buttons["attach"].exists, "the + stays up while listening")
         sleep(1)
         shot("04-push-to-talk")
+    }
+
+    /// TestFlight feedback AFxu7cyMxK1BmzLnKcwsPzw: let go sends, with a waveform while it listens.
+    /// `-yuiPTTFake` stands in for the mic; the hold and the let-go are the real gesture.
+    func testLetGoSends() {
+        let words = "Book me a haircut Friday at four"
+        let app = launch(["-yuiPTTFake", words])
+        let talk = app.descendants(matching: .any)["talk"].firstMatch
+        XCTAssertTrue(talk.waitForExistence(timeout: 20))
+        talk.press(forDuration: 1.5)
+        XCTAssertTrue(app.staticTexts[words].waitForExistence(timeout: 5), "let go did not send the words")
+        XCTAssertFalse(app.descendants(matching: .any)["listening"].exists, "still listening after let go")
+        XCTAssertFalse(app.keyboards.firstMatch.exists, "a voice send brought the keyboard up")
+        sleep(1)
+        shot("06-talk-sent")
+    }
+
+    /// Slide left to the trash and let go: nothing is sent.
+    func testSlideLeftCancels() {
+        let words = "Never mind this one"
+        let app = launch(["-yuiPTTFake", words])
+        let talk = app.descendants(matching: .any)["talk"].firstMatch
+        XCTAssertTrue(talk.waitForExistence(timeout: 20))
+        let from = talk.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+        from.press(forDuration: 1.0, thenDragTo: from.withOffset(CGVector(dx: -200, dy: 0)))
+        sleep(2)
+        XCTAssertFalse(app.staticTexts[words].exists, "a cancelled recording was sent")
+        XCTAssertFalse(app.descendants(matching: .any)["listening"].exists, "still listening after cancel")
+        XCTAssertTrue(talk.exists, "the mic did not come back")
+        shot("07-talk-cancelled")
+    }
+
+    func testSlideToTrashArmsCancel() {
+        let app = launch(["-yuiPTTDemo", "Book me a haircut Friday at four", "-yuiPTTDemoCancel"])
+        XCTAssertTrue(app.descendants(matching: .any)["listening"].firstMatch.waitForExistence(timeout: 20))
+        XCTAssertTrue(app.descendants(matching: .any)["talk-trash-armed"].firstMatch.exists, "the trash is not armed")
+        sleep(1)
+        shot("05-talk-cancel-armed")
+    }
+
+    func testReduceMotionShowsALevelBar() {
+        let app = launch(["-yuiPTTDemo", "Book me a haircut Friday at four", "-yuiReduceMotion"])
+        XCTAssertTrue(app.descendants(matching: .any)["listening"].firstMatch.waitForExistence(timeout: 20))
+        sleep(1)
+        shot("08-talk-reduce-motion")
     }
 
     func testTapOnMicExplainsHold() {
