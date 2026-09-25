@@ -95,6 +95,9 @@ node --test tests/client.test.ts        # the client: SSE, both versions, resubs
 node --test tests/sdk_interop.test.ts   # against the official a2a-sdk servers, 1.x and 0.3 (needs uv)
 python3 tests/a2a_e2e.py                # live: pair, turns, a long task, kill -9 mid-task (throwaway account)
 python3 tests/a2a_e2e.py --protocol 1.0 --sim <udid>   # plus the app on a simulator, with screenshots
+python3 tests/a2a_e2e.py --protocol adk # live with a real Google ADK agent (tests/sdk/adk_agent.py on Ollama qwen2.5:7b; needs uv)
 ```
+
+**ADK and Gemini agents (INT-9).** `tests/sdk/adk_agent.py` is a Google ADK agent served over A2A by ADK's own `to_a2a`. It shows how an ADK agent uses Yui's guide: a `before_model_callback` moves the part marked `{"yui": "channel_guide"}` into the model's instructions. It runs on local Ollama through LiteLLM with no key; `ADK_MODEL=gemini-2.5-flash` with `GEMINI_API_KEY` runs it on Gemini.
 
 `tests/echo-agent.ts` is the scripted A2A agent the tests use: no model, fixed answers, either version, streaming or not.

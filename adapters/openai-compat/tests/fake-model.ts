@@ -3,7 +3,7 @@
 // picked by the last line the person sent. Streams like Ollama and vLLM do
 // (SSE, "data: [DONE]"), or not at all.
 //
-//   node tests/fake-model.ts [--port 0] [--no-streaming] [--refuse-stream] [--key K] [--no-done]
+//   node tests/fake-model.ts [--port 0] [--no-streaming] [--refuse-stream] [--key K] [--no-done] [--gemini]
 //
 // Prints "fake-model <base url>" first. GET /_log lists every request.
 //
@@ -18,6 +18,15 @@
 //   refuse           -> 400, the context is too long
 //   think            -> a <think> block, then "Thought it through."
 //   anything else    -> "You said: <it>"
+//
+// --gemini answers the way Google's OpenAI-compatible endpoint does (INT-9):
+// model ids listed as "models/<id>", every error wrapped in a list with a
+// status word, a bad key as 400 INVALID_ARGUMENT, no role-only first chunk,
+// the last piece carrying finish_reason and usage. Two more lines:
+//   thought          -> a thought summary (extra_content.google.thought when
+//                       streamed, a <thought> block when plain), then "Tea, then."
+//   blocked          -> no text, finish_reason content_filter
+//   quota            -> 429 RESOURCE_EXHAUSTED the first time, then "Quota back."
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { parseArgs } from "node:util";
 
@@ -27,6 +36,7 @@ export interface FakeOptions {
   refuseStream?: boolean; // 400 on stream: true, like a server that can't
   key?: string; // wants Authorization: Bearer <key>
   done?: boolean; // false: ends streams on finish_reason, no [DONE]
+  gemini?: boolean; // Gemini's shapes, see above
 }
 
 export interface Fake {
@@ -51,13 +61,19 @@ export function startFake(opts: FakeOptions = {}): Promise<Fake> {
   async function handle(req: IncomingMessage, res: ServerResponse) {
     const url = new URL(req.url ?? "/", "http://x");
     if (req.method === "GET" && url.pathname === "/_log") return json(res, 200, log);
+    const fail = (status: number, message: string, word: string) => opts.gemini
+      ? json(res, status, [{ error: { code: status, message, status: word } }])
+      : json(res, status, { error: { message, type: "invalid_request_error" } });
     if (opts.key && req.headers.authorization !== `Bearer ${opts.key}`) {
-      return json(res, 401, { error: { message: "Incorrect API key provided", type: "invalid_request_error" } });
+      if (opts.gemini) return fail(400, "API key not valid. Please pass a valid API key.", "INVALID_ARGUMENT");
+      return fail(401, "Incorrect API key provided", "UNAUTHENTICATED");
     }
     if (req.method === "GET" && url.pathname === "/v1/models") {
-      return json(res, 200, { object: "list", data: [{ id: "fake-1", object: "model" }, { id: "fake-2", object: "model" }] });
+      const id = (x: string) => (opts.gemini ? `models/${x}` : x);
+      return json(res, 200, { object: "list", data: [{ id: id("fake-1"), object: "model", owned_by: opts.gemini ? "google" : "fake" },
+                                                     { id: id("fake-2"), object: "model", owned_by: opts.gemini ? "google" : "fake" }] });
     }
-    if (req.method !== "POST" || url.pathname !== "/v1/chat/completions") return json(res, 404, { error: { message: "no such route" } });
+    if (req.method !== "POST" || url.pathname !== "/v1/chat/completions") return fail(404, "no such route", "NOT_FOUND");
     let raw = "";
     for await (const c of req) raw += c;
     const body = JSON.parse(raw);
@@ -67,7 +83,7 @@ export function startFake(opts: FakeOptions = {}): Promise<Fake> {
     log.push({ model: body.model, stream: !!body.stream, messages: msgs, text: last, auth: req.headers.authorization ?? null,
                max_tokens: body.max_tokens, temperature: body.temperature, at: Date.now() });
     if (body.model !== "fake-1" && body.model !== "fake-2") {
-      return json(res, 404, { error: { message: `model "${body.model}" not found, try pulling it first` } });
+      return fail(404, `model "${body.model}" not found, try pulling it first`, "NOT_FOUND");
     }
     if (body.stream && opts.refuseStream) return json(res, 400, { error: { message: "stream is not supported by this server" } });
     const n = (seen.get(line) ?? 0) + 1;
@@ -75,6 +91,8 @@ export function startFake(opts: FakeOptions = {}): Promise<Fake> {
 
     let pieces: string[];
     let wait = 0;
+    let thought = "";
+    let fin = "stop";
     let m: RegExpMatchArray | null;
     if (line === "hello") pieces = ["You said: ", "hello"];
     else if (line === "screen") pieces = ["Pick one:\n", "```yui\nchoose \"Pick one\" Tea|Coffee\n```"];
@@ -97,18 +115,44 @@ export function startFake(opts: FakeOptions = {}): Promise<Fake> {
       return json(res, 400, { error: { message: "This model's maximum context length is 4096 tokens", type: "invalid_request_error" } });
     } else if (line === "think") pieces = ["<think>Let me see.", " Tea or coffee.</think>", "Thought it through."];
     else if (line === "drop") pieces = n === 1 ? ["Half of ", "the answer", "DROP"] : ["Whole this time."];
+    else if (opts.gemini && line === "thought") {
+      thought = "Tea suits the afternoon.";
+      pieces = ["Tea, ", "then."];
+    } else if (opts.gemini && line === "blocked") {
+      pieces = [];
+      fin = "content_filter";
+    } else if (opts.gemini && line === "quota") {
+      if (n === 1) return fail(429, "Resource has been exhausted (e.g. check quota).", "RESOURCE_EXHAUSTED");
+      pieces = ["Quota back."];
+    }
     else pieces = [`You said: ${line}`];
 
     const id = `chatcmpl-${log.length}`;
     if (!body.stream || opts.streaming === false) {
       for (const _ of pieces) if (wait) await sleep(wait);
-      const text = pieces.filter((p) => p !== "DROP").join("");
+      const said = pieces.filter((p) => p !== "DROP").join("");
+      const text = thought ? `<thought>${thought}</thought>${said}` : said;
       return json(res, 200, { id, object: "chat.completion", model: body.model,
-        choices: [{ index: 0, message: { role: "assistant", content: text }, finish_reason: "stop" }],
+        choices: [{ index: 0, message: { role: "assistant", content: opts.gemini && fin !== "stop" ? null : text }, finish_reason: fin }],
         usage: { prompt_tokens: raw.length >> 2, completion_tokens: text.length >> 2 } });
     }
     res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache" });
     const send = (d: unknown) => res.write(`data: ${JSON.stringify(d)}\n\n`);
+    if (opts.gemini) {
+      // No role-only opener; each chunk names the role; the last one finishes and counts.
+      const chunk = (delta: any, finish: string | null, extra = {}) =>
+        send({ id, object: "chat.completion.chunk", created: 0, model: body.model,
+               choices: [{ index: 0, delta: { role: "assistant", ...delta }, finish_reason: finish }], ...extra });
+      if (thought) chunk({ content: thought, extra_content: { google: { thought: true } } }, null);
+      if (!pieces.length) chunk({}, fin, { usage: { prompt_tokens: raw.length >> 2, completion_tokens: 0 } });
+      for (let i = 0; i < pieces.length; i++) {
+        if (wait) await sleep(wait);
+        const last = i === pieces.length - 1;
+        chunk({ content: pieces[i] }, last ? fin : null, last ? { usage: { prompt_tokens: raw.length >> 2, completion_tokens: 3 } } : {});
+      }
+      if (opts.done !== false) res.write("data: [DONE]\n\n");
+      return void res.end();
+    }
     send({ id, object: "chat.completion.chunk", choices: [{ index: 0, delta: { role: "assistant", content: "" }, finish_reason: null }] });
     for (const p of pieces) {
       if (p === "DROP") {
@@ -140,9 +184,9 @@ function json(res: ServerResponse, status: number, body: unknown) {
 if (import.meta.url === `file://${process.argv[1]}`) {
   const { values: o } = parseArgs({ options: {
     port: { type: "string", default: "0" }, "no-streaming": { type: "boolean" }, "refuse-stream": { type: "boolean" },
-    key: { type: "string" }, "no-done": { type: "boolean" },
+    key: { type: "string" }, "no-done": { type: "boolean" }, gemini: { type: "boolean" },
   } });
   const f = await startFake({ port: Number(o.port), streaming: !o["no-streaming"], refuseStream: o["refuse-stream"],
-                              key: o.key, done: !o["no-done"] });
+                              key: o.key, done: !o["no-done"], gemini: o.gemini });
   console.log(`fake-model ${f.url}`);
 }

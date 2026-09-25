@@ -3,7 +3,7 @@
 //   node --test tests/client.test.ts
 import assert from "node:assert/strict";
 import { after, before, describe, test } from "node:test";
-import { ChatClient, ModelError, ModelUnavailable, StreamRefused, baseUrl, errorMessage, splitThinking } from "../src/openai.ts";
+import { ChatClient, ModelError, ModelUnavailable, SERVERS, StreamRefused, baseUrl, errorMessage, splitThinking } from "../src/openai.ts";
 import { alternate, buildMessages, toMessage, tokens, type ThreadRow } from "../src/thread.ts";
 import { startFake, type Fake } from "./fake-model.ts";
 
@@ -123,6 +123,74 @@ describe("client, other servers", () => {
   });
 });
 
+describe("client, Gemini-shaped server (INT-9)", () => {
+  let f: Fake;
+  let c: ChatClient;
+  before(async () => {
+    f = await startFake({ gemini: true, key: "gm-test-key" });
+    c = new ChatClient(f.url, { key: "gm-test-key" });
+  });
+  after(() => f.close());
+
+  test("the preset is Google's OpenAI-compatible base, key from GEMINI_API_KEY, a bigger window", () => {
+    assert.equal(SERVERS.gemini.url, "https://generativelanguage.googleapis.com/v1beta/openai");
+    assert.equal(baseUrl(`${SERVERS.gemini.url}/`), SERVERS.gemini.url);
+    assert.equal(SERVERS.gemini.keyEnv, "GEMINI_API_KEY");
+    assert.ok((SERVERS.gemini.context ?? 0) > 4096);
+  });
+  test("models/ comes off the listed ids, so they match what chat takes", async () => {
+    assert.deepEqual(await c.models(), ["fake-1", "fake-2"]);
+  });
+  test("streams without a role-only opener, the last piece carrying finish and usage", async () => {
+    const seen: string[] = [];
+    const r = await ask(c, "hello", true, (d) => seen.push(d));
+    assert.equal(r.text, "You said: hello");
+    assert.deepEqual(seen, ["You said: ", "hello"]);
+    assert.equal(r.finish, "stop");
+    assert.ok(r.usage?.prompt_tokens);
+  });
+  test("a screen streams through whole", async () => {
+    assert.equal((await ask(c, "screen")).text, "Pick one:\n```yui\nchoose \"Pick one\" Tea|Coffee\n```");
+  });
+  test("the system message goes as a system role, first", async () => {
+    await ask(c, "hello");
+    assert.deepEqual(f.log.at(-1).messages.map((m: any) => m.role), ["system", "user"]);
+  });
+  test("a streamed thought (extra_content.google.thought) is reasoning, not the answer", async () => {
+    const seen: string[] = [];
+    const r = await ask(c, "thought", true, (d) => seen.push(d));
+    assert.equal(r.text, "Tea, then.");
+    assert.equal(r.reasoning, "Tea suits the afternoon.");
+    assert.deepEqual(seen, ["Tea, ", "then."]);
+  });
+  test("a plain <thought> block is taken out", async () => {
+    const r = await ask(c, "thought", false);
+    assert.equal(r.text, "Tea, then.");
+    assert.equal(r.reasoning, "Tea suits the afternoon.");
+  });
+  test("a blocked answer is empty with content_filter, streamed or plain", async () => {
+    for (const stream of [true, false]) {
+      const r = await ask(c, "blocked", stream);
+      assert.equal(r.text, "");
+      assert.equal(r.finish, "content_filter");
+    }
+  });
+  test("an error wrapped in a list reads as its message", async () => {
+    await assert.rejects(c.complete({ model: "gemini-nope", messages: [{ role: "user", content: "hi" }] }),
+      (e: any) => e instanceof ModelError && e.status === 404 && /"gemini-nope" not found/.test(e.message) && !/^\[/.test(e.message));
+  });
+  test("429 RESOURCE_EXHAUSTED is ModelUnavailable (wait), then it answers", async () => {
+    await assert.rejects(ask(c, "quota"), (e: any) => e instanceof ModelUnavailable && /429: Resource has been exhausted/.test(e.message));
+    assert.equal((await ask(c, "quota")).text, "Quota back.");
+  });
+  test("a bad key is Gemini's 400 INVALID_ARGUMENT, and reads as a key problem", async () => {
+    const bad = new ChatClient(f.url, { key: "wrong" });
+    await assert.rejects(ask(bad, "hello"), (e: any) => e instanceof ModelError && !(e instanceof StreamRefused)
+      && e.status === 400 && /turned the key down/.test(e.message) && /API key not valid/.test(e.message));
+    await assert.rejects(bad.models(), (e: any) => e instanceof ModelError && /key/.test(e.message));
+  });
+});
+
 describe("helpers", () => {
   test("baseUrl takes the endpoint or the base, with or without a slash", () => {
     assert.equal(baseUrl("http://127.0.0.1:11434/v1/"), "http://127.0.0.1:11434/v1");
@@ -135,11 +203,15 @@ describe("helpers", () => {
     assert.equal(errorMessage('{"error":"bad request"}'), "bad request");
     assert.equal(errorMessage('{"detail":[{"msg":"field required"}]}'), "field required");
     assert.equal(errorMessage("Bad Gateway"), "Bad Gateway");
+    assert.equal(errorMessage('[{"error":{"code":400,"message":"API key not valid.","status":"INVALID_ARGUMENT"}}]'), "API key not valid.");
   });
   test("splitThinking only takes a leading block", () => {
     assert.deepEqual(splitThinking("<think>a</think>\nhi"), { text: "\nhi", thinking: "a" });
     assert.deepEqual(splitThinking("hi <think>a</think>"), { text: "hi <think>a</think>", thinking: "" });
     assert.deepEqual(splitThinking("<think>still going"), { text: "", thinking: "still going" });
+    assert.deepEqual(splitThinking("<thought>a</thought>hi"), { text: "hi", thinking: "a" });
+    assert.deepEqual(splitThinking("<thinking>a</thinking>hi"), { text: "hi", thinking: "a" });
+    assert.deepEqual(splitThinking("<thought>a</think>hi"), { text: "", thinking: "a</think>hi" });
   });
 });
 

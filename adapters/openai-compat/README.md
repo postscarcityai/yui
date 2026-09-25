@@ -45,6 +45,7 @@ Ollama is the default. Others by name or by URL:
 | vLLM | `--server vllm` | `http://127.0.0.1:8000/v1` |
 | llama.cpp | `--server llamacpp` | `http://127.0.0.1:8080/v1` |
 | OpenRouter | `--server openrouter` | `https://openrouter.ai/api/v1`, key from `$OPENROUTER_API_KEY` |
+| Gemini | `--server gemini` | `https://generativelanguage.googleapis.com/v1beta/openai`, key from `$GEMINI_API_KEY` (a free AI Studio key), `--context` 32768 |
 | anything else | `--url http://host:port/v1` | also takes the full `.../chat/completions` URL |
 
 **Keys.** Local servers need none. For one that does, `--key-env NAME` reads the key from that environment variable each time the bridge runs, and nothing is stored. `--key-stdin` reads it once from stdin and keeps it in the state file (mode 600). Never put a key on the command line, in chat or on a board.
@@ -104,4 +105,4 @@ python3 tests/openai_e2e.py --run ollama          # live with a real model on th
 python3 tests/openai_e2e.py --run phone --sim <udid>   # plus the app on a simulator, with screenshots
 ```
 
-`tests/fake-model.ts` is the scripted server the tests use: no model, fixed answers, streaming or not, with or without a key.
+`tests/fake-model.ts` is the scripted server the tests use: no model, fixed answers, streaming or not, with or without a key. `--gemini` makes it answer in the shapes of Gemini's OpenAI-compatible endpoint (`models/` ids, errors in a list, a bad key as 400, thought summaries, a blocked answer), which the bridge copes with (INT-9).

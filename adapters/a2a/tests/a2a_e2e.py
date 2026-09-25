@@ -19,6 +19,12 @@ account (never a real one):
   F. a tap on a screen reaches the agent as text and data.
   G. failed: the person reads why.
   H. a clean stop reads offline.
+  ADK (--protocol adk, INT-9, not in `all`): a real Google ADK agent,
+     tests/sdk/adk_agent.py, served over A2A by ADK's own to_a2a, its model
+     local Ollama qwen2.5:7b through LiteLLM (no key). Pair, a turn, a screen
+     the YL parser reads (drawn only because the guide reached the model: the
+     agent's own instruction never mentions Yui), a tap on it, a clean stop.
+     Needs uv and Ollama with qwen2.5:7b.
   I. with --sim: the phone side, on its own fresh account and thread (A2A
      1.0): YuiUITests/A2ATests on a simulator shows the working row, the long
      answer, a screen and a tap (light), a question and its answer (dark).
@@ -27,7 +33,7 @@ account (never a real one):
 Pass: every person's row is handled and named by exactly one reply, and the
 agent got each turn exactly once.
 
-    python3 adapters/a2a/tests/a2a_e2e.py [--protocol 1.0|0.3|poll|phone|all] [--sim <udid>] [--out DIR]
+    python3 adapters/a2a/tests/a2a_e2e.py [--protocol 1.0|0.3|poll|phone|adk|all] [--sim <udid>] [--out DIR]
 
 `poll` is 1.0 with streaming off: the bridge sends, then follows by GetTask.
 Needs a Supabase access token like supabase/tests. Accounts are deleted.
@@ -40,7 +46,7 @@ A2A = REPO / "adapters/a2a"
 BRIDGE = ["node", str(A2A / "yui-a2a.ts")]
 
 ap = argparse.ArgumentParser()
-ap.add_argument("--protocol", choices=["1.0", "0.3", "poll", "phone", "all"], default="all")
+ap.add_argument("--protocol", choices=["1.0", "0.3", "poll", "phone", "adk", "all"], default="all")
 ap.add_argument("--sim", help="simulator udid: also run YuiUITests/A2ATests (phone side)")
 ap.add_argument("--out", default="/tmp/int18-proof")
 args = ap.parse_args()
@@ -246,6 +252,139 @@ def run(protocol: str) -> None:
         print(f"  bridge log: {home / 'bridge.log'}")
 
 
+YL = Path.home() / "dev/yuigui/site/lib/yl/yl.mjs"
+
+def yl_ops(text):
+    """The YL parser's ops for every ```yui fence in a reply."""
+    ops = []
+    for fence in text.split("```yui\n")[1:]:
+        fence = fence.split("```", 1)[0]
+        js = f"import({json.dumps(str(YL))}).then(m => console.log(JSON.stringify(m.parse({json.dumps(fence)}))))"
+        ops += json.loads(subprocess.check_output(["node", "-e", js], text=True))
+    return ops
+
+
+def run_adk():
+    print("\n==== ADK: a Google ADK agent over A2A (INT-9)")
+    home = Path(tempfile.mkdtemp(prefix="yui-int9-adk-"))
+    state = home / "a2a.json"
+    base = BRIDGE + ["--state", str(state)]
+    import socket
+    with socket.socket() as so:
+        so.bind(("127.0.0.1", 0))
+        port = so.getsockname()[1]
+    url = f"http://127.0.0.1:{port}"
+    agent_proc = subprocess.Popen(["uv", "run", "--quiet", "--with", "google-adk", "--with", "litellm",
+                                   "--with", "a2a-sdk[http-server]", "--with", "uvicorn",
+                                   str(A2A / "tests/sdk/adk_agent.py"), str(port)],
+                                  stdout=open(home / "adk.log", "w"), stderr=subprocess.STDOUT)
+    T = str(uuid.uuid4())
+    proc = [None]
+    agent = None
+    tok = None
+
+    def card():
+        try:
+            with urllib.request.urlopen(f"{url}/.well-known/agent-card.json", timeout=2) as r:
+                return json.loads(r.read())
+        except Exception:
+            return None
+
+    def say(text, kind="text", meta=None):
+        row = {"id": str(uuid.uuid4()), "user_id": T, "agent_id": agent, "sender": "user", "body": text, "kind": kind}
+        if meta:
+            row["meta"] = meta
+        s, r = rest("POST", "yui_messages", tok, row)
+        assert s == 201, (s, r)
+        log(f"app sent {text!r}")
+        return row["id"]
+
+    def thread():
+        s, r = rest("GET", "yui_messages?select=id,sender,body,kind,meta,delivered_at,handled_at"
+                           f"&agent_id=eq.{agent}&order=created_at.asc,id.asc", tok)
+        assert s == 200, (s, r)
+        return r
+
+    def replies_to(rid):
+        return [m for m in thread() if m["sender"] == "agent" and rid in ((m.get("meta") or {}).get("turn") or [])]
+
+    def row(rid):
+        return next(m for m in thread() if m["id"] == rid)
+
+    def presence():
+        return rest("GET", f"yui_agent_list?select=presence&id=eq.{agent}", tok)[1][0]["presence"]
+
+    try:
+        c = wait(card, 240, "the ADK agent's card (first run downloads ADK)")
+        log(f"ADK agent {c['name']} at {url}")
+        sql(f"insert into yui_users(id, apple_sub) values ('{T}','test.{T}')")
+        tok = mint(T, ttl=3600)
+        s, r = fn("yui-agents", {"action": "create", "name": "ADK", "pair": True}, tok)
+        agent = r["agent"]["id"]
+
+        print("== pair by the ADK agent's card")
+        p = subprocess.run(base + ["pair", r["pairing"]["code"], "--card", url, "--host-name", "INT-9 test"],
+                           capture_output=True, text=True, timeout=60)
+        st = json.loads(state.read_text()) if state.exists() else {}
+        check("adk: pairs with the app's code and ADK's card (A2A 1.0, served by to_a2a)",
+              p.returncode == 0 and "paired" in p.stdout and "A2A 1.0" in p.stdout, (p.stdout + p.stderr).strip()[:300])
+        check("adk: state file is private, holds the token and the card",
+              oct(state.stat().st_mode & 0o777) == "0o600" and st.get("token", "").startswith("yui_ct_")
+              and any(v.get("card", "").startswith(url) for v in st.get("remotes", {}).values()), json.dumps(st.get("remotes")))
+
+        print("== a turn")
+        out = open(home / "bridge.log", "a")
+        proc[0] = subprocess.Popen(base + ["run", "--interval", "1"], stdout=out, stderr=subprocess.STDOUT)
+        wait(lambda: "online as" in (home / "bridge.log").read_text(), 30, "bridge online")
+        check("adk: agent reads online", wait(lambda: presence() == "online", 20, "online"))
+        hi = say("Hi! In one short sentence, what can you help with?")
+        rep = wait(lambda: replies_to(hi), 300, "ADK's answer")
+        wait(lambda: row(hi)["handled_at"], 20, "hi handled")
+        check("adk: the turn is answered once, meta.turn names it, delivered and handled",
+              len(rep) == 1 and rep[0]["body"].strip() and rep[0]["meta"] == {"turn": [hi]}
+              and row(hi)["delivered_at"] and row(hi)["handled_at"], rep and rep[0]["body"][:200])
+
+        print("== a screen")
+        ask = say("Help me pick a drink for this afternoon: Tea or Coffee. Give me the choices as buttons.")
+        rep = wait(lambda: replies_to(ask), 300, "the screen")
+        body = rep[0]["body"]
+        ops = yl_ops(body)
+        picks = [o for o in ops if o.get("op") == "add" and o.get("preset") in ("choose", "ask")]
+        check("adk: the model drew a Yui screen the YL parser reads (the guide reached it through ADK)",
+              len(rep) == 1 and picks and picks[0]["props"].get("options") and not [o for o in ops if o.get("op") == "error"],
+              body[:240])
+
+        print("== a tap")
+        op = picks[0]
+        choice = next((o for o in op["props"]["options"] if "tea" in o.lower()), op["props"]["options"][0])
+        tap = say(f"[yui] {op['id']} {op['preset']} choice={choice}", "event",
+                  {"id": op["id"], "preset": op["preset"], "value": {"choice": choice}, "echo": choice})
+        rep = wait(lambda: replies_to(tap), 300, "answer to the tap")
+        check(f"adk: the tap ({choice}) goes back as the next turn and is answered once",
+              len(rep) == 1 and rep[0]["body"].strip(), rep and rep[0]["body"][:240])
+
+        print("== clean stop, totals")
+        wait(lambda: all(m["handled_at"] for m in thread() if m["sender"] == "user"), 20, "all handled")
+        proc[0].send_signal(signal.SIGTERM)
+        proc[0].wait(20)
+        check("adk: a clean stop reads offline", presence() == "offline", presence())
+        users = [m for m in thread() if m["sender"] == "user"]
+        named = [i for m in thread() if m["sender"] == "agent" for i in (m.get("meta") or {}).get("turn") or []]
+        check("adk: every person's row handled and answered by exactly one reply",
+              all(m["handled_at"] for m in users) and all(named.count(m["id"]) == 1 for m in users), f"{len(users)} rows")
+        (home / "thread.json").write_text(json.dumps(thread(), indent=1))
+    finally:
+        if proc[0] and proc[0].poll() is None:
+            proc[0].kill()
+        agent_proc.kill()
+        if tok:
+            s, _ = fn("yui-delete", {}, tok)
+            left = sql(f"select count(*)::int n from yui_messages where user_id = '{T}'")[0]["n"] \
+                + sql(f"select count(*)::int n from yui_users where id = '{T}'")[0]["n"]
+            check("adk: throwaway account deleted, nothing left", s == 200 and left == 0, f"{s} {left}")
+        print(f"  bridge log: {home / 'bridge.log'}, ADK log: {home / 'adk.log'}, thread: {home / 'thread.json'}")
+
+
 def phone_side(T, start, stop, thread, replies_to):
     print("== I. the phone (simulator)")
     out = Path(args.out)
@@ -286,7 +425,7 @@ if "phone" in runs and not args.sim:
     sys.exit("--protocol phone needs --sim <udid>")
 for p in runs:
     try:
-        run(p)
+        run_adk() if p == "adk" else run(p)
     except Exception as e:  # one run failing still runs the others
         check(f"{p}: ran to the end", False, repr(e))
 

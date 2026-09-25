@@ -43,13 +43,17 @@ export class ModelError extends Error {
 /** The server does not stream (it said so with a 400). Send the same request plain. */
 export class StreamRefused extends ModelError {}
 
-/** Local servers people run, by the port they ship with. */
-export const SERVERS: Record<string, { url: string; keyEnv?: string }> = {
+/** Local servers people run, by the port they ship with, and the cloud APIs with a preset. */
+export const SERVERS: Record<string, { url: string; keyEnv?: string; context?: number }> = {
   ollama: { url: "http://127.0.0.1:11434/v1" },
   lmstudio: { url: "http://127.0.0.1:1234/v1" },
   vllm: { url: "http://127.0.0.1:8000/v1" },
   llamacpp: { url: "http://127.0.0.1:8080/v1" },
   openrouter: { url: "https://openrouter.ai/api/v1", keyEnv: "OPENROUTER_API_KEY" },
+  // Google's OpenAI-compatible endpoint (INT-9). A free AI Studio key works.
+  // Gemini's window is a million tokens; 32k keeps a long thread without
+  // sending all of it every turn.
+  gemini: { url: "https://generativelanguage.googleapis.com/v1beta/openai", keyEnv: "GEMINI_API_KEY", context: 32768 },
 };
 
 /** "http://host:11434/v1/" or ".../v1/chat/completions" -> "http://host:11434/v1". */
@@ -114,7 +118,8 @@ export class ChatClient {
     try {
       const r = await this.call("GET", "/models", undefined, ctl);
       const data: any = await r.json().catch(() => null);
-      return ((data?.data ?? []) as any[]).map((m) => String(m.id)).filter(Boolean);
+      // Gemini lists "models/gemini-2.5-flash" but is called with "gemini-2.5-flash".
+      return ((data?.data ?? []) as any[]).map((m) => String(m.id ?? "").replace(/^models\//, "")).filter(Boolean);
     } finally {
       clearTimeout(t);
     }
@@ -146,6 +151,7 @@ export class ChatClient {
       const choice = data?.choices?.[0];
       if (!choice) throw new ModelError(r.status, "the answer had no choices");
       const m = choice.message ?? {};
+      if (isThought(m)) return finish("", String(m.content ?? ""), choice.finish_reason ?? null, false, data.usage);
       return finish(String(m.content ?? choice.text ?? ""), String(m.reasoning_content ?? m.reasoning ?? ""),
                     choice.finish_reason ?? null, false, data.usage);
     } finally {
@@ -182,7 +188,8 @@ export class ChatClient {
         if (!choice) continue;
         const d = choice.delta ?? {};
         if (d.reasoning_content || d.reasoning) reasoning += d.reasoning_content ?? d.reasoning;
-        if (typeof d.content === "string" && d.content) {
+        if (isThought(d) && typeof d.content === "string") reasoning += d.content; // Gemini marks a thought piece
+        else if (typeof d.content === "string" && d.content) {
           text += d.content;
           onDelta?.(d.content);
         }
@@ -198,11 +205,18 @@ export class ChatClient {
   }
 }
 
-/** Takes a leading <think>...</think> (Qwen 3, DeepSeek R1 and friends) out of the answer. */
+/** Takes a leading <think>...</think> (Qwen 3, DeepSeek R1 and friends), or
+ *  <thought> / <thinking> (Gemini with include_thoughts, some gateways), out of
+ *  the answer. Only the same tag closes it. */
 export function splitThinking(text: string): { text: string; thinking: string } {
-  const m = text.match(/^\s*<think>([\s\S]*?)(?:<\/think>|$)/);
+  const m = text.match(/^\s*<(think|thought|thinking)>([\s\S]*?)(?:<\/\1>|$)/);
   if (!m) return { text, thinking: "" };
-  return { text: text.slice(m[0].length), thinking: m[1].trim() };
+  return { text: text.slice(m[0].length), thinking: m[2].trim() };
+}
+
+/** Gemini tags a thought summary as extra_content.google.thought on the delta or message. */
+function isThought(d: any): boolean {
+  return d?.extra_content?.google?.thought === true;
 }
 
 function finish(raw: string, reasoning: string, fin: string | null, streamed: boolean, usage?: any): Completion {
@@ -214,10 +228,12 @@ function reason(e: any): string {
   return String(e?.cause?.code ?? e?.cause?.message ?? e?.message ?? e);
 }
 
-/** {"error": {"message": ...}} (OpenAI, Ollama, vLLM), {"error": "..."} (llama.cpp), {"detail": ...}, or the text. */
+/** {"error": {"message": ...}} (OpenAI, Ollama, vLLM), {"error": "..."} (llama.cpp), {"detail": ...},
+ *  [{"error": {...}}] (Gemini wraps it in a list), or the text. */
 export function errorMessage(text: string): string {
   try {
-    const d = JSON.parse(text);
+    let d = JSON.parse(text);
+    if (Array.isArray(d) && d.length && typeof d[0] === "object") d = d[0];
     const e = d?.error ?? d?.detail ?? d?.message;
     if (typeof e === "string") return e;
     if (e?.message) return String(e.message);
@@ -227,7 +243,8 @@ export function errorMessage(text: string): string {
 }
 
 function explain(status: number, msg: string): string {
-  if (status === 401 || status === 403) return `the server turned the key down (${status}: ${msg})`;
+  // Gemini answers a bad key with 400 INVALID_ARGUMENT "API key not valid".
+  if (status === 401 || status === 403 || /api key/i.test(msg)) return `the server turned the key down (${status}: ${msg})`;
   if (status === 404) return `not found (${msg}). Check the model name and the base URL`;
   return `${status}: ${msg}`;
 }

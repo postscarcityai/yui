@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // Yui model bridge (INT-12): any OpenAI-compatible model in Yui. Ollama,
-// LM Studio, vLLM, llama.cpp, or any server with /v1/chat/completions.
+// LM Studio, vLLM, llama.cpp, Gemini (--server gemini, INT-9), or any server
+// with /v1/chat/completions.
 //
 //   node yui-openai.ts models [--server ollama]                  # what the server has
 //   node yui-openai.ts try "hi" --model qwen2.5:7b              # one answer, guide included, nothing paired
@@ -32,7 +33,7 @@ const USAGE = `usage: yui-openai.ts [--state FILE] <command>
   status                                       the connector, its agents and their models
   guide                                        print the channel guide (the system message)
 
-SERVER: --server ollama|lmstudio|vllm|llamacpp|openrouter, or --url http://host:port/v1 (default ollama)
+SERVER: --server ollama|lmstudio|vllm|llamacpp|openrouter|gemini, or --url http://host:port/v1 (default ollama)
         --key-env VAR   read the key from $VAR when it runs (nothing stored)
         --key-stdin     read the key from stdin once and keep it in the state file (mode 600)
 MODEL OPTIONS: --system "text"  --context 4096  --max-tokens N  --temperature T  --no-stream`;
@@ -81,7 +82,7 @@ async function main(argv: string[]): Promise<number> {
     const system = o["system-file"] ? readFileSync(o["system-file"], "utf8") : o.system;
     if (system?.trim()) r.system = system.trim();
     const context = num(o.context, "--context"), maxTokens = num(o["max-tokens"], "--max-tokens"), temperature = num(o.temperature, "--temperature");
-    if (context) r.context = context;
+    if (context || preset?.context) r.context = context || preset.context;
     if (maxTokens) r.maxTokens = maxTokens;
     if (temperature !== undefined) r.temperature = temperature;
     if (o["no-stream"]) r.stream = false;

@@ -449,6 +449,10 @@ export class Bridge {
         + (done.finish && done.finish !== "stop" ? `, finish ${done.finish}` : "")
         + (done.usage?.prompt_tokens ? `, ${done.usage.prompt_tokens} prompt tokens` : ""));
       if (!text && done.finish === "length") text = `${agent.name} ran out of room before it could answer. Try a shorter message, or raise its max tokens.`;
+      // Gemini ends a blocked answer with no text and content_filter (or SAFETY / RECITATION).
+      if (!text && /content_filter|safety|recitation|prohibited|blocklist/i.test(done.finish ?? "")) {
+        text = `${agent.name}'s model stopped before answering (its ${done.finish} filter). Try saying it another way.`;
+      }
     } catch (e) {
       if (e instanceof ModelUnavailable) {
         inflight.tries += 1;
