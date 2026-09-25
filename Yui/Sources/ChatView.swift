@@ -965,6 +965,35 @@ struct ChatView: View {
         **Connected Platforms:** yui
         """
 
+    /// Short lines, many of them: a bubble taller than any phone (YUI-78).
+    static let holdChecklist = """
+        **Before build 95**
+        - Captions
+        - Voice
+        - Pauses
+        - Takes
+        - Acronyms
+        - Stitch
+        - Cut
+        - Cleanup
+        - Menu
+        - Replies
+        - Copy
+        - Select
+        - Share
+        - Dark
+        - Small
+        - Type
+        - Top
+        - Bottom
+        - Cards
+        - Remove
+        - Outside
+        - Haptics
+        - Shots
+        - Progress
+        """
+
     /// One of each element a host sends: bold, italic, code, a block, lists, a link.
     static let markdownSample = """
         ## Build 92
@@ -1003,6 +1032,18 @@ struct ChatView: View {
                     ChatMessage(text: statusAnswer, fromUser: false),
                     ChatMessage(text: "Show me **everything** you can format", fromUser: true),
                     ChatMessage(text: markdownSample, fromUser: false)]
+        }
+        // -yuiDemoHold: things to hold (YUI-78): a short answer at the top, a checklist
+        // taller than the screen (under the fold count, so it stays whole), a card,
+        // and a short answer at the bottom.
+        if ProcessInfo.processInfo.arguments.contains("-yuiDemoHold") {
+            return [ChatMessage(text: "Morning! Ready when you are.", fromUser: false),
+                    ChatMessage(text: "What's left before the build?", fromUser: true),
+                    ChatMessage(text: holdChecklist, fromUser: false),
+                    ChatMessage(text: "Show me everything you can draw", fromUser: true),
+                    ChatMessage(text: "", fromUser: false, yl: YLScreen(YLSamples.text("tour") ?? "")),
+                    ChatMessage(text: "Anything else?", fromUser: true),
+                    ChatMessage(text: "Last one: the hold menu fits now.", fromUser: false)]
         }
         // -yuiDemoLong: a short answer, then the long report that folds into pages (YUI-79).
         if ProcessInfo.processInfo.arguments.contains("-yuiDemoLong") {

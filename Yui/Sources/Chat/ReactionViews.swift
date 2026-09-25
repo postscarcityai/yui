@@ -147,8 +147,11 @@ struct ReactionBadge: View {
 }
 
 /// Held bubble: the thread dims, the bubble lifts, the six reactions float
-/// above it and Reply, Copy and Select text sit below (a tapback, the Telegram
-/// and iMessage way). The person's own bubbles get the menu without the bar.
+/// above it and Reply, Copy, Select text and Share sit below (a tapback, the
+/// Telegram and iMessage way). The person's own bubbles get the menu without the bar.
+/// The bar is always above and the menu always below, both on screen: a message
+/// too tall for the room between them lifts as a preview of its top with a soft
+/// fade at the cut (TestFlight feedback AFduDX-JwEKyTFAt4pnYIPY, YUI-78).
 struct ReactionOverlay<Lifted: View>: View {
     /// What Copy copies: a bubble's words, a card's lines.
     let text: String
@@ -170,30 +173,55 @@ struct ReactionOverlay<Lifted: View>: View {
     @Environment(\.colorScheme) private var scheme
     @State private var up = false
     @State private var chosen: Reaction?
+    /// The menu as drawn (rows grow with Dynamic Type); an estimate until then.
+    @State private var drawnMenu: CGFloat?
 
     private let item = CGSize(width: 48, height: 58)
     private var barSize: CGSize {
         reacts ? CGSize(width: item.width * CGFloat(Reaction.all.count) + 12, height: item.height + 12) : .zero
     }
-    private let menuSize = CGSize(width: 210, height: 48)
+    private let menuWidth: CGFloat = 220
+    private let rowHeight: CGFloat = 48
+    /// Between the bar, the preview and the menu, and from the window's edges.
+    private let gap: CGFloat = 10
+    private let edge: CGFloat = 8
+    /// A preview is never cut shorter than this, and fades over its last `fade` points.
+    private let minPreview: CGFloat = 72
+    private let fade: CGFloat = 56
+
+    /// Where each piece goes: bar on top, then the preview, then the menu, in a
+    /// column that fits the window. `internal` for the layout tests.
+    struct Layout: Equatable {
+        var bar: CGRect
+        var preview: CGRect
+        var menu: CGRect
+        /// The preview shows only the top of the message.
+        var cut: Bool
+    }
+
+    static func layout(rect: CGRect, size: CGSize, bar: CGSize, menu: CGSize, reacts: Bool,
+                       gap: CGFloat = 10, edge: CGFloat = 8, minPreview: CGFloat = 72) -> Layout {
+        let top = edge + (reacts ? bar.height + gap : 0)
+        let bottom = size.height - edge - menu.height - gap
+        let height = min(rect.height, max(minPreview, bottom - top))
+        // Stay where it was held when that fits; else slide just enough (a bubble at
+        // the bottom lifts, one under the header comes down).
+        let y = max(top, min(rect.minY, bottom - height))
+        let preview = CGRect(x: rect.minX, y: y, width: rect.width, height: height)
+        let barX = min(max(rect.minX - 6, edge), size.width - bar.width - edge)
+        let barRect = CGRect(x: barX, y: y - gap - bar.height, width: bar.width, height: bar.height)
+        // Under the bubble's leading edge; the person's own (on the right) under its trailing edge.
+        let menuX = reacts || rect.width < menu.width
+            ? min(max(rect.minX, edge), size.width - menu.width - edge)
+            : min(max(rect.maxX - menu.width, edge), size.width - menu.width - edge)
+        let menuRect = CGRect(x: menuX, y: preview.maxY + gap, width: menu.width, height: menu.height)
+        return Layout(bar: barRect, preview: preview, menu: menuRect, cut: height < rect.height - 0.5)
+    }
 
     var body: some View {
         let c = theme.swatch(scheme)
-        // Above the bubble when there is room, else under it (a message at the very top).
-        let above = rect.minY - barSize.height - 12 > 4
-        // A bubble at the bottom lifts until the menu fits under it (the iMessage way),
-        // never so far that the bar leaves the screen.
-        let lift = above ? max(0, min(rect.maxY + 12 + menuHeight + 8 - size.height,
-                                      rect.minY - barSize.height - 16)) : 0
-        let rect = rect.offsetBy(dx: 0, dy: -lift)
-        let barY = above ? rect.minY - 12 - barSize.height / 2 : rect.maxY + 12 + barSize.height / 2
-        let barX = min(max(rect.minX - 6 + barSize.width / 2, barSize.width / 2 + 8), size.width - barSize.width / 2 - 8)
-        let menuTop = above ? rect.maxY + 12 : barY + barSize.height / 2 + 10
-        let menuY = min(menuTop + menuHeight / 2, size.height - menuHeight / 2 - 8)
-        // Under the bubble's leading edge; the person's own (on the right) under its trailing edge.
-        let menuX = reacts || rect.width < menuSize.width
-            ? min(max(rect.minX + menuSize.width / 2, menuSize.width / 2 + 8), size.width - menuSize.width / 2 - 8)
-            : min(rect.maxX - menuSize.width / 2, size.width - menuSize.width / 2 - 8)
+        let l = Self.layout(rect: rect, size: size, bar: barSize, menu: CGSize(width: menuWidth, height: menuHeight),
+                            reacts: reacts, gap: gap, edge: edge, minPreview: minPreview)
         ZStack(alignment: .topLeading) {
             Rectangle()
                 .fill(.ultraThinMaterial)
@@ -205,29 +233,21 @@ struct ReactionOverlay<Lifted: View>: View {
                 .accessibilityAddTraits(.isButton)
                 .accessibilityIdentifier("reaction-dismiss")
 
-            lifted()
-                .frame(width: rect.width, height: rect.height)
-                .overlay(alignment: .bottomTrailing) {
-                    if let shown = chosen ?? current {
-                        ReactionBadge(reaction: shown).offset(x: 10, y: 16).transition(.scale(scale: 0.2))
-                    }
-                }
-                .scaleEffect(up ? 1.04 : 1, anchor: above ? .bottomLeading : .topLeading)
-                .shadow(color: .black.opacity(up ? 0.18 : 0), radius: 14, y: 6)
-                .position(x: rect.midX, y: rect.midY)
-                .accessibilityHidden(true)
+            preview(l)
+                .position(x: l.preview.midX, y: l.preview.midY)
 
             if reacts {
                 bar(c)
-                    .scaleEffect(up ? 1 : 0.4, anchor: above ? .bottomLeading : .topLeading)
+                    .scaleEffect(up ? 1 : 0.4, anchor: .bottomLeading)
                     .opacity(up ? 1 : 0)
-                    .position(x: barX, y: barY)
+                    .position(x: l.bar.midX, y: l.bar.midY)
             }
 
             menu(c)
-                .scaleEffect(up ? 1 : 0.6, anchor: above ? .topLeading : .topLeading)
+                .scaleEffect(up ? 1 : 0.6, anchor: .topLeading)
                 .opacity(up ? 1 : 0)
-                .position(x: menuX, y: menuY)
+                .frame(width: menuWidth)
+                .position(x: l.menu.midX, y: l.menu.minY + menuHeight / 2)
         }
         .accessibilityElement(children: .contain)
         .accessibilityAddTraits(.isModal)
@@ -236,7 +256,41 @@ struct ReactionOverlay<Lifted: View>: View {
         .sensoryFeedback(.selection, trigger: chosen)
     }
 
-    private var menuHeight: CGFloat { menuSize.height * (current == nil ? 3 : 4) }
+    /// The held message in place, or the top of it when it is taller than the room.
+    /// Tapping it closes, like tapping the thread.
+    private func preview(_ l: Layout) -> some View {
+        lifted()
+            .frame(width: rect.width, height: rect.height)
+            .frame(width: l.preview.width, height: l.preview.height, alignment: .top)
+            .clipped()
+            .mask {
+                if l.cut {
+                    LinearGradient(stops: [.init(color: .black, location: 0),
+                                           .init(color: .black, location: 1 - fade / l.preview.height),
+                                           .init(color: .clear, location: 1)],
+                                   startPoint: .top, endPoint: .bottom)
+                } else {
+                    Rectangle()
+                }
+            }
+            .overlay(alignment: .bottomTrailing) {
+                if let shown = chosen ?? current {
+                    ReactionBadge(reaction: shown).offset(x: 10, y: l.cut ? 0 : 16).transition(.scale(scale: 0.2))
+                }
+            }
+            // A small lift, never more than a few points, so it can't reach the bar or the menu.
+            .scaleEffect(up ? 1 + min(0.03, 6 / max(l.preview.height, 1)) : 1)
+            .shadow(color: .black.opacity(up && !l.cut ? 0.18 : 0), radius: 14, y: 6)
+            .contentShape(Rectangle())
+            .onTapGesture(perform: dismiss)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(l.cut ? "Held message, shortened" : "Held message")
+            .accessibilityIdentifier("reaction-preview")
+    }
+
+    /// Rows: Reply, Copy, Select text, Share, and Remove when there is a reaction.
+    private var rows: Int { current == nil ? 4 : 5 }
+    private var menuHeight: CGFloat { drawnMenu ?? rowHeight * CGFloat(rows) }
 
     private func bar(_ c: Swatch) -> some View {
         HStack(spacing: 0) {
@@ -258,6 +312,7 @@ struct ReactionOverlay<Lifted: View>: View {
                     }
                     .frame(width: item.width, height: item.height)
                     .background(on ? c.accent.opacity(0.22) : .clear, in: RoundedRectangle(cornerRadius: 16))
+                    .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .scaleEffect(up ? 1 : 0.3)
@@ -271,6 +326,8 @@ struct ReactionOverlay<Lifted: View>: View {
         .frame(width: barSize.width, height: barSize.height)
         .glassEffect(.regular, in: .capsule)
         .overlay(Capsule().stroke(c.outline.opacity(0.6), lineWidth: 1))
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("reaction-bar")
     }
 
     private func menu(_ c: Swatch) -> some View {
@@ -286,30 +343,42 @@ struct ReactionOverlay<Lifted: View>: View {
             Divider().overlay(c.outline)
             menuRow("Select text", icon: "text.cursor", c, action: select)
                 .accessibilityIdentifier("react-select")
+            Divider().overlay(c.outline)
+            ShareLink(item: text) { rowLabel("Share", icon: "square.and.arrow.up", c) }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("react-share")
             if let current {
                 Divider().overlay(c.outline)
                 menuRow("Remove \(current.emoji)", icon: "xmark.circle", c) { pick(nil) }
                     .accessibilityIdentifier("react-remove")
             }
         }
-        .frame(width: menuSize.width)
+        .frame(width: menuWidth)
+        .fixedSize(horizontal: false, vertical: true)
         .glassEffect(.regular, in: .rect(cornerRadius: 18))
         .overlay(RoundedRectangle(cornerRadius: 18).stroke(c.outline.opacity(0.6), lineWidth: 1))
+        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { drawnMenu = $0 }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("reaction-menu")
     }
 
     private func menuRow(_ title: String, icon: String, _ c: Swatch, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            HStack {
-                Text(title).font(theme.font(theme.type.body, .semibold))
-                Spacer()
-                Image(systemName: icon)
-            }
-            .foregroundStyle(c.ink)
-            .padding(.horizontal, theme.spacing.l)
-            .frame(height: menuSize.height)
-            .contentShape(Rectangle())
+        Button(action: action) { rowLabel(title, icon: icon, c) }
+            .buttonStyle(.plain)
+    }
+
+    private func rowLabel(_ title: String, icon: String, _ c: Swatch) -> some View {
+        HStack {
+            Text(title).font(theme.font(theme.type.body, .semibold))
+            Spacer()
+            // The theme's type is a fixed size; the icon keeps pace with it.
+            Image(systemName: icon).font(.system(size: theme.type.body, weight: .medium))
         }
-        .buttonStyle(.plain)
+        .foregroundStyle(c.ink)
+        .padding(.horizontal, theme.spacing.l)
+        .padding(.vertical, 6)
+        .frame(minHeight: rowHeight)
+        .contentShape(Rectangle())
     }
 }
 
