@@ -69,6 +69,10 @@ Transport: the gateway dials OUT to Supabase (PROOF). No inbound ports.
      meta.mentions; this agent's next turn starts with notes on what other
      agents were asked and answered in its thread.
 
+     Groups (YUI-93, groups.py): in a group thread the database routes the
+     same meta.mentions by the group's hop budget, and a turn that answers a
+     group row starts with notes on what the other members said there.
+
  12. Text bombs (YUI-79, textbomb.py): a message whose chat text (outside
      ```yui fences) runs over 60 words is noted by profile, source and word
      count, never its text, in <profile home>/yui/textbombs.jsonl, with a
@@ -114,7 +118,7 @@ from gateway.config import Platform, PlatformConfig
 from gateway.platforms.base import (BasePlatformAdapter, MessageEvent, MessageType, ProcessingOutcome,
                                     SendResult)
 
-from . import board, compat, connector, flywheel, media, mentions, needs, outbox, textbomb
+from . import board, compat, connector, flywheel, groups, media, mentions, needs, outbox, textbomb
 from . import commands as slash
 
 logger = logging.getLogger(__name__)
@@ -636,6 +640,8 @@ class YuiAdapter(BasePlatformAdapter):
         notes = self._notes.pop(row["agent_id"], [])
         if not texts[0].lstrip().startswith("/"):
             notes += await self._mention_notes(row["agent_id"], row.get("created_at"))
+            for tid in groups.threads_in(rows):  # what the other members said (YUI-93)
+                notes += await self._group_notes(row["agent_id"], tid, row.get("created_at"))
         if notes and not texts[0].lstrip().startswith("/"):
             texts = notes + texts
         event = MessageEvent(
@@ -679,6 +685,27 @@ class YuiAdapter(BasePlatformAdapter):
             self._cursor[key] = rows[-1]["created_at"]
             await asyncio.to_thread(self._save_cursor)
         return mentions.notes(rows)
+
+    async def _group_notes(self, aid: str, tid: str, upto: Optional[str]) -> List[str]:
+        """What else happened in group `tid` since this agent's last turn there
+        (YUI-93). Only yui_group_notes() can say: a host never reads the other
+        members' rows. Best effort: none on a failure."""
+        key = f"group:{aid}:{tid}"
+        floor = self._cursor.get(key) or self._cursor.get(aid) or new_agent_floor()
+        try:
+            r = await self._client.post(f"{REST}/rpc/yui_group_notes", headers=self._rest_headers(),
+                                        json={"agent": aid, "thread": tid, "since": floor, "upto": upto})
+            if r.status_code >= 300:
+                logger.warning("[yui] group notes: %s %s", r.status_code, r.text[:120])
+                return []
+            rows = r.json()
+        except Exception as e:
+            logger.warning("[yui] group notes: %s", e)
+            return []
+        if rows:
+            self._cursor[key] = rows[-1]["created_at"]
+            await asyncio.to_thread(self._save_cursor)
+        return groups.notes(rows)
 
     async def _realtime_loop(self) -> None:
         """Phoenix channel on postgres_changes; any INSERT wakes the fetcher."""
