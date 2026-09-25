@@ -46,6 +46,9 @@ struct ChatView: View {
         systemReduceMotion || ProcessInfo.processInfo.arguments.contains("-yuiReduceMotion")
     }
 
+    /// The chat is on show (not a screen, and not the first run's welcome).
+    private var onChat: Bool { firstRun || (page ?? 1) == 1 }
+
     var body: some View {
         let c = theme.swatch(scheme)
         ZStack {
@@ -74,8 +77,13 @@ struct ChatView: View {
                             PageTabs(page: page ?? 1, screens: screens) { store.goToPage($0) }
                                 .transition(.scale(scale: 0.8).combined(with: .opacity))
                         }
-                        inputBar(c)
+                        // Screens are for reading: the composer stays with the chat.
+                        if onChat {
+                            inputBar(c)
+                                .transition(.move(edge: .bottom).combined(with: .opacity))
+                        }
                     }
+                    .animation(theme.spring, value: onChat)
                 }
             }
             // Held agent bubble: the tapback bar over a dimmed thread (YUI-49).
@@ -126,6 +134,9 @@ struct ChatView: View {
                 }
             }
             .toolbarBackground(c.background, for: .navigationBar)
+            // A screen is full screen: the agent switcher and settings stay with the chat.
+            .toolbar(onChat ? .visible : .hidden, for: .navigationBar)
+            .animation(theme.spring, value: onChat)
             .sheet(isPresented: $showSettings) {
                 SettingsView()
                     .presentationDetents([.medium, .large], selection: $settingsDetent)
@@ -173,7 +184,11 @@ struct ChatView: View {
         .onChange(of: theme) { store.spring = theme.spring }
         // Pages (YUI-31): a swipe tells the store; the store (a tab, a pill, a
         // reply sent to a page) moves the pager with a spring, or a fade under Reduce Motion.
-        .onChange(of: page) { if let page { store.showingPage(page) } }
+        .onChange(of: page) {
+            if let page { store.showingPage(page) }
+            // The composer goes with the chat, so does the keyboard.
+            if !onChat { focused = false }
+        }
         // Streamed lines can ask for 2 and then 3 within a quarter second; a new
         // scroll animation cuts the last one short, so take only the newest ask.
         .task(id: store.pageTurns) {

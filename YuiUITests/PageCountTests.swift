@@ -62,6 +62,26 @@ final class PageCountTests: XCTestCase {
         shot(app, "clear-2-left")
     }
 
+    /// A screen is full screen (TestFlight feedback on build 57): no nav bar and no
+    /// composer, just the dots at the bottom; both come back with the chat.
+    func testScreensAreFullScreen() throws {
+        let app = launch("full", ["say Plan on screen 2.", ">2 card \"Mazewood MVP\" body=\"One map, 10 waves\"",
+                                  ">2 list Build \"Grid map\" Pathfinding +check"])
+        let page = app.descendants(matching: .any)["page-2"]
+        waitHittable(page.staticTexts["Mazewood MVP"], "screen 2 never showed")
+        waitSelected(app.buttons["page-tab-2"], "the reply did not bring screen 2 forward")
+        waitGone(app.descendants(matching: .any)["composer"].firstMatch, "the composer is on a screen")
+        waitGone(app.buttons["Settings"], "the nav bar is on a screen")
+        XCTAssertFalse(app.buttons["Your agents"].isHittable, "the agents button is on a screen")
+        XCTAssertTrue(app.buttons["page-tab-1"].isHittable, "no way back to the chat")
+        shot(app, "full-screen-2")
+        app.buttons["page-tab-1"].tap()
+        waitSelected(app.buttons["page-tab-1"], "the chat glyph does not go to the chat")
+        waitHittable(app.descendants(matching: .any)["composer"].firstMatch, "the composer did not come back with the chat")
+        waitHittable(app.buttons["Settings"], "the nav bar did not come back with the chat")
+        shot(app, "full-back-to-chat")
+    }
+
     // MARK: helpers
 
     private var tag = ""
@@ -96,6 +116,11 @@ final class PageCountTests: XCTestCase {
 
     private func waitSelected(_ e: XCUIElement, _ message: String) {
         let p = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", "showing"), object: e)
+        XCTAssertEqual(XCTWaiter.wait(for: [p], timeout: 6), .completed, message)
+    }
+
+    private func waitGone(_ e: XCUIElement, _ message: String) {
+        let p = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false OR isHittable == false"), object: e)
         XCTAssertEqual(XCTWaiter.wait(for: [p], timeout: 6), .completed, message)
     }
 

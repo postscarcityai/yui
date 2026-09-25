@@ -55,9 +55,10 @@ struct PagedThread<Chat: View>: View {
     }
 }
 
-/// Above the composer when there is more than the chat (ChatView puts it in the
-/// composer's inset, which every page respects): a small chat glyph, then one
-/// dot per screen. The one on show is filled and wider.
+/// At the bottom when there is more than the chat (ChatView puts it in the
+/// composer's inset, which every page respects; on a screen, where there is no
+/// composer, it is all that is left there): a small chat glyph, then one dot per
+/// screen. The one on show is filled and wider.
 struct PageTabs: View {
     let page: Int
     let screens: [Int]
@@ -159,9 +160,8 @@ struct ScreenPage: View {
                     .padding(.vertical, theme.spacing.m)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                // The nav bar with its round glass buttons is taller than the safe area it
-                // reports, so a page's first card would start under it (the chat is
-                // anchored to the bottom and never shows this).
+                // A screen has no nav bar (ChatView hides it off the chat): a little
+                // room under the status bar for the first card.
                 .contentMargins(.top, theme.spacing.xl, for: .scrollContent)
             }
         }
