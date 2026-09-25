@@ -112,6 +112,55 @@ try:
     fn("yui-connect", {"action": "heartbeat"}, b_ct)
     s, r = rest("GET", f"yui_agent_list?select=status&id=eq.{b_agent}", tokB)
     check("a heartbeat brings them back online", r == [{"status": "connected"}], f"{r}")
+    s, r = rest("GET", f"yui_agent_list?select=presence&id=eq.{b_agent}", tokB)
+    check("a host that never reports serving keeps per-computer presence", r == [{"presence": "online"}], f"{r}")
+
+    print("\n== Presence per agent (YUI-64): two agents on one computer, one gateway up")
+    def presence(*ids):
+        s, r = rest("GET", f"yui_agent_list?select=id,presence,status&id=in.({','.join(ids)})", tokB)
+        by = {x["id"]: x for x in r} if s == 200 else {}
+        return [by.get(i, {}).get("presence") for i in ids], [by.get(i, {}).get("status") for i in ids]
+    s, r = fn("yui-agents", {"action": "create", "name": "Alpha", "pair": True}, tokB)
+    alpha = r["agent"]["id"]
+    s, r = fn("yui-connect", {"action": "pair", "code": r["pairing"]["code"], "remote_ref": "alpha",
+                              "host_name": "Test Mac", "serving": []})
+    c_ct, c_conn = r["connector_token"], r["connector"]["id"]
+    check("paired by a host that reports serving: not listening yet", s == 200 and r["agent"]["presence"] == "not_listening", f"{s} {code(r)} {r.get('agent', {}).get('presence')}")
+    s, r = fn("yui-connect", {"action": "add", "remote_ref": "bravo", "serving": []}, c_ct)
+    bravo = r["agent"]["id"]
+    check("an added profile is not listening yet either", s == 200 and r["agent"]["presence"] == "not_listening", f"{s} {code(r)}")
+    s, r = fn("yui-connect", {"action": "heartbeat", "serving": ["alpha"]}, c_ct)
+    p, st = presence(alpha, bravo)
+    check("one gateway serving alpha: Alpha online, Bravo not listening", s == 200 and p == ["online", "not_listening"], f"{s} {p}")
+    check("status stays per computer for older apps", st == ["connected", "connected"], f"{st}")
+    s, r = rest("GET", f"yui_agent_list?select=presence&id=eq.{bravo}", tokA)
+    check("another person sees nothing of it", s == 200 and r == [], f"{s} {r}")
+    s, r = fn("yui-connect", {"action": "session", "serving": ["bravo", "not a ref!"]}, c_ct)
+    p, _ = presence(alpha, bravo)
+    check("Bravo's gateway starts (session): both online, junk refs ignored", s == 200 and p == ["online", "online"], f"{s} {p}")
+    s, r = fn("yui-connect", {"action": "bye", "serving": ["bravo"]}, c_ct)
+    p, _ = presence(alpha, bravo)
+    check("Bravo's gateway says bye: Bravo offline, Alpha stays online", s == 200 and r["stopped_at"] is None and p == ["online", "offline"], f"{s} {r} {p}")
+    fn("yui-connect", {"action": "heartbeat", "serving": ["bravo"]}, c_ct)
+    sql(f"update yui_agents set served_at = now() - interval '5 minutes' where id = '{alpha}'")
+    p, _ = presence(alpha, bravo)
+    check("Alpha's gateway went quiet while the computer is up: Alpha offline", p == ["offline", "online"], f"{p}")
+    s, r = fn("yui-connect", {"action": "bye", "serving": ["bravo"]}, c_ct)
+    p, st = presence(alpha, bravo)
+    check("the last gateway says bye: the whole computer reads offline", s == 200 and r["stopped_at"] and p == ["offline", "offline"] and st == ["offline", "offline"], f"{s} {r} {p} {st}")
+    fn("yui-connect", {"action": "heartbeat", "serving": ["alpha", "bravo"]}, c_ct)
+    sql(f"update yui_connectors set last_seen_at = now() - interval '5 minutes' where id = '{c_conn}'")
+    p, _ = presence(alpha, bravo)
+    check("the computer sleeps: both asleep", p == ["asleep", "asleep"], f"{p}")
+    fn("yui-connect", {"action": "heartbeat", "serving": ["alpha", "bravo"]}, c_ct)
+    sql(f"update yui_agents set remote_ref = 'bravo2' where id = '{bravo}'")
+    p, _ = presence(alpha, bravo)
+    check("bound to another profile: not listening until that gateway reports", p == ["online", "not_listening"], f"{p}")
+    got = sql(f"select public.yui_agent_presence('{bravo}') p")[0]["p"]
+    check("mentions read the same rule", got == "not_listening", f"{got}")
+    fn("yui-agents", {"action": "delete", "id": alpha}, tokB)
+    fn("yui-agents", {"action": "delete", "id": bravo}, tokB)
+    fn("yui-agents", {"action": "connector_revoke", "id": c_conn}, tokB)
 
     print("\n== Slash commands (YUI-61)")
     s, r = rest("GET", f"yui_agent_list?select=commands&id=eq.{b_agent}", tokB)

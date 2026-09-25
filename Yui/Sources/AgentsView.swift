@@ -183,7 +183,7 @@ struct StatusLine: View {
         case .online: .green
         case .asleep: c.lavender
         case .offline: c.inkSoft.opacity(0.5)
-        case .pending: c.butter
+        case .pending, .notListening: c.butter
         }
     }
 
@@ -195,7 +195,60 @@ struct StatusLine: View {
         case .pending: return "Waiting to connect"
         case .asleep: return "Asleep" + seen
         case .offline: return "Offline" + seen
+        case .notListening: return "Not listening yet"
         }
+    }
+}
+
+/// Paired, but nothing on its computer reads its thread yet (YUI-64): the one
+/// step left, with the exact command for its profile.
+struct RestartStep: View {
+    let agent: YuiAgent
+    @Environment(\.yuiTheme) private var theme
+    @Environment(\.colorScheme) private var scheme
+
+    var body: some View {
+        let c = theme.swatch(scheme)
+        VStack(alignment: .leading, spacing: theme.spacing.m) {
+            Label("One step left", systemImage: "arrow.clockwise.circle.fill")
+                .font(theme.font(theme.type.body, .bold)).foregroundStyle(c.ink)
+            Text("\(agent.name) is paired\(agent.connectorName.map { " with \($0)" } ?? ""), but its gateway isn't listening yet. On that computer, run:")
+                .font(theme.font(theme.type.caption)).foregroundStyle(c.inkSoft)
+                .fixedSize(horizontal: false, vertical: true)
+            CommandBox(command: agent.restartCommand)
+            Text("Anything you send waits, and \(agent.name) answers it once the gateway is up.")
+                .font(theme.font(theme.type.caption)).foregroundStyle(c.inkSoft)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(theme.spacing.l)
+        .background(c.butter.opacity(0.35), in: .rect(cornerRadius: theme.radius.card))
+        .accessibilityIdentifier("restart-step")
+    }
+}
+
+/// One command to run on the computer, with a copy button.
+struct CommandBox: View {
+    let command: String
+    @Environment(\.yuiTheme) private var theme
+    @Environment(\.colorScheme) private var scheme
+
+    var body: some View {
+        let c = theme.swatch(scheme)
+        HStack(alignment: .top) {
+            Text(command)
+                .font(.system(size: 13, weight: .medium, design: .monospaced))
+                .foregroundStyle(c.ink)
+                .textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityIdentifier("restart-command")
+            Spacer(minLength: 0)
+            Button("Copy command", systemImage: "doc.on.doc") { UIPasteboard.general.string = command }
+                .labelStyle(.iconOnly).tint(c.inkSoft)
+        }
+        .padding(theme.spacing.m)
+        .background(c.surface, in: .rect(cornerRadius: theme.radius.bubble))
+        .overlay(RoundedRectangle(cornerRadius: theme.radius.bubble).stroke(c.outline, lineWidth: 1))
     }
 }
 
@@ -399,7 +452,10 @@ private struct PairingStep: View {
     @State private var since = Date.now
 
     private var agent: YuiAgent? { store.agents.first { $0.id == agentID } }
-    private var connected: Bool { agent.map { $0.status != .pending } ?? false }
+    /// The host claimed the code.
+    private var paired: Bool { agent.map { $0.status != .pending } ?? false }
+    /// And a gateway reads its thread (YUI-64): until then, one step left.
+    private var connected: Bool { paired && agent?.liveness != .notListening }
     /// Waiting this long means a step was missed: show the fix.
     static let stuckAfter: TimeInterval = ProcessInfo.processInfo.arguments.contains("-yuiPairStuck") ? 0 : 150
 
@@ -434,6 +490,17 @@ private struct PairingStep: View {
                 }
                 .frame(maxWidth: .infinity)
                 .transition(.scale.combined(with: .opacity))
+            } else if paired, let agent {
+                VStack(alignment: .leading, spacing: theme.spacing.l) {
+                    RestartStep(agent: agent)
+                    HStack(spacing: theme.spacing.s) {
+                        ProgressView()
+                        Text("Waiting for its gateway…").font(theme.font(theme.type.caption, .semibold)).foregroundStyle(c.inkSoft)
+                    }
+                    .accessibilityElement(children: .combine)
+                    GuideLink()
+                }
+                .transition(.opacity)
             } else {
                 TimelineView(.periodic(from: .now, by: 1)) { ctx in
                     let left = max(0, Int(code.expiresAt.timeIntervalSince(ctx.date)))
@@ -465,6 +532,7 @@ private struct PairingStep: View {
         }
         .padding(theme.spacing.xl)
         .animation(theme.spring, value: connected)
+        .animation(theme.spring, value: paired)
         .onChange(of: code) { since = .now }
         .task {
             while !Task.isCancelled && !connected {
@@ -576,6 +644,9 @@ private struct EditAgentSheet: View {
         return a
     }
 
+    /// Its presence as of now: the list refreshes while the sheet is up.
+    private var live: YuiAgent { store.agents.first { $0.id == agent.id } ?? agent }
+
     /// The sheet wears the look being picked, so the choice previews itself.
     private var theme: YuiTheme { preview.yuiTheme }
 
@@ -641,9 +712,12 @@ private struct EditAgentSheet: View {
                 Spacer()
                 VStack(spacing: theme.spacing.s) {
                     AgentBadge(agent: preview, size: 72)
-                    StatusLine(agent: agent)
+                    StatusLine(agent: live)
                 }
                 Spacer()
+            }
+            if live.liveness == .notListening {
+                RestartStep(agent: live)
             }
             Text("Name").font(theme.font(theme.type.caption, .bold)).foregroundStyle(c.inkSoft)
             TextField("Name", text: $name)

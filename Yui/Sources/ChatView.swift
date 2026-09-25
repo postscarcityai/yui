@@ -146,12 +146,13 @@ struct ChatView: View {
                                 Text(agent.name)
                                     .font(theme.font(theme.type.body, theme.strong))
                                     .foregroundStyle(c.ink)
-                                Circle().fill(agent.liveness == .online ? c.mint : agent.liveness == .asleep ? c.lavender : c.outline)
+                                Circle().fill(agent.liveness == .online ? c.mint : agent.liveness == .asleep ? c.lavender
+                                              : agent.liveness == .notListening ? c.butter : c.outline)
                                     .frame(width: 8, height: 8)
                             }
                         }
                         .buttonStyle(.plain)
-                        .accessibilityLabel("Talking to \(agent.name), \(agent.liveness == .pending ? "offline" : agent.liveness.rawValue)")
+                        .accessibilityLabel("Talking to \(agent.name), \(agent.liveness.spoken)")
                     } else {
                         Wordmark(height: 26)
                     }
@@ -290,9 +291,10 @@ struct ChatView: View {
         #endif
         .task {
             // Presence changes on its own (a Mac falls asleep): keep it honest while the chat is up.
+            // An agent that isn't listening yet is checked often: its gateway is about to start.
             while !Task.isCancelled {
                 await agents.refresh()
-                try? await Task.sleep(for: .seconds(30))
+                try? await Task.sleep(for: .seconds(agents.selected?.liveness == .notListening ? 5 : 30))
             }
         }
         .onChange(of: agents.selected?.id, initial: true) {
@@ -369,6 +371,9 @@ struct ChatView: View {
                     if let agent = store.agent, outbox.offline, !outbox.pending(agentID: agent.id).isEmpty {
                         // On the phone, not on Yui yet: it sends itself when the connection is back.
                         QuietNote(text: "Not sent yet. It goes the moment you're back online.", icon: "clock")
+                    } else if store.waiting, let agent = store.agent, agent.liveness == .notListening {
+                        // Paired, but its gateway never started (YUI-64): it waits, no timer counting forever.
+                        ListeningNote(agent: agent)
                     } else if store.waiting, let agent = store.agent, agent.liveness != .online {
                         // Delivered, but the agent's computer is away: say so instead of fake dots.
                         QuietNote(text: agent.liveness == .asleep
@@ -1097,6 +1102,29 @@ private struct AgentFace: View {
     }
 }
 
+/// Sent to an agent whose gateway hasn't started (YUI-64): it waits, and here's
+/// the one command that starts it. Replaces the working row, which would count forever.
+private struct ListeningNote: View {
+    let agent: YuiAgent
+    @Environment(\.yuiTheme) private var theme
+    @Environment(\.colorScheme) private var scheme
+
+    var body: some View {
+        VStack(alignment: .trailing, spacing: theme.spacing.s) {
+            Label("\(agent.name) isn't listening yet. This waits and goes the moment its gateway starts.",
+                  systemImage: "hourglass")
+                .font(theme.font(theme.type.caption, .semibold))
+                .foregroundStyle(theme.swatch(scheme).inkSoft)
+                .multilineTextAlignment(.trailing)
+                .accessibilityIdentifier("quiet-note")
+            CommandBox(command: agent.restartCommand)
+                .frame(maxWidth: 320)
+        }
+        .frame(maxWidth: .infinity, alignment: .trailing)
+        .transition(.opacity)
+    }
+}
+
 /// One quiet status line in the thread: not sent yet, the agent is asleep.
 private struct QuietNote: View {
     let text: String
@@ -1133,7 +1161,9 @@ private struct EmptyChat: View {
                     .font(theme.font(theme.type.display, theme.strong))
                     .foregroundStyle(c.ink)
                     .multilineTextAlignment(.center)
-                Text(agent.liveness == .asleep ?
+                Text(agent.liveness == .notListening ?
+                        "\(agent.name) isn't listening yet. Messages wait until its gateway starts.\nOn its computer, run \(agent.restartCommand)." :
+                        agent.liveness == .asleep ?
                         "\(agent.name) is asleep right now. Messages wait and arrive when its computer wakes." :
                         agent.liveness == .offline ?
                         "\(agent.name) is offline right now. Messages wait until it's back.\nTo wake it, run hermes gateway restart on its computer." :

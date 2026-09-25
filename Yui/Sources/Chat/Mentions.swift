@@ -65,6 +65,7 @@ enum Mentions {
         case .asleep: return "Asleep"
         case .offline: return "Offline"
         case .pending: return "Not connected yet"
+        case .notListening: return "Not listening yet"
         }
     }
 

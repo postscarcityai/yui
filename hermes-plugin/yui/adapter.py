@@ -30,7 +30,10 @@ Transport: the gateway dials OUT to Supabase (PROOF). No inbound ports.
      A reply (YUI-68) is a text row whose body the app starts with
      `[yui] reply to=<row id> from=agent quote="..."`; it passes through too.
   5. A heartbeat every 45 s keeps the agent "online" in the app. A clean stop
-     says goodbye (action=bye), so the app shows offline, not asleep.
+     says goodbye (action=bye), so the app shows offline, not asleep. Each
+     of them names the profile this gateway serves (`serving`, YUI-64), so
+     presence is per agent: a profile paired on a computer whose gateway for
+     it never started reads "not listening yet" instead of online.
   6. Every agent message is pushed to the user's phones (yui-push
      action=notify): "<Agent> has something for you in Yui" for handoffs,
      a text preview for replies. The tap opens yui://agent/<id>/thread.
@@ -308,7 +311,7 @@ class YuiAdapter(BasePlatformAdapter):
         self._mark_disconnected()
         if self._client:
             try:  # goodbye: the app shows offline at once instead of asleep
-                await asyncio.wait_for(self._connect_call({"action": "bye"}), 5)
+                await asyncio.wait_for(self._connect_call({"action": "bye", "serving": self._serving}), 5)
             except Exception as e:
                 logger.info("[yui] goodbye not sent: %s", e)
         for t in self._tasks:
@@ -353,7 +356,7 @@ class YuiAdapter(BasePlatformAdapter):
             logger.info("[yui] now serving %s", ", ".join(mine[a]["name"] for a in added))
 
     async def _refresh_session(self) -> None:
-        data = await self._connect_call({"action": "session"})
+        data = await self._connect_call({"action": "session", "serving": self._serving})
         self._token = data["access_token"]
         self._token_exp = _parse_ts(data["expires_at"]).timestamp()
         self._user_id = data["user_id"]
@@ -367,7 +370,7 @@ class YuiAdapter(BasePlatformAdapter):
                 if self._token_exp - time.time() < REFRESH_MARGIN_SECONDS:
                     await self._refresh_session()  # the realtime loop pushes the new token
                 else:
-                    data = await self._connect_call({"action": "heartbeat"})
+                    data = await self._connect_call({"action": "heartbeat", "serving": self._serving})
                     self._set_agents(data.get("agents") or [])
                 await self._report_commands()
             except asyncio.CancelledError:
@@ -393,6 +396,11 @@ class YuiAdapter(BasePlatformAdapter):
             logger.info("[yui] reported %d commands for %s", len(cmds), self._remote_ref)
         except Exception as e:
             logger.warning("[yui] commands not reported: %s", e)
+
+    @property
+    def _serving(self) -> List[str]:
+        """The profiles whose threads this gateway reads: its own."""
+        return [self._remote_ref]
 
     def _rest_headers(self) -> dict:
         return {"apikey": connector.PUBLISHABLE, "authorization": f"Bearer {self._token}"}

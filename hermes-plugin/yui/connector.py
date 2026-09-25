@@ -92,7 +92,8 @@ def show(agent: dict) -> str:
 def pair(code: str, profile: str, host: str | None = None) -> tuple[int, dict]:
     state = load()
     s, r = call({"action": "pair", "code": code, "remote_ref": profile,
-                 "host_name": host or host_name(), "kind": "hermes"}, state.get("token"))
+                 "host_name": host or host_name(), "kind": "hermes",
+                 "serving": []}, state.get("token"))  # a CLI serves nothing: presence per agent (YUI-64)
     if r.get("connector_token"):
         # New connector for this machine (first pairing, or a different Yui account).
         save({"token": r["connector_token"], "connector_id": r.get("connector", {}).get("id"),
@@ -104,7 +105,7 @@ def add(profile: str, name: str | None = None, color: str | None = None) -> tupl
     token = load().get("token")
     if not token:
         return 401, {"error": "not_paired"}
-    body = {"action": "add", "remote_ref": profile}
+    body = {"action": "add", "remote_ref": profile, "serving": []}
     if name:
         body["name"] = name
     if color:

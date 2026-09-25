@@ -14,8 +14,20 @@ struct YuiAgent: Codable, Identifiable, Equatable, Sendable {
 
     /// What the host's heartbeat says (YUI-28). `asleep`: it went quiet without
     /// saying goodbye (the computer slept or lost its network); `offline`: its
-    /// gateway stopped, or it was removed.
-    enum Liveness: String, Sendable { case online, asleep, offline, pending }
+    /// gateway stopped, or it was removed. `notListening` (YUI-64): paired,
+    /// but no gateway on its computer has started reading its thread yet.
+    enum Liveness: String, Sendable {
+        case online, asleep, offline, pending
+        case notListening = "not_listening"
+        /// What VoiceOver says: "Talking to Bravo, not listening yet".
+        var spoken: String {
+            switch self {
+            case .pending: "offline"
+            case .notListening: "not listening yet"
+            default: rawValue
+            }
+        }
+    }
 
     let id: String
     var name: String
@@ -34,7 +46,7 @@ struct YuiAgent: Codable, Identifiable, Equatable, Sendable {
     var theme: AgentLook? = nil
     /// Its answers don't push to this person's phones (YUI-24). Nil from older servers.
     var pushMuted: Bool? = nil
-    /// online / asleep / offline / pending (YUI-28). Nil from older servers.
+    /// online / asleep / offline / pending (YUI-28), not_listening (YUI-64). Nil from older servers.
     var presence: String? = nil
     /// The /commands its host accepts, as its plugin reports them (YUI-61).
     /// Nil: the host has no registry (MCP, OpenClaw, webhook), so no suggestions.
@@ -67,6 +79,11 @@ extension YuiAgent {
         case .pending: return .pending
         case .offline: return .offline
         }
+    }
+    /// The one step left for an agent that isn't listening: start its profile's gateway.
+    var restartCommand: String {
+        guard let ref = remoteRef, ref != "default" else { return "hermes gateway restart" }
+        return "hermes -p \(ref) gateway restart"
     }
     /// The whole app wears this while its thread is open.
     var yuiTheme: YuiTheme { AgentLook.theme(theme, name: handle.isEmpty ? name : handle, isYui: isYui) }

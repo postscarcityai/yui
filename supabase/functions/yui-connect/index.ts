@@ -8,15 +8,23 @@
 //       was created (shown once, stored hashed).
 //   {action: "add", remote_ref, name?, color?}          Bearer yui_ct_...
 //       A paired host registers another of its profiles. No code needed.
-//   {action: "heartbeat"}                                Bearer yui_ct_...
+//   {action: "heartbeat", serving?}                      Bearer yui_ct_...
 //       Marks the host online; returns the agents it serves.
-//   {action: "session"}                                  Bearer yui_ct_...
+//   {action: "session", serving?}                        Bearer yui_ct_...
 //       Trades the connector token for a 60-minute database token (role
 //       yui_connector) for Realtime and REST on the threads it serves, plus
 //       the current channel guide. Heartbeats too.
-//   {action: "bye"}                                      Bearer yui_ct_...
+//   {action: "bye", serving?}                            Bearer yui_ct_...
 //       The host is stopping cleanly (YUI-28): its agents read offline at
 //       once instead of asleep. The next heartbeat or session clears it.
+//
+//   serving (YUI-64): the Hermes profiles this gateway reads threads for,
+//   ["yui"]. A gateway is one profile on a computer that may run several, so
+//   presence is per agent: an agent paired since the last report naming its
+//   profile reads not_listening, and one whose gateway said bye reads offline
+//   while the others stay online. `pair` and `add` send [] (a CLI serves
+//   nothing) so the computer counts as one that reports. Hosts that never
+//   send it keep per-computer presence.
 //   {action: "commands", remote_ref, commands}           Bearer yui_ct_...
 //       The /commands that profile accepts (YUI-61): [{name, description,
 //       args?}], cleaned here, stored on its agents for the composer's
@@ -73,11 +81,11 @@ Deno.serve(async (req) => {
       case "add":
         return await add(req, body);
       case "heartbeat":
-        return await heartbeat(req);
+        return await heartbeat(req, body);
       case "session":
-        return await session(req);
+        return await session(req, body);
       case "bye":
-        return await bye(req);
+        return await bye(req, body);
       case "commands":
         return await commands(req, body);
       case "guide":
@@ -101,6 +109,20 @@ async function connectorFor(db: DB, req: Request) {
   await take(db, `connect:c:${data.id}`, "connect");
   const { suspended_at: _, ...connector } = data;
   return connector;
+}
+
+// The profiles a gateway says it serves, or null when the host doesn't report.
+// deno-lint-ignore no-explicit-any
+function servingRefs(v: any): string[] | null {
+  if (!Array.isArray(v)) return null;
+  return v.filter(validRemoteRef).slice(0, 50);
+}
+
+async function reportServing(db: DB, connectorId: string, b: Body): Promise<void> {
+  const refs = servingRefs(b.serving);
+  if (refs === null) return;
+  const { error } = await db.rpc("yui_serving", { connector: connectorId, refs });
+  if (error) throw error;
 }
 
 function clientIp(req: Request): string {
@@ -162,6 +184,7 @@ async function pair(req: Request, b: Body): Promise<Response> {
     throw error;
   }
   await db.from("yui_pairings").update({ connector_id: connector.id }).eq("id", p.id);
+  await reportServing(db, connector.id, b);
 
   return json({
     connector: { id: connector.id, name: connector.name, kind: connector.kind },
@@ -183,6 +206,7 @@ async function add(req: Request, b: Body): Promise<Response> {
   const { data: existing } = await db.from("yui_agents").select("id")
     .eq("connector_id", connector.id).eq("remote_ref", b.remote_ref).maybeSingle();
   if (existing) {
+    await reportServing(db, connector.id, b);
     return json({ created: false, agent: await agentView(db, connector.user_id, existing.id) });
   }
   const id = await insertAgent(db, {
@@ -193,25 +217,34 @@ async function add(req: Request, b: Body): Promise<Response> {
     connector_id: connector.id,
     remote_ref: b.remote_ref,
   });
+  await reportServing(db, connector.id, b);
   return json({ created: true, agent: await agentView(db, connector.user_id, id) });
 }
 
-async function heartbeat(req: Request): Promise<Response> {
+async function heartbeat(req: Request, b: Body): Promise<Response> {
   const db = admin();
   const connector = await connectorFor(db, req);
   if (!connector) return json({ error: "unauthorized" }, 401);
   const now = new Date().toISOString();
   await db.from("yui_connectors").update({ last_seen_at: now, stopped_at: null }).eq("id", connector.id);
+  await reportServing(db, connector.id, b);
   const { data: agents } = await db.from("yui_agents").select("id, name, handle, remote_ref, theme")
     .eq("connector_id", connector.id).order("sort");
   return json({ connector: { id: connector.id, name: connector.name }, seen_at: now, agents: agents ?? [] });
 }
 
-async function bye(req: Request): Promise<Response> {
+async function bye(req: Request, b: Body): Promise<Response> {
   const db = admin();
   const connector = await connectorFor(db, req);
   if (!connector) return json({ error: "unauthorized" }, 401);
   const now = new Date().toISOString();
+  const refs = servingRefs(b.serving);
+  if (refs !== null) {
+    // One gateway of several: only its agents go offline, unless it was the last one up.
+    const { data: last, error } = await db.rpc("yui_serving_bye", { connector: connector.id, refs });
+    if (error) throw error;
+    return json({ stopped_at: last ? now : null });
+  }
   await db.from("yui_connectors").update({ last_seen_at: now, stopped_at: now }).eq("id", connector.id);
   return json({ stopped_at: now });
 }
@@ -263,13 +296,14 @@ async function guide(db: DB): Promise<any> {
   return data;
 }
 
-async function session(req: Request): Promise<Response> {
+async function session(req: Request, b: Body): Promise<Response> {
   const db = admin();
   const connector = await connectorFor(db, req);
   if (!connector) return json({ error: "unauthorized" }, 401);
   const now = new Date();
   await db.from("yui_connectors").update({ last_seen_at: now.toISOString(), stopped_at: null })
     .eq("id", connector.id);
+  await reportServing(db, connector.id, b);
   const { data: agents } = await db.from("yui_agents").select("id, name, handle, remote_ref, theme")
     .eq("connector_id", connector.id).order("sort");
   return json({
