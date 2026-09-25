@@ -221,6 +221,19 @@ final class ChatStore {
             out.write(Data((e.json + "\n").utf8))
             try? out.close()
         }
+        // -yuiDemoGame: on the demo account a stand-in agent answers tic-tac-toe moves (UI tests, videos).
+        if client == nil, UserDefaults.standard.bool(forKey: "yuiDemoGame"), e.preset == "game",
+           e.value["kind"] == .string("tictactoe"), e.value["winner"] == nil, let move = e.value["move"]?.number {
+            let x = TicTacToe.cells(e.value["x"]), o = TicTacToe.cells(e.value["o"])
+            let me = x.contains(Int(move)) ? "o" : "x"
+            let mine = me == "o" ? o : x
+            if let cell = TicTacToe.reply(mine: mine, theirs: me == "o" ? x : o) {
+                Task {
+                    try? await Task.sleep(for: .seconds(0.9))
+                    stream("~game \(me)=" + (mine + [cell]).map(String.init).joined(separator: "|"))
+                }
+            }
+        }
         #endif
         let id = UUID().uuidString.lowercased()
         // A sent plan is done with the whole phone: back to the chat, where its answers land (YUI-51).
@@ -529,10 +542,20 @@ final class ChatStore {
         guard !nodes.isEmpty, let i = messages.firstIndex(where: { $0.id == id }) else { return }
         guard var yl = messages[i].yl else { return }
         let before = yl
-        for n in nodes { apply(n, to: &yl) }
+        // A patch for something an earlier reply drew lands on the newest match, as in history.
+        var earlier: [(Int, YLNode)] = []
+        for n in nodes {
+            if n.op == .patch, let t = n.target, !yl.has(t),
+               let j = messages[..<i].lastIndex(where: { $0.yl?.has(t) == true }) {
+                earlier.append((j, n))
+            } else {
+                apply(n, to: &yl)
+            }
+        }
         withAnimation(spring) {
             for n in nodes { clearPage(n, except: id) }
             messages[i].yl = yl
+            for (j, n) in earlier { messages[j].yl?.apply(n) }
         }
         file(Array(yl.shelfOps.dropFirst(before.shelfOps.count)), at: .now)
         pageUpdate(nodes)

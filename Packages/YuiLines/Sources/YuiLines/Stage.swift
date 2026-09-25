@@ -2,7 +2,7 @@
 /// layer over the chat for moments that deserve the whole phone.
 extension YuiLines {
     /// Presets that open on the stage unless they say `+inline`.
-    public static let stagePresets: Set<String> = ["timer", "camera", "mic", "deck", "plan"]
+    public static let stagePresets: Set<String> = ["timer", "camera", "mic", "deck", "plan", "game"]
 
     /// A timer with rounds or rest. Workouts always open on the stage.
     public static func isWorkout(preset: String, props: [String: YLValue]) -> Bool {

@@ -12,6 +12,7 @@ let presets: Set<String> = [
     "chart", "stat", "math", "step", "calc",
     "deck", "page", "plan", "project", "narrate",
     "timeline", "done", "now", "next",
+    "game",
 ]
 
 /// Groups (spec section 6): a head collects the member lines that follow it on
@@ -72,6 +73,7 @@ private let listProps: [String: [String]] = [
     "page": ["points"],
     "project": ["facts", "next"],
     "pick": ["answer"],
+    "game": ["items"],
 ]
 
 private func asList(_ v: YLValue) -> YLValue {
@@ -87,6 +89,8 @@ private func normalize(_ preset: String, _ o: inout Props) {
     }
     switch preset {
     case "compare": if let v = o["hl"] { o["hl"] = boxes(v) }
+    case "game":
+        for k in ["x", "o"] { if let v = o[k] { o[k] = cellList(v) } }
     case "chart": chartSeries(&o)
     case "stat": if let v = o["spark"], v.array == nil { o["spark"] = .array([v]) }
     case "step": if let v = o["time"], let s = seconds(jsString(v)) { o["time"] = .number(s) }
@@ -96,6 +100,16 @@ private func normalize(_ preset: String, _ o: inout Props) {
         }
     default: break
     }
+}
+
+/// Tic-tac-toe cells: always a list of numbers; a part that is not a number
+/// is dropped, so x=5 is [5].
+private func cellList(_ v: YLValue) -> YLValue {
+    .array((v.array ?? [v]).compactMap { c in
+        if case .number = c { return c }
+        if case .string(let s) = c, isNumber(s) { return .number(Double(s)!) }
+        return nil
+    })
 }
 
 /// `seconds()` in the reference: `\d+(:\d{1,2})?(\.\d+)?[smh]?`, whole string.
@@ -118,6 +132,7 @@ private func boxes(_ v: YLValue) -> YLValue {
 }
 
 /// A y value with an error: 12.5±0.4 or 12.5+-0.4.
+private let gameWordRE = JSRegex(#"^[A-Za-z][A-Za-z0-9_-]*\z"#)
 private let pmRE = JSRegex(#"^(-?[0-9]+(?:\.[0-9]+)?)(?:±|\+-)([0-9]+(?:\.[0-9]+)?)\z"#)
 private let seriesKeyRE = JSRegex(#"^(y|err)([0-9]*)\z"#)
 
@@ -381,6 +396,14 @@ private func positional(_ preset: String, _ pos: [Token]) -> Props {
             if o["url"] == nil, t.parts == nil, !t.quoted, t.text.hasPrefix("https://") { o["url"] = .string(t.text) } else { text.append(t) }
         }
         if !text.isEmpty { o["text"] = .string(joinText(text)) }
+
+    case "game":
+        // The first bare word (not quoted, not options) is the kind, wherever it sits.
+        var text: [Token] = []
+        for t in pos {
+            if o["kind"] == nil, t.parts == nil, !t.quoted, gameWordRE.match(t.text) != nil { o["kind"] = .string(t.text) } else { text.append(t) }
+        }
+        if !text.isEmpty { o["title"] = .string(joinText(text)) }
 
     case "project":
         if let first = pos.first { o["title"] = .string(first.text) }

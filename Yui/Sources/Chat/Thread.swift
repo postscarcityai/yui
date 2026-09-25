@@ -74,8 +74,9 @@ extension YLEvent {
     }
 
     /// Quiet events (a timer starting, a checklist tick) stay on the phone;
-    /// anything the person answered, and anything that finished, goes back.
-    var relays: Bool { echo != nil || value["done"] == .bool(true) }
+    /// anything the person answered, anything that finished, and every game
+    /// event (a tic-tac-toe move needs the agent's answer) goes back.
+    var relays: Bool { echo != nil || value["done"] == .bool(true) || preset == "game" }
 
     var meta: YLValue {
         var o: [String: YLValue] = ["id": .string(id), "preset": .string(preset), "value": .object(value)]
