@@ -41,7 +41,22 @@ final class ChatStore {
     /// Timer clocks for the whole thread, shared by the stage and the pills.
     let timers = TimerRuns()
 
-    var stageMessage: ChatMessage? { stageID.flatMap { id in messages.first { $0.id == id } } }
+    /// A long plain answer read as pages (YUI-79): a deck made from its words, on the stage.
+    private(set) var reading: ChatMessage?
+
+    var stageMessage: ChatMessage? {
+        stageID.flatMap { id in reading?.id == id ? reading : messages.first { $0.id == id } }
+    }
+
+    /// "Read as pages" on a folded bubble: its words as a deck, full screen.
+    func readAsPages(_ m: ChatMessage) {
+        let id = m.id + "#pages"
+        if reading?.id != id { reading = ChatMessage(id: id, text: "", fromUser: false, yl: LongText.deck(m.text)) }
+        openStage(id)
+    }
+
+    /// The pages are for reading: a deck of them tells the agent nothing.
+    static let quiet = YLEmit()
 
     func openStage(_ id: String) {
         withAnimation(spring) {
@@ -373,6 +388,7 @@ final class ChatStore {
         replying = nil
         stageID = nil
         stageOpen = false
+        reading = nil
         page = agent.flatMap { pages[$0.id] } ?? 1
         seen = []
         cursor = nil

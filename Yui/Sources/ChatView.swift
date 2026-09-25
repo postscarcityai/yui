@@ -132,7 +132,7 @@ struct ChatView: View {
                             if let yl = m.yl {
                                 YLReplyItems(screen: yl, scope: m.id, style: agentStyle).allowsHitTesting(false)
                             } else {
-                                BubbleText(text: m.text, fromUser: m.fromUser)
+                                BubbleText(text: Bubble.shown(m), fromUser: m.fromUser)
                             }
                         }
                         .id(m.id)
@@ -207,6 +207,7 @@ struct ChatView: View {
         if let m = store.stageMessage, let yl = m.yl, !yl.staged(agentStyle).isEmpty {
             StageView(components: yl.staged(agentStyle), scope: m.id, agent: store.agent, open: store.stageOpen,
                       close: store.closeStage)
+                .environment(\.ylEmit, m.id == store.reading?.id ? ChatStore.quiet : store.emit)
                 .environment(\.ylComponents, yl.components)
                 .id(m.id)
                 .transition(.opacity)
@@ -359,7 +360,8 @@ struct ChatView: View {
                                        openFrom: m.from.flatMap { f in
                                            agents.agents.contains { $0.id == f.agentID }
                                                ? { agents.selectedID = f.agentID } : nil
-                                       })
+                                       },
+                                       read: { store.readAsPages(m) })
                             }
                         }
                         // Scrolled to from a reply's chip: a short glow says "this one".
@@ -930,6 +932,9 @@ struct ChatView: View {
         ChatMessage(text: "", fromUser: false, yl: YLScreen(YLSamples.text("tabata")!)),
     ]
 
+    /// The INT-18 report as it landed on build 82: one wall of about 300 words (YUI-79).
+    static let longReport = "A2A bridge: add any A2A agent to Yui by its Agent Card. node adapters/a2a/yui-a2a.ts pair <code> --card <url>, then run; add --card <url> puts more agents on the same machine. Runtime-neutral TypeScript client (src/a2a.ts + src/sse.ts, fetch and an SSE parser only, so the hosted step runs the same code in a Durable Object): A2A 1.0 SendMessage / SendStreamingMessage / SubscribeToTask / GetTask / CancelTask and 0.3 message/send, message/stream, tasks/resubscribe, tasks/get, one version-free shape for callers; 1.0 wins when a card lists both. The bridge keeps the relay's rules (delivered on pickup, handled after the answer, meta.turn, outbox on disk, one turn at a time per agent, a clean stop reads offline): contextId = the Yui agent, the channel guide rides as a context part on each new task, working states are the app's working row, text artifacts plus the final status message become the answer, input-required keeps the task open for the person's next message, failed/rejected/canceled say so. The running task's id is on disk, so a restart resubscribes (then GetTask) instead of sending the turn again; agents without streaming are sent returnImmediately and polled. Connector kind http, no server changes. Tests: client.test.ts 42/42 (SSE, both versions' shapes, errors, live against the scripted tests/echo-agent.ts in 1.0 and 0.3, resubscribe, GetTask polling); sdk_interop.test.ts 4/4 against the official a2a-sdk servers (1.1.5 and 0.3.26); a2a_e2e.py 66/66 live on throwaway accounts (1.0, 0.3, 1.0 without streaming: turns, a long task working then done, kill -9 mid-task resumes the same task and answers once, input-required, taps, failed) plus the phone run 6/6 with YuiUITests/A2ATests on the iPhone 18 Pro sim (working row, long answer, an A2A agent's screen and a tap, light; a question continuing the task, dark). No app binary change (INT-18)"
+
     /// `-yuiDemo` seeds a chat; `-yuiYL <sample>` seeds one YL reply (see `YLSamples`).
     static var seed: [ChatMessage] {
         if UserDefaults.standard.string(forKey: "yuiReactDemo") != nil {
@@ -946,6 +951,14 @@ struct ChatView: View {
                                   fromUser: false)
                     : ChatMessage(text: "Message \(i)", fromUser: true)
             }
+        }
+        // -yuiDemoLong: a short answer, then the long report that folds into pages (YUI-79).
+        if ProcessInfo.processInfo.arguments.contains("-yuiDemoLong") {
+            return [ChatMessage(text: "How did the A2A bridge go?", fromUser: true),
+                    ChatMessage(text: "It went well. Every test is green and the phone run passed in light and dark. Want the whole report?",
+                                fromUser: false),
+                    ChatMessage(text: "Yes, all of it", fromUser: true),
+                    ChatMessage(text: longReport, fromUser: false)]
         }
         if let name = UserDefaults.standard.string(forKey: "yuiYL"), let text = YLSamples.text(name) {
             return [ChatMessage(text: "Show me the \(name) one", fromUser: true),
@@ -1035,7 +1048,15 @@ private struct Bubble: View {
     var goToQuote: (ReplyQuote) -> Void = { _ in }
     /// Another agent's answer to a mention: opens its own thread (YUI-44).
     var openFrom: (() -> Void)? = nil
+    /// "Read as pages" under a folded answer (YUI-79).
+    var read: () -> Void = {}
     @Environment(\.yuiTheme) private var theme
+
+    /// An agent's plain answer past `LongText.foldWords` folds: never a wall in the thread.
+    static func folds(_ m: ChatMessage) -> Bool { !m.fromUser && m.yl == nil && LongText.folds(m.text) }
+
+    /// What the bubble shows: the words, or a folded answer's first sentences.
+    static func shown(_ m: ChatMessage) -> String { folds(m) ? LongText.excerpt(m.text) : m.text }
 
     var body: some View {
         if message.from != nil, let agent {
@@ -1044,6 +1065,15 @@ private struct Bubble: View {
         } else {
             content
         }
+    }
+
+    /// The words in their bubble, holdable. VoiceOver reads what shows.
+    private var text: some View {
+        let shown = Self.shown(message)
+        return BubbleText(text: shown, fromUser: message.fromUser)
+            .accessibilityLabel(pending ? "\(shown), not sent yet" : shown)
+            .modifier(Reactable(text: message.text, reacts: !message.fromUser, reaction: reaction,
+                                lifted: lifted, open: open, react: react, select: select, reply: reply))
     }
 
     private var content: some View {
@@ -1060,11 +1090,15 @@ private struct Bubble: View {
                     ReplyChip(quote: q, agent: agent?.name) { goToQuote(q) }
                 }
                 ForEach(Array(message.photos.enumerated()), id: \.offset) { BubblePhoto(photo: $1) }
-                if !message.text.isEmpty {
-                    BubbleText(text: message.text, fromUser: message.fromUser)
-                        .accessibilityLabel(pending ? "\(message.text), not sent yet" : message.text)
-                        .modifier(Reactable(text: message.text, reacts: !message.fromUser, reaction: reaction,
-                                            lifted: lifted, open: open, react: react, select: select, reply: reply))
+                if Self.folds(message) {
+                    // Folded: the first sentences, then the whole answer a page at a time.
+                    // Copy and Select text still get every word.
+                    VStack(alignment: .leading, spacing: theme.spacing.s) {
+                        text
+                        ReadAsPages(pages: LongText.pages(message.text).count, action: read)
+                    }
+                } else if !message.text.isEmpty {
+                    text
                 }
             }
             .modifier(SwipeToReply(reply: reply, reduceMotion: reduceMotion))
@@ -1077,6 +1111,43 @@ private struct Bubble: View {
             ? .asymmetric(insertion: .offset(y: 56).combined(with: .scale(scale: 0.8, anchor: .bottomTrailing))
                 .combined(with: .opacity), removal: .opacity)
             : .scale(scale: 0.85, anchor: .bottomLeading).combined(with: .opacity))
+    }
+}
+
+/// Under a folded answer (YUI-79): the whole text as a deck on the stage, a page at a time.
+private struct ReadAsPages: View {
+    let pages: Int
+    let action: () -> Void
+    @Environment(\.yuiTheme) private var theme
+    @Environment(\.colorScheme) private var scheme
+
+    var body: some View {
+        let c = theme.swatch(scheme)
+        Button(action: action) {
+            HStack(spacing: theme.spacing.s) {
+                Image(systemName: "rectangle.stack.fill")
+                    .font(theme.font(theme.type.caption, .heavy))
+                    .foregroundStyle(c.onAccent)
+                    .frame(width: 30, height: 30)
+                    .background(c.accent, in: Circle())
+                Text("Read as pages")
+                    .font(theme.font(theme.type.body, .bold))
+                    .foregroundStyle(c.ink)
+                Text("\(pages) pages")
+                    .font(theme.font(theme.type.caption, .heavy))
+                    .foregroundStyle(c.inkSoft)
+            }
+            .padding(.leading, theme.spacing.xs)
+            .padding(.trailing, theme.spacing.m)
+            .padding(.vertical, theme.spacing.xs)
+            .background(c.surface, in: Capsule())
+            .overlay(Capsule().stroke(c.outline, lineWidth: 1.5))
+            .contentShape(Capsule())
+        }
+        .buttonStyle(BounceButtonStyle())
+        .accessibilityLabel("Read as pages")
+        .accessibilityValue("\(pages) pages")
+        .accessibilityIdentifier("read-as-pages")
     }
 }
 
