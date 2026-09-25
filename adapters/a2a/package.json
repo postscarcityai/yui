@@ -1,0 +1,12 @@
+{
+  "name": "yui-a2a",
+  "version": "0.1.0",
+  "description": "Yui A2A bridge: add any A2A agent to Yui by its Agent Card",
+  "type": "module",
+  "bin": { "yui-a2a": "yui-a2a.ts" },
+  "exports": { "./client": "./src/a2a.ts", "./sse": "./src/sse.ts" },
+  "scripts": { "test": "node --test tests/*.test.ts" },
+  "engines": { "node": ">=22.18" },
+  "license": "Apache-2.0",
+  "repository": { "type": "git", "url": "https://github.com/postscarcityai/yui", "directory": "adapters/a2a" }
+}
