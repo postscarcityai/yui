@@ -50,6 +50,7 @@ const LINE: Record<string, string> = {
   now: 'now "Building"',
   next: 'next "Later"',
   game: 'game tictactoe "Beat me"',
+  flow: 'flow@intake "Website intake"\nflowchart TD\n  %% kind: choose "What are we building?" Site|Shop\n  kind -->|Shop| products[slide Products 1-500]\nend',
   sketch: 'sketch "Card ids" frame=bubble\nrow "Parked t_1 in the backlog" +x note="an id"\nrow\nrow "Install" +button +hi',
   row: 'row "Plain words" +hi',
   after: 'sketch "Fix"\nrow Old +x\nafter Now\nrow New +hi',

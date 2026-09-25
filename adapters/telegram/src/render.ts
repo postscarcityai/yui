@@ -76,13 +76,13 @@ export const HOW: Record<string, "keyboard" | "text" | "app" | "member"> = {
   gallery: "app", video: "app", compare: "app", storyboard: "app",
   chart: "app", math: "app", calc: "app",
   deck: "app", page: "app", plan: "app", project: "app", narrate: "app",
-  game: "app", custom: "app",
+  game: "app", flow: "app", custom: "app",
 };
 
 const ICON: Record<string, string> = {
   timer: "⏱", slide: "🎚", form: "📝", image: "🖼", camera: "📷", mic: "🎙", gallery: "🖼", video: "🎬",
   compare: "↔️", storyboard: "🎞", chart: "📈", math: "∑", calc: "🧮", deck: "📚", page: "📄", plan: "🗂",
-  project: "📁", narrate: "🔊", game: "🎮", custom: "✨", table: "📋", timeline: "🗓",
+  project: "📁", narrate: "🔊", game: "🎮", flow: "🧭", custom: "✨", table: "📋", timeline: "🗓",
 };
 
 export const esc = (s: unknown) => String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
