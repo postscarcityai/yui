@@ -1,0 +1,12 @@
+{
+  "name": "yui-telegram",
+  "version": "0.1.0",
+  "description": "Yui Lines in Telegram: inline keyboards for questions, a Mini App for the rest (INT-4)",
+  "type": "module",
+  "bin": { "yui-telegram": "yui-telegram.ts" },
+  "exports": { "./render": "./src/render.ts", "./taps": "./src/taps.ts", "./webapp": "./src/webapp.ts", "./share": "./src/share.ts" },
+  "scripts": { "test": "node --test tests/*.test.ts", "sync": "node scripts/sync-vendor.mjs" },
+  "engines": { "node": ">=22.18" },
+  "license": "Apache-2.0",
+  "repository": { "type": "git", "url": "https://github.com/postscarcityai/yui", "directory": "adapters/telegram" }
+}
