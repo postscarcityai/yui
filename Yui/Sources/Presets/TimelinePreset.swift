@@ -1,19 +1,29 @@
 import SwiftUI
 import YuiLines
 
-/// `timeline [title] mark= fold=`, then `done` / `now` / `next` rows (YUI-65).
+/// `timeline [title] mark= fold= [+reorder] [board=]`, then `done` / `now` / `next` rows (YUI-65).
 /// A vertical track: done rows oldest first, the now marker, the running rows
 /// lit up on it, then the queue in order. Older done rows fold behind an
 /// "N earlier" button. A lone row (no timeline above it) is a one-row track.
+/// `+reorder` (YUI-66): Edit order gives each queued row a drag handle; Save
+/// sends `{order: [key...], board}` once. Done and running rows never move.
 struct TimelinePreset: View {
     let c: YLComponent
     @State private var unfolded = false
+    @State private var draft: [Int]?       // the queue's serials while editing
+    @State private var savedOrder: [Int]?  // the queue as last saved
+    @State private var dragging: Int?
+    @State private var dragY: CGFloat = 0
+    @State private var anchor: CGFloat = 0
+    @State private var heights: [Int: CGFloat] = [:]
     @Environment(\.ylComponents) private var all
+    @Environment(\.ylEmit) private var emit
     @Environment(\.yuiTheme) private var theme
     @Environment(\.colorScheme) private var scheme
 
     private var lone: Bool { c.preset != "timeline" }
     private var rows: [YLComponent] { lone ? [c] : all.members(of: c) }
+    private var reorder: Bool { !lone && c.flag("reorder") && !c.locked }
 
     var body: some View {
         let s = theme.swatch(scheme)
@@ -21,8 +31,34 @@ struct TimelinePreset: View {
         let split = rows.firstIndex { $0.preset != "done" } ?? rows.count
         let fold = lone ? 0 : Int(c.number("fold") ?? 5)
         let hidden = !unfolded && fold > 0 && split > fold ? split - fold : 0
+        let tail = Array(rows[split...])
+        // With +reorder the queue is drawn in its own order under the running rows.
+        let queue = reorder ? tail.filter { $0.preset == "next" } : []
+        let fixed = reorder ? tail.filter { $0.preset != "next" } : tail
+        let order = ordered(queue)
+        let byID = Dictionary(uniqueKeysWithValues: queue.map { ($0.serial, $0) })
+        let editing = draft != nil
         PresetCard {
-            if !lone, let t = c.string("title"), !t.isEmpty { PresetTitle(text: t) }
+            let title = lone ? nil : c.string("title").flatMap { $0.isEmpty ? nil : $0 }
+            if title != nil || (queue.count > 1 && !editing) {
+                HStack(alignment: .firstTextBaseline, spacing: theme.spacing.s) {
+                    if let title { PresetTitle(text: title) }
+                    Spacer(minLength: 0)
+                    if queue.count > 1, !editing {
+                        Button {
+                            withAnimation(.snappy) { draft = order }
+                        } label: {
+                            Label("Edit order", systemImage: "arrow.up.arrow.down")
+                                .font(theme.font(theme.type.caption, .bold)).foregroundStyle(s.ink)
+                                .padding(.horizontal, theme.spacing.m).frame(minHeight: 36)
+                                .overlay(Capsule().stroke(s.outline, lineWidth: 1.5))
+                                .contentShape(Capsule())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityIdentifier("timeline-edit-order")
+                    }
+                }
+            }
             VStack(alignment: .leading, spacing: 0) {
                 if hidden > 0 {
                     HStack(spacing: 0) {
@@ -42,9 +78,106 @@ struct TimelinePreset: View {
                 }
                 ForEach(rows[hidden..<split]) { TimelineRow(r: $0) }
                 if !lone { NowMarker(label: c.string("mark") ?? "Now", last: split == rows.count) }
-                ForEach(rows[split...]) { TimelineRow(r: $0) }
+                ForEach(fixed) { TimelineRow(r: $0) }
+                ForEach(Array(order.enumerated()), id: \.element) { i, serial in
+                    if let r = byID[serial] { queued(r, at: i, of: order, editing: editing, s) }
+                }
+            }
+            .sensoryFeedback(.selection, trigger: draft)
+            if editing {
+                HStack(spacing: theme.spacing.s) {
+                    OptionPill(text: "Cancel", fill: s.background, on: false, grow: true) {
+                        withAnimation(.snappy) { draft = nil; dragging = nil; dragY = 0 }
+                    }
+                    .accessibilityIdentifier("timeline-cancel-order")
+                    let moved = order != (savedOrder.map { ordered(queue, $0) } ?? queue.map(\.serial))
+                    OptionPill(text: "Save order", fill: s.accent, ink: s.onAccent, dim: !moved, grow: true) {
+                        save(order, byID)
+                    }
+                    .disabled(!moved)
+                    .accessibilityIdentifier("timeline-save-order")
+                }
+                .padding(.top, theme.spacing.s)
+                .transition(.opacity)
             }
         }
+    }
+
+    /// The queue's serials: the draft while editing, else the last save, else line order.
+    /// Rows a later patch added go at the end; rows that left drop out.
+    private func ordered(_ queue: [YLComponent], _ from: [Int]? = nil) -> [Int] {
+        let ids = queue.map(\.serial)
+        let base = (from ?? draft ?? savedOrder ?? ids).filter(ids.contains)
+        return base + ids.filter { !base.contains($0) }
+    }
+
+    @ViewBuilder
+    private func queued(_ r: YLComponent, at i: Int, of order: [Int], editing: Bool, _ s: Swatch) -> some View {
+        let lifted = dragging == r.serial
+        HStack(spacing: 0) {
+            TimelineRow(r: r, editing: editing)
+            if editing {
+                Image(systemName: "line.3.horizontal")
+                    .font(.body.weight(.bold)).foregroundStyle(lifted ? s.accent : s.inkSoft)
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
+                    .highPriorityGesture(drag(r.serial))
+                    .accessibilityElement()
+                    .accessibilityLabel("Reorder \(r.string("tag") ?? r.string("text") ?? "")")
+                    .accessibilityHint("Drag up or down, or use Move up and Move down")
+                    .accessibilityIdentifier("timeline-grip")
+                    .accessibilityActions {
+                        if i > 0 { Button("Move up") { move(r.serial, by: -1) } }
+                        if i < order.count - 1 { Button("Move down") { move(r.serial, by: 1) } }
+                    }
+                    .transition(.opacity.combined(with: .move(edge: .trailing)))
+            }
+        }
+        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { heights[r.serial] = $0 }
+        .background {
+            if lifted {
+                RoundedRectangle(cornerRadius: theme.radius.bubble / 1.5).fill(s.surface)
+                    .shadow(color: .black.opacity(0.18), radius: 10, y: 4)
+            }
+        }
+        .scaleEffect(lifted ? 1.02 : 1)
+        .offset(y: lifted ? dragY : 0)
+        .zIndex(lifted ? 1 : 0)
+    }
+
+    /// Drag the handle: the row follows the finger; past half a neighbour's height they swap.
+    private func drag(_ serial: Int) -> some Gesture {
+        DragGesture(minimumDistance: 0, coordinateSpace: .global)
+            .onChanged { v in
+                guard var o = draft, let i = o.firstIndex(of: serial) else { return }
+                if dragging != serial { dragging = serial; anchor = v.startLocation.y }
+                let dy = v.location.y - anchor
+                let h = { (id: Int) in heights[id] ?? 44 }
+                if dy > 0, i < o.count - 1, dy > h(o[i + 1]) / 2 {
+                    anchor += h(o[i + 1]); o.swapAt(i, i + 1)
+                } else if dy < 0, i > 0, -dy > h(o[i - 1]) / 2 {
+                    anchor -= h(o[i - 1]); o.swapAt(i, i - 1)
+                }
+                if o != draft { withAnimation(.snappy(duration: 0.2)) { draft = o } }
+                dragY = v.location.y - anchor
+            }
+            .onEnded { _ in withAnimation(.snappy) { dragging = nil; dragY = 0 } }
+    }
+
+    private func move(_ serial: Int, by step: Int) {
+        guard var o = draft, let i = o.firstIndex(of: serial), o.indices.contains(i + step) else { return }
+        o.swapAt(i, i + step)
+        withAnimation(.snappy) { draft = o }
+    }
+
+    private func save(_ order: [Int], _ byID: [Int: YLComponent]) {
+        let rows = order.compactMap { byID[$0] }
+        let keys = rows.map { $0.string("key") ?? $0.string("tag") ?? $0.string("text") ?? "" }
+        var value: [String: YLValue] = ["order": .array(keys.map { .string($0) })]
+        if let board = c.string("board"), !board.isEmpty { value["board"] = .string(board) }
+        let names = rows.map { $0.string("tag") ?? $0.string("text") ?? "" }
+        emit(c.event(value, echo: "New order: " + names.joined(separator: ", ")))
+        withAnimation(.snappy) { savedOrder = order; draft = nil }
     }
 }
 
@@ -82,6 +215,8 @@ private struct NowMarker: View {
 /// A row with an https `url` opens it in Safari and sends nothing to the chat.
 struct TimelineRow: View {
     let r: YLComponent
+    /// Edit order mode: a link row stops opening Safari so a drag never leaves the app.
+    var editing = false
     static let gutter: CGFloat = 58
     static let railWidth: CGFloat = 26
     @State private var pulse = false
@@ -96,7 +231,7 @@ struct TimelineRow: View {
     }
 
     var body: some View {
-        if let link {
+        if let link, !editing {
             Button { openURL(link) } label: { row.contentShape(Rectangle()) }
                 .buttonStyle(.plain)
                 .accessibilityHint("Opens in Safari")

@@ -48,6 +48,11 @@ Transport: the gateway dials OUT to Supabase (PROOF). No inbound ports.
      shape only (type tree and key names, never a value) in
      <profile home>/yui/flywheel.jsonl, so repeated shapes can become presets.
 
+  9. Board order (YUI-66, board.py): a timeline's saved order with
+     board=<this profile> is applied to kanban priority here, with no agent
+     turn, and only for the paired owner. The person gets a one-line
+     confirmation (no push); the agent reads a note on its next turn.
+
 The channel guide (CHANNEL.md, synced verbatim from yuigui/spec/CHANNEL.md by
 ../sync_channel.py) is this platform's system-prompt hint, so it is in the
 system prompt on every turn on the Yui channel, and only there.
@@ -82,7 +87,7 @@ from gateway.config import Platform, PlatformConfig
 from gateway.platforms.base import (BasePlatformAdapter, MessageEvent, MessageType, ProcessingOutcome,
                                     SendResult)
 
-from . import connector, flywheel, media, outbox
+from . import board, connector, flywheel, media, outbox
 
 logger = logging.getLogger(__name__)
 
@@ -216,6 +221,7 @@ class YuiAdapter(BasePlatformAdapter):
         self._acks: set = set()                       # handled, not yet written
         self._outbox = outbox.Outbox(self._state_dir() / "outbox.jsonl")
         self._outbox_wake = asyncio.Event()
+        self._notes: Dict[str, List[str]] = {}       # agent id -> notes for its next turn (board order)
 
     # Inbound is authorized upstream: RLS on yui_messages only ever shows this
     # connector the threads of its own paired user.
@@ -402,6 +408,8 @@ class YuiAdapter(BasePlatformAdapter):
                         logger.info("[yui] %s was answered before a restart, not replaying", row["id"][:8])
                         self._acks.add(row["id"])
                         continue
+                    if await self._board_order(aid, row):
+                        continue
                     self._queue.setdefault(aid, []).append(row)
                 await self._pump(aid)
             await self._flush_acks()
@@ -434,6 +442,36 @@ class YuiAdapter(BasePlatformAdapter):
         self._busy[aid] = (ids, time.time())
         await self._mark(ids, "delivered_at")
         await self._dispatch(rows)
+
+    async def _board_order(self, aid: str, row: dict) -> bool:
+        """A timeline's saved board order (YUI-66): straight to kanban priority, no turn.
+        False when the row is not one, or names another profile's board (then the agent gets it)."""
+        found = board.order_of(row)
+        if not found or found[0] != self._remote_ref:
+            return False
+        name, keys = found
+        await self._mark([row["id"]], "delivered_at")
+        if row.get("user_id") != self._user_id:
+            text = "Only the owner can reorder this board."
+        else:
+            try:
+                result = await asyncio.to_thread(board.apply, name, keys)
+                text = board.reply(result)
+                if result["order"]:
+                    self._notes.setdefault(aid, []).append(board.note(result))
+                logger.info("[yui] board order %s: %d moved, %d left in place", row["id"][:8],
+                            len(result["moves"]), len(result["skipped"]))
+            except Exception as e:
+                logger.warning("[yui] board order %s: %s", row["id"][:8], e)
+                text = "Couldn't reach the board to save that order. Try again in a minute."
+        reply = {"id": str(uuid.uuid4()), "user_id": self._user_id, "agent_id": aid, "sender": "agent",
+                 "body": text, "kind": "text", "meta": {"turn": [row["id"]], "board": True}}
+        # A confirmation of the person's own tap: no push.
+        if await self._write_row(reply) == "retry":
+            await asyncio.to_thread(self._outbox.add, reply, None, False)
+            self._outbox_wake.set()
+        self._acks.add(row["id"])
+        return True
 
     async def _answered(self, row: dict) -> bool:
         """True when an agent reply already names this row in its meta.turn:
@@ -511,6 +549,10 @@ class YuiAdapter(BasePlatformAdapter):
                 photos += p
                 types += t
             texts.append(text)
+        # Board orders saved since the last turn (YUI-66): the agent reads them first.
+        notes = self._notes.pop(row["agent_id"], [])
+        if notes and not texts[0].lstrip().startswith("/"):
+            texts = notes + texts
         event = MessageEvent(
             text="\n".join(texts),
             message_type=MessageType.PHOTO if photos else MessageType.TEXT,
