@@ -60,7 +60,7 @@ import os
 import random
 import time
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -100,6 +100,7 @@ MAX_MESSAGE_LENGTH = 32000   # matches the yui_messages body check; never split 
 OUTBOX_BACKOFF_MAX = 60      # seconds between resends while Yui is unreachable
 FAILURE_ACK_SECONDS = 5      # a failed turn is acked only if the gateway is still up after this
 TURN_TIMEOUT_SECONDS = 30 * 60  # a turn that never reports back stops holding the queue
+NEW_AGENT_LOOKBACK_SECONDS = 24 * 3600  # a just-paired agent still answers what was sent before its gateway came up
 
 
 def load_guide() -> tuple[str, str]:
@@ -140,6 +141,16 @@ def look_prompt(agent: dict) -> str:
             prefs.append(STYLE_WORDS.get(k, {}).get(v) or f"{v} {'galleries' if k == 'gallery' else k + 's'}")
         lines.append("Screens you prefer (use them as your defaults): " + ", ".join(prefs) + ".")
     return "\n".join(lines)
+
+
+def new_agent_floor() -> str:
+    """Cursor for an agent this host has never served. Pairing and the gateway
+    restart are separate steps, and the user often says hi in between; starting
+    at "now" skipped those messages for good (TestFlight AMiI7ezKx6x1KcexlzOKYJc:
+    R0SS paired at 22:36, gateway restarted later, "Did we stall?" never
+    answered). Only unhandled user rows are fetched, so this replays nothing
+    that was already answered."""
+    return (datetime.now(tz=timezone.utc) - timedelta(seconds=NEW_AGENT_LOOKBACK_SECONDS)).isoformat()
 
 
 def _parse_ts(s: str | None) -> datetime:
@@ -192,7 +203,7 @@ class YuiAdapter(BasePlatformAdapter):
         self._fetch_lock = asyncio.Lock()
         self._inbound = asyncio.Event()
         # Delivery (YUI-28). The cursor is only a floor now: a new agent starts
-        # from the moment it was added, not from old history.
+        # a day back (new_agent_floor), not from old history.
         self._cursor_file = self._state_dir() / "cursor.json"
         self._cursor: Dict[str, str] = {}
         # One turn at a time per agent: rows that arrive while it works wait
@@ -244,8 +255,8 @@ class YuiAdapter(BasePlatformAdapter):
             return False
         self._client = httpx.AsyncClient(timeout=httpx.Timeout(20.0))
         # Load the floors BEFORE the session: it registers the agents, and an
-        # agent that looks new gets "now", which would skip everything sent
-        # while this gateway was down.
+        # agent that looks new gets a fresh floor, which would skip whatever
+        # older messages this gateway missed while it was down.
         self._load_cursor()
         try:
             await self._refresh_session()
@@ -254,10 +265,10 @@ class YuiAdapter(BasePlatformAdapter):
             await self._client.aclose()
             self._client = None
             return False
-        now = datetime.now(tz=timezone.utc).isoformat()
+        floor = new_agent_floor()
         for aid in self._agents:
-            # First run for an agent: start from now, don't replay old history.
-            self._cursor.setdefault(aid, now)
+            # First run for an agent: its last day of unanswered messages, not all history.
+            self._cursor.setdefault(aid, floor)
         self._save_cursor()
         self._mark_connected()
         self._tasks = [
@@ -314,9 +325,9 @@ class YuiAdapter(BasePlatformAdapter):
         added = set(mine) - set(self._agents)
         self._agents = mine
         if added:
-            now = datetime.now(tz=timezone.utc).isoformat()
+            floor = new_agent_floor()
             for aid in added:
-                self._cursor.setdefault(aid, now)
+                self._cursor.setdefault(aid, floor)
             self._save_cursor()
             logger.info("[yui] now serving %s", ", ".join(mine[a]["name"] for a in added))
 
