@@ -376,8 +376,7 @@ struct ChatView: View {
                                   : "\(agent.name) is offline. It gets this when its gateway starts again.",
                                   icon: agent.liveness == .asleep ? "moon.zzz" : "powersleep")
                     } else if store.waiting {
-                        TypingDots(agent: store.agent).id("typing")
-                        WorkingNote(agent: store.agent, since: store.waitingSince, pickedUp: store.pickedUpAt)
+                        WorkingNote(agent: store.agent, since: store.waitingSince, pickedUp: store.pickedUpAt).id("typing")
                     }
                     if let error = store.error {
                         Text(error)
@@ -761,6 +760,13 @@ struct ChatView: View {
             }
             return
         }
+        #if DEBUG
+        // -yuiDemoReply: the demo account's agent answers through the store, working row and all (YUI-63).
+        if photos.isEmpty, UserDefaults.standard.string(forKey: "yuiDemoReply") != nil, store.send(text) {
+            clearComposer()
+            return
+        }
+        #endif
         let body = Attachments.body(text: text, photos: photos.count)
         let q = text.hasPrefix("/") ? nil : store.replying
         store.replying = nil
@@ -1108,35 +1114,6 @@ private struct QuietNote: View {
     }
 }
 
-/// The agent is thinking.
-private struct TypingDots: View {
-    var agent: YuiAgent?
-    @Environment(\.yuiTheme) private var theme
-    @Environment(\.colorScheme) private var scheme
-
-    var body: some View {
-        let c = theme.swatch(scheme)
-        HStack(alignment: .bottom, spacing: theme.spacing.s) {
-            AgentFace(agent: agent)
-            HStack(spacing: 5) {
-                ForEach(0..<3, id: \.self) { i in
-                    Circle().fill(c.inkSoft).frame(width: 7, height: 7)
-                        .phaseAnimator([0.3, 1.0]) { dot, o in dot.opacity(o) } animation: { _ in
-                            .easeInOut(duration: 0.5).delay(Double(i) * 0.15)
-                        }
-                }
-            }
-            .padding(.horizontal, theme.spacing.l)
-            .padding(.vertical, theme.spacing.m + 4)
-            .background(c.agentBubble, in: Capsule())
-            .overlay(Capsule().stroke(c.outline, lineWidth: 1.5))
-            Spacer(minLength: 48)
-        }
-        .accessibilityLabel("\(agent?.name ?? "Yui") is typing")
-        .transition(.opacity)
-    }
-}
-
 private struct EmptyChat: View {
     var agent: YuiAgent? = nil
     var loading = false
@@ -1286,22 +1263,42 @@ private struct FirstRun: View {
     }
 }
 
-/// The agent owes a reply: say it is on it and for how long, the way Telegram
-/// does. Long turns are normal (TestFlight: "assume it's always going to take
-/// a little while"), so there is no time limit and no fix-it advice here; an
-/// agent whose computer is away gets its own asleep/offline note instead.
+/// The agent owes a reply: one row, its face, a small moving mark and one
+/// line, a working word and the time ("Pondering · 12s"). Before the host
+/// picks it up it is "On its way". Long turns are normal (TestFlight: "assume
+/// it's always going to take a little while"), so there is no time limit and
+/// no fix-it advice here; an agent whose computer is away gets its own
+/// asleep/offline note instead. Later the host's own few words take the
+/// word's place (YUI-63 step 2).
 struct WorkingNote: View {
     var agent: YuiAgent?
     var since: Date?
     var pickedUp: Date?
     @Environment(\.yuiTheme) private var theme
     @Environment(\.colorScheme) private var scheme
+    @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
+    private var reduceMotion: Bool {
+        systemReduceMotion || ProcessInfo.processInfo.arguments.contains("-yuiReduceMotion")
+    }
 
-    /// "Yui is working · 1m 24s". Before the host picks it up, it is still on its way.
-    static func label(name: String, since: Date?, pickedUp: Date?, now: Date) -> String {
-        guard let start = pickedUp ?? since else { return "\(name) is working" }
-        let took = elapsed(now.timeIntervalSince(start))
-        return pickedUp == nil ? "Sent to \(name) · \(took)" : "\(name) is working · \(took)"
+    /// Friendly, short, no AI talk. One at a time, in this order.
+    static let words = ["Pondering", "Figuring it out", "Mulling it over", "Tinkering",
+                        "Piecing it together", "Working on it", "Noodling", "Almost there, maybe"]
+    /// Seconds each word stays.
+    static let wordEvery: TimeInterval = 4
+
+    /// The word for this moment of the turn: "On its way" until the host picks it up.
+    static func word(pickedUp: Date?, now: Date) -> String {
+        guard let pickedUp else { return "On its way" }
+        let n = Int(max(0, now.timeIntervalSince(pickedUp)) / wordEvery)
+        return words[n % words.count]
+    }
+
+    /// "Pondering · 1m 24s", or "On its way · 3s" before pickup.
+    static func label(since: Date?, pickedUp: Date?, now: Date) -> String {
+        let word = Self.word(pickedUp: pickedUp, now: now)
+        guard let start = pickedUp ?? since else { return word }
+        return "\(word) · \(elapsed(now.timeIntervalSince(start)))"
     }
 
     /// 12s, 1m 24s, 1h 3m.
@@ -1319,26 +1316,72 @@ struct WorkingNote: View {
         let c = theme.swatch(scheme)
         let name = agent?.name ?? "Your agent"
         TimelineView(.periodic(from: .now, by: 1)) { ctx in
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: theme.spacing.s) {
-                    Image(systemName: "sparkles")
-                        .foregroundStyle(c.accent)
-                        .symbolEffect(.variableColor.iterative.reversing, options: .repeat(.continuous))
-                    Text(Self.label(name: name, since: since, pickedUp: pickedUp, now: ctx.date))
-                        .monospacedDigit()
-                        .contentTransition(.numericText())
+            let word = Self.word(pickedUp: pickedUp, now: ctx.date)
+            let took = (pickedUp ?? since).map { Self.elapsed(ctx.date.timeIntervalSince($0)) }
+            HStack(alignment: .top, spacing: theme.spacing.s) {
+                AgentFace(agent: agent)
+                VStack(alignment: .leading, spacing: theme.spacing.xs) {
+                    HStack(spacing: theme.spacing.s) {
+                        Dots(color: c.accent, still: reduceMotion)
+                        HStack(spacing: 0) {
+                            Text(word)
+                                .id(word)
+                                .transition(reduceMotion ? .identity : .push(from: .bottom).combined(with: .opacity))
+                            if let took {
+                                Text(" · \(took)")
+                                    .monospacedDigit()
+                                    .contentTransition(reduceMotion ? .identity : .numericText())
+                            }
+                        }
+                        .foregroundStyle(c.inkSoft)
+                        .animation(reduceMotion ? nil : .snappy, value: word)
+                    }
+                    .font(theme.font(theme.type.caption, .semibold))
+                    .padding(.horizontal, theme.spacing.m)
+                    .padding(.vertical, theme.spacing.s + 2)
+                    .background(c.agentBubble, in: RoundedRectangle(cornerRadius: theme.radius.bubble))
+                    .overlay(RoundedRectangle(cornerRadius: theme.radius.bubble).stroke(c.outline, lineWidth: 1.5))
+                    if let start = pickedUp ?? since, ctx.date.timeIntervalSince(start) > Self.longTurn {
+                        Text("Long jobs are fine. Leave any time, the answer lands here.")
+                            .font(theme.font(theme.type.caption, .semibold))
+                            .foregroundStyle(c.inkSoft)
+                            .padding(.leading, theme.spacing.xs)
+                            .transition(.opacity)
+                    }
                 }
-                if let start = pickedUp ?? since, ctx.date.timeIntervalSince(start) > Self.longTurn {
-                    Text("Long jobs are fine. Leave any time, the answer lands here.")
-                        .transition(.opacity)
-                }
+                Spacer(minLength: 48)
             }
-            .font(theme.font(theme.type.caption, .semibold))
-            .foregroundStyle(c.inkSoft)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .accessibilityElement(children: .combine)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(Self.accessibility(name: name, label: Self.label(since: since, pickedUp: pickedUp, now: ctx.date),
+                                                   long: (pickedUp ?? since).map { ctx.date.timeIntervalSince($0) > Self.longTurn } ?? false))
             .accessibilityIdentifier("working")
         }
         .transition(.opacity)
+    }
+
+    /// VoiceOver: who, then the row. "Yui: Pondering · 12s".
+    static func accessibility(name: String, label: String, long: Bool) -> String {
+        "\(name): \(label)" + (long ? ". Long jobs are fine. Leave any time, the answer lands here." : "")
+    }
+
+    /// Three small dots that breathe; still under Reduce Motion.
+    private struct Dots: View {
+        let color: Color
+        let still: Bool
+        var body: some View {
+            HStack(spacing: 3) {
+                ForEach(0..<3, id: \.self) { i in
+                    if still {
+                        Circle().fill(color).frame(width: 5, height: 5)
+                    } else {
+                        Circle().fill(color).frame(width: 5, height: 5)
+                            .phaseAnimator([0.3, 1.0]) { dot, o in dot.opacity(o) } animation: { _ in
+                                .easeInOut(duration: 0.5).delay(Double(i) * 0.15)
+                            }
+                    }
+                }
+            }
+            .accessibilityHidden(true)
+        }
     }
 }

@@ -38,12 +38,63 @@ final class WorkingNoteTests: XCTestCase {
         let note = app.descendants(matching: .any)["working"]
         XCTAssertTrue(note.waitForExistence(timeout: 5), "reopened mid-turn: no working note, the agent looks idle")
         let first = note.label
-        XCTAssertTrue(first.contains("is working · 2m "), "the note does not say it is working and for how long: \(first)")
+        XCTAssertTrue(first.contains(" · 2m "), "the row does not say how long it has been working: \(first)")
+        XCTAssertFalse(first.contains("On its way"), "picked up, but the row still says it is on its way: \(first)")
+        // One row: no separate dots bubble.
+        XCTAssertEqual(app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS[c] 'is typing'")).count, 0,
+                       "the old dots bubble is still there next to the working row")
         XCTAssertTrue(first.contains("Long jobs are fine"), "a long turn does not say it's fine to leave: \(first)")
         sleep(3)
         shot("1-long-turn")
         XCTAssertNotEqual(note.label, first, "the elapsed time does not count up")
         let restart = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS[c] 'gateway restart'"))
         XCTAssertEqual(restart.count, 0, "an online agent's long turn still tells you to restart the gateway")
+    }
+
+    /// YUI-63: sending shows one row (no dots bubble next to a status line):
+    /// "On its way" until the host picks it up, then a working word that
+    /// changes every few seconds with the time, gone when the answer lands.
+    func testOneWorkingRowFromSendToReply() throws {
+        for appearance in ["light", "dark"] {
+            let shots = ProcessInfo.processInfo.environment["YUI_SHOTS"].map { URL(fileURLWithPath: $0) }
+            func shot(_ name: String) {
+                let png = XCUIScreen.main.screenshot().pngRepresentation
+                if let shots { try? png.write(to: shots.appending(path: "working-row-\(appearance)-\(name).png")) }
+                let a = XCTAttachment(data: png, uniformTypeIdentifier: "public.png")
+                a.name = "working-row-\(appearance)-\(name)"
+                a.lifetime = .keepAlways
+                add(a)
+            }
+            let app = XCUIApplication()
+            app.launchArguments = ["-yuiDemoAccount", "-yuiDemoAgents", "-yuiAgent", "wizard", "-appearance", appearance,
+                                   "-yuiDemoReply", "Here you go.", "-yuiDemoPickupAfter", "3", "-yuiDemoReplyAfter", "14"]
+            app.launch()
+            let input = app.descendants(matching: .any)["composer"].firstMatch
+            XCTAssertTrue(input.waitForExistence(timeout: 20), "no composer")
+            input.tap()
+            input.typeText("What's queued up on the board?")
+            app.buttons["Send"].tap()
+
+            let row = app.descendants(matching: .any)["working"]
+            XCTAssertTrue(row.waitForExistence(timeout: 3), "sending shows no working row")
+            XCTAssertEqual(app.descendants(matching: .any).matching(identifier: "working").count, 1, "more than one working row")
+            XCTAssertEqual(app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS[c] 'is typing'")).count, 0,
+                           "the old dots bubble is back")
+            XCTAssertTrue(row.label.contains("On its way · "), "before pickup it should be on its way: \(row.label)")
+            shot("1-on-its-way")
+
+            let picked = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label CONTAINS 'Pondering · '"), object: row)
+            XCTAssertEqual(XCTWaiter.wait(for: [picked], timeout: 5), .completed, "picked up, no working word: \(row.label)")
+            shot("2-pondering")
+            let next = XCTNSPredicateExpectation(
+                predicate: NSPredicate(format: "NOT (label CONTAINS 'Pondering') AND NOT (label CONTAINS 'On its way')"), object: row)
+            XCTAssertEqual(XCTWaiter.wait(for: [next], timeout: 6), .completed, "the working word does not rotate: \(row.label)")
+            shot("3-next-word")
+
+            XCTAssertTrue(app.staticTexts["Here you go."].waitForExistence(timeout: 15), "the answer never landed")
+            XCTAssertTrue(row.waitForNonExistence(timeout: 3), "the working row stayed after the answer")
+            shot("4-answered")
+            app.terminate()
+        }
     }
 }

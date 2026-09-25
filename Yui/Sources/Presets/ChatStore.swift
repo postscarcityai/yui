@@ -402,9 +402,17 @@ final class ChatStore {
             withAnimation(Self.sendSpring) { messages.append(ChatMessage(text: text, fromUser: true, replyTo: q)) }
             waiting = true
             waitingSince = .now
+            pickedUpAt = nil
+            // -yuiDemoPickupAfter / -yuiDemoReplyAfter <seconds>: stretch the turn so the working row can be watched (YUI-63).
+            let d = UserDefaults.standard
+            let pickup = d.object(forKey: "yuiDemoPickupAfter") == nil ? 0.5 : d.double(forKey: "yuiDemoPickupAfter")
+            let answer = max(pickup, d.object(forKey: "yuiDemoReplyAfter") == nil ? 1.6 : d.double(forKey: "yuiDemoReplyAfter"))
             Task {
-                try? await Task.sleep(for: .seconds(1.6))
+                try? await Task.sleep(for: .seconds(pickup))
+                pickedUpAt = .now
+                try? await Task.sleep(for: .seconds(answer - pickup))
                 waiting = false
+                pickedUpAt = nil
                 stream(reply.replacingOccurrences(of: "\\n", with: "\n"))
             }
             return true

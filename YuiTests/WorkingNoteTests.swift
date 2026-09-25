@@ -18,11 +18,33 @@ final class WorkingNoteTests: XCTestCase {
 
     func testLabelCountsUp() {
         let now = Date.now
-        XCTAssertEqual(WorkingNote.label(name: "Yui", since: now.addingTimeInterval(-9), pickedUp: nil, now: now), "Sent to Yui · 9s")
-        XCTAssertEqual(WorkingNote.label(name: "Yui", since: now.addingTimeInterval(-90), pickedUp: now.addingTimeInterval(-84), now: now),
-                       "Yui is working · 1m 24s")
+        XCTAssertEqual(WorkingNote.label(since: now.addingTimeInterval(-9), pickedUp: nil, now: now), "On its way · 9s")
+        XCTAssertEqual(WorkingNote.label(since: now.addingTimeInterval(-14), pickedUp: now.addingTimeInterval(-2), now: now),
+                       "Pondering · 2s")
+        XCTAssertEqual(WorkingNote.label(since: nil, pickedUp: nil, now: now), "On its way")
         XCTAssertEqual(WorkingNote.elapsed(3 * 3600 + 7 * 60 + 5), "3h 7m")
         XCTAssertEqual(WorkingNote.elapsed(-2), "0s")
+    }
+
+    /// One row, one line: a working word that changes every few seconds, then the time.
+    func testWordRotatesAfterPickup() {
+        let now = Date.now
+        let picked = now.addingTimeInterval(-84)
+        let word = WorkingNote.word(pickedUp: picked, now: now)
+        XCTAssertEqual(WorkingNote.label(since: now.addingTimeInterval(-90), pickedUp: picked, now: now), "\(word) · 1m 24s")
+        let seen = Set((0..<WorkingNote.words.count).map {
+            WorkingNote.word(pickedUp: picked, now: picked.addingTimeInterval(Double($0) * WorkingNote.wordEvery + 1))
+        })
+        XCTAssertEqual(seen.count, WorkingNote.words.count, "the word does not rotate through the list")
+        XCTAssertEqual(WorkingNote.word(pickedUp: picked, now: picked.addingTimeInterval(1)),
+                       WorkingNote.word(pickedUp: picked, now: picked.addingTimeInterval(WorkingNote.wordEvery - 1)),
+                       "the word flickers inside its few seconds")
+        XCTAssertEqual(WorkingNote.word(pickedUp: nil, now: now), "On its way")
+        for w in WorkingNote.words {
+            XCTAssertFalse(w.contains("—"), w)
+            XCTAssertLessThanOrEqual(w.count, 20, "keep the words short: \(w)")
+        }
+        XCTAssertEqual(WorkingNote.accessibility(name: "Yui", label: "Pondering · 2s", long: false), "Yui: Pondering · 2s")
     }
 
     func testReopenedMidTurnKeepsWorking() {
