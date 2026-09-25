@@ -740,6 +740,10 @@ enum YLSamples {
         choose "Which split today?" Push|Pull|Legs +other
         ask "Send the invite now?" "Yes, send"|"Not yet"
         """),
+        ("needs", """
+        choose@need-t_8b02462c "How did it go?" "Works"|"Phone only"|"Connector failed"|"Not yet"|"You decide" tag=INT-7 title="Claude adapter, MCP connector plus Yui screens as an MCP App" body="Yui is built as a Claude connector. The last check needs your browser: in claude.ai add Yui as a custom connector, then ask Claude for a 5 minute timer."
+        choose@need-t_85ea7583 "How did it go?" "Works"|"Phone only"|"Failed"|"Not yet"|"You decide" tag=INT-8 title="ChatGPT adapter through the Yui MCP server" body="Yui is built as a ChatGPT connector too. The last check needs your browser: in chatgpt.com developer mode add Yui as a connector, then ask for a 5 minute timer."
+        """),
         ("gear", """
         pick "What gear do you have?" Dumbbells|Bench|Bands|"Pull-up bar"|Kettlebell +other max=3
         """),
