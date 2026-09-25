@@ -1,15 +1,18 @@
 import SwiftUI
 import YuiLines
 
-// Pages (YUI-31, spec yuigui/spec/YL.md section 5, "Pages"): every agent gets
-// three screens side by side. Page 1 is the chat; screens 2 and 3 are a swipe
-// away and keep what the agent puts there across replies. A reply that sends
-// a line there brings the page forward; the chat keeps an "On screen 2" pill.
+// Pages (YUI-31, spec yuigui/spec/YL.md section 5, "Pages"): the chat, then a
+// page for each screen the agent puts something on, `>2` up to `>12`. Screens
+// keep what lands there across replies; a reply that sends a line there brings
+// the page forward, and the chat keeps an "On screen 2" pill. `>N clear` empties
+// a screen and takes its page away.
 
-/// The chat and the agent's two screens, one swipe apart.
+/// The chat and the agent's screens, one swipe apart.
 struct PagedThread<Chat: View>: View {
     let store: ChatStore
-    /// The page on show, bound to the paging scroll (1, 2 or 3).
+    /// The pages there are: 1 (the chat), then each screen with something on it.
+    let screens: [Int]
+    /// The page on show, bound to the paging scroll.
     @Binding var page: Int?
     /// Reduce Motion moves between pages with a cross-fade instead of a slide.
     var fade: Double = 1
@@ -18,12 +21,13 @@ struct PagedThread<Chat: View>: View {
     @ViewBuilder var chat: () -> Chat
 
     var body: some View {
+        ScrollViewReader { proxy in
         ScrollView(.horizontal) {
             HStack(spacing: 0) {
                 chat()
                     .containerRelativeFrame(.horizontal)
                     .id(1)
-                ForEach([2, 3], id: \.self) { n in
+                ForEach(screens.dropFirst(), id: \.self) { n in
                     ScreenPage(number: n, parts: store.onPage(n), agent: agent, style: style) { store.openStage($0) }
                     .containerRelativeFrame(.horizontal)
                     .id(n)
@@ -34,16 +38,29 @@ struct PagedThread<Chat: View>: View {
         .scrollTargetBehavior(.paging)
         .scrollPosition(id: $page)
         .scrollIndicators(.hidden)
+        // Chat only: nothing to swipe to, so the chat doesn't rubber-band sideways.
+        .scrollDisabled(screens.count < 2)
         .opacity(fade)
+        // Reduce Motion jumps without animation, and a jump to a page that just
+        // arrived can stop short while the pager is still sizing it: scroll there
+        // again once it has settled, before the fade-in ends.
+        .onChange(of: page) { _, n in
+            guard let n, fade < 1 else { return }
+            Task { @MainActor in
+                try? await Task.sleep(for: .milliseconds(120))
+                if page == n { proxy.scrollTo(n, anchor: .leading) }
+            }
+        }
+        }
     }
 }
 
-/// Chat · 2 · 3 above the composer (ChatView puts it in the composer's inset,
-/// which every page respects). The highlight slides to the page on
-/// show; a dot marks a page with something on it.
+/// Above the composer when there is more than the chat (ChatView puts it in the
+/// composer's inset, which every page respects): a small chat glyph, then one
+/// dot per screen. The one on show is filled and wider.
 struct PageTabs: View {
     let page: Int
-    let filled: Set<Int>
+    let screens: [Int]
     let go: (Int) -> Void
     @Namespace private var tabs
     @Environment(\.yuiTheme) private var theme
@@ -51,40 +68,48 @@ struct PageTabs: View {
 
     var body: some View {
         let c = theme.swatch(scheme)
-        HStack(spacing: 2) {
-            ForEach(1...3, id: \.self) { n in
+        HStack(spacing: 0) {
+            ForEach(screens, id: \.self) { n in
                 let on = n == page
                 Button { go(n) } label: {
-                    Text(n == 1 ? "Chat" : "\(n)")
-                        .font(theme.font(theme.type.caption, .heavy))
-                        .foregroundStyle(on ? c.onAccent : c.inkSoft)
-                        .frame(minWidth: n == 1 ? 56 : 40, minHeight: 36)
-                        .background {
-                            if on { Capsule().fill(c.accent).matchedGeometryEffect(id: "on", in: tabs) }
-                        }
-                        .overlay(alignment: .topTrailing) {
-                            if filled.contains(n), !on {
-                                Circle().fill(c.accent).frame(width: 6, height: 6).padding(.top, 7).padding(.trailing, 8)
+                    Group {
+                        if n == 1 {
+                            Image(systemName: on ? "bubble.left.fill" : "bubble.left")
+                                .font(.system(size: 11, weight: .bold))
+                                .foregroundStyle(on ? c.accent : c.inkSoft)
+                        } else {
+                            ZStack {
+                                Capsule().fill(c.inkSoft.opacity(0.45)).frame(width: 7, height: 7)
+                                if on {
+                                    Capsule().fill(c.accent).frame(width: 18, height: 7)
+                                        .matchedGeometryEffect(id: "on", in: tabs)
+                                }
                             }
                         }
-                        .contentShape(Capsule())
+                    }
+                    // Small to look at, a full finger to tap.
+                    .frame(minWidth: n == 1 ? 30 : (on ? 30 : 20), minHeight: 30)
+                    .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(n == 1 ? "Chat" : "Screen \(n)")
-                .accessibilityValue(on ? "showing" : filled.contains(n) ? "has something on it" : "")
+                .accessibilityValue(on ? "showing" : "")
                 .accessibilityAddTraits(on ? .isSelected : [])
                 .accessibilityIdentifier("page-tab-\(n)")
             }
         }
-        .padding(3)
+        .padding(.horizontal, 6)
         .background(c.surface, in: Capsule())
         .overlay(Capsule().stroke(c.outline, lineWidth: 1))
         .animation(theme.spring, value: page)
+        .animation(theme.spring, value: screens)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("page-tabs")
         .frame(maxWidth: .infinity)
     }
 }
 
-/// Screen 2 or 3: everything the agent put there, oldest reply first.
+/// A screen beside the chat: everything the agent put there, oldest reply first.
 struct ScreenPage: View {
     let number: Int
     let parts: [ChatMessage]

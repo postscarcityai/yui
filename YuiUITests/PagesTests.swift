@@ -1,6 +1,6 @@
 import XCTest
 
-/// Three screens per agent (YUI-31): a reply sends a focus timer to screen 2
+/// Screens beside the chat (YUI-31): a reply sends a focus timer to screen 2
 /// and a list to screen 3, the app brings screen 3 forward, and the person
 /// swipes back through screen 2 to the chat, where pills go back to each page.
 /// Runs on the demo account, no network. Screenshots go to `YUI_SHOTS` when set.
@@ -43,7 +43,7 @@ final class PagesTests: XCTestCase {
         app.launch()
 
         let tab = { (n: Int) in app.buttons["page-tab-\(n)"] }
-        XCTAssertTrue(tab(1).waitForExistence(timeout: 10), "no page tabs")
+        XCTAssertTrue(app.textFields.firstMatch.waitForExistence(timeout: 10) || app.textViews.firstMatch.exists, "no composer")
         shot("0-chat")
 
         // The reply streams in: the timer goes to 2, then the list brings 3 forward.

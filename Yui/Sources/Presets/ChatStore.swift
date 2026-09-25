@@ -61,7 +61,7 @@ final class ChatStore {
 
     // MARK: Pages (YUI-31, spec YL.md section 5, Pages)
 
-    /// The page on show: 1 is the chat, 2 and 3 the agent's screens beside it.
+    /// The page on show: 1 is the chat, 2 to 12 the agent's screens beside it.
     private(set) var page = 1
     /// The page each agent's thread was on, so switching agents and back keeps it.
     private var pages: [String: Int] = [:]
@@ -71,20 +71,32 @@ final class ChatStore {
     private(set) var pageTurns = 0
 
     func goToPage(_ n: Int) {
-        guard (1...3).contains(n) else { return }
+        guard (1...YuiLines.maxPage).contains(n) else { return }
         showingPage(n)
         pageTurns += 1
     }
 
     /// The person swiped to page `n`: note it, nothing to move.
     func showingPage(_ n: Int) {
-        guard (1...3).contains(n) else { return }
+        guard (1...YuiLines.maxPage).contains(n) else { return }
         page = n
         if let id = agent?.id { pages[id] = n }
     }
 
     /// Made once, like `ylShow`: the chat's "On screen 2" pills go through it.
     @ObservationIgnored private(set) lazy var ylPage = YLPage { [weak self] n in self?.goToPage(n) }
+
+    /// The pages there are, in order: the chat, then each screen with something
+    /// on it. A screen appears when a line lands there and goes when `>N clear`
+    /// empties it; the numbers can skip (`>5` alone makes chat and screen 5).
+    var screens: [Int] {
+        var on = Set<Int>()
+        for m in messages {
+            guard let yl = m.yl else { continue }
+            for c in yl.top where c.page != 1 && !c.onStage(style) { on.insert(c.page) }
+        }
+        return [1] + on.sorted()
+    }
 
     /// What is on page `n`: each reply with something there, oldest first.
     /// A page keeps what lands on it across replies until `>2 clear`.

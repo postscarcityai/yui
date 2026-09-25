@@ -10,7 +10,7 @@ extension EnvironmentValues {
     @Entry var ylShow = YLShow()
     /// The thread's answers, for presets that reopen answered.
     @Entry var ylAnswers = YLAnswers()
-    /// Goes to one of the agent's pages (2 or 3) from the chat's page pills.
+    /// Goes to one of the agent's pages (2 to 12) from the chat's page pills.
     @Entry var ylPage = YLPage()
 }
 

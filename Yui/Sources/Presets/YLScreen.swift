@@ -108,7 +108,7 @@ struct YLScreen: Equatable, Sendable {
         components.contains { $0.ylID == target || $0.preset == target }
     }
 
-    /// What this reply put on page `n` (2 or 3), in line order. Staged ones
+    /// What this reply put on page `n` (2 to 12), in line order. Staged ones
     /// (a workout sent to a page) stay on the stage.
     func onPage(_ n: Int, style: [String: String]) -> [YLComponent] {
         top.filter { $0.page == n && !$0.onStage(style) }
@@ -131,7 +131,7 @@ struct YLScreen: Equatable, Sendable {
 }
 
 extension YLComponent {
-    /// The page this component lives on (spec section 5, Pages): 2 or 3, else the chat.
+    /// The page this component lives on (spec section 5, Pages): 2 to 12, else the chat.
     var page: Int { YuiLines.page(of: screen) }
 
     static let groupHeads: Set<String> = ["deck", "plan", "narrate"]
@@ -156,7 +156,7 @@ enum YLItem: Identifiable {
     case one(YLComponent)
     case steps([YLComponent])
     case pill([YLComponent])
-    /// Components sent to screen 2 or 3: in the chat, one "On screen 2" pill per run.
+    /// Components sent to screens 2 to 12: in the chat, one "On screen 2" pill per run.
     case page(Int, [YLComponent])
 
     var id: String {

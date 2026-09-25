@@ -33,17 +33,17 @@ extension YuiLines {
     }
 }
 
-/// Pages (spec `yuigui/spec/YL.md` section 5, "Pages"): every agent gets three
-/// screens side by side, the chat and then screens 2 and 3.
+/// Pages (spec `yuigui/spec/YL.md` section 5, "Pages"): the chat, then up to
+/// eleven screens beside it, `2` through `12`. A page exists while something is on it.
 extension YuiLines {
-    /// The page a screen lives on: 2 and 3 are pages beside the chat; every
-    /// other screen (`1`, `chat`, `full`, `stats-view`) renders in the chat, page 1.
+    /// The most pages an agent's thread has: the chat plus screens 2 to 12.
+    public static let maxPage = 12
+
+    /// The page a screen lives on: `2` to `12` are pages beside the chat; every
+    /// other screen (`1`, `chat`, `full`, `stats-view`, `13`, `02`) renders in the chat, page 1.
     /// Mirrors `pageOf` in the JS reference parser.
     public static func page(of screen: String) -> Int {
-        switch screen {
-        case "2": 2
-        case "3": 3
-        default: 1
-        }
+        guard let n = Int(screen), String(n) == screen, (2...maxPage).contains(n) else { return 1 }
+        return n
     }
 }

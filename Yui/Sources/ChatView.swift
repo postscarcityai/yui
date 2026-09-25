@@ -36,7 +36,7 @@ struct ChatView: View {
     @State private var scrolledUp = false
     /// Agent messages that landed while scrolled up: the count on the arrow.
     @State private var unread = 0
-    /// The page on show (YUI-31): 1 the chat, 2 and 3 the agent's screens. Follows `store.page`.
+    /// The page on show (YUI-31): 1 the chat, 2 to 12 the agent's screens. Follows `store.page`.
     @State private var page: Int? = 1
     /// Reduce Motion: pages cross-fade instead of sliding.
     @State private var pageFade = 1.0
@@ -58,8 +58,8 @@ struct ChatView: View {
                         Task { await agents.refresh() }
                     }
                 } else {
-                    // Three screens per agent (YUI-31): the chat, then screens 2 and 3 a swipe away.
-                    PagedThread(store: store, page: $page, fade: pageFade, agent: store.agent, style: agentStyle) { thread }
+                    // The chat, then each screen the agent put something on, a swipe apart (YUI-31).
+                    PagedThread(store: store, screens: store.screens, page: $page, fade: pageFade, agent: store.agent, style: agentStyle) { thread }
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -67,8 +67,13 @@ struct ChatView: View {
             .safeAreaInset(edge: .bottom) {
                 if !firstRun {
                     VStack(spacing: theme.spacing.s) {
-                        // Chat · 2 · 3 (YUI-31), in the composer's inset so every page clears it.
-                        PageTabs(page: page ?? 1, filled: Set([2, 3].filter { !store.onPage($0).isEmpty })) { store.goToPage($0) }
+                        // A chat glyph and a dot per screen, in the composer's inset so every
+                        // page clears it. Only there when there is somewhere to go.
+                        let screens = store.screens
+                        if screens.count > 1 {
+                            PageTabs(page: page ?? 1, screens: screens) { store.goToPage($0) }
+                                .transition(.scale(scale: 0.8).combined(with: .opacity))
+                        }
                         inputBar(c)
                     }
                 }
@@ -177,6 +182,11 @@ struct ChatView: View {
             turnPage(to: store.page)
         }
         .onChange(of: store.agent?.id, initial: true) { turnPage(to: store.page) }
+        // Screens come and go: a page emptied by `>N clear` is gone, so back to the
+        // chat; a page remembered for this agent shows once its history loads.
+        // (A reply that adds a page turns to it through `pageTurns` above, after layout.)
+        .onChange(of: store.screens) { if !store.screens.contains(store.page), store.loaded { store.goToPage(1) } }
+        .onChange(of: store.loaded) { keepPage() }
         #if DEBUG
         // -yuiReactDemo bar|<meaning> ("love it"): the reaction bar open, or a reacted bubble, for screenshots.
         .task {
@@ -603,6 +613,15 @@ struct ChatView: View {
             jumpToBottom()
         } else if scrolledUp {
             withAnimation(theme.spring) { unread += added.count }
+        }
+    }
+
+    private func keepPage() {
+        let screens = store.screens
+        if !screens.contains(store.page) {
+            if store.loaded { store.goToPage(1) }
+        } else if page != store.page {
+            turnPage(to: store.page)
         }
     }
 
