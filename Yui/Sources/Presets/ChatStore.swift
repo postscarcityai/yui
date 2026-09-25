@@ -13,6 +13,11 @@ struct ChatMessage: Identifiable, Equatable {
     var photos: [MessagePhoto] = []
     /// The person's reply to an earlier message: its quote (YUI-68).
     var replyTo: ReplyQuote? = nil
+    /// The person's message went to another agent ("To Luna"), or came here
+    /// from another agent's thread ("You, from Alpha's thread") (YUI-44).
+    var mentionTo: String? = nil
+    /// Another agent's answer to a mention, copied into this thread (YUI-44).
+    var from: MentionFrom? = nil
 }
 
 /// The chat's messages plus the event log going back to the agent.
@@ -389,7 +394,7 @@ final class ChatStore {
 
     /// False when it can't go out (no agent or session yet): nothing is added, the caller keeps the text.
     @discardableResult
-    func send(_ text: String) -> Bool {
+    func send(_ text: String, mention: YuiAgent? = nil) -> Bool {
         #if DEBUG
         // -yuiDemoReply "<lines>": on the demo account the agent answers what you send with these lines (SOC-3 videos).
         if client == nil, agent != nil, let reply = UserDefaults.standard.string(forKey: "yuiDemoReply") {
@@ -406,6 +411,16 @@ final class ChatStore {
         }
         #endif
         guard client != nil, agent != nil, account?.session?.userID != nil else { return false }
+        if let mention {
+            // A mention goes to the other agent with this thread's last lines; a reply
+            // quote would point at a row it can't see, so it stays here.
+            replying = nil
+            let m = ChatMessage(id: UUID().uuidString.lowercased(), text: text, fromUser: true, mentionTo: "To \(mention.name)")
+            withAnimation(Self.sendSpring) { messages.append(m) }
+            post(id: m.id, body: Mentions.body(text, to: mention), kind: "text", meta: Mentions.meta(nil, to: mention),
+                 answers: false)
+            return true
+        }
         let q = takeReply(for: text)
         let m = ChatMessage(id: UUID().uuidString.lowercased(), text: text, fromUser: true, replyTo: q)
         withAnimation(Self.sendSpring) { messages.append(m) }
@@ -416,14 +431,23 @@ final class ChatStore {
     /// Words and photos. The photos go up first (the outbox holds rows, not
     /// files), then the row goes out like any other. Throws when an upload
     /// fails: nothing is added, the composer keeps everything.
-    func send(_ text: String, photos: [ComposerPhoto]) async throws {
-        guard !photos.isEmpty else { if !send(text) { throw AccountError.signedOut }; return }
+    func send(_ text: String, photos: [ComposerPhoto], mention: YuiAgent? = nil) async throws {
+        guard !photos.isEmpty else { if !send(text, mention: mention) { throw AccountError.signedOut }; return }
         guard client != nil, let agentID = agent?.id, let account else { throw AccountError.signedOut }
         let media = YuiMedia(account: account, agentID: agentID)
         var paths: [String] = []
         for p in photos { paths.append(try await media.upload(photo: p.jpeg)) }
         guard agent?.id == agentID else { throw AccountError.signedOut }  // switched threads mid-upload
         let body = Attachments.body(text: text, photos: paths.count)
+        if let mention {
+            replying = nil
+            let m = ChatMessage(id: UUID().uuidString.lowercased(), text: Attachments.caption(body: body, photos: paths.count),
+                                fromUser: true, photos: photos.map { .local($0.preview) }, mentionTo: "To \(mention.name)")
+            withAnimation(Self.sendSpring) { messages.append(m) }
+            post(id: m.id, body: Mentions.body(body, to: mention), kind: "text",
+                 meta: Mentions.meta(Attachments.meta(paths: paths), to: mention), answers: false)
+            return
+        }
         let q = takeReply(for: body)
         let m = ChatMessage(id: UUID().uuidString.lowercased(), text: Attachments.caption(body: body, photos: paths.count),
                             fromUser: true, photos: photos.map { .local($0.preview) }, replyTo: q)
@@ -435,19 +459,26 @@ final class ChatStore {
     /// A person's text row (or outbox item) as a bubble, photos and reply quote included.
     static func userMessage(id: String, body: String, meta: YLValue?) -> ChatMessage {
         let paths = Attachments.paths(meta)
-        let words = ReplyQuote.words(body: body, meta: meta)
+        let arrived = Mentions.arrived(meta: meta)
+        let words = arrived != nil ? Mentions.arrivedWords(body: body)
+            : Mentions.words(body: ReplyQuote.words(body: body, meta: meta), meta: meta)
         return ChatMessage(id: id, text: Attachments.caption(body: words, photos: paths.count), fromUser: true,
-                           photos: paths.map { .stored($0) }, replyTo: ReplyQuote.from(meta: meta))
+                           photos: paths.map { .stored($0) }, replyTo: ReplyQuote.from(meta: meta),
+                           mentionTo: Mentions.to(meta: meta).map { "To \($0)" } ?? arrived)
     }
 
     /// Into the outbox first (on disk), then out: a dropped network or a killed
     /// app never loses it, and it sends itself when the connection is back.
-    private func post(id: String = UUID().uuidString.lowercased(), body: String, kind: String, meta: YLValue?) {
+    /// `answers: false`: this agent won't answer it (a mention goes to another), so no typing dots.
+    private func post(id: String = UUID().uuidString.lowercased(), body: String, kind: String, meta: YLValue?,
+                      answers: Bool = true) {
         guard client != nil, let agentID = agent?.id, let user = account?.session?.userID else { return }
         seen.insert(id.lowercased())
-        waiting = true
-        waitingSince = .now
-        pickedUpAt = nil
+        if answers {
+            waiting = true
+            waitingSince = .now
+            pickedUpAt = nil
+        }
         Outbox.shared.add(.init(id: id.lowercased(), userID: user, agentID: agentID, body: body, kind: kind,
                                 meta: meta, queuedAt: .now))
     }
@@ -523,7 +554,8 @@ final class ChatStore {
         let id = row.id.lowercased()
         // Polls overlap: only a row not seen before can end the wait.
         guard seen.insert(id).inserted else { return }
-        if row.sender == "agent" { waiting = false; pickedUpAt = nil }
+        // Another agent's answer copied in (YUI-44) doesn't end this agent's turn.
+        if row.sender == "agent", Mentions.from(meta: row.meta) == nil { waiting = false; pickedUpAt = nil }
         var new: [ChatMessage] = []
         /// A live reply's lines: they can bring a page forward.
         var live: [YLNode] = []
@@ -534,6 +566,17 @@ final class ChatStore {
                 if let echo = row.meta?.object?["echo"]?.string { new.append(ChatMessage(id: id, text: echo, fromUser: true)) }
             } else {
                 new.append(Self.userMessage(id: id, body: row.body, meta: row.meta))
+            }
+        } else if let from = Mentions.from(meta: row.meta) {
+            // Another agent's answer to a mention (YUI-44): its words here, in its look.
+            // Its screens stay in its own thread, where their taps reach it.
+            if let r = row.reaction { reactions[id] = r }
+            for (i, seg) in YuiFence.split(row.body).enumerated() {
+                switch seg {
+                case .text(let t): new.append(ChatMessage(id: "\(id)#\(i)", text: t, fromUser: false, from: from))
+                case .yl: new.append(ChatMessage(id: "\(id)#\(i)", text: "Sent a screen. It's in \(from.name)'s thread.",
+                                                 fromUser: false, from: from))
+                }
             }
         } else {
             if let r = row.reaction { reactions[id] = r }

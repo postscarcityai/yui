@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// One row in the composer's suggestion popover: a slash command now (YUI-61),
-/// an @mention next (YUI-44). `title` is what the row shows first (`/new`),
+/// One row in the composer's suggestion popover: a slash command (YUI-61) or
+/// an @mention of another agent (YUI-44). `title` is what the row shows first (`/new`),
 /// `hint` its arguments (`[name]`), `detail` the one-line description.
 struct Suggestion: Identifiable, Equatable {
     let id: String
@@ -10,6 +10,8 @@ struct Suggestion: Identifiable, Equatable {
     var detail: String = ""
     /// What the composer holds after a tap.
     let fill: String
+    /// An @mention row's agent: its face leads the row (YUI-44).
+    var agent: YuiAgent? = nil
 }
 
 /// Suggestions over the composer, filtered as the person types. Tap one and
@@ -26,13 +28,19 @@ struct SuggestionPopover: View {
 
     var body: some View {
         let c = theme.swatch(scheme)
-        // A short list sizes to its rows; a long one scrolls. About four rows,
-        // more when the text is bigger, never the whole screen.
-        ViewThatFits(in: .vertical) {
-            list(c)
-            ScrollView { list(c) }.scrollBounceBehavior(.basedOnSize)
+        // A short list sizes to its rows; a long one scrolls in about four rows'
+        // height, more when the text is bigger, never the whole screen.
+        // (ViewThatFits stretched a two-row list to the full height, blank above and below.)
+        let big = typeSize.isAccessibilitySize
+        Group {
+            if items.count <= (big ? 2 : 4) {
+                list(c).fixedSize(horizontal: false, vertical: true)
+            } else {
+                ScrollView { list(c) }
+                    .scrollBounceBehavior(.basedOnSize)
+                    .frame(height: big ? 320 : 248)
+            }
         }
-        .frame(maxHeight: typeSize.isAccessibilitySize ? 320 : 248)
         .background(c.surface, in: .rect(cornerRadius: theme.radius.bubbleTail + 10))
         .overlay(RoundedRectangle(cornerRadius: theme.radius.bubbleTail + 10).stroke(c.outline, lineWidth: 1.5))
         .clipShape(.rect(cornerRadius: theme.radius.bubbleTail + 10))
@@ -60,6 +68,17 @@ struct SuggestionPopover: View {
     }
 
     private func row(_ s: Suggestion, _ c: Swatch) -> some View {
+        HStack(spacing: theme.spacing.m) {
+            if let a = s.agent { AgentBadge(agent: a, size: 32).accessibilityHidden(true) }
+            words(s, c)
+        }
+        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+        .padding(.horizontal, theme.spacing.l)
+        .padding(.vertical, theme.spacing.s)
+        .contentShape(Rectangle())
+    }
+
+    private func words(_ s: Suggestion, _ c: Swatch) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             HStack(alignment: .firstTextBaseline, spacing: theme.spacing.xs) {
                 Text(s.title)
@@ -79,10 +98,7 @@ struct SuggestionPopover: View {
                     .lineLimit(typeSize.isAccessibilitySize ? 3 : 1)
             }
         }
-        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-        .padding(.horizontal, theme.spacing.l)
-        .padding(.vertical, theme.spacing.s)
-        .contentShape(Rectangle())
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 

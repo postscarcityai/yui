@@ -335,7 +335,9 @@ struct ChatView: View {
                                         select: { selecting = m },
                                         reply: { startReply(m.id) }) { store.openStage(m.id) }
                             } else {
-                                Bubble(message: m, agent: store.agent, pending: outbox.isPending(m.id),
+                                Bubble(message: m, agent: m.from.map { f in agents.agents.first { $0.id == f.agentID } }
+                                            ?? store.agent,
+                                       pending: outbox.isPending(m.id),
                                        reaction: store.wearsReaction(m) ? store.reaction(for: m) : nil,
                                        lifted: store.reacting == m.id,
                                        reduceMotion: reduceMotion,
@@ -343,7 +345,11 @@ struct ChatView: View {
                                        react: { store.react(m.id, with: $0) },
                                        select: { selecting = m },
                                        reply: { startReply(m.id) },
-                                       goToQuote: { goToOriginal(of: $0) })
+                                       goToQuote: { goToOriginal(of: $0) },
+                                       openFrom: m.from.flatMap { f in
+                                           agents.agents.contains { $0.id == f.agentID }
+                                               ? { agents.selectedID = f.agentID } : nil
+                                       })
                             }
                         }
                         // Scrolled to from a reply's chip: a short glow says "this one".
@@ -435,13 +441,31 @@ struct ChatView: View {
         talk.listening ? [] : SlashCommands.suggestions(draft, in: store.agent?.commands)
     }
 
+    /// Typing @ anywhere: your other agents, filtered as you type (YUI-44).
+    private var mentionSuggestions: [Suggestion] {
+        guard !talk.listening, account.session?.userID != "demo" || agents.agents.count > 1 else { return [] }
+        return Mentions.suggestions(draft, agents: agents.agents, current: store.agent?.id)
+    }
+
+    /// The other agent this draft goes to, if it @s one.
+    private var mentioning: YuiAgent? {
+        guard !draft.hasPrefix("/") else { return nil }
+        return Mentions.target(draft, agents: agents.agents, current: store.agent?.id)
+    }
+
     private func inputBar(_ c: Swatch) -> some View {
-        let suggestions = slashSuggestions
+        let mentions = mentionSuggestions
+        let suggestions = mentions.isEmpty ? slashSuggestions : mentions
+        let to = mentions.isEmpty ? mentioning : nil
         return VStack(alignment: .leading, spacing: theme.spacing.s) {
             if !suggestions.isEmpty {
                 SuggestionPopover(items: suggestions, pick: { draft = $0.fill; focused = true },
-                                  identifier: "slash")
+                                  identifier: mentions.isEmpty ? "slash" : "mention")
                     .transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
+            }
+            if let to {
+                MentionBar(agent: to)
+                    .transition(.opacity)
             }
             if let q = store.replying {
                 ReplyBar(quote: q, agent: store.agent?.name) { store.cancelReply() }
@@ -467,6 +491,7 @@ struct ChatView: View {
         .animation(theme.spring, value: talk.listening)
         .animation(theme.spring, value: photos)
         .animation(reduceMotion ? .easeInOut(duration: 0.15) : theme.spring, value: suggestions.isEmpty)
+        .animation(.easeInOut(duration: 0.15), value: to?.id)
         .animation(reduceMotion ? .easeInOut(duration: 0.2) : theme.spring, value: store.replying)
         .fullScreenCover(isPresented: $shooting) {
             CameraCapture(front: false) { data in
@@ -715,9 +740,10 @@ struct ChatView: View {
         guard !text.isEmpty || !photos.isEmpty, !sending else { return }
         if account.session?.userID != "demo" {
             guard store.agent != nil else { return }
+            let to = mentioning
             if photos.isEmpty {
                 // Not sent (no agent, no session): the words stay in the field.
-                guard store.send(text) else { return }
+                guard store.send(text, mention: to) else { return }
                 clearComposer()
                 return
             }
@@ -726,7 +752,7 @@ struct ChatView: View {
             Task {
                 defer { sending = false }
                 do {
-                    try await store.send(text, photos: outgoing)
+                    try await store.send(text, photos: outgoing, mention: to)
                     photos = []
                     clearComposer()
                 } catch {
@@ -951,12 +977,29 @@ private struct Bubble: View {
     var reply: () -> Void = {}
     /// The chip on a sent reply: back to the message it quotes.
     var goToQuote: (ReplyQuote) -> Void = { _ in }
+    /// Another agent's answer to a mention: opens its own thread (YUI-44).
+    var openFrom: (() -> Void)? = nil
     @Environment(\.yuiTheme) private var theme
 
     var body: some View {
+        if message.from != nil, let agent {
+            // Another agent's answer: drawn in its own look, whatever thread it's in.
+            content.environment(\.yuiTheme, agent.yuiTheme)
+        } else {
+            content
+        }
+    }
+
+    private var content: some View {
         HStack(alignment: .bottom, spacing: theme.spacing.s) {
             if message.fromUser { Spacer(minLength: 48) } else { AgentFace(agent: agent) }
-            VStack(alignment: .trailing, spacing: theme.spacing.xs) {
+            VStack(alignment: message.from == nil ? .trailing : .leading, spacing: theme.spacing.xs) {
+                if let from = message.from {
+                    MentionHeader(from: from, open: openFrom)
+                }
+                if let label = message.mentionTo {
+                    MentionChip(label: label)
+                }
                 if let q = message.replyTo {
                     ReplyChip(quote: q, agent: agent?.name) { goToQuote(q) }
                 }

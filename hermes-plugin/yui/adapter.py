@@ -60,6 +60,11 @@ Transport: the gateway dials OUT to Supabase (PROOF). No inbound ports.
      and unblocks it, with no agent turn, only for the paired owner. Same
      confirmation and note as a board order.
 
+ 11. Mentions (YUI-44, mentions.py): Yui routes @mentions in the database. A
+     reply to the person's turn that @s another of their agents carries
+     meta.mentions; this agent's next turn starts with notes on what other
+     agents were asked and answered in its thread.
+
 The channel guide (CHANNEL.md, synced verbatim from yuigui/spec/CHANNEL.md by
 ../sync_channel.py) is this platform's system-prompt hint, so it is in the
 system prompt on every turn on the Yui channel, and only there.
@@ -94,7 +99,7 @@ from gateway.config import Platform, PlatformConfig
 from gateway.platforms.base import (BasePlatformAdapter, MessageEvent, MessageType, ProcessingOutcome,
                                     SendResult)
 
-from . import board, connector, flywheel, media, needs, outbox
+from . import board, connector, flywheel, media, mentions, needs, outbox
 from . import commands as slash
 
 logger = logging.getLogger(__name__)
@@ -605,8 +610,11 @@ class YuiAdapter(BasePlatformAdapter):
                 photos += p
                 types += t
             texts.append(text)
-        # Board orders saved since the last turn (YUI-66): the agent reads them first.
+        # Board orders saved since the last turn (YUI-66) and what other agents
+        # were asked and answered in this thread (YUI-44): the agent reads them first.
         notes = self._notes.pop(row["agent_id"], [])
+        if not texts[0].lstrip().startswith("/"):
+            notes += await self._mention_notes(row["agent_id"], row.get("created_at"))
         if notes and not texts[0].lstrip().startswith("/"):
             texts = notes + texts
         event = MessageEvent(
@@ -626,6 +634,30 @@ class YuiAdapter(BasePlatformAdapter):
         if not event.is_command():
             self._turns[id(event)] = (row["agent_id"], [r["id"] for r in rows])
         await self.handle_message(event)
+
+    async def _mention_notes(self, aid: str, upto: Optional[str]) -> List[str]:
+        """Mentions of other agents from this thread, and their answers here,
+        since this agent's last turn (YUI-44). Best effort: none on a failure."""
+        key = f"mention:{aid}"
+        floor = self._cursor.get(key) or self._cursor.get(aid) or new_agent_floor()
+        params = {"select": "id,sender,body,meta,created_at", "agent_id": f"eq.{aid}",
+                  "created_at": f"gt.{floor}", "order": "created_at.asc,id.asc", "limit": "20",
+                  "or": "(meta->mention.not.is.null,meta->mention_reply.not.is.null)"}
+        if upto:
+            params["and"] = f'(created_at.lte."{upto}")'
+        try:
+            r = await self._client.get(f"{REST}/yui_messages", headers=self._rest_headers(), params=params)
+            if r.status_code >= 300:
+                logger.warning("[yui] mention notes: %s %s", r.status_code, r.text[:120])
+                return []
+            rows = r.json()
+        except Exception as e:
+            logger.warning("[yui] mention notes: %s", e)
+            return []
+        if rows:
+            self._cursor[key] = rows[-1]["created_at"]
+            await asyncio.to_thread(self._save_cursor)
+        return mentions.notes(rows)
 
     async def _realtime_loop(self) -> None:
         """Phoenix channel on postgres_changes; any INSERT wakes the fetcher."""
@@ -702,6 +734,10 @@ class YuiAdapter(BasePlatformAdapter):
         turn = (self._busy.get(agent_id) or (None,))[0]
         if turn and not sender:
             row["meta"] = {"turn": turn}  # the rows this reply answers (restart dedupe)
+            # @another agent in a reply to the person (YUI-44): Yui hands it on, one hop.
+            found = mentions.handles_in(body, own=[(self._agents.get(agent_id) or {}).get("handle")])
+            if found:
+                row["meta"]["mentions"] = found
         handoff = bool(sender) or time.time() - self._last_inbound.get(agent_id, 0) > HANDOFF_AFTER_SECONDS
         mid = row["id"]
         # Older replies still waiting go first: never overtake them.
