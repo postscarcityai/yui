@@ -15,6 +15,7 @@ struct StoryPage: View {
     var showNotes = false
     @State private var phase = Phase.before
     @State private var viewing = false
+    @Environment(\.ylComponents) private var all
     @Environment(\.yuiTheme) private var theme
     @Environment(\.colorScheme) private var scheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -49,8 +50,14 @@ struct StoryPage: View {
         let points = c.strings("points") ?? []
         // No title: the words are the headline.
         let statement = title == nil && points.isEmpty
+        // A drawn picture comes on part by part first; the words take their beats after it.
+        let drawn = all.art(of: c)
+        let after = drawn.map { $0.parts.count + 1 } ?? 0
         return VStack(alignment: .leading, spacing: 0) {
-            if let img = YLMediaURL.url(c.string("img")) {
+            if let drawn {
+                SketchDrawing(sketch: drawn.sketch, parts: drawn.parts, phase: phase)
+                    .padding(.bottom, title == nil && body == nil && points.isEmpty ? 0 : theme.spacing.xl)
+            } else if let img = YLMediaURL.url(c.string("img")) {
                 art(img)
                     .padding(.bottom, theme.spacing.xl)
                     .beat(phase, 0, reduceMotion, theme.spring)
@@ -60,7 +67,7 @@ struct StoryPage: View {
                     .foregroundStyle(s.ink)
                     .accessibilityIdentifier("story-title")
                     .accessibilityAddTraits(.isHeader)
-                    .beat(phase, 1, reduceMotion, theme.spring)
+                    .beat(phase, after + 1, reduceMotion, theme.spring)
             }
             if let body {
                 Group {
@@ -76,7 +83,7 @@ struct StoryPage: View {
                 }
                 .fixedSize(horizontal: false, vertical: true)
                 .accessibilityIdentifier("story-body")
-                .beat(phase, statement ? 1 : 2, reduceMotion, theme.spring)
+                .beat(phase, after + (statement ? 1 : 2), reduceMotion, theme.spring)
             }
             if !points.isEmpty {
                 VStack(alignment: .leading, spacing: theme.spacing.l) {
@@ -92,7 +99,7 @@ struct StoryPage: View {
                                 .fixedSize(horizontal: false, vertical: true)
                                 .accessibilityIdentifier("story-point")
                         }
-                        .beat(phase, 2 + i, reduceMotion, theme.spring)
+                        .beat(phase, after + 2 + i, reduceMotion, theme.spring)
                     }
                 }
                 .padding(.top, title == nil && body == nil ? 0 : theme.spacing.xl)
@@ -136,7 +143,7 @@ struct StoryPage: View {
         return typeSize.isAccessibilitySize ? base * 1.3 : typeSize >= .xxLarge ? base * 1.12 : base
     }
 
-    /// The picture's slot: an image now; a drawn `sketch` goes here once the app draws them.
+    /// The picture's slot for an image (a drawn `sketch` takes it over, see `content`).
     private func art(_ img: URL) -> some View {
         MediaTile(src: img)
             .frame(maxWidth: .infinity)
@@ -151,7 +158,7 @@ struct StoryPage: View {
     private func leave() { phase = .after }
 }
 
-private extension View {
+extension View {
     /// One part of a story page on its beat: in order after the page arrives,
     /// all at once and quickly when it leaves.
     func beat(_ phase: StoryPage.Phase, _ order: Int, _ reduce: Bool, _ spring: Animation) -> some View {

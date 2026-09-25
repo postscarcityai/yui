@@ -15,6 +15,8 @@ struct YLComponent: Identifiable, Equatable, Sendable {
     var inGroup: String? = nil
     /// The saved screen it came back from (`show name`, the shelf): its events carry `saved`.
     var saved: String? = nil
+    /// A page's picture drawn by a `sketch` (its serial): set by `steps(of:)`, never by the parser.
+    var art: Int? = nil
 
     var id: Int { serial }
 }
@@ -150,7 +152,7 @@ extension YLComponent {
     /// The page this component lives on (spec section 5, Pages): 2 to 12, else the chat.
     var page: Int { YuiLines.page(of: screen) }
 
-    static let groupHeads: Set<String> = ["deck", "plan", "narrate", "timeline"]
+    static let groupHeads: Set<String> = ["deck", "plan", "narrate", "timeline", "sketch"]
 }
 
 extension Array where Element == YLComponent {
@@ -158,6 +160,31 @@ extension Array where Element == YLComponent {
     func members(of head: YLComponent) -> [YLComponent] {
         let next = first { $0.serial > head.serial && $0.ylID == head.ylID && $0.preset == head.preset }?.serial ?? .max
         return filter { $0.inGroup == head.ylID && $0.serial > head.serial && $0.serial < next }
+    }
+
+    /// A deck's or plan's steps (spec: sketch, On a page): a `sketch` is the picture of
+    /// the page right before it; one with no page there, or after a page that has one,
+    /// is a page of its own that is only the drawing.
+    func steps(of head: YLComponent) -> [YLComponent] {
+        var out: [YLComponent] = []
+        for m in members(of: head) {
+            guard m.preset == "sketch" else { out.append(m); continue }
+            if let last = out.last, last.preset == "page", last.art == nil {
+                out[out.count - 1].art = m.serial
+            } else {
+                var page = YLComponent(serial: m.serial, ylID: m.ylID, preset: "page", screen: m.screen, props: [:],
+                                       line: m.line, inGroup: m.inGroup, saved: m.saved)
+                page.art = m.serial
+                out.append(page)
+            }
+        }
+        return out
+    }
+
+    /// The sketch drawn as `page`'s picture, and its rows.
+    func art(of page: YLComponent) -> (sketch: YLComponent, parts: [YLComponent])? {
+        guard let n = page.art, let s = first(where: { $0.serial == n && $0.preset == "sketch" }) else { return nil }
+        return (s, members(of: s))
     }
 
     /// The newest inline table called `id` (by YL id or by name), for `chart data=id`.

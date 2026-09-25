@@ -95,16 +95,20 @@ struct PagePreset: View {
     var standalone = false
     var showNotes = false
     @State private var viewing = false
+    @Environment(\.ylComponents) private var all
     @Environment(\.yuiTheme) private var theme
     @Environment(\.colorScheme) private var scheme
 
     var body: some View {
         let s = theme.swatch(scheme)
-        let img = YLMediaURL.url(c.string("img"))
+        // A drawn sketch is the page's picture, in place of an image (spec: sketch, On a page).
+        let art = all.art(of: c)
+        let img = art == nil ? YLMediaURL.url(c.string("img")) : nil
         let points = c.strings("points") ?? []
         let hasText = c.string("body") != nil || !points.isEmpty
-        let layout = c.string("layout") ?? (img == nil ? "text" : hasText ? "split" : "cover")
+        let layout = art != nil ? "text" : c.string("layout") ?? (img == nil ? "text" : hasText ? "split" : "cover")
         let content = VStack(alignment: .leading, spacing: theme.spacing.m) {
+            if let art { SketchDrawing(sketch: art.sketch, parts: art.parts) }
             if layout == "cover", let img {
                 MediaTile(src: img)
                     .frame(maxWidth: .infinity, minHeight: 260, maxHeight: .infinity)
@@ -180,13 +184,13 @@ struct DeckPreset: View {
 
     var body: some View {
         // On the stage the deck is the full screen already: no card around it (YUI-82).
-        DeckBody(c: c, pages: all.members(of: c), at: $at, seen: $seen, notes: notes ?? c.flag("notes"),
+        DeckBody(c: c, pages: all.steps(of: c), at: $at, seen: $seen, notes: notes ?? c.flag("notes"),
                  toggleNotes: { notes = !(notes ?? c.flag("notes")) }, full: onStage,
                  openFull: onStage ? nil : { full = true }, emit: pageEmit)
             .onChange(of: at) { seen.insert(at); checkDone() }
             .onAppear { if c.flag("full"), !onStage { full = true } }
             .fullScreenCover(isPresented: $full) {
-                DeckBody(c: c, pages: all.members(of: c), at: $at, seen: $seen, notes: notes ?? c.flag("notes"),
+                DeckBody(c: c, pages: all.steps(of: c), at: $at, seen: $seen, notes: notes ?? c.flag("notes"),
                          toggleNotes: { notes = !(notes ?? c.flag("notes")) }, full: true, openFull: nil, emit: pageEmit,
                          close: { full = false })
                     .environment(\.ylComponents, all)
@@ -196,7 +200,7 @@ struct DeckPreset: View {
 
     private var pageEmit: YLEmit {
         relay(emit, pass: true) { e in
-            let pages = all.members(of: c)
+            let pages = all.steps(of: c)
             guard let i = pages.firstIndex(where: { $0.ylID == e.id && $0.preset == e.preset }) else { return }
             answered.insert(i)
             if let r = e.value["correct"]?.bool { graded[i] = r }
@@ -205,7 +209,7 @@ struct DeckPreset: View {
     }
 
     private func checkDone() {
-        let pages = all.members(of: c)
+        let pages = all.steps(of: c)
         guard !sentDone, !pages.isEmpty, seen.count >= pages.count else { return }
         let questions = pages.indices.filter { pages[$0].preset != "page" }
         guard questions.allSatisfy(answered.contains) else { return }
@@ -434,7 +438,7 @@ struct PlanPreset: View {
 
     var body: some View {
         let s = theme.swatch(scheme)
-        let steps = all.members(of: c)
+        let steps = all.steps(of: c)
         let review = c.props["review"]?.bool != false
         // On the stage the plan is the screen, not a card on it (YUI-82).
         PresetCard(flat: onStage) {
@@ -570,7 +574,7 @@ struct PlanRecord: View {
 
     var body: some View {
         let s = theme.swatch(scheme)
-        let steps = all.members(of: plan)
+        let steps = all.steps(of: plan)
         let pages = steps.filter { $0.preset == "page" }
         let asked = steps.count - pages.count
         let held = [pages.isEmpty ? nil : "\(pages.count) page\(pages.count == 1 ? "" : "s")",
@@ -861,7 +865,7 @@ struct NarratePreset: View {
         all.members(of: c).flatMap { m -> [NarrateStep] in
             switch m.preset {
             case "deck":
-                return all.members(of: m).enumerated().map { i, p in
+                return all.steps(of: m).enumerated().map { i, p in
                     NarrateStep(member: m, part: i, say: said(p), question: p.preset != "page")
                 }
             case "storyboard":
@@ -955,7 +959,7 @@ struct NarratePreset: View {
         let m = step.member
         switch (m.preset, step.part) {
         case ("deck", let i?):
-            let pages = all.members(of: m)
+            let pages = all.steps(of: m)
             if i < pages.count {
                 if pages[i].preset == "page" {
                     if full { StoryPage(c: pages[i]) } else { PagePreset(c: pages[i]) }

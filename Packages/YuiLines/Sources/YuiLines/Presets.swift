@@ -12,16 +12,19 @@ let presets: Set<String> = [
     "chart", "stat", "math", "step", "calc",
     "deck", "page", "plan", "project", "narrate",
     "timeline", "done", "now", "next",
+    "sketch", "row", "after",
     "game",
 ]
 
 /// Groups (spec section 6): a head collects the member lines that follow it on
-/// the same screen. Only a narrate can hold another group (a deck).
+/// the same screen. A narrate can hold another group (a deck), a deck or plan
+/// a sketch (the picture of the page before it).
 let groups: [String: Set<String>] = [
-    "deck": ["page", "ask", "choose", "pick"],
-    "plan": ["page", "ask", "choose", "pick", "slide", "form", "mic", "camera"],
+    "deck": ["page", "ask", "choose", "pick", "sketch"],
+    "plan": ["page", "ask", "choose", "pick", "slide", "form", "mic", "camera", "sketch"],
     "narrate": ["page", "compare", "image", "video", "card", "stat", "chart", "math", "storyboard", "gallery", "deck"],
     "timeline": ["done", "now", "next"],
+    "sketch": ["row", "after"],
 ]
 
 let chartTypes: Set<String> = ["line", "bar", "area", "scatter", "pie", "donut"]
@@ -386,8 +389,15 @@ private func positional(_ preset: String, _ pos: [Token]) -> Props {
             if text.count > 1 { o["body"] = .string(joinText(Array(text.dropFirst()))) }
         }
 
-    case "calc", "deck", "plan", "narrate", "timeline":
+    case "calc", "deck", "plan", "narrate", "timeline", "sketch":
         if !pos.isEmpty { o["title"] = .string(joinText(pos)) }
+
+    case "row":
+        // A drawn line: every positional token is text, links included.
+        if !pos.isEmpty { o["text"] = .string(joinText(pos)) }
+
+    case "after":
+        if !pos.isEmpty { o["label"] = .string(joinText(pos)) }
 
     case "done", "now", "next":
         // One timeline row: the first bare https token is url, the rest is text.

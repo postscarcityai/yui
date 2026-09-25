@@ -1046,6 +1046,30 @@ struct ChatView: View {
         end
         """
 
+    /// The "No card or feedback ids" idea drawn, not told (YUI-84): a story page whose
+    /// picture is a chat bubble with the id struck and the plain words highlighted, a
+    /// page that is only a drawing, and one sketch on its own in the chat.
+    static let drawnPages = """
+        deck "Plain words" +inline
+        page "No card or feedback ids" body="Each page says what changed in words you already use."
+        sketch Yui frame=bubble
+        row "Parked YUI-83 (t_2f464301) in the backlog" +x note="an id tells you nothing"
+        after
+        row "Parked the drawing card in the backlog" +hi note="plain words"
+        page "Every button does something"
+        sketch "Build ready" frame=phone
+        row "Build 97 is ready"
+        row +dim
+        row "Got it" +button +x note="does nothing"
+        row "Install" +button +hi note="does the thing"
+        end
+        end
+        sketch "What's in build 96" frame=window
+        row "Hold menu fits" +hi
+        row "YUI-78 ALUttyXBpVz3" +x +dim note="ids go"
+        row
+        """
+
     /// `-yuiDemo` seeds a chat; `-yuiYL <sample>` seeds one YL reply (see `YLSamples`).
     static var seed: [ChatMessage] {
         if UserDefaults.standard.string(forKey: "yuiReactDemo") != nil {
@@ -1090,10 +1114,12 @@ struct ChatView: View {
                     ChatMessage(text: "Yes, all of it", fromUser: true),
                     ChatMessage(text: longReport, fromUser: false)]
         }
-        // -yuiDemoPages: the build 96 feedback message that folds, and a build-ready deck (YUI-82).
+        // -yuiDemoPages: the build 96 feedback message that folds, the pages drawn (YUI-84), and a build-ready deck (YUI-82).
         if ProcessInfo.processInfo.arguments.contains("-yuiDemoPages") {
             return [ChatMessage(text: "Can the build pages read better?", fromUser: true),
                     ChatMessage(text: cardedAnswer, fromUser: false),
+                    ChatMessage(text: "Show me what no ids means", fromUser: true),
+                    ChatMessage(text: "", fromUser: false, yl: YLScreen(drawnPages)),
                     ChatMessage(text: "And the build ping?", fromUser: true),
                     ChatMessage(text: "Yui build 96 is ready in TestFlight.", fromUser: false),
                     ChatMessage(text: "", fromUser: false, yl: YLScreen(buildReady))]
