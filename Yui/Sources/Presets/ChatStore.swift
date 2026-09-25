@@ -395,6 +395,32 @@ final class ChatStore {
         if let agentID = agent?.id { shelf.store(agentID: agentID) }
     }
 
+    // MARK: The drawer's lists (YUI-86, spec YL.md section 5, The drawer)
+
+    /// What the open agent put in its drawer with `menu` lines: review, backlog,
+    /// shortcuts. Rebuilt from the thread as it loads and kept on the phone, like the shelf.
+    private(set) var menu = AgentMenu()
+
+    /// A reply's `menu` lines, stamped with the reply's time.
+    private func fileMenu(_ nodes: [YLNode], at: Date) {
+        guard !nodes.isEmpty else { return }
+        withAnimation(spring) { menu.apply(nodes, at: at) }
+        if let agentID = agent?.id { menu.store(agentID: agentID) }
+    }
+
+    /// Held in the drawer, Remove. Only a later line from the agent brings it back.
+    func removeFromMenu(_ id: String) {
+        withAnimation(spring) { menu.remove(id) }
+        if let agentID = agent?.id { menu.store(agentID: agentID) }
+    }
+
+    /// A review or backlog item with no `show=` or `url=`: it goes back to the
+    /// agent (`[yui] dana menu bucket=review tapped`), and the agent answers with the screen.
+    func tapMenu(_ item: YLMenuItem, bucket: String) {
+        receive(YLEvent(id: item.id, preset: "menu", value: ["bucket": .string(bucket), "tapped": .bool(true)],
+                        echo: item.label))
+    }
+
     // MARK: Thread
 
     /// Same agent, new fields (a rename, a new look): swap it in, keep the thread.
@@ -421,6 +447,7 @@ final class ChatStore {
         messages = []
         answers = [:]
         shelf = agent.map { Shelf.load(agentID: $0.id) } ?? Shelf()
+        menu = agent.map { AgentMenu.load(agentID: $0.id) } ?? AgentMenu()
         reactions = [:]
         reacting = nil
         replying = nil
@@ -683,6 +710,7 @@ final class ChatStore {
                         }
                     }
                     file(screen.shelfOps, at: at)
+                    fileMenu(screen.menuLines, at: at)
                     if let agentID = agent?.id { for look in screen.looks { onLook?(agentID, look, row.createdAt) } }
                     new.append(ChatMessage(id: "\(id)#\(i)", text: "", fromUser: false, yl: screen))
                     if loaded { live += nodes }
@@ -733,6 +761,7 @@ final class ChatStore {
         }
         for (_, n) in earlier where known[n.target ?? ""] != nil { shelve(n, at: .now) }
         file(Array(yl.shelfOps.dropFirst(before.shelfOps.count)), at: .now)
+        fileMenu(nodes.filter { $0.op == .menu }, at: .now)
         pageUpdate(nodes)
         stageUpdate(id, before: before)
         // Demo streams restyle live too, stamped now.

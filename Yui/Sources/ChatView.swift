@@ -374,7 +374,7 @@ struct ChatView: View {
     /// Top left: the drawer, also a drag right on the chat away. What's waiting on
     /// you sits on the button's glass as a count.
     private func menuItem(_ c: Swatch) -> some ToolbarContent {
-        let n = store.awaitingYou.count
+        let n = store.waitingCount
         return ToolbarItem(placement: .topBarLeading) {
             Button { settleDrawer(open: true) } label: {
                 Image(systemName: "line.3.horizontal")

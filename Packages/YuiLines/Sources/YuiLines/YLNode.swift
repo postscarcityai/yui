@@ -24,6 +24,9 @@ public struct YLNode: Codable, Equatable, Sendable {
         case close
         /// `>2 talk`: page 2 keeps the composer; `props.on` false (`talk off`) takes it away.
         case talk
+        /// `menu review@dana "Invite Dana?"`: an item in the agent's drawer, `id` and
+        /// `props` {bucket, label, sub?, say?, show?, url?}; `menu done dana` gives props {done: true}.
+        case menu
         /// The line was rejected: `message`. Every other line still renders.
         case error
     }

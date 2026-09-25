@@ -23,10 +23,12 @@ MIN_BUILD: Dict[str, int] = {
     "timeline": 69, "done": 69, "now": 69, "next": 69,  # b14ea17
     "game": 71,                                          # 36ecded
     "sketch": 104, "row": 104, "after": 104,             # d7214ee (YUI-84)
+    "menu": 115,                                         # YUI-86: the drawer's lists; dropped before
 }
 GROUPS = {"sketch": {"row", "after"}, "timeline": {"done", "now", "next"}}
 MEMBER_OF = {m: head for head, ms in GROUPS.items() for m in ms}
 STORY = {"deck", "plan"}  # a sketch in these is the picture of a page
+QUIET = {"menu"}  # draws nothing in the chat: dropped on old builds, never named in the note
 
 FENCE = re.compile(r"```yui[^\n]*\n(.*?)```", re.DOTALL)
 TOKEN = re.compile(r'[+\w-]+="(?:[^"\\]|\\.)*"(?:\|"(?:[^"\\]|\\.)*")*|"(?:[^"\\]|\\.)*"|\S+')
@@ -57,7 +59,7 @@ def too_new(build: Optional[int]) -> set:
 
 def note(build: Optional[int]) -> str:
     """A line for the agent's turn, or "" when the phone draws everything."""
-    heads = sorted({MEMBER_OF.get(p, p) for p in too_new(build)})
+    heads = sorted({MEMBER_OF.get(p, p) for p in too_new(build) - QUIET})
     if not heads:
         return ""
     which = f"build {build}" if build else "an older build"

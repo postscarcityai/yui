@@ -120,8 +120,14 @@ class Downgrade(unittest.TestCase):
     def test_note_names_what_to_skip(self):
         self.assertIn("cannot draw sketch", compat.note(96))
         self.assertNotIn("timeline", compat.note(96))
-        self.assertEqual(compat.note(112), "")
+        self.assertEqual(compat.note(115), "")
         self.assertIn("an older build", compat.note(None))
+
+    def test_menu_lines_go_quietly_before_the_drawer(self):
+        body = fence("say Drafted.", 'menu backlog@deload "Deload week plan" sub=drafting', "menu done dana")
+        self.assertEqual(compat.downgrade(body, 106), fence("say Drafted."))
+        self.assertEqual(compat.downgrade(body, 115), body)
+        self.assertNotIn("menu", compat.note(106))
 
 
 if __name__ == "__main__":

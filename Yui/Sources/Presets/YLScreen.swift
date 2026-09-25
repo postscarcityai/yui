@@ -32,6 +32,8 @@ struct YLScreen: Equatable, Sendable {
     private var saved: [String: SavedScreen] = [:]
     /// This reply's saves and forgets, in order, for the thread's shelf (YUI-32).
     private(set) var shelfOps: [ShelfOp] = []
+    /// This reply's `menu` lines, in order, for the agent's drawer (YUI-86). They draw nothing here.
+    private(set) var menuLines: [YLNode] = []
     /// This reply's `talk` and `clear` lines, in order: which pages keep the composer (YUI-62).
     private(set) var talkLines: [YLNode] = []
     private var serial = 0
@@ -87,6 +89,8 @@ struct YLScreen: Equatable, Sendable {
             break
         case .close:
             closedAt = serial
+        case .menu:
+            menuLines.append(node)
         case .theme:
             looks.append((node.props ?? [:]).compactMapValues { v in v.string ?? v.number.map(YLComponent.format) })
         case .error:

@@ -204,3 +204,9 @@ test("labels name what waits in the app", () => {
   assert.equal(label({ preset: "form", props: { fields: [{ key: "name" }, { key: "goal" }] } }), "Form: name, goal");
   assert.equal(label({ preset: "game", props: { kind: "snake" } }), "Play snake");
 });
+
+test("menu lines send nothing and a +fold card shows open (YL.md 5, The drawer; 10)", async () => {
+  const r = await renderYL('say Drafted.\nmenu backlog@deload "Deload week plan" sub=drafting\nmenu done dana\ncard "Deload" "Lighter sets, more sleep." +fold', opts());
+  assert.deepEqual(r.messages.map((m) => m.text), ["Drafted.", "<b>Deload</b>\nLighter sets, more sleep."]);
+  assert.deepEqual(r.errors, []);
+});

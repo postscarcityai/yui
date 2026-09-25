@@ -23,6 +23,8 @@ struct Vector: Sendable, CustomTestStringConvertible {
     let talk: [Int]?
     /// Words typed on a screen and the body the agent reads: screen, words, body.
     let typed: [String: String]?
+    /// The drawer after the input (spec section 5, The drawer).
+    let menu: YLValue?
     let style: [String: String]
     /// Ids that last from earlier replies, id -> preset (spec section 5).
     let known: [String: String]
@@ -52,6 +54,7 @@ enum Vectors {
                 pages: v["pages"]?.array?.map { Int($0.number!) },
                 talk: v["talk"]?.array?.map { Int($0.number!) },
                 typed: v["typed"]?.object?.compactMapValues { $0.string },
+                menu: v["menu"],
                 style: v["style"]?.object?.compactMapValues { $0.string } ?? [:],
                 known: v["known"]?.object?.compactMapValues { $0.string } ?? [:]
             )
@@ -120,6 +123,21 @@ func conformance(_ v: Vector) {
         } else {
             #expect(read?.screen == screen && read?.words == words, "typed read back: \(String(describing: read))")
         }
+    }
+
+    if let want = v.menu {
+        let m = YuiLines.menu(YuiLines.parse(v.input))
+        let got = YLValue.object(Dictionary(uniqueKeysWithValues: YuiLines.menuBuckets.map { b in
+            (b, YLValue.array(m[b].map { it in
+                var o: [String: YLValue] = ["id": .string(it.id), "label": .string(it.label)]
+                if let x = it.sub { o["sub"] = .string(x) }
+                if let x = it.say { o["say"] = .string(x) }
+                if let x = it.show { o["show"] = .string(x) }
+                if let x = it.url { o["url"] = .string(x) }
+                return .object(o)
+            }))
+        }))
+        #expect(got == want, "menu: \(json(got))")
     }
 
     #expect(v.expected.contains { $0["op"] == "error" } == v.error, "`error` flag does not match expected")

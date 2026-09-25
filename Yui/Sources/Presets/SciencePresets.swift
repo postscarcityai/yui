@@ -228,44 +228,83 @@ struct MathPreset: View {
 
 // MARK: - card
 
-/// `card title [body] sub= tag= img= cta= url=`. The button emits `{cta}`, or with
-/// `url=` opens the link instead.
+/// `card title [body] sub= tag= img= cta= url= +fold`. The button emits `{cta}`, or with
+/// `url=` opens the link instead. `+fold` shows the tag, title, sub and the body's
+/// first line; a tap opens the rest in place and another folds it (no event).
 struct CardPreset: View {
     let c: YLComponent
+    @State private var opened = false
     @Environment(\.ylEmit) private var emit
     @Environment(\.openURL) private var openURL
     @Environment(\.yuiTheme) private var theme
     @Environment(\.colorScheme) private var scheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private var folds: Bool { c.flag("fold") }
+    private var folded: Bool { folds && !opened }
 
     var body: some View {
         let s = theme.swatch(scheme)
         PresetCard {
-            if let img = YLMediaURL.url(c.string("img")) {
+            if !folded, let img = YLMediaURL.url(c.string("img")) {
                 RemoteImage(src: img).frame(height: 170).frame(maxWidth: .infinity)
                     .clipShape(.rect(cornerRadius: theme.radius.bubble))
+                    .transition(.opacity)
             }
-            if let tag = c.string("tag") {
-                Text(tag).font(theme.font(theme.type.caption, .heavy)).foregroundStyle(s.userInk)
-                    .padding(.horizontal, theme.spacing.s).padding(.vertical, 3).background(s.butter, in: Capsule())
+            if folds {
+                Button {
+                    withAnimation(reduceMotion ? .easeInOut(duration: 0.2) : theme.spring) { opened.toggle() }
+                } label: {
+                    HStack(alignment: .top, spacing: theme.spacing.m) {
+                        VStack(alignment: .leading, spacing: theme.spacing.s) { heading(s) }
+                        Spacer(minLength: 0)
+                        Image(systemName: "chevron.down")
+                            .font(theme.font(14, .bold)).foregroundStyle(s.inkSoft)
+                            .rotationEffect(.degrees(opened ? 180 : 0))
+                            .padding(.top, 6)
+                    }
+                    .contentShape(.rect)
+                }
+                .buttonStyle(.plain)
+                .sensoryFeedback(.selection, trigger: opened)
+                .accessibilityLabel(c.string("title") ?? "Card")
+                .accessibilityValue(opened ? "Open" : "Folded")
+                .accessibilityHint(opened ? "Folds it away" : "Opens it here")
+                .accessibilityIdentifier("card-fold-\(c.ylID)")
+            } else {
+                heading(s)
             }
-            if let t = c.string("title") { PresetTitle(text: t) }
-            if let sub = c.string("sub") {
-                Text(sub).font(theme.font(theme.type.caption, .semibold)).foregroundStyle(s.inkSoft)
-            }
-            if let b = c.string("body") {
-                Text(b).font(theme.font(theme.type.body)).foregroundStyle(s.ink).fixedSize(horizontal: false, vertical: true)
-            }
-            if let link {
-                OptionPill(text: c.string("cta") ?? "Open", fill: s.accent, ink: s.onAccent, grow: true,
-                           icon: "arrow.up.right") { openURL(link) }
-                    .accessibilityHint("Opens in Safari")
-            } else if let cta = c.string("cta") {
-                OptionPill(text: cta, fill: s.accent, ink: s.onAccent, grow: true) {
-                    emit(c.event(["cta": .string(cta)], echo: cta))
+            if !folded {
+                if let link {
+                    OptionPill(text: c.string("cta") ?? "Open", fill: s.accent, ink: s.onAccent, grow: true,
+                               icon: "arrow.up.right") { openURL(link) }
+                        .accessibilityHint("Opens in Safari")
+                } else if let cta = c.string("cta") {
+                    OptionPill(text: cta, fill: s.accent, ink: s.onAccent, grow: true) {
+                        emit(c.event(["cta": .string(cta)], echo: cta))
+                    }
                 }
             }
         }
         .disabled(c.locked)
+    }
+
+    /// Tag, title, sub and body. Folded, the body shows only its first line.
+    @ViewBuilder private func heading(_ s: Swatch) -> some View {
+        if let tag = c.string("tag") {
+            Text(tag).font(theme.font(theme.type.caption, .heavy)).foregroundStyle(s.userInk)
+                .padding(.horizontal, theme.spacing.s).padding(.vertical, 3).background(s.butter, in: Capsule())
+        }
+        if let t = c.string("title") { PresetTitle(text: t) }
+        if let sub = c.string("sub") {
+            Text(sub).font(theme.font(theme.type.caption, .semibold)).foregroundStyle(s.inkSoft)
+        }
+        if let b = c.string("body") {
+            Text(b).font(theme.font(theme.type.body)).foregroundStyle(folded ? s.inkSoft : s.ink)
+                .lineLimit(folded ? 1 : nil)
+                .multilineTextAlignment(.leading)
+                .fixedSize(horizontal: false, vertical: true)
+        }
     }
 
     /// `url=` makes the button a link: it carries an arrow, opens the page in

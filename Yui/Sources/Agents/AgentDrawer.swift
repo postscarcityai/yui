@@ -6,9 +6,11 @@ import YuiLines
 // with everything about the agent you're talking to. A drag to the right on the
 // chat pulls it out and it follows the finger; it stops short of the right edge
 // so the chat stays in view, and a tap on that sliver or a drag back closes it.
-// Tabs: Home (pinned screens, what's next, the agent's screens, shortcuts),
-// Review (what's waiting on you, answered in place), Controls, About. The agent
-// sits at the bottom; a tap there opens the switcher, which springs up.
+// Tabs: Home (pinned screens, what's next, the agent's backlog and screens,
+// shortcuts), Review (what's waiting on you, answered in place), Controls, About.
+// The agent sits at the bottom; a tap there opens the switcher, which springs up.
+// The agent fills three lists itself with `menu` lines (YUI-86): review items
+// sit under the thread's asks in Review, backlog and shortcuts on Home.
 
 enum Drawer {
     /// Share of the screen the drawer covers. One constant, so it can shrink later.
@@ -95,6 +97,9 @@ extension ChatStore {
         }
         return out
     }
+
+    /// Everything waiting on the person: the thread's open asks plus the agent's review items.
+    var waitingCount: Int { awaitingYou.count + menu.review.count }
 }
 
 // MARK: The drawer
@@ -121,14 +126,14 @@ struct AgentDrawer: View {
         let waiting = store.awaitingYou
         VStack(alignment: .leading, spacing: 0) {
             header(c)
-            TabStrip(tab: $tab, review: waiting.count, ns: tabs)
+            TabStrip(tab: $tab, review: waiting.count + store.menu.review.count, ns: tabs)
                 .padding(.horizontal, theme.spacing.l)
                 .padding(.bottom, theme.spacing.m)
             ScrollView {
                 Group {
                     switch tab {
                     case .home: DrawerHome(store: store, waiting: waiting, close: close, compose: compose) { tab = .review }
-                    case .review: DrawerReview(store: store, items: waiting, close: close)
+                    case .review: DrawerReview(store: store, items: waiting, close: close, compose: compose)
                     case .controls: DrawerControls(store: store, close: close, edit: edit)
                     case .about: DrawerAbout(agent: store.agent)
                     }
@@ -306,6 +311,7 @@ private struct DrawerHome: View {
     let close: () -> Void
     let compose: (String) -> Void
     let review: () -> Void
+    @Environment(\.openURL) private var openURL
     @Environment(\.yuiTheme) private var theme
     @Environment(\.colorScheme) private var scheme
 
@@ -336,7 +342,9 @@ private struct DrawerHome: View {
                 .scrollClipDisabled()
             }
 
-            if let next = waiting.first {
+            let count = waiting.count + store.menu.review.count
+            if let next = waiting.first.map({ ($0.title, $0.kicker) })
+                ?? store.menu.review.first.map({ ($0.label, $0.sub ?? "For you") }) {
                 DrawerHeading(text: "Next up for you")
                 Button(action: review) {
                     HStack(spacing: theme.spacing.m) {
@@ -344,12 +352,12 @@ private struct DrawerHome: View {
                             .font(theme.font(17, .bold)).foregroundStyle(c.onAccent)
                             .frame(width: 38, height: 38).background(c.accent, in: Circle())
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(next.title).font(theme.font(theme.type.body, .bold)).foregroundStyle(c.ink)
+                            Text(next.0).font(theme.font(theme.type.body, .bold)).foregroundStyle(c.ink)
                                 .lineLimit(2).multilineTextAlignment(.leading)
-                            Text(next.kicker).font(theme.font(theme.type.caption)).foregroundStyle(c.inkSoft)
+                            Text(next.1).font(theme.font(theme.type.caption)).foregroundStyle(c.inkSoft)
                         }
                         Spacer(minLength: 0)
-                        Text("\(waiting.count)")
+                        Text("\(count)")
                             .font(theme.font(13, .heavy)).foregroundStyle(c.onAccent)
                             .frame(minWidth: 26, minHeight: 26).background(c.accent, in: Circle())
                     }
@@ -358,8 +366,24 @@ private struct DrawerHome: View {
                     .overlay(RoundedRectangle(cornerRadius: 20).stroke(c.accent.opacity(0.4), lineWidth: 1.5))
                 }
                 .buttonStyle(BounceButtonStyle())
-                .accessibilityLabel("Next up: \(next.title). \(waiting.count) waiting on you")
+                .accessibilityLabel("Next up: \(next.0). \(count) waiting on you")
                 .accessibilityIdentifier("drawer-next-up")
+            }
+
+            // What the agent is working on for you (`menu backlog`).
+            let backlog = store.menu.backlog
+            if !backlog.isEmpty {
+                DrawerHeading(text: "Backlog")
+                ForEach(backlog) { item in
+                    DrawerRow(icon: MenuAction.icon(item, fallback: "hourglass"), title: item.label, sub: item.sub,
+                              tint: c.lavender, trailing: MenuAction.trailing(item)) {
+                        MenuAction.open(item, bucket: "backlog", store: store, close: close, openURL: openURL)
+                    }
+                    .contextMenu {
+                        Button("Remove", systemImage: "minus.circle", role: .destructive) { store.removeFromMenu(item.id) }
+                    }
+                    .accessibilityIdentifier("drawer-backlog-\(item.id)")
+                }
             }
 
             let screens = store.screens.dropFirst()
@@ -375,9 +399,23 @@ private struct DrawerHome: View {
                 }
             }
 
+            // The agent's own shortcuts (`menu shortcut`) first, then the host's commands.
+            let mine = store.menu.shortcuts
             let shortcuts = (store.agent?.commands ?? []).prefix(6)
-            if !shortcuts.isEmpty {
+            if !shortcuts.isEmpty || !mine.isEmpty {
                 DrawerHeading(text: "Shortcuts")
+                ForEach(mine) { item in
+                    DrawerRow(icon: "sparkles", title: item.label, sub: item.sub, tint: c.butter,
+                              trailing: item.say?.hasSuffix(" ") == true ? "text.cursor" : "paperplane.fill") {
+                        close()
+                        MenuAction.shortcut(item, store: store, compose: compose)
+                    }
+                    .contextMenu {
+                        Button("Remove", systemImage: "minus.circle", role: .destructive) { store.removeFromMenu(item.id) }
+                    }
+                    .accessibilityHint(item.say?.hasSuffix(" ") == true ? "Starts a message to finish" : "Sends it as your message")
+                    .accessibilityIdentifier("drawer-shortcut-\(item.id)")
+                }
                 ForEach(Array(shortcuts)) { cmd in
                     DrawerRow(icon: "bolt.fill", title: cmd.description.isEmpty ? "/\(cmd.name)" : cmd.description,
                               sub: "/\(cmd.name)\(cmd.args.map { " " + $0 } ?? "")", tint: c.butter) {
@@ -445,14 +483,18 @@ private struct DrawerReview: View {
     let store: ChatStore
     let items: [ReviewItem]
     let close: () -> Void
+    let compose: (String) -> Void
     @State private var open: String?
+    @Environment(\.openURL) private var openURL
     @Environment(\.yuiTheme) private var theme
     @Environment(\.colorScheme) private var scheme
 
     var body: some View {
         let c = theme.swatch(scheme)
+        let flagged = store.menu.review
+        let count = items.count + flagged.count
         VStack(alignment: .leading, spacing: theme.spacing.m) {
-            if items.isEmpty {
+            if count == 0 {
                 VStack(alignment: .leading, spacing: theme.spacing.s) {
                     Text("All caught up.")
                         .font(theme.font(theme.type.display, theme.strong)).foregroundStyle(c.ink)
@@ -461,12 +503,18 @@ private struct DrawerReview: View {
                 }
                 .padding(.top, theme.spacing.xl)
             } else {
-                Text(items.count == 1 ? "1 thing is waiting on you" : "\(items.count) things are waiting on you")
+                Text(count == 1 ? "1 thing is waiting on you" : "\(count) things are waiting on you")
                     .font(theme.font(theme.type.caption, .semibold)).foregroundStyle(c.inkSoft)
                 ForEach(items) { item in
                     ReviewCard(item: item, open: open == item.id, store: store) {
                         withAnimation(theme.spring) { open = open == item.id ? nil : item.id }
                     }
+                }
+                // What the agent flagged for you (`menu review`): a tap opens it.
+                ForEach(flagged) { item in
+                    MenuReviewCard(item: item, agent: store.agent?.name ?? "Your agent") {
+                        MenuAction.open(item, bucket: "review", store: store, close: close, openURL: openURL)
+                    } remove: { store.removeFromMenu(item.id) }
                 }
             }
         }
@@ -530,6 +578,95 @@ private struct ReviewCard: View {
         .padding(theme.spacing.l)
         .background(c.surface, in: .rect(cornerRadius: 26))
         .overlay(RoundedRectangle(cornerRadius: 26).stroke(open ? c.accent.opacity(0.5) : c.outline, lineWidth: 1.5))
+    }
+}
+
+/// An item the agent flagged with `menu review`: the same card as an ask, but a
+/// tap opens what it points at (a saved screen, a link, or the agent's answer).
+private struct MenuReviewCard: View {
+    let item: YLMenuItem
+    let agent: String
+    let open: () -> Void
+    let remove: () -> Void
+    @Environment(\.yuiTheme) private var theme
+    @Environment(\.colorScheme) private var scheme
+
+    var body: some View {
+        let c = theme.swatch(scheme)
+        Button(action: open) {
+            HStack(alignment: .top, spacing: theme.spacing.m) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("From \(agent)")
+                        .font(theme.font(12, .heavy)).textCase(.uppercase).kerning(0.8)
+                        .foregroundStyle(c.accent)
+                    Text(item.label)
+                        .font(theme.font(21, theme.strong)).foregroundStyle(c.ink)
+                        .lineLimit(3).multilineTextAlignment(.leading)
+                        .fixedSize(horizontal: false, vertical: true)
+                    if let sub = item.sub {
+                        Text(sub).font(theme.font(15)).foregroundStyle(c.inkSoft).lineLimit(2)
+                            .multilineTextAlignment(.leading)
+                    }
+                }
+                Spacer(minLength: 0)
+                Image(systemName: MenuAction.trailing(item))
+                    .font(theme.font(14, .bold)).foregroundStyle(c.onAccent)
+                    .frame(width: 30, height: 30).background(c.accent, in: Circle())
+            }
+            .padding(theme.spacing.l)
+            .background(c.surface, in: .rect(cornerRadius: 26))
+            .overlay(RoundedRectangle(cornerRadius: 26).stroke(c.outline, lineWidth: 1.5))
+            .contentShape(.rect(cornerRadius: 26))
+        }
+        .buttonStyle(BounceButtonStyle())
+        .contextMenu {
+            Button("Remove", systemImage: "minus.circle", role: .destructive, action: remove)
+        }
+        .accessibilityLabel("From \(agent): \(item.label)")
+        .accessibilityHint(MenuAction.hint(item))
+        .accessibilityIdentifier("review-menu-\(item.id)")
+    }
+}
+
+/// What a tap on an agent's drawer item does (spec YL.md section 5, The drawer).
+@MainActor
+enum MenuAction {
+    /// A review or backlog item: its saved screen on the stage, its link in
+    /// Safari, else back to the agent, who answers with the screen.
+    static func open(_ item: YLMenuItem, bucket: String, store: ChatStore, close: () -> Void, openURL: OpenURLAction) {
+        if let name = item.show, store.shelf[name] != nil {
+            close()
+            store.reopen(name)
+        } else if let link = url(item) {
+            openURL(link)
+        } else {
+            close()
+            store.tapMenu(item, bucket: bucket)
+        }
+    }
+
+    /// A shortcut sends its words as the person's message; words that end in a
+    /// space go in the composer to finish.
+    static func shortcut(_ item: YLMenuItem, store: ChatStore, compose: (String) -> Void) {
+        let words = item.say ?? item.label
+        if words.hasSuffix(" ") { compose(words) } else { _ = store.send(words) }
+    }
+
+    static func url(_ item: YLMenuItem) -> URL? {
+        guard let raw = item.url, let u = URL(string: raw), u.scheme?.lowercased() == "https" else { return nil }
+        return u
+    }
+
+    static func icon(_ item: YLMenuItem, fallback: String) -> String {
+        item.show != nil ? "star.fill" : url(item) != nil ? "link" : fallback
+    }
+
+    static func trailing(_ item: YLMenuItem) -> String {
+        url(item) != nil ? "arrow.up.right" : item.show != nil ? "arrow.up.left.and.arrow.down.right" : "arrow.right"
+    }
+
+    static func hint(_ item: YLMenuItem) -> String {
+        url(item) != nil ? "Opens in Safari" : item.show != nil ? "Opens full screen" : "Asks for it in the chat"
     }
 }
 

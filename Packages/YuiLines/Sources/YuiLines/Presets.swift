@@ -237,7 +237,7 @@ func rawArgs(_ preset: String, _ rest: String) -> Props {
 }
 
 /// `^\+[A-Za-z][\w-]*$`
-private func isFlag(_ raw: String) -> Bool {
+func isFlag(_ raw: String) -> Bool {
     let u = Scalars(raw.unicodeScalars)
     return u.count >= 2 && u[0] == "+" && isAlpha(u[1]) && u.dropFirst(2).allSatisfy(isWordish)
 }
