@@ -62,14 +62,29 @@ final class ComposerAttachTests: XCTestCase {
         let left = (field.value as? String) ?? ""
         XCTAssertTrue(left.isEmpty || left == "Say something nice", "the caption stayed in the composer: \(left)")
         sleep(2)
-        // The thread lets the keyboard go on an interactive drag, so pull it down past the bottom.
+        // A person lets the keyboard go with a pull on the thread into the keyboard.
+        // The pull scrolls the thread too; a thread that sat on the newest message goes back to it.
         if app.keyboards.firstMatch.exists {
-            app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.35))
-                .press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.99)))
-            sleep(1)
+            app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.4))
+                .press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.9)))
+            sleep(2)
         }
+        XCTAssertFalse(app.keyboards.firstMatch.exists, "the pull did not let the keyboard go")
         XCTAssertTrue(sent.isHittable, "the sent photo is hidden")
+        // The thread rests on the newest message: the caption clears the page pill (YUI-74).
+        let caption = app.staticTexts["Lunch, what do you think?"]
+        let tabs = app.descendants(matching: .any)["page-tabs"].firstMatch
+        let floor = tabs.exists ? tabs.frame.minY : app.descendants(matching: .any)["composer"].firstMatch.frame.minY
+        XCTAssertLessThanOrEqual(caption.frame.maxY, floor + 1, "the caption sits under the page pill: \(caption.frame) vs \(floor)")
+        XCTAssertLessThanOrEqual(sent.frame.maxY, floor + 1, "the photo sits under the page pill")
         shot("03-photo-sent")
+        // Scrolled up on purpose, the thread stays put (YUI-74).
+        for _ in 0..<2 {
+            app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.25))
+                .press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.85)))
+        }
+        sleep(2)
+        XCTAssertGreaterThan(caption.frame.minY, floor, "a thread scrolled up jumped back to the bottom")
     }
 
     func testHoldToTalkListens() {

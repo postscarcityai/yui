@@ -48,6 +48,14 @@ struct ChatView: View {
     /// The thread's scroll, and whether it is far enough up to offer the way back down (YUI-50).
     @State private var position = ScrollPosition(edge: .bottom)
     @State private var scrolledUp = false
+    /// The thread rests on the newest message (YUI-74): the composer changing height, the
+    /// keyboard going or a new row keep it there. Only the person's own scroll up lets go.
+    @State private var pinned = true
+    /// A drag on the thread is under way. `dismissPin`: it started pinned with the keyboard
+    /// up, so if it only lets the keyboard go, the thread goes back to the newest message.
+    @State private var dragging = false
+    @State private var dismissPin = false
+    @State private var atBottom = true
     /// Agent messages that landed while scrolled up: the count on the arrow.
     @State private var unread = 0
     /// The page on show (YUI-31): 1 the chat, 2 to 12 the agent's screens. Follows `store.page`.
@@ -399,6 +407,7 @@ struct ChatView: View {
             .onChange(of: scrollTarget) {
                 guard let id = scrollTarget else { return }
                 scrollTarget = nil
+                pinned = false
                 withAnimation(reduceMotion ? nil : .spring(response: 0.45, dampingFraction: 0.9)) {
                     position.scrollTo(id: id, anchor: .center)
                 }
@@ -411,7 +420,22 @@ struct ChatView: View {
                 let below = geo.contentSize.height - geo.contentInsets.top - geo.contentOffset.y - geo.containerSize.height
                 return below / max(geo.containerSize.height, 1)
             } action: { _, screens in
+                atBottom = screens < 0.04
                 followScroll(screens: screens)
+            }
+            // Content or insets changed size (a sent photo, the composer, the keyboard):
+            // a pinned thread goes back to the newest message.
+            .onScrollGeometryChange(for: CGSize.self) { geo in
+                CGSize(width: geo.containerSize.height, height: geo.contentSize.height)
+            } action: { _, _ in
+                if pinned, !dragging, !atBottom { position.scrollTo(edge: .bottom) }
+            }
+            .onScrollPhaseChange { _, phase in settleScroll(phase) }
+            // The keyboard often goes a moment after the drag settles.
+            .onChange(of: focused) {
+                guard !focused, dismissPin, !dragging else { return }
+                dismissPin = false
+                jumpToBottom()
             }
             .onChange(of: store.messages.map(\.id)) { old, new in countNew(old: old, new: new) }
             // The agent's saved screens, one tap from the stage (YUI-32).
@@ -855,7 +879,28 @@ struct ChatView: View {
         withAnimation(.easeInOut(duration: 0.25)) { pageFade = 1 }
     }
 
+    /// A drag takes the pin away unless it ends at the bottom, or it let the keyboard
+    /// go from a pinned thread; then the thread goes back to the newest message.
+    private func settleScroll(_ phase: ScrollPhase) {
+        switch phase {
+        case .interacting, .tracking:
+            if !dragging { dragging = true; dismissPin = pinned && focused }
+        case .idle:
+            guard dragging else { return }
+            dragging = false
+            if dismissPin, !focused {
+                dismissPin = false
+                jumpToBottom()
+            } else {
+                pinned = atBottom
+            }
+        default:
+            break
+        }
+    }
+
     private func jumpToBottom() {
+        pinned = true
         withAnimation(reduceMotion ? nil : .spring(response: 0.4, dampingFraction: 0.9)) {
             position.scrollTo(edge: .bottom)
         }
