@@ -25,7 +25,7 @@ import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { hostname } from "node:os";
 import { dirname } from "node:path";
 import {
-  A2AClient, A2AError, A2AUnavailable, INTERRUPTED, TASK_NOT_FOUND, UNSUPPORTED_OPERATION, TaskView,
+  A2AClient, A2AError, A2AUnavailable, INTERRUPTED, TASK_NOT_FOUND, UNSUPPORTED_OPERATION, TaskView, isLangGraph,
   type AgentCard, type Message, type Part, type Update,
 } from "./a2a.ts";
 
@@ -345,15 +345,22 @@ export class Bridge {
     }
   }
 
-  /** The A2A message for a turn: the person's words, plus the guide when a task starts. */
-  message(agentId: string, rows: Row[], inflight: Inflight, taskId?: string): Message {
+  /** The A2A message for a turn: the person's words, plus the guide when a task starts.
+   * A LangGraph server gets one text part and the rest as keyed data (state input keys). */
+  message(agentId: string, rows: Row[], inflight: Inflight, taskId?: string, card?: AgentCard): Message {
     const parts: Part[] = [];
-    if (!taskId && this.sendGuide && this.guide.body) {
-      parts.push({ text: this.guide.body, metadata: { yui: "channel_guide", version: this.guide.version } });
-    }
-    parts.push({ text: rows.map((r) => r.body).join("\n") });
-    for (const r of rows) { // a tap on a screen, as data too
-      if (r.kind === "event" && r.meta) parts.push({ data: r.meta, metadata: { yui: "event", row: r.id } });
+    const guide = !taskId && this.sendGuide && this.guide.body;
+    const taps = rows.filter((r) => r.kind === "event" && r.meta);
+    if (card && isLangGraph(card)) {
+      parts.push({ text: rows.map((r) => r.body).join("\n") });
+      const data: Record<string, unknown> = {};
+      if (guide) data.yui_channel_guide = { version: this.guide.version, body: this.guide.body };
+      if (taps.length) data.yui_events = taps.map((r) => ({ ...r.meta, row: r.id }));
+      if (guide || taps.length) parts.push({ data, metadata: { yui: "context" } });
+    } else {
+      if (guide) parts.push({ text: this.guide.body, metadata: { yui: "channel_guide", version: this.guide.version } });
+      parts.push({ text: rows.map((r) => r.body).join("\n") });
+      for (const r of taps) parts.push({ data: r.meta, metadata: { yui: "event", row: r.id } }); // a tap, as data too
     }
     return { messageId: inflight.messageId, role: "user", parts, contextId: agentId, ...(taskId ? { taskId } : {}) };
   }
@@ -477,7 +484,7 @@ export class Bridge {
               onUpdate: (u: Update) => void): Promise<void> {
     let openTask: string | undefined = this.state.data.open[aid];
     for (let attempt = 0; ; attempt++) {
-      const msg = this.message(aid, rows, inflight, openTask);
+      const msg = this.message(aid, rows, inflight, openTask, c.card);
       try {
         if (c.card.streaming) {
           for await (const u of c.client.stream(msg)) onUpdate(u);

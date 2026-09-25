@@ -13,7 +13,7 @@ import { fileURLToPath } from "node:url";
 import { SseParser, readSse } from "../src/sse.ts";
 import {
   A2AClient, A2AError, A2AUnavailable, TaskView, cardUrls, messageToWire, normState, parseAgentCard,
-  pickInterface, updateFromWire, TASK_NOT_FOUND, type Message, type Update,
+  pickInterface, updateFromWire, isLangGraph, TASK_NOT_FOUND, type Message, type Update,
 } from "../src/a2a.ts";
 import { Bridge, State, refFromName } from "../src/bridge.ts";
 
@@ -417,5 +417,43 @@ describe("bridge: following a task with no stream", () => {
     assert.ok(Date.now() - t0 < 15000);
     const log = await (await fetch(`${agent.url}/_log`)).json() as any[];
     assert.ok(log.some((l) => l.method === "GetTask"), "it polled");
+  });
+});
+
+describe("bridge: a LangGraph Agent Server (INT-14)", () => {
+  const lgCard = parseAgentCard({
+    name: "helper", url: "http://127.0.0.1:1/a2a/x",
+    supportedInterfaces: [{ url: "http://127.0.0.1:1/a2a/x", protocolBinding: "JSONRPC", protocolVersion: "1.0" }],
+    capabilities: { streaming: true, extensions: [{ uri: "https://langchain.com/a2a/extensions/history-scope/v1" }] },
+  }, "http://127.0.0.1:1/.well-known/agent-card.json?assistant_id=x");
+  const plain = parseAgentCard({ name: "echo", url: "http://127.0.0.1:1/", capabilities: {} });
+  const bridge = new Bridge(new State(join(mkdtempSync(join(tmpdir(), "yui-a2a-")), "s.json")));
+  bridge.guide = { version: "v16", body: "GUIDE: choose, ask" };
+  const tap = { id: "r2", agent_id: "a", body: "[yui] n1 choose choice=Tea", kind: "event",
+                meta: { id: "n1", preset: "choose", value: { choice: "Tea" } } } as any;
+  const inflight = { messageId: "m1" } as any;
+
+  test("its card is told apart by LangChain's extensions; the card URL keeps ?assistant_id", () => {
+    assert.equal(isLangGraph(lgCard), true);
+    assert.equal(isLangGraph(plain), false);
+    assert.deepEqual(cardUrls("http://h:1/.well-known/agent-card.json?assistant_id=x"),
+                     ["http://h:1/.well-known/agent-card.json?assistant_id=x"]);
+  });
+
+  test("one text part (a second would replace it); the guide and taps as keyed data", () => {
+    const m = bridge.message("a", [tap], inflight, undefined, lgCard);
+    assert.deepEqual(m.parts, [
+      { text: "[yui] n1 choose choice=Tea" },
+      { data: { yui_channel_guide: { version: "v16", body: "GUIDE: choose, ask" },
+                yui_events: [{ id: "n1", preset: "choose", value: { choice: "Tea" }, row: "r2" }] },
+        metadata: { yui: "context" } },
+    ]);
+    const cont = bridge.message("a", [{ ...tap, kind: "text", meta: null }], inflight, "t1", lgCard);
+    assert.deepEqual(cont.parts, [{ text: "[yui] n1 choose choice=Tea" }], "continuing a task: no guide, no data");
+  });
+
+  test("any other agent: the guide as a marked text part, as before", () => {
+    const m = bridge.message("a", [tap], inflight, undefined, plain);
+    assert.deepEqual(m.parts.map((p: any) => p.metadata?.yui ?? "text"), ["channel_guide", "text", "event"]);
   });
 });

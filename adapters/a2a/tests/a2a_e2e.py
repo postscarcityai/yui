@@ -25,6 +25,12 @@ account (never a real one):
      the YL parser reads (drawn only because the guide reached the model: the
      agent's own instruction never mentions Yui), a tap on it, a clean stop.
      Needs uv and Ollama with qwen2.5:7b.
+  LangGraph (--protocol langgraph, INT-14, not in `all`): a scripted LangGraph
+     graph, tests/sdk/langgraph_agent.py (no model), served over A2A by
+     LangGraph's own Agent Server (`langgraph dev`, /a2a/{assistant_id}). As
+     ADK, plus: the guide and the tap reach the graph's state as data keys
+     (yui_channel_guide, yui_events), the thread is the Yui agent, and the
+     guide never shows up as a chat message. Needs uv.
   I. with --sim: the phone side, on its own fresh account and thread (A2A
      1.0): YuiUITests/A2ATests on a simulator shows the working row, the long
      answer, a screen and a tap (light), a question and its answer (dark).
@@ -33,7 +39,7 @@ account (never a real one):
 Pass: every person's row is handled and named by exactly one reply, and the
 agent got each turn exactly once.
 
-    python3 adapters/a2a/tests/a2a_e2e.py [--protocol 1.0|0.3|poll|phone|adk|all] [--sim <udid>] [--out DIR]
+    python3 adapters/a2a/tests/a2a_e2e.py [--protocol 1.0|0.3|poll|phone|adk|langgraph|all] [--sim <udid>] [--out DIR]
 
 `poll` is 1.0 with streaming off: the bridge sends, then follows by GetTask.
 Needs a Supabase access token like supabase/tests. Accounts are deleted.
@@ -46,7 +52,7 @@ A2A = REPO / "adapters/a2a"
 BRIDGE = ["node", str(A2A / "yui-a2a.ts")]
 
 ap = argparse.ArgumentParser()
-ap.add_argument("--protocol", choices=["1.0", "0.3", "poll", "phone", "adk", "all"], default="all")
+ap.add_argument("--protocol", choices=["1.0", "0.3", "poll", "phone", "adk", "langgraph", "all"], default="all")
 ap.add_argument("--sim", help="simulator udid: also run YuiUITests/A2ATests (phone side)")
 ap.add_argument("--out", default="/tmp/int18-proof")
 args = ap.parse_args()
@@ -264,31 +270,74 @@ def yl_ops(text):
     return ops
 
 
-def run_adk():
-    print("\n==== ADK: a Google ADK agent over A2A (INT-9)")
-    home = Path(tempfile.mkdtemp(prefix="yui-int9-adk-"))
+SDK = {  # --protocol adk / langgraph: a real framework's own A2A server
+    "adk": {"name": "ADK", "card": "INT-9", "log": "adk.log", "boot": 240,
+            "what": "a Google ADK agent over A2A (INT-9)",
+            "served": "A2A 1.0, served by to_a2a", "reached": "the guide reached it through ADK"},
+    "langgraph": {"name": "LangGraph", "card": "INT-14", "log": "langgraph.log", "boot": 240,
+                  "what": "a LangGraph agent on LangGraph's Agent Server over A2A (INT-14)",
+                  "served": "A2A 1.0, served by langgraph dev",
+                  "reached": "drawn only because the guide reached the graph's state"},
+}
+
+
+def start_sdk(kind, home, port):
+    """Starts the framework's agent in its own process group; returns (process, base URL, [card URL], card getter)."""
+    url = f"http://127.0.0.1:{port}"
+    out = open(home / SDK[kind]["log"], "w")
+    if kind == "adk":
+        proc = subprocess.Popen(["uv", "run", "--quiet", "--with", "google-adk", "--with", "litellm",
+                                 "--with", "a2a-sdk[http-server]", "--with", "uvicorn",
+                                 str(A2A / "tests/sdk/adk_agent.py"), str(port)],
+                                stdout=out, stderr=subprocess.STDOUT, start_new_session=True)
+        card_url = [url]
+    else:  # langgraph dev writes .langgraph_api/ where it runs, so it runs in a copy
+        lg = home / "langgraph"
+        lg.mkdir()
+        for f in ("langgraph_agent.py", "langgraph.json"):
+            (lg / f).write_text((A2A / "tests/sdk" / f).read_text())
+        proc = subprocess.Popen(["uv", "run", "--quiet", "--with", "langgraph-cli[inmem]", "langgraph", "dev",
+                                 "--config", "langgraph.json", "--port", str(port), "--no-browser", "--no-reload"],
+                                cwd=lg, stdout=out, stderr=subprocess.STDOUT, start_new_session=True)
+        card_url = [None]
+
+    def card():
+        try:
+            if card_url[0] is None:  # the graph's assistant, then its card
+                req = urllib.request.Request(f"{url}/assistants/search", json.dumps({"graph_id": "yui_helper"}).encode(),
+                                             {"content-type": "application/json"})
+                with urllib.request.urlopen(req, timeout=2) as r:
+                    card_url[0] = f"{url}/.well-known/agent-card.json?assistant_id={json.loads(r.read())[0]['assistant_id']}"
+            u = card_url[0] if "?" in card_url[0] else f"{card_url[0]}/.well-known/agent-card.json"
+            with urllib.request.urlopen(u, timeout=2) as r:
+                return json.loads(r.read())
+        except Exception:
+            return None
+    return proc, url, card_url, card
+
+
+def lg_state(url, thread_id):
+    """The LangGraph thread's state (the Agent Server's own threads API)."""
+    with urllib.request.urlopen(f"{url}/threads/{thread_id}/state", timeout=10) as r:
+        return json.loads(r.read())["values"]
+
+
+def run_sdk(kind):
+    S = SDK[kind]
+    print(f"\n==== {S['name']}: {S['what']}")
+    home = Path(tempfile.mkdtemp(prefix=f"yui-{S['card'].lower()}-{kind}-"))
     state = home / "a2a.json"
     base = BRIDGE + ["--state", str(state)]
     import socket
     with socket.socket() as so:
         so.bind(("127.0.0.1", 0))
         port = so.getsockname()[1]
-    url = f"http://127.0.0.1:{port}"
-    agent_proc = subprocess.Popen(["uv", "run", "--quiet", "--with", "google-adk", "--with", "litellm",
-                                   "--with", "a2a-sdk[http-server]", "--with", "uvicorn",
-                                   str(A2A / "tests/sdk/adk_agent.py"), str(port)],
-                                  stdout=open(home / "adk.log", "w"), stderr=subprocess.STDOUT)
+    agent_proc, url, card_url, card = start_sdk(kind, home, port)
     T = str(uuid.uuid4())
     proc = [None]
     agent = None
     tok = None
-
-    def card():
-        try:
-            with urllib.request.urlopen(f"{url}/.well-known/agent-card.json", timeout=2) as r:
-                return json.loads(r.read())
-        except Exception:
-            return None
+    k = kind
 
     def say(text, kind="text", meta=None):
         row = {"id": str(uuid.uuid4()), "user_id": T, "agent_id": agent, "sender": "user", "body": text, "kind": kind}
@@ -315,20 +364,20 @@ def run_adk():
         return rest("GET", f"yui_agent_list?select=presence&id=eq.{agent}", tok)[1][0]["presence"]
 
     try:
-        c = wait(card, 240, "the ADK agent's card (first run downloads ADK)")
-        log(f"ADK agent {c['name']} at {url}")
+        c = wait(card, S["boot"], f"the {S['name']} agent's card (first run downloads it)")
+        log(f"{S['name']} agent {c['name']} at {card_url[0]}")
         sql(f"insert into yui_users(id, apple_sub) values ('{T}','test.{T}')")
         tok = mint(T, ttl=3600)
-        s, r = fn("yui-agents", {"action": "create", "name": "ADK", "pair": True}, tok)
+        s, r = fn("yui-agents", {"action": "create", "name": S["name"], "pair": True}, tok)
         agent = r["agent"]["id"]
 
-        print("== pair by the ADK agent's card")
-        p = subprocess.run(base + ["pair", r["pairing"]["code"], "--card", url, "--host-name", "INT-9 test"],
+        print(f"== pair by the {S['name']} agent's card")
+        p = subprocess.run(base + ["pair", r["pairing"]["code"], "--card", card_url[0], "--host-name", f"{S['card']} test"],
                            capture_output=True, text=True, timeout=60)
         st = json.loads(state.read_text()) if state.exists() else {}
-        check("adk: pairs with the app's code and ADK's card (A2A 1.0, served by to_a2a)",
+        check(f"{k}: pairs with the app's code and {S['name']}'s card ({S['served']})",
               p.returncode == 0 and "paired" in p.stdout and "A2A 1.0" in p.stdout, (p.stdout + p.stderr).strip()[:300])
-        check("adk: state file is private, holds the token and the card",
+        check(f"{k}: state file is private, holds the token and the card",
               oct(state.stat().st_mode & 0o777) == "0o600" and st.get("token", "").startswith("yui_ct_")
               and any(v.get("card", "").startswith(url) for v in st.get("remotes", {}).values()), json.dumps(st.get("remotes")))
 
@@ -336,11 +385,11 @@ def run_adk():
         out = open(home / "bridge.log", "a")
         proc[0] = subprocess.Popen(base + ["run", "--interval", "1"], stdout=out, stderr=subprocess.STDOUT)
         wait(lambda: "online as" in (home / "bridge.log").read_text(), 30, "bridge online")
-        check("adk: agent reads online", wait(lambda: presence() == "online", 20, "online"))
+        check(f"{k}: agent reads online", wait(lambda: presence() == "online", 20, "online"))
         hi = say("Hi! In one short sentence, what can you help with?")
-        rep = wait(lambda: replies_to(hi), 300, "ADK's answer")
+        rep = wait(lambda: replies_to(hi), 300, f"{S['name']}'s answer")
         wait(lambda: row(hi)["handled_at"], 20, "hi handled")
-        check("adk: the turn is answered once, meta.turn names it, delivered and handled",
+        check(f"{k}: the turn is answered once, meta.turn names it, delivered and handled",
               len(rep) == 1 and rep[0]["body"].strip() and rep[0]["meta"] == {"turn": [hi]}
               and row(hi)["delivered_at"] and row(hi)["handled_at"], rep and rep[0]["body"][:200])
 
@@ -350,7 +399,7 @@ def run_adk():
         body = rep[0]["body"]
         ops = yl_ops(body)
         picks = [o for o in ops if o.get("op") == "add" and o.get("preset") in ("choose", "ask")]
-        check("adk: the model drew a Yui screen the YL parser reads (the guide reached it through ADK)",
+        check(f"{k}: a Yui screen the YL parser reads ({S['reached']})",
               len(rep) == 1 and picks and picks[0]["props"].get("options") and not [o for o in ops if o.get("op") == "error"],
               body[:240])
 
@@ -360,29 +409,43 @@ def run_adk():
         tap = say(f"[yui] {op['id']} {op['preset']} choice={choice}", "event",
                   {"id": op["id"], "preset": op["preset"], "value": {"choice": choice}, "echo": choice})
         rep = wait(lambda: replies_to(tap), 300, "answer to the tap")
-        check(f"adk: the tap ({choice}) goes back as the next turn and is answered once",
+        check(f"{k}: the tap ({choice}) goes back as the next turn and is answered once",
               len(rep) == 1 and rep[0]["body"].strip(), rep and rep[0]["body"][:240])
+        if kind == "langgraph":
+            check(f"{k}: the graph read the tap from its data part (yui_events in the state), not only the text",
+                  rep and rep[0]["body"].startswith(f"{choice} it is. (read from the tap's data)"), rep and rep[0]["body"])
+            v = lg_state(url, agent)
+            g = v.get("yui_channel_guide") or {}
+            online = (home / "bridge.log").read_text()
+            gv = online.split("guide ", 1)[1].split()[0] if "guide " in online else "?"
+            check(f"{k}: the thread is the Yui agent (contextId = thread_id) and its state holds the guide",
+                  g.get("version") and str(g.get("version")) == gv and "choose" in g.get("body", ""),
+                  f"guide {g.get('version')} ({len(g.get('body', ''))} chars), bridge guide {gv}")
+            humans = [m for m in v.get("messages", []) if m.get("type") == "human"]
+            check(f"{k}: the graph saw only the person's words as messages (the guide never became chat)",
+                  len(humans) == 3 and not any(g.get("body") and g["body"] in str(m.get("content")) for m in humans)
+                  and v.get("yui_events") == [], f"{[str(m.get('content'))[:40] for m in humans]}")
 
         print("== clean stop, totals")
         wait(lambda: all(m["handled_at"] for m in thread() if m["sender"] == "user"), 20, "all handled")
         proc[0].send_signal(signal.SIGTERM)
         proc[0].wait(20)
-        check("adk: a clean stop reads offline", presence() == "offline", presence())
+        check(f"{k}: a clean stop reads offline", presence() == "offline", presence())
         users = [m for m in thread() if m["sender"] == "user"]
         named = [i for m in thread() if m["sender"] == "agent" for i in (m.get("meta") or {}).get("turn") or []]
-        check("adk: every person's row handled and answered by exactly one reply",
+        check(f"{k}: every person's row handled and answered by exactly one reply",
               all(m["handled_at"] for m in users) and all(named.count(m["id"]) == 1 for m in users), f"{len(users)} rows")
         (home / "thread.json").write_text(json.dumps(thread(), indent=1))
     finally:
         if proc[0] and proc[0].poll() is None:
             proc[0].kill()
-        agent_proc.kill()
+        os.killpg(agent_proc.pid, signal.SIGKILL)  # uv and the server it started
         if tok:
             s, _ = fn("yui-delete", {}, tok)
             left = sql(f"select count(*)::int n from yui_messages where user_id = '{T}'")[0]["n"] \
                 + sql(f"select count(*)::int n from yui_users where id = '{T}'")[0]["n"]
-            check("adk: throwaway account deleted, nothing left", s == 200 and left == 0, f"{s} {left}")
-        print(f"  bridge log: {home / 'bridge.log'}, ADK log: {home / 'adk.log'}, thread: {home / 'thread.json'}")
+            check(f"{k}: throwaway account deleted, nothing left", s == 200 and left == 0, f"{s} {left}")
+        print(f"  bridge log: {home / 'bridge.log'}, {S['name']} log: {home / S['log']}, thread: {home / 'thread.json'}")
 
 
 def phone_side(T, start, stop, thread, replies_to):
@@ -425,7 +488,7 @@ if "phone" in runs and not args.sim:
     sys.exit("--protocol phone needs --sim <udid>")
 for p in runs:
     try:
-        run_adk() if p == "adk" else run(p)
+        run_sdk(p) if p in SDK else run(p)
     except Exception as e:  # one run failing still runs the others
         check(f"{p}: ran to the end", False, repr(e))
 

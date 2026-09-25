@@ -9,3 +9,4 @@ supabase/.temp/
 .env.*
 __pycache__/
 *.p8
+.langgraph_api/

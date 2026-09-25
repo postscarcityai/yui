@@ -1,0 +1,6 @@
+{
+  "dependencies": ["."],
+  "graphs": {
+    "yui_helper": "./langgraph_agent.py:graph"
+  }
+}

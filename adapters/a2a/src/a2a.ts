@@ -204,6 +204,14 @@ export function parseAgentCard(raw: any, base?: string): AgentCard {
   };
 }
 
+/** A LangGraph Agent Server (its card lists LangChain's A2A extensions). It turns each text
+ * part into its own message under one id, so a second text part replaces the first, and it
+ * drops part metadata; data parts become keys of the graph's input instead. */
+export function isLangGraph(card: AgentCard): boolean {
+  const ext = (card.raw as any)?.capabilities?.extensions;
+  return Array.isArray(ext) && ext.some((e: any) => String(e?.uri ?? "").startsWith("https://langchain.com/a2a/"));
+}
+
 /** The JSON-RPC interface to use: 1.x before 0.3, the first listed on a tie. */
 export function pickInterface(card: AgentCard): { url: string; version: Version } | null {
   const rpc = card.interfaces.filter((i) => i.binding.toUpperCase().replace(/[-_]/g, "") === "JSONRPC");
