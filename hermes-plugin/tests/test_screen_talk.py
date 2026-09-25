@@ -31,6 +31,7 @@ def adapter():
     ad.MessageEvent = Event
     ad.MessageType = types.SimpleNamespace(PHOTO="photo", TEXT="text")
     a = ad.YuiAdapter.__new__(ad.YuiAdapter)
+    a._user_id = "u1"  # the owner's thread (YUI-95)
     a._agents = {"a1": {"name": "Arnold"}}
     a._notes, a._last_inbound, a._turns, a._token = {}, {}, {}, None
     a.got = []

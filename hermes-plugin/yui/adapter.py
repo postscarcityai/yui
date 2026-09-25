@@ -78,6 +78,17 @@ Transport: the gateway dials OUT to Supabase (PROOF). No inbound ports.
      count, never its text, in <profile home>/yui/textbombs.jsonl, with a
      warning in the gateway log. The app folds it into "Read as pages".
 
+ 14. Shared agents (YUI-95, sandbox.py): an agent its owner shared with
+     other people (a grant) has one thread per person. Each person's thread
+     is its own Hermes session (chat_id `<agent id>~<user id>`; the owner's
+     stays the agent id). The heartbeat reports this profile's sandbox, and
+     Yui marks the agent client-safe from it. Before a turn for anyone but
+     the owner the sandbox is checked again: if it no longer passes, the turn
+     does not run, the person reads "This agent is paused by its owner", and
+     the owner gets a card naming the rule. Owner-only taps (board orders,
+     Needs you answers, invite approvals) from anyone else are refused, and
+     mention and board notes go only into the owner's turns.
+
  13. Builds (compat.py, beta feedback ANJPrtB7CHynwGR5mqNVPSM): the session
      carries app_build, the oldest build among the person's phones. A preset
      that build cannot draw (sketch before 104, ...) goes out as plain words,
@@ -94,6 +105,7 @@ import json
 import logging
 import os
 import random
+import re
 import time
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -118,7 +130,7 @@ from gateway.config import Platform, PlatformConfig
 from gateway.platforms.base import (BasePlatformAdapter, MessageEvent, MessageType, ProcessingOutcome,
                                     SendResult)
 
-from . import board, compat, connector, flywheel, groups, media, mentions, needs, outbox, textbomb
+from . import board, compat, connector, flywheel, groups, media, mentions, needs, outbox, sandbox, textbomb
 from . import commands as slash
 
 logger = logging.getLogger(__name__)
@@ -138,6 +150,11 @@ OUTBOX_BACKOFF_MAX = 60      # seconds between resends while Yui is unreachable
 FAILURE_ACK_SECONDS = 5      # a failed turn is acked only if the gateway is still up after this
 TURN_TIMEOUT_SECONDS = 30 * 60  # a turn that never reports back stops holding the queue
 NEW_AGENT_LOOKBACK_SECONDS = 24 * 3600  # a just-paired agent still answers what was sent before its gateway came up
+
+
+# Taps only the owner may make; from anyone else they are refused without a turn.
+OWNER_ONLY = re.compile(r"^\[yui\] (need-|invite-|war\b)")
+PAUSED_TEXT = "This agent is paused by its owner."
 
 
 def load_guide() -> tuple[str, str]:
@@ -199,6 +216,11 @@ def _parse_ts(s: str | None) -> datetime:
         return datetime.now(tz=timezone.utc)
 
 
+def texts_are_commands(rows: List[dict]) -> bool:
+    """/stop, /new ...: they change nothing outside the session, so they run even while paused."""
+    return all(r.get("kind") == "text" and r["body"].lstrip().startswith("/") for r in rows)
+
+
 def check_requirements() -> bool:
     return HTTPX_AVAILABLE
 
@@ -254,6 +276,7 @@ class YuiAdapter(BasePlatformAdapter):
         self._outbox = outbox.Outbox(self._state_dir() / "outbox.jsonl")
         self._outbox_wake = asyncio.Event()
         self._notes: Dict[str, List[str]] = {}       # agent id -> notes for its next turn (board order)
+        self._paused_said: Optional[str] = None      # the rule list the owner was last told about (YUI-95)
         self._commands_sent: Optional[str] = None    # fingerprint of the /command list Yui has (YUI-61)
 
     # Inbound is authorized upstream: RLS on yui_messages only ever shows this
@@ -372,7 +395,8 @@ class YuiAdapter(BasePlatformAdapter):
             logger.info("[yui] now serving %s", ", ".join(mine[a]["name"] for a in added))
 
     async def _refresh_session(self) -> None:
-        data = await self._connect_call({"action": "session", "serving": self._serving})
+        data = await self._connect_call({"action": "session", "serving": self._serving,
+                                         "sandbox": await self._sandbox()})
         self._token = data["access_token"]
         self._token_exp = _parse_ts(data["expires_at"]).timestamp()
         self._user_id = data["user_id"]
@@ -387,7 +411,8 @@ class YuiAdapter(BasePlatformAdapter):
                 if self._token_exp - time.time() < REFRESH_MARGIN_SECONDS:
                     await self._refresh_session()  # the realtime loop pushes the new token
                 else:
-                    data = await self._connect_call({"action": "heartbeat", "serving": self._serving})
+                    data = await self._connect_call({"action": "heartbeat", "serving": self._serving,
+                                                     "sandbox": await self._sandbox()})
                     self._set_agents(data.get("agents") or [])
                 await self._report_commands()
             except asyncio.CancelledError:
@@ -418,6 +443,22 @@ class YuiAdapter(BasePlatformAdapter):
     def _serving(self) -> List[str]:
         """The profiles whose threads this gateway reads: its own."""
         return [self._remote_ref]
+
+    async def _sandbox(self) -> dict:
+        """This profile's sandbox report (YUI-95): Yui marks the agent client-safe from it."""
+        return {self._remote_ref: await asyncio.to_thread(sandbox.current)}
+
+    # -- threads: one per (agent, person) (YUI-95) ----------------------------
+
+    def _key(self, row: dict) -> str:
+        """The Hermes chat for a row: the agent id for the owner's thread,
+        `<agent id>~<user id>` for someone the agent is shared with."""
+        uid = row.get("user_id")
+        return row["agent_id"] if not uid or uid == self._user_id else f"{row['agent_id']}~{uid}"
+
+    def _split(self, key: str) -> tuple[str, str]:
+        aid, _, uid = key.partition("~")
+        return aid, uid or self._user_id
 
     def _rest_headers(self) -> dict:
         return {"apikey": connector.PUBLISHABLE, "authorization": f"Bearer {self._token}"}
@@ -468,24 +509,26 @@ class YuiAdapter(BasePlatformAdapter):
                         logger.info("[yui] %s was answered before a restart, not replaying", row["id"][:8])
                         self._acks.add(row["id"])
                         continue
-                    if await self._board_order(aid, row) or await self._need_answer(aid, row):
+                    if (await self._owner_only(aid, row) or await self._board_order(aid, row)
+                            or await self._need_answer(aid, row)):
                         continue
-                    self._queue.setdefault(aid, []).append(row)
-                await self._pump(aid)
+                    self._queue.setdefault(self._key(row), []).append(row)
+                for key in [k for k in self._queue if k.split("~")[0] == aid]:
+                    await self._pump(key)
             await self._flush_acks()
             if len(self._dispatched) > 5000:
                 live = {r["id"] for rows in self._queue.values() for r in rows}
                 live |= {i for ids, _ in self._busy.values() for i in ids}
                 self._dispatched = live | self._acks
 
-    async def _pump(self, aid: str) -> None:
-        """Start the agent's next turn with everything waiting, unless it is mid-turn."""
-        busy = self._busy.get(aid)
+    async def _pump(self, key: str) -> None:
+        """Start the thread's next turn with everything waiting, unless it is mid-turn."""
+        busy = self._busy.get(key)
         if busy and time.time() - busy[1] > TURN_TIMEOUT_SECONDS:
             logger.warning("[yui] turn on %s never finished, moving on", ", ".join(i[:8] for i in busy[0]))
-            self._busy.pop(aid, None)
+            self._busy.pop(key, None)
             busy = None
-        waiting = self._queue.get(aid) or []
+        waiting = self._queue.get(key) or []
         if not waiting:
             return
         # Commands (/stop, /new) go straight in, even mid-turn, and never replay.
@@ -497,11 +540,20 @@ class YuiAdapter(BasePlatformAdapter):
             await self._dispatch([row])
         if busy or not waiting:
             return
-        rows, self._queue[aid] = list(waiting), []
+        rows, self._queue[key] = list(waiting), []
         ids = [r["id"] for r in rows]
-        self._busy[aid] = (ids, time.time())
+        self._busy[key] = (ids, time.time())
         await self._mark(ids, "delivered_at")
         await self._dispatch(rows)
+
+    async def _owner_only(self, aid: str, row: dict) -> bool:
+        """War room, Needs you and invite taps from someone the agent is shared
+        with (YUI-95): refused with one line, no turn."""
+        if row.get("user_id") == self._user_id or row.get("kind") != "event" or not OWNER_ONLY.match(row["body"]):
+            return False
+        await self._mark([row["id"]], "delivered_at")
+        await self._confirm(aid, row, "Only the owner can do that.")
+        return True
 
     async def _board_order(self, aid: str, row: dict) -> bool:
         """A timeline's saved board order (YUI-66): straight to kanban priority, no turn.
@@ -551,8 +603,8 @@ class YuiAdapter(BasePlatformAdapter):
 
     async def _confirm(self, aid: str, row: dict, text: str) -> None:
         """One line back for a tap the gateway handled itself, named by the row so a restart never replays it."""
-        reply = {"id": str(uuid.uuid4()), "user_id": self._user_id, "agent_id": aid, "sender": "agent",
-                 "body": text, "kind": "text", "meta": {"turn": [row["id"]], "board": True}}
+        reply = {"id": str(uuid.uuid4()), "user_id": row.get("user_id") or self._user_id, "agent_id": aid,
+                 "sender": "agent", "body": text, "kind": "text", "meta": {"turn": [row["id"]], "board": True}}
         # A confirmation of the person's own tap: no push.
         if await self._write_row(reply) == "retry":
             await asyncio.to_thread(self._outbox.add, reply, None, False)
@@ -566,7 +618,7 @@ class YuiAdapter(BasePlatformAdapter):
         if any(row["id"] in ((i["row"].get("meta") or {}).get("turn") or []) for i in waiting):
             return True
         r = await self._client.get(f"{REST}/yui_messages", headers=self._rest_headers(), params={
-            "select": "id", "agent_id": f"eq.{row['agent_id']}", "sender": "eq.agent",
+            "select": "id", "agent_id": f"eq.{row['agent_id']}", "user_id": f"eq.{row['user_id']}", "sender": "eq.agent",
             "meta->turn": f'cs.["{row["id"]}"]', "limit": "1",
         })
         return r.status_code == 200 and bool(r.json())
@@ -595,11 +647,11 @@ class YuiAdapter(BasePlatformAdapter):
             self._acks.difference_update(ids)
 
     async def on_processing_complete(self, event: MessageEvent, outcome: ProcessingOutcome) -> None:
-        aid, ids = self._turns.pop(id(event), (None, []))
-        if not aid:
+        key, ids = self._turns.pop(id(event), (None, []))
+        if not key:
             return
-        if self._busy.get(aid, ((),))[0] == ids:
-            self._busy.pop(aid, None)
+        if self._busy.get(key, ((),))[0] == ids:
+            self._busy.pop(key, None)
         if outcome == ProcessingOutcome.SUCCESS:
             self._acks.update(ids)
             await self._flush_acks()
@@ -619,12 +671,20 @@ class YuiAdapter(BasePlatformAdapter):
         """One turn for these rows (oldest first): a backlog reads as one message, line by line."""
         row = rows[-1]
         agent = self._agents.get(row["agent_id"], {})
+        key = self._key(row)
+        owner = key == row["agent_id"]
+        if not owner and not texts_are_commands(rows):
+            # Someone the agent is shared with: only while this profile is still sandboxed.
+            fails = sandbox.failures(await asyncio.to_thread(sandbox.current))
+            if fails:
+                await self._paused(key, rows, fails)
+                return
         source = self.build_source(
-            chat_id=row["agent_id"],
+            chat_id=key,
             chat_name=f"Yui: {agent.get('name', 'agent')}",
             chat_type="dm",
             user_id=row["user_id"],
-            user_name="Yui user",
+            user_name="Yui user" if owner else "Yui user (shared)",
         )
         texts, photos, types = [], [], []
         for r in rows:
@@ -637,8 +697,9 @@ class YuiAdapter(BasePlatformAdapter):
             texts.append(text)
         # Board orders saved since the last turn (YUI-66) and what other agents
         # were asked and answered in this thread (YUI-44): the agent reads them first.
-        notes = self._notes.pop(row["agent_id"], [])
-        if not texts[0].lstrip().startswith("/"):
+        # Only the owner's turns: these name the owner's other agents and board.
+        notes = self._notes.pop(row["agent_id"], []) if owner else []
+        if owner and not texts[0].lstrip().startswith("/"):
             notes += await self._mention_notes(row["agent_id"], row.get("created_at"))
             for tid in groups.threads_in(rows):  # what the other members said (YUI-93)
                 notes += await self._group_notes(row["agent_id"], tid, row.get("created_at"))
@@ -655,12 +716,35 @@ class YuiAdapter(BasePlatformAdapter):
             timestamp=_parse_ts(row.get("created_at")),
             channel_prompt=look_prompt(agent),
         )
-        self._last_inbound[row["agent_id"]] = time.time()
+        self._last_inbound[key] = time.time()
         for r in rows:
             logger.info("[yui] inbound %s %s: %s", r.get("kind"), r["id"][:8], r["body"][:80])
         if not event.is_command():
-            self._turns[id(event)] = (row["agent_id"], [r["id"] for r in rows])
+            self._turns[id(event)] = (key, [r["id"] for r in rows])
         await self.handle_message(event)
+
+    async def _paused(self, key: str, rows: List[dict], fails: List[str]) -> None:
+        """The sandbox broke since Yui last checked (YUI-95): no turn for a
+        non-owner. The person reads one line, the owner gets a card naming the
+        rule (once per change), and a heartbeat now clears client_safe."""
+        aid, _ = self._split(key)
+        ids = [r["id"] for r in rows]
+        self._busy.pop(key, None)
+        logger.warning("[yui] %s paused for shared threads: %s", self._remote_ref, "; ".join(fails))
+        await self._confirm(aid, rows[-1], PAUSED_TEXT)
+        self._acks.update(ids)
+        said = "; ".join(fails)
+        if said != self._paused_said:
+            self._paused_said = said
+            name = (self._agents.get(aid) or {}).get("name") or self._remote_ref
+            body = ("```yui\ncard \"" + f"{name} is paused for the people you shared it with" + "\" body=\""
+                    + "It no longer runs in a sandbox: " + said.replace('"', "'")
+                    + ". Turn those off in its Hermes profile and restart its gateway.\"\n```")
+            await self._write_row({"id": str(uuid.uuid4()), "user_id": self._user_id, "agent_id": aid,
+                                   "sender": "agent", "body": body, "kind": "text"})
+        self._spawn(self._connect_call({"action": "heartbeat", "serving": self._serving,
+                                        "sandbox": await self._sandbox()}))
+        await self._flush_acks()
 
     async def _mention_notes(self, aid: str, upto: Optional[str]) -> List[str]:
         """Mentions of other agents from this thread, and their answers here,
@@ -767,7 +851,8 @@ class YuiAdapter(BasePlatformAdapter):
 
     # -- outbound -------------------------------------------------------------
 
-    async def _insert(self, agent_id: str, body: str, sender: Optional[str] = None) -> SendResult:
+    async def _insert(self, key: str, body: str, sender: Optional[str] = None) -> SendResult:
+        agent_id, user_id = self._split(key)
         if not self._client:
             return SendResult(success=False, error="not connected")
         body = body.strip()
@@ -779,16 +864,17 @@ class YuiAdapter(BasePlatformAdapter):
         textbomb.record(body, connector.current_profile(), "handoff" if sender else "reply", logger)
         body = compat.downgrade(body, compat.PHONE["build"])  # what the phone can't draw: words
         body = await asyncio.to_thread(media.rewrite, body, lambda src: self._host(agent_id, src), logger)
-        row = {"id": str(uuid.uuid4()), "user_id": self._user_id, "agent_id": agent_id, "sender": "agent",
+        row = {"id": str(uuid.uuid4()), "user_id": user_id, "agent_id": agent_id, "sender": "agent",
                "body": body, "kind": "text"}
-        turn = (self._busy.get(agent_id) or (None,))[0]
+        turn = (self._busy.get(key) or (None,))[0]
         if turn and not sender:
             row["meta"] = {"turn": turn}  # the rows this reply answers (restart dedupe)
             # @another agent in a reply to the person (YUI-44): Yui hands it on, one hop.
+            # Never out of a shared thread: the owner's other agents aren't the person's.
             found = mentions.handles_in(body, own=[(self._agents.get(agent_id) or {}).get("handle")])
-            if found:
+            if found and user_id == self._user_id:
                 row["meta"]["mentions"] = found
-        handoff = bool(sender) or time.time() - self._last_inbound.get(agent_id, 0) > HANDOFF_AFTER_SECONDS
+        handoff = bool(sender) or time.time() - self._last_inbound.get(key, 0) > HANDOFF_AFTER_SECONDS
         mid = row["id"]
         # Older replies still waiting go first: never overtake them.
         queued = await asyncio.to_thread(len, self._outbox)
@@ -883,9 +969,13 @@ class YuiAdapter(BasePlatformAdapter):
             logger.warning("[yui] push %s failed: %s", message_id[:8], e)
 
     def _agent_for(self, chat_id: str) -> tuple[Optional[str], Optional[str]]:
-        """(agent id, sending profile's name when the thread is another agent's)."""
+        """(thread key, sending profile's name when the thread is another agent's).
+        A shared thread's chat id `<agent id>~<user id>` goes back to that person."""
+        base, _, uid = (chat_id or "").partition("~")
+        if uid and base in self._agents and re.fullmatch(r"[0-9a-f-]{36}", uid):
+            return chat_id, None
         agents = self._all_agents or list(self._agents.values())
-        a, sender = connector.pick_agent(agents, self._remote_ref, chat_id)
+        a, sender = connector.pick_agent(agents, self._remote_ref, base)
         return (a["id"] if a else None), sender
 
     async def send(self, chat_id: str, content: str, reply_to: Optional[str] = None,
