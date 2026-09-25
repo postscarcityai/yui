@@ -72,7 +72,7 @@ final class PageCountTests: XCTestCase {
         waitSelected(app.buttons["page-tab-2"], "the reply did not bring screen 2 forward")
         waitGone(app.descendants(matching: .any)["composer"].firstMatch, "the composer is on a screen")
         waitGone(app.buttons["Settings"], "the nav bar is on a screen")
-        XCTAssertFalse(app.buttons["Your agents"].isHittable, "the agents button is on a screen")
+        XCTAssertFalse(app.buttons["Agent menu"].isHittable, "the menu button is on a screen")
         XCTAssertTrue(app.buttons["page-tab-1"].isHittable, "no way back to the chat")
         shot(app, "full-screen-2")
         app.buttons["page-tab-1"].tap()

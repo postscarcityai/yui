@@ -625,7 +625,7 @@ struct GuideLink: View {
 }
 
 /// Rename, pick a look (the sheet previews it live), notifications, make default, new pairing code, remove.
-private struct EditAgentSheet: View {
+struct EditAgentSheet: View {
     let agent: YuiAgent
     @Environment(AgentStore.self) private var store
     @Environment(\.dismiss) private var dismiss

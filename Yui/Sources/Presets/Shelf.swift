@@ -148,6 +148,6 @@ struct ShelfBar: View {
     }
 }
 
-private extension SavedScreen.Part {
+extension SavedScreen.Part {
     var isWorkout: Bool { YuiLines.isWorkout(preset: preset, props: props) }
 }

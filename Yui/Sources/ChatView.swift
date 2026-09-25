@@ -20,6 +20,11 @@ struct ChatView: View {
     @State private var settingsDetent: PresentationDetent =
         ProcessInfo.processInfo.arguments.contains("-yuiSettingsLarge") ? .large : .medium
     @State private var showAgents = ProcessInfo.processInfo.arguments.contains("-yuiAgents")
+    /// The agent's drawer (YUI-54): open, and where a drag has it (points from its resting place).
+    @State private var drawerOpen = ProcessInfo.processInfo.arguments.contains("-yuiDrawer")
+    @State private var drawerDrag: CGFloat?
+    /// Controls, "Name, look and notifications": that agent's edit sheet.
+    @State private var editingAgent: YuiAgent?
     /// The first-run button opens Add agent straight from the chat.
     @State private var addFirst = false
     /// The message open in Select text.
@@ -94,6 +99,14 @@ struct ChatView: View {
                 } else {
                     // The chat, then each screen the agent put something on, a swipe apart (YUI-31).
                     PagedThread(store: store, screens: store.screens, page: $page, fade: pageFade, agent: store.agent, style: agentStyle) { thread }
+                        // Drag right on the chat: the drawer follows the finger (YUI-54). On a
+                        // screen the pager is scrolled along, so the drag pages back instead.
+                        .gesture(DrawerPan(direction: .right, enabled: !drawerOpen && !store.stageShowing) { x in
+                            focused = false
+                            drawerDrag = max(0, x)
+                        } ended: { x, v in
+                            settleDrawer(open: x > drawerWidth * Drawer.threshold || v > Drawer.flick)
+                        })
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -152,13 +165,10 @@ struct ChatView: View {
             }
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button("Your agents", systemImage: "person.2.fill") { showAgents = true }
-                        .tint(c.inkSoft)
-                }
+                menuItem(c)
                 ToolbarItem(placement: .principal) {
                     if let agent = store.agent {
-                        Button { showAgents = true } label: {
+                        Button { settleDrawer(open: true) } label: {
                             HStack(spacing: theme.spacing.s) {
                                 AgentBadge(agent: agent, size: 26)
                                 Text(agent.name)
@@ -209,7 +219,13 @@ struct ChatView: View {
                     .presentationDetents([.medium, .large])
                     .presentationCornerRadius(theme.radius.card)
             }
+            .sheet(item: $editingAgent) { agent in
+                EditAgentSheet(agent: agent)
+                    .presentationDetents([.medium, .large])
+                    .presentationCornerRadius(theme.radius.card)
+            }
         }
+        .overlay { drawer }
         // Belt and braces (YUI-80): while the chat is stepped back, a tap or a swipe on it
         // closes the stage. The stage covers it, so this only answers if the stage never drew.
         .overlay {
@@ -346,10 +362,96 @@ struct ChatView: View {
             push.pendingAgentID = nil
             showAgents = false
             showSettings = false
+            settleDrawer(open: false)
             agents.selectedID = id
             if !agents.agents.contains(where: { $0.id == id }) { Task { await agents.refresh() } }
         }
         .tint(c.accent)
+    }
+
+    // MARK: The agent's drawer (YUI-54)
+
+    /// Top left: the drawer, also a drag right on the chat away. What's waiting on
+    /// you sits on the button's glass as a count.
+    private func menuItem(_ c: Swatch) -> some ToolbarContent {
+        let n = store.awaitingYou.count
+        return ToolbarItem(placement: .topBarLeading) {
+            Button { settleDrawer(open: true) } label: {
+                Image(systemName: "line.3.horizontal")
+                    .overlay(alignment: .topTrailing) {
+                        if n > 0 {
+                            Text("\(n)")
+                                .font(theme.font(10, .heavy)).foregroundStyle(c.onAccent)
+                                .padding(.horizontal, 4).frame(minWidth: 15, minHeight: 15)
+                                .background(c.accent, in: Capsule())
+                                .offset(x: 8, y: -8)
+                        }
+                    }
+            }
+            .tint(c.inkSoft)
+            .accessibilityLabel("Agent menu")
+            .accessibilityValue(n > 0 ? "\(n) waiting on you" : "")
+        }
+    }
+
+    private var drawerWidth: CGFloat { (UIApplication.shared.connectedScenes.first as? UIWindowScene)?.screen.bounds.width ?? 390 }
+
+    /// How far out the drawer is, 0 closed to 1 open, following a drag when there is one.
+    private var drawerShown: CGFloat {
+        let w = drawerWidth * Drawer.fraction
+        guard let d = drawerDrag else { return drawerOpen ? 1 : 0 }
+        return min(1, max(0, drawerOpen ? 1 + d / w : d / w))
+    }
+
+    /// Springs open or shut from wherever the finger let go. Reduce Motion: a fade.
+    private func settleDrawer(open: Bool) {
+        if open { focused = false }
+        withAnimation(reduceMotion ? .easeInOut(duration: 0.2) : theme.spring) {
+            drawerOpen = open
+            drawerDrag = nil
+        }
+    }
+
+    /// Over the chat, from the left, stopping short so the chat peeks out on the right.
+    /// A tap on that sliver or a drag back to the left closes it.
+    @ViewBuilder private var drawer: some View {
+        let p = drawerShown
+        if !firstRun, p > 0 || drawerOpen {
+            GeometryReader { geo in
+                let w = geo.size.width * Drawer.fraction
+                ZStack(alignment: .leading) {
+                    Color.black.opacity(0.32 * p)
+                        .ignoresSafeArea()
+                        .contentShape(.rect)
+                        .onTapGesture { settleDrawer(open: false) }
+                        .accessibilityLabel("Close the menu")
+                        .accessibilityAddTraits(.isButton)
+                        .accessibilityAction { settleDrawer(open: false) }
+                    AgentDrawer(store: store, close: { settleDrawer(open: false) },
+                                compose: { draft = $0; focused = true },
+                                manage: { settleDrawer(open: false); showAgents = true },
+                                add: { settleDrawer(open: false); addFirst = true },
+                                edit: { editingAgent = $0 },
+                                reduceMotion: reduceMotion)
+                        .frame(width: w)
+                        .background {
+                            UnevenRoundedRectangle(bottomTrailingRadius: 34, topTrailingRadius: 34)
+                                .fill(theme.swatch(scheme).background)
+                                .shadow(color: .black.opacity(0.18 * p), radius: 24, x: 6)
+                                .ignoresSafeArea()
+                        }
+                        .offset(x: reduceMotion ? 0 : -w * (1 - p))
+                        .opacity(reduceMotion ? p : 1)
+                        .accessibilityAddTraits(.isModal)
+                }
+                .gesture(DrawerPan(direction: .left) { x in
+                    drawerDrag = min(0, x)
+                } ended: { x, v in
+                    settleDrawer(open: !(x < -w * Drawer.threshold || v < -Drawer.flick))
+                })
+            }
+            .transition(.identity)
+        }
     }
 
     /// Page 1: the thread itself, or the empty chat before the first message.

@@ -26,14 +26,14 @@ final class StuckStageTests: XCTestCase {
         app.launchArguments = ["-yuiDemoAccount", "-yuiDemoAgents", "-yuiAgent", agent, "-appearance", appearance,
                                "-yuiThemeDemo", reply.joined(separator: "\\n")] + extra
         app.launch()
-        let agents = app.buttons["Your agents"]
+        let agents = app.buttons["Agent menu"]
         XCTAssertTrue(agents.waitForExistence(timeout: 10))
         home = agents.frame
     }
 
     /// Full size: the top-left button is where it was at launch (0.92 moves it ~16 pt in).
     private func assertFullSize(_ why: String, file: StaticString = #filePath, line: UInt = #line) {
-        let agents = app.buttons["Your agents"]
+        let agents = app.buttons["Agent menu"]
         XCTAssertTrue(agents.waitForExistence(timeout: 5), "no agents button: \(why)", file: file, line: line)
         let settled = XCTNSPredicateExpectation(
             predicate: NSPredicate { [home] e, _ in abs((e as! XCUIElement).frame.minX - home.minX) < 1.5
@@ -66,8 +66,8 @@ final class StuckStageTests: XCTestCase {
         assertFullSize("after a tap")
     }
 
-    /// The card's walk (dark): war room from the shelf, the agents sheet, switch agent
-    /// and back, the sheet pulled to full height. Full size whenever no stage shows.
+    /// The card's walk (dark): war room from the shelf, the drawer, switch agent
+    /// and back. Full size whenever no stage shows.
     func testWarRoomAgentsSheetAndSwitchNeverLeaveItShrunk() {
         let room = [">2", "clear", #"stat 2 "Needs you" sub="cards waiting on your answer""#,
                     #"card "APP lane" sub="Idle""#, #"card "WEB lane" sub="Idle""#, "save war room"]
@@ -88,33 +88,32 @@ final class StuckStageTests: XCTestCase {
         close.tap()
         assertFullSize("after the X")
 
-        // The top-left button: the agents sheet, dismissed, then pulled to full height.
-        app.buttons["Your agents"].tap()
-        XCTAssertTrue(app.staticTexts["Who do you want to talk to?"].waitForExistence(timeout: 5))
+        // The top-left button: the agent's drawer (YUI-54), closed by its X, then by a tap on the chat beside it.
+        app.buttons["Agent menu"].tap()
+        let shut = app.buttons["drawer-close"]
+        XCTAssertTrue(shut.waitForExistence(timeout: 5))
         sleep(1)
-        shot("3-agents-sheet")
-        app.buttons["Done"].tap()
-        assertFullSize("after the agents sheet")
+        shot("3-drawer")
+        shut.tap()
+        assertFullSize("after the drawer")
 
-        app.buttons["Your agents"].tap()
-        let header = app.staticTexts["Who do you want to talk to?"]
-        XCTAssertTrue(header.waitForExistence(timeout: 5))
-        header.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
-            .press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.05)))
+        app.buttons["Agent menu"].tap()
+        XCTAssertTrue(shut.waitForExistence(timeout: 5))
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.96, dy: 0.5)).tap()
         sleep(1)
-        shot("4-agents-sheet-large")
-        app.buttons["Done"].tap()
-        assertFullSize("after the sheet at full height")
+        shot("4-drawer-closed-by-tap")
+        assertFullSize("after a tap beside the drawer")
 
-        // Switch agent and back.
-        app.buttons["Your agents"].tap()
-        XCTAssertTrue(header.waitForExistence(timeout: 5))
-        app.cells.containing(.staticText, identifier: "Coach").firstMatch.tap()
-        assertFullSize("after switching to Coach")
-        app.buttons["Your agents"].tap()
-        XCTAssertTrue(header.waitForExistence(timeout: 5))
-        app.cells.containing(.staticText, identifier: "Wizard").firstMatch.tap()
-        assertFullSize("after switching back")
+        // Switch agent and back, from the drawer's switcher.
+        for name in ["Coach", "Wizard"] {
+            app.buttons["Agent menu"].tap()
+            XCTAssertTrue(shut.waitForExistence(timeout: 5))
+            app.buttons["drawer-agent-bar"].tap()
+            let row = app.buttons["switch-\(name)"]
+            XCTAssertTrue(row.waitForExistence(timeout: 5))
+            row.tap()
+            assertFullSize("after switching to \(name)")
+        }
 
         // War room again, swiped away this time.
         XCTAssertTrue(chip.waitForExistence(timeout: 5))
