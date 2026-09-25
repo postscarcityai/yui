@@ -68,6 +68,11 @@ Transport: the gateway dials OUT to Supabase (PROOF). No inbound ports.
      meta.mentions; this agent's next turn starts with notes on what other
      agents were asked and answered in its thread.
 
+ 12. Text bombs (YUI-79, textbomb.py): a message whose chat text (outside
+     ```yui fences) runs over 60 words is noted by profile, source and word
+     count, never its text, in <profile home>/yui/textbombs.jsonl, with a
+     warning in the gateway log. The app folds it into "Read as pages".
+
 The channel guide (CHANNEL.md, synced verbatim from yuigui/spec/CHANNEL.md by
 ../sync_channel.py) is this platform's system-prompt hint, so it is in the
 system prompt on every turn on the Yui channel, and only there.
@@ -102,7 +107,7 @@ from gateway.config import Platform, PlatformConfig
 from gateway.platforms.base import (BasePlatformAdapter, MessageEvent, MessageType, ProcessingOutcome,
                                     SendResult)
 
-from . import board, connector, flywheel, media, mentions, needs, outbox
+from . import board, connector, flywheel, media, mentions, needs, outbox, textbomb
 from . import commands as slash
 
 logger = logging.getLogger(__name__)
@@ -736,6 +741,7 @@ class YuiAdapter(BasePlatformAdapter):
         if len(body) > MAX_MESSAGE_LENGTH:
             body = body[:MAX_MESSAGE_LENGTH]
         flywheel.record(body, connector.current_profile())  # custom shapes only, off unless yui.flywheel
+        textbomb.record(body, connector.current_profile(), "handoff" if sender else "reply", logger)
         body = await asyncio.to_thread(media.rewrite, body, lambda src: self._host(agent_id, src), logger)
         row = {"id": str(uuid.uuid4()), "user_id": self._user_id, "agent_id": agent_id, "sender": "agent",
                "body": body, "kind": "text"}
@@ -939,6 +945,7 @@ async def _standalone_send(pconfig, chat_id: str, message: str, *, thread_id: Op
             media_fence("video" if f.lower().endswith((".mp4", ".mov", ".m4v")) else "image", f)
             for f in files if f.lower().rsplit(".", 1)[-1] in media.TYPES]).strip()
         flywheel.record(body, connector.current_profile())
+        textbomb.record(body, connector.current_profile(), "out-of-process", logger)
         body = await asyncio.to_thread(
             media.rewrite, body, lambda src: media.host(s["access_token"], s["user_id"], target["id"], src), logger)
         row = {"id": str(uuid.uuid4()), "user_id": s["user_id"], "agent_id": target["id"], "sender": "agent",
