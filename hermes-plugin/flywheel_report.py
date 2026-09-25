@@ -15,6 +15,8 @@ No dependencies. The log holds shapes, never values, so this report is safe to
 paste anywhere.
 """
 
+from __future__ import annotations
+
 import argparse
 import json
 import os
