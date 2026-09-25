@@ -19,3 +19,5 @@ python3 yui_webhook.py run --webhook http://127.0.0.1:8787 [--secret S]
 `--state FILE` (or `$YUI_WEBHOOK_STATE`) before the command picks the state file, default `~/.yui/webhook.json`.
 
 `example_agent.py` is the whole agent in ten lines: it answers any message with a `choose` screen and any tap with the choice. What the webhook receives and may answer: [../README.md](../README.md).
+
+`crewai_crew.py` is a CrewAI crew (a planner and a writer on local Ollama) two ways: as the webhook, each turn kicks off the crew; with `send "..."`, it runs once (say from cron) and puts the answer in the thread. Yui's guide goes in the writer's backstory, so the crew can answer with screens. Needs `uv run --with 'crewai[litellm]'`. CrewAI agents served over A2A: [../../a2a/README.md](../../a2a/README.md).

@@ -31,6 +31,12 @@ account (never a real one):
      ADK, plus: the guide and the tap reach the graph's state as data keys
      (yui_channel_guide, yui_events), the thread is the Yui agent, and the
      guide never shows up as a chat message. Needs uv.
+  CrewAI (--protocol crewai, INT-15, not in `all`): a CrewAI agent,
+     tests/sdk/crewai_agent.py, served over A2A 0.3 by CrewAI's own
+     A2AServerConfig card and task executor on the A2A SDK's server, its model
+     local Ollama qwen2.5:7b through LiteLLM (no key). As ADK: the screen is
+     drawn only because the guide reached the agent's backstory. Needs uv and
+     Ollama with qwen2.5:7b.
   I. with --sim: the phone side, on its own fresh account and thread (A2A
      1.0): YuiUITests/A2ATests on a simulator shows the working row, the long
      answer, a screen and a tap (light), a question and its answer (dark).
@@ -39,7 +45,7 @@ account (never a real one):
 Pass: every person's row is handled and named by exactly one reply, and the
 agent got each turn exactly once.
 
-    python3 adapters/a2a/tests/a2a_e2e.py [--protocol 1.0|0.3|poll|phone|adk|langgraph|all] [--sim <udid>] [--out DIR]
+    python3 adapters/a2a/tests/a2a_e2e.py [--protocol 1.0|0.3|poll|phone|adk|langgraph|crewai|all] [--sim <udid>] [--out DIR]
 
 `poll` is 1.0 with streaming off: the bridge sends, then follows by GetTask.
 Needs a Supabase access token like supabase/tests. Accounts are deleted.
@@ -52,7 +58,7 @@ A2A = REPO / "adapters/a2a"
 BRIDGE = ["node", str(A2A / "yui-a2a.ts")]
 
 ap = argparse.ArgumentParser()
-ap.add_argument("--protocol", choices=["1.0", "0.3", "poll", "phone", "adk", "langgraph", "all"], default="all")
+ap.add_argument("--protocol", choices=["1.0", "0.3", "poll", "phone", "adk", "langgraph", "crewai", "all"], default="all")
 ap.add_argument("--sim", help="simulator udid: also run YuiUITests/A2ATests (phone side)")
 ap.add_argument("--out", default="/tmp/int18-proof")
 args = ap.parse_args()
@@ -278,6 +284,10 @@ SDK = {  # --protocol adk / langgraph: a real framework's own A2A server
                   "what": "a LangGraph agent on LangGraph's Agent Server over A2A (INT-14)",
                   "served": "A2A 1.0, served by langgraph dev",
                   "reached": "drawn only because the guide reached the graph's state"},
+    "crewai": {"name": "CrewAI", "card": "INT-15", "log": "crewai.log", "boot": 300, "version": "0.3",
+               "what": "a CrewAI agent over A2A (INT-15)",
+               "served": "A2A 0.3, served by CrewAI's A2AServerConfig and executor",
+               "reached": "drawn only because the guide reached the agent's backstory"},
 }
 
 
@@ -289,6 +299,11 @@ def start_sdk(kind, home, port):
         proc = subprocess.Popen(["uv", "run", "--quiet", "--with", "google-adk", "--with", "litellm",
                                  "--with", "a2a-sdk[http-server]", "--with", "uvicorn",
                                  str(A2A / "tests/sdk/adk_agent.py"), str(port)],
+                                stdout=out, stderr=subprocess.STDOUT, start_new_session=True)
+        card_url = [url]
+    elif kind == "crewai":
+        proc = subprocess.Popen(["uv", "run", "--quiet", "--python", "3.12", "--with", "crewai[a2a,litellm]", "--with", "uvicorn",
+                                 str(A2A / "tests/sdk/crewai_agent.py"), str(port)],
                                 stdout=out, stderr=subprocess.STDOUT, start_new_session=True)
         card_url = [url]
     else:  # langgraph dev writes .langgraph_api/ where it runs, so it runs in a copy
@@ -376,7 +391,7 @@ def run_sdk(kind):
                            capture_output=True, text=True, timeout=60)
         st = json.loads(state.read_text()) if state.exists() else {}
         check(f"{k}: pairs with the app's code and {S['name']}'s card ({S['served']})",
-              p.returncode == 0 and "paired" in p.stdout and "A2A 1.0" in p.stdout, (p.stdout + p.stderr).strip()[:300])
+              p.returncode == 0 and "paired" in p.stdout and f"A2A {S.get('version', '1.0')}" in p.stdout, (p.stdout + p.stderr).strip()[:300])
         check(f"{k}: state file is private, holds the token and the card",
               oct(state.stat().st_mode & 0o777) == "0o600" and st.get("token", "").startswith("yui_ct_")
               and any(v.get("card", "").startswith(url) for v in st.get("remotes", {}).values()), json.dumps(st.get("remotes")))
