@@ -18,6 +18,8 @@ struct ChatMessage: Identifiable, Equatable {
     var mentionTo: String? = nil
     /// Another agent's answer to a mention, copied into this thread (YUI-44).
     var from: MentionFrom? = nil
+    /// The person typed it on this screen (YUI-62): "From screen 2".
+    var fromScreen: Int? = nil
 }
 
 /// The chat's messages plus the event log going back to the agent.
@@ -152,8 +154,15 @@ final class ChatStore {
     /// `>2 clear` empties the page, which holds what earlier replies put there too.
     private func clearPage(_ node: YLNode, except id: String? = nil) {
         guard node.op == .clear, YuiLines.page(of: node.screen) != 1 else { return }
-        for j in messages.indices where messages[j].id != id && messages[j].yl != nil { messages[j].yl?.apply(node) }
+        for j in messages.indices where messages[j].id != id && messages[j].yl != nil { messages[j].yl?.empty(node.screen) }
     }
+
+    /// Pages the agent keeps the composer on (`>2 talk`, YUI-62), from every reply
+    /// in order: `talk off` and `>2 clear` take it away again.
+    var talking: Set<Int> { Set(YuiLines.talking(messages.flatMap { $0.yl?.talkLines ?? [] })) }
+
+    /// The composer shows on page `n`: the chat always, a page when the agent said `talk`.
+    func talks(on n: Int) -> Bool { n == 1 || talking.contains(n) }
 
     /// The agent this thread talks to, when there is one.
     private(set) var agent: YuiAgent?
@@ -425,12 +434,16 @@ final class ChatStore {
 
     /// False when it can't go out (no agent or session yet): nothing is added, the caller keeps the text.
     @discardableResult
-    func send(_ text: String, mention: YuiAgent? = nil) -> Bool {
+    func send(_ text: String, mention: YuiAgent? = nil, screen: Int? = nil) -> Bool {
+        // Typed on a screen (YUI-62): tagged with it. A slash command is still a command.
+        let screen = text.hasPrefix("/") ? nil : screen
         #if DEBUG
         // -yuiDemoReply "<lines>": on the demo account the agent answers what you send with these lines (SOC-3 videos).
         if client == nil, agent != nil, let reply = UserDefaults.standard.string(forKey: "yuiDemoReply") {
-            let q = takeReply(for: text)
-            withAnimation(Self.sendSpring) { messages.append(ChatMessage(text: text, fromUser: true, replyTo: q)) }
+            let q = screen == nil ? takeReply(for: text) : nil
+            withAnimation(Self.sendSpring) {
+                messages.append(ChatMessage(text: text, fromUser: true, replyTo: q, fromScreen: screen))
+            }
             waiting = true
             waitingSince = .now
             pickedUpAt = nil
@@ -450,6 +463,13 @@ final class ChatStore {
         }
         #endif
         guard client != nil, agent != nil, account?.session?.userID != nil else { return false }
+        if let screen {
+            // About the screen, to this agent: no mention, and a reply quote waits for the chat.
+            let m = ChatMessage(id: UUID().uuidString.lowercased(), text: text, fromUser: true, fromScreen: screen)
+            withAnimation(Self.sendSpring) { messages.append(m) }
+            post(id: m.id, body: ScreenTalk.body(text, screen: screen), kind: "text", meta: ScreenTalk.meta(nil, screen: screen))
+            return true
+        }
         if let mention {
             // A mention goes to the other agent with this thread's last lines; a reply
             // quote would point at a row it can't see, so it stays here.
@@ -470,14 +490,22 @@ final class ChatStore {
     /// Words and photos. The photos go up first (the outbox holds rows, not
     /// files), then the row goes out like any other. Throws when an upload
     /// fails: nothing is added, the composer keeps everything.
-    func send(_ text: String, photos: [ComposerPhoto], mention: YuiAgent? = nil) async throws {
-        guard !photos.isEmpty else { if !send(text, mention: mention) { throw AccountError.signedOut }; return }
+    func send(_ text: String, photos: [ComposerPhoto], mention: YuiAgent? = nil, screen: Int? = nil) async throws {
+        guard !photos.isEmpty else { if !send(text, mention: mention, screen: screen) { throw AccountError.signedOut }; return }
         guard client != nil, let agentID = agent?.id, let account else { throw AccountError.signedOut }
         let media = YuiMedia(account: account, agentID: agentID)
         var paths: [String] = []
         for p in photos { paths.append(try await media.upload(photo: p.jpeg)) }
         guard agent?.id == agentID else { throw AccountError.signedOut }  // switched threads mid-upload
         let body = Attachments.body(text: text, photos: paths.count)
+        if let screen {
+            let m = ChatMessage(id: UUID().uuidString.lowercased(), text: Attachments.caption(body: body, photos: paths.count),
+                                fromUser: true, photos: photos.map { .local($0.preview) }, fromScreen: screen)
+            withAnimation(Self.sendSpring) { messages.append(m) }
+            post(id: m.id, body: ScreenTalk.body(body, screen: screen), kind: "text",
+                 meta: ScreenTalk.meta(Attachments.meta(paths: paths), screen: screen))
+            return
+        }
         if let mention {
             replying = nil
             let m = ChatMessage(id: UUID().uuidString.lowercased(), text: Attachments.caption(body: body, photos: paths.count),
@@ -500,10 +528,11 @@ final class ChatStore {
         let paths = Attachments.paths(meta)
         let arrived = Mentions.arrived(meta: meta)
         let words = arrived != nil ? Mentions.arrivedWords(body: body)
-            : Mentions.words(body: ReplyQuote.words(body: body, meta: meta), meta: meta)
+            : Mentions.words(body: ReplyQuote.words(body: ScreenTalk.words(body: body, meta: meta), meta: meta), meta: meta)
         return ChatMessage(id: id, text: Attachments.caption(body: words, photos: paths.count), fromUser: true,
                            photos: paths.map { .stored($0) }, replyTo: ReplyQuote.from(meta: meta),
-                           mentionTo: Mentions.to(meta: meta).map { "To \($0)" } ?? arrived)
+                           mentionTo: Mentions.to(meta: meta).map { "To \($0)" } ?? arrived,
+                           fromScreen: ScreenTalk.screen(meta: meta))
     }
 
     /// Into the outbox first (on disk), then out: a dropped network or a killed

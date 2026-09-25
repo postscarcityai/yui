@@ -37,7 +37,7 @@ PRESETS = {
     "timeline", "done", "now", "next",
     "game",
 }
-CORE = {"say", "custom", "save", "show", "forget", "clear", "end", "theme", "close"}
+CORE = {"say", "custom", "save", "show", "forget", "clear", "end", "theme", "close", "talk"}
 
 FENCE = re.compile(r"```yui[^\n]*\n(.*?)```", re.S)
 # A name that looks like a field or a type, not like data. Keys that do not

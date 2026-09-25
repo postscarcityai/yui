@@ -46,4 +46,33 @@ extension YuiLines {
         guard let n = Int(screen), String(n) == screen, (2...maxPage).contains(n) else { return 1 }
         return n
     }
+
+    /// Chat with a screen: the pages whose composer is on after these nodes, in
+    /// number order. `talk` turns it on, `talk off` and `clear` take it away; only
+    /// pages 2 to 12 have one to turn on. Mirrors `talking` in the JS reference parser.
+    public static func talking(_ nodes: [YLNode]) -> [Int] {
+        var on = Set<Int>()
+        for n in nodes {
+            let p = page(of: n.screen)
+            guard p != 1 else { continue }
+            if n.op == .talk, n.props?["on"]?.bool == true { on.insert(p) }
+            else if n.op == .clear || n.op == .talk { on.remove(p) }
+        }
+        return on.sorted()
+    }
+
+    /// What the person typed on a page, as the agent reads it (spec section 7):
+    /// a `[yui] screen=2` line, then the words. Anywhere else the words as they are.
+    public static func typedBody(screen: String, words: String) -> String {
+        page(of: screen) == 1 ? words : "[yui] screen=\(screen)\n" + words
+    }
+
+    /// The other way: the screen and words of a message typed on a page, else nil.
+    public static func readTyped(_ body: String) -> (screen: String, words: String)? {
+        guard body.hasPrefix("[yui] screen="), let nl = body.firstIndex(of: "\n") else { return nil }
+        var screen = body[body.index(body.startIndex, offsetBy: 13)..<nl]
+        if screen.hasSuffix("\r") { screen = screen.dropLast() }
+        guard !screen.isEmpty, !screen.contains(where: \.isWhitespace), page(of: String(screen)) != 1 else { return nil }
+        return (String(screen), String(body[body.index(after: nl)...]))
+    }
 }

@@ -71,6 +71,15 @@ struct ChatView: View {
     /// The chat is on show (not a screen, and not the first run's welcome).
     private var onChat: Bool { firstRun || (page ?? 1) == 1 }
 
+    /// The screen on show when the agent keeps the composer on it (`>2 talk`, YUI-62).
+    private var talkPage: Int? {
+        let n = page ?? 1
+        return !firstRun && n != 1 && store.talks(on: n) ? n : nil
+    }
+
+    /// The composer is here: the chat, or a screen the agent talks on.
+    private var composing: Bool { onChat || talkPage != nil }
+
     var body: some View {
         let c = theme.swatch(scheme)
         ZStack {
@@ -99,13 +108,14 @@ struct ChatView: View {
                             PageTabs(page: page ?? 1, screens: screens) { store.goToPage($0) }
                                 .transition(.scale(scale: 0.8).combined(with: .opacity))
                         }
-                        // Screens are for reading: the composer stays with the chat.
-                        if onChat {
+                        // Screens are for reading: the composer stays with the chat,
+                        // unless the agent keeps it on this screen (`>2 talk`).
+                        if composing {
                             inputBar(c)
                                 .transition(.move(edge: .bottom).combined(with: .opacity))
                         }
                     }
-                    .animation(theme.spring, value: onChat)
+                    .animation(theme.spring, value: composing)
                 }
             }
             // Held bubble or card: the tapback bar (agent's only) and Reply, Copy,
@@ -248,7 +258,7 @@ struct ChatView: View {
         .onChange(of: page) {
             if let page { store.showingPage(page) }
             // The composer goes with the chat, so does the keyboard.
-            if !onChat { focused = false }
+            if !composing { focused = false }
         }
         // Streamed lines can ask for 2 and then 3 within a quarter second; a new
         // scroll animation cuts the last one short, so take only the newest ask.
@@ -491,13 +501,13 @@ struct ChatView: View {
 
     /// Typing @ anywhere: your other agents, filtered as you type (YUI-44).
     private var mentionSuggestions: [Suggestion] {
-        guard !talk.listening, account.session?.userID != "demo" || agents.agents.count > 1 else { return [] }
+        guard !talk.listening, talkPage == nil, account.session?.userID != "demo" || agents.agents.count > 1 else { return [] }
         return Mentions.suggestions(draft, agents: agents.agents, current: store.agent?.id)
     }
 
     /// The other agent this draft goes to, if it @s one.
     private var mentioning: YuiAgent? {
-        guard !draft.hasPrefix("/") else { return nil }
+        guard !draft.hasPrefix("/"), talkPage == nil else { return nil }
         return Mentions.target(draft, agents: agents.agents, current: store.agent?.id)
     }
 
@@ -515,7 +525,7 @@ struct ChatView: View {
                 MentionBar(agent: to)
                     .transition(.opacity)
             }
-            if let q = store.replying {
+            if let q = store.replying, talkPage == nil {
                 ReplyBar(quote: q, agent: store.agent?.name) { store.cancelReply() }
                     .transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
             }
@@ -574,7 +584,8 @@ struct ChatView: View {
     }
 
     private func field(_ c: Swatch) -> some View {
-        TextField(photos.isEmpty ? "Say something nice" : "Add a caption", text: $draft, axis: .vertical)
+        TextField(!photos.isEmpty ? "Add a caption" : talkPage.map { "About screen \($0)" } ?? "Say something nice",
+                  text: $draft, axis: .vertical)
             .font(theme.font(theme.type.body))
             .foregroundStyle(c.ink)
             .lineLimit(1...5)
@@ -789,9 +800,10 @@ struct ChatView: View {
         if account.session?.userID != "demo" {
             guard store.agent != nil else { return }
             let to = mentioning
+            let screen = talkPage
             if photos.isEmpty {
                 // Not sent (no agent, no session): the words stay in the field.
-                guard store.send(text, mention: to) else { return }
+                guard store.send(text, mention: to, screen: screen) else { return }
                 clearComposer()
                 return
             }
@@ -800,7 +812,7 @@ struct ChatView: View {
             Task {
                 defer { sending = false }
                 do {
-                    try await store.send(text, photos: outgoing, mention: to)
+                    try await store.send(text, photos: outgoing, mention: to, screen: screen)
                     photos = []
                     clearComposer()
                 } catch {
@@ -811,17 +823,18 @@ struct ChatView: View {
         }
         #if DEBUG
         // -yuiDemoReply: the demo account's agent answers through the store, working row and all (YUI-63).
-        if photos.isEmpty, UserDefaults.standard.string(forKey: "yuiDemoReply") != nil, store.send(text) {
+        if photos.isEmpty, UserDefaults.standard.string(forKey: "yuiDemoReply") != nil, store.send(text, screen: talkPage) {
             clearComposer()
             return
         }
         #endif
         let body = Attachments.body(text: text, photos: photos.count)
-        let q = text.hasPrefix("/") ? nil : store.replying
-        store.replying = nil
+        let screen = text.hasPrefix("/") ? nil : talkPage
+        let q = text.hasPrefix("/") || screen != nil ? nil : store.replying
+        if screen == nil { store.replying = nil }
         withAnimation(ChatStore.sendSpring) {
             store.messages.append(ChatMessage(text: Attachments.caption(body: body, photos: photos.count), fromUser: true,
-                                              photos: photos.map { .local($0.preview) }, replyTo: q))
+                                              photos: photos.map { .local($0.preview) }, replyTo: q, fromScreen: screen))
         }
         photos = []
         clearComposer()
@@ -1184,6 +1197,9 @@ private struct Bubble: View {
                 }
                 if let label = message.mentionTo {
                     MentionChip(label: label)
+                }
+                if let n = message.fromScreen {
+                    ScreenChip(screen: n)
                 }
                 if let q = message.replyTo {
                     ReplyChip(quote: q, agent: agent?.name) { goToQuote(q) }

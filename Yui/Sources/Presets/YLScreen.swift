@@ -30,6 +30,8 @@ struct YLScreen: Equatable, Sendable {
     private var saved: [String: SavedScreen] = [:]
     /// This reply's saves and forgets, in order, for the thread's shelf (YUI-32).
     private(set) var shelfOps: [ShelfOp] = []
+    /// This reply's `talk` and `clear` lines, in order: which pages keep the composer (YUI-62).
+    private(set) var talkLines: [YLNode] = []
     private var serial = 0
     /// The component count when the last `close` line landed. Staged components
     /// at or under it arrived before the agent closed the stage (spec section 5).
@@ -58,6 +60,9 @@ struct YLScreen: Equatable, Sendable {
             components[i].props.merge(node.props ?? [:]) { $1 }
         case .clear:
             components.removeAll { $0.screen == node.screen }
+            talkLines.append(node)
+        case .talk:
+            talkLines.append(node)
         case .save:
             let name = node.name ?? ""
             let shot = SavedScreen(name: name, components: components.filter { $0.screen == node.screen },
@@ -88,6 +93,12 @@ struct YLScreen: Equatable, Sendable {
     }
 
     var isEmpty: Bool { components.isEmpty && errors.isEmpty && looks.isEmpty }
+
+    /// A later reply's `>2 clear` reaching what this one put on screen 2. Its own
+    /// talk lines stay as they were: the thread reads them in order.
+    mutating func empty(_ screen: String) {
+        components.removeAll { $0.screen == screen }
+    }
 
     /// Whether this reply saved `name` itself (a `show` of it needs no shelf).
     func hasSaved(_ name: String) -> Bool { saved[name] != nil }

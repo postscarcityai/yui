@@ -155,6 +155,14 @@ public struct YLParser: Sendable {
             return YLNode(op: .close, screen: "full", line: line)
         }
         if head == "theme" { return YLNode(op: .theme, screen: screen, props: parseArgs("theme", tokens), line: line) }
+        if head == "talk" {
+            // `talk` or `talk on` turns the composer on for this page, `talk off` takes it away.
+            let word = tokens.isEmpty ? "on" : tokens.count == 1 ? tokens[0].text : nil
+            guard word == "on" || word == "off" else {
+                return YLNode(op: .error, screen: screen, message: "talk: takes nothing, on or off", line: line)
+            }
+            return YLNode(op: .talk, screen: screen, props: ["on": .bool(word == "on")], line: line)
+        }
 
         // ^([a-z]+)(?:@([\w-]+))?$
         let h = Scalars(head.unicodeScalars)

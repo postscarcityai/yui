@@ -19,6 +19,10 @@ struct Vector: Sendable, CustomTestStringConvertible {
     let stage: [String]?
     /// The page of each add, in order (spec section 5, Pages).
     let pages: [Int]?
+    /// The pages with the composer on after the input (chat with a screen).
+    let talk: [Int]?
+    /// Words typed on a screen and the body the agent reads: screen, words, body.
+    let typed: [String: String]?
     let style: [String: String]
     var testDescription: String { "\(file) :: \(name)" }
 }
@@ -44,6 +48,8 @@ enum Vectors {
                 emits: v["emits"]?.array?.map { $0.array! },
                 stage: v["stage"]?.array?.map { $0.string! },
                 pages: v["pages"]?.array?.map { Int($0.number!) },
+                talk: v["talk"]?.array?.map { Int($0.number!) },
+                typed: v["typed"]?.object?.compactMapValues { $0.string },
                 style: v["style"]?.object?.compactMapValues { $0.string } ?? [:]
             )
         }
@@ -95,6 +101,22 @@ func conformance(_ v: Vector) {
     if let pages = v.pages {
         let got = YuiLines.parse(v.input).filter { $0.op == .add }.map { YuiLines.page(of: $0.screen) }
         #expect(got == pages, "pages: \(got)")
+    }
+
+    if let talk = v.talk {
+        let got = YuiLines.talking(YuiLines.parse(v.input))
+        #expect(got == talk, "talk: \(got)")
+    }
+
+    if let t = v.typed, let screen = t["screen"], let words = t["words"], let body = t["body"] {
+        let made = YuiLines.typedBody(screen: screen, words: words)
+        #expect(made == body, "typed body: \(made)")
+        let read = YuiLines.readTyped(body)
+        if YuiLines.page(of: screen) == 1 {
+            #expect(read == nil, "typed read back: \(String(describing: read))")
+        } else {
+            #expect(read?.screen == screen && read?.words == words, "typed read back: \(String(describing: read))")
+        }
     }
 
     #expect(v.expected.contains { $0["op"] == "error" } == v.error, "`error` flag does not match expected")

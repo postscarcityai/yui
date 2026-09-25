@@ -22,6 +22,8 @@ public struct YLNode: Codable, Equatable, Sendable {
         case theme
         /// `close` or bare `>chat`: close the stage; later lines go to screen 1. Screen is `full`.
         case close
+        /// `>2 talk`: page 2 keeps the composer; `props.on` false (`talk off`) takes it away.
+        case talk
         /// The line was rejected: `message`. Every other line still renders.
         case error
     }
