@@ -151,7 +151,9 @@ async function presence(userId: string, b: Body): Promise<Response> {
   if (b.active && b.agent_id != null) {
     if (typeof b.agent_id !== "string" || !UUID.test(b.agent_id)) return json({ error: "invalid_agent_id" }, 400);
     const { data } = await admin().from("yui_agents").select("id").eq("id", b.agent_id).eq("user_id", userId).maybeSingle();
-    agentId = data?.id ?? null;
+    const { data: g } = data ? { data: null } : await admin().from("yui_agent_grants").select("agent_id")
+      .eq("agent_id", b.agent_id).eq("user_id", userId).is("revoked_at", null).maybeSingle();
+    agentId = data?.id ?? g?.agent_id ?? null;
   }
   const { data, error } = await admin().from("yui_devices").update({
     active_at: b.active ? new Date().toISOString() : null,
@@ -188,15 +190,25 @@ async function notify(req: Request, b: Body): Promise<Response> {
   const { data: msg } = await db.from("yui_messages").select("id, user_id, agent_id, sender, body, created_at")
     .eq("id", b.message_id).maybeSingle();
   const { data: agent } = msg
-    ? await db.from("yui_agents").select("id, name, connector_id, push_muted").eq("id", msg.agent_id).maybeSingle()
+    ? await db.from("yui_agents").select("id, name, connector_id, push_muted, client_safe").eq("id", msg.agent_id).maybeSingle()
     : { data: null };
+  // A shared agent's thread with someone else (YUI-95): only while the grant is
+  // live and the agent is client-safe, with that person's own mute.
+  let muted = agent?.push_muted ?? false;
+  let mine = msg?.user_id === connector.user_id;
+  if (msg && agent && !mine) {
+    const { data: g } = await db.from("yui_agent_grants").select("push_muted")
+      .eq("agent_id", agent.id).eq("user_id", msg.user_id).is("revoked_at", null).maybeSingle();
+    mine = !!g && agent.client_safe === true;
+    muted = g?.push_muted ?? true;
+  }
   // Same answer for "no such message" and "not yours": no probing other threads.
-  if (!msg || !agent || agent.connector_id !== connector.id || msg.user_id !== connector.user_id) {
+  if (!msg || !agent || agent.connector_id !== connector.id || !mine) {
     return json({ error: "not_found" }, 404);
   }
   if (msg.sender !== "agent") return json({ error: "not_an_agent_message" }, 400);
   if (Date.now() - new Date(msg.created_at).getTime() > NOTIFY_WINDOW_MS) return json({ error: "too_old" }, 409);
-  if (agent.push_muted) return json({ ok: true, muted: true, devices: 0, delivered: 0, skipped: 0, results: [] });
+  if (muted) return json({ ok: true, muted: true, devices: 0, delivered: 0, skipped: 0, results: [] });
 
   const from = cleanName(b.from);
   const who = from ?? agent.name;

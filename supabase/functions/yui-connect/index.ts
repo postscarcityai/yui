@@ -16,6 +16,10 @@
 //       the current channel guide. Heartbeats too. app_build: the oldest
 //       app build among the user's phones seen in the last 14 days (null when
 //       none has said), so the host sends only presets that build can draw.
+//   sandbox (YUI-95): {<remote_ref>: {terminal, files, reach, memory, runner,
+//   profile, extra_keys}} with heartbeat and session, one per profile in
+//   serving. Sets yui_agents.client_safe from the five client-safe rules
+//   (sandboxFailures); only a client-safe agent can be shared.
 //   {action: "bye", serving?}                            Bearer yui_ct_...
 //       The host is stopping cleanly (YUI-28): its agents read offline at
 //       once instead of asleep. The next heartbeat or session clears it.
@@ -127,6 +131,58 @@ async function reportServing(db: DB, connectorId: string, b: Body): Promise<void
   if (error) throw error;
 }
 
+// Client-safe (YUI-95, spec yuigui/spec/AGENTS.md "Client-safe"). Each gateway
+// reports its profile's sandbox with serving: {sandbox: {<remote_ref>: report}}.
+// Same five rules as hermes-plugin/yui/sandbox.py failures(): [] = safe. A
+// gateway that serves a profile and sends no report for it clears the mark.
+const SANDBOX_KEYS = ["terminal", "files", "reach", "memory", "runner", "profile", "extra_keys"];
+
+// deno-lint-ignore no-explicit-any
+function sandboxFailures(r: any): string[] {
+  if (!r || typeof r !== "object" || Array.isArray(r)) return ["no sandbox report from its host yet"];
+  const out: string[] = [];
+  if (r.profile !== "own") out.push("profile: not its own Hermes profile");
+  if (typeof r.extra_keys !== "number" || r.extra_keys > 0) {
+    out.push(`keys: ${typeof r.extra_keys === "number" ? r.extra_keys : "unknown"} in its .env beyond its model key`);
+  }
+  if (!["off", "container", "remote"].includes(r.terminal)) out.push("terminal: local shell");
+  if (!["off", "sandbox"].includes(r.files)) out.push("files: the host's files");
+  if (!Array.isArray(r.reach) || r.reach.length) {
+    out.push("reach: " + (Array.isArray(r.reach) ? r.reach.map(String).join(", ") : "unknown"));
+  }
+  if (!["off", "per-user"].includes(r.memory)) out.push("memory: shared between people");
+  if (r.runner !== "api") out.push("runner: a local agent with a shell");
+  return out;
+}
+
+async function reportSandbox(db: DB, connectorId: string, b: Body): Promise<void> {
+  const refs = servingRefs(b.serving);
+  if (!refs || !refs.length) return;
+  const reports = b.sandbox && typeof b.sandbox === "object" && !Array.isArray(b.sandbox) ? b.sandbox : {};
+  const now = new Date().toISOString();
+  for (const ref of refs) {
+    const raw = reports[ref];
+    const clean = raw && typeof raw === "object" && !Array.isArray(raw)
+      ? Object.fromEntries(SANDBOX_KEYS.filter((k) => k in raw).map((k) => [k,
+        k === "reach" && Array.isArray(raw[k]) ? raw[k].slice(0, 20).map((x: unknown) => String(x).slice(0, 40))
+        : typeof raw[k] === "string" ? raw[k].slice(0, 40) : raw[k]]))
+      : null;
+    const why = sandboxFailures(clean);
+    const safe = why.length === 0;
+    const sandbox = { ...(clean ?? {}), why, at: now };
+    if (safe) {
+      // client_safe_at: when it last started passing.
+      const { error } = await db.from("yui_agents").update({ sandbox, client_safe: true, client_safe_at: now })
+        .eq("connector_id", connectorId).eq("remote_ref", ref).eq("client_safe", false);
+      if (error) throw error;
+    }
+    const { error } = await db.from("yui_agents").update(
+      safe ? { sandbox } : { sandbox, client_safe: false, client_safe_at: null },
+    ).eq("connector_id", connectorId).eq("remote_ref", ref);
+    if (error) throw error;
+  }
+}
+
 function clientIp(req: Request): string {
   return (req.headers.get("x-forwarded-for") ?? "").split(",")[0].trim() || "unknown";
 }
@@ -230,7 +286,8 @@ async function heartbeat(req: Request, b: Body): Promise<Response> {
   const now = new Date().toISOString();
   await db.from("yui_connectors").update({ last_seen_at: now, stopped_at: null }).eq("id", connector.id);
   await reportServing(db, connector.id, b);
-  const { data: agents } = await db.from("yui_agents").select("id, name, handle, remote_ref, theme")
+  await reportSandbox(db, connector.id, b);
+  const { data: agents } = await db.from("yui_agents").select("id, name, handle, remote_ref, theme, client_safe")
     .eq("connector_id", connector.id).order("sort");
   return json({ connector: { id: connector.id, name: connector.name }, seen_at: now, agents: agents ?? [] });
 }
@@ -316,7 +373,8 @@ async function session(req: Request, b: Body): Promise<Response> {
   await db.from("yui_connectors").update({ last_seen_at: now.toISOString(), stopped_at: null })
     .eq("id", connector.id);
   await reportServing(db, connector.id, b);
-  const { data: agents } = await db.from("yui_agents").select("id, name, handle, remote_ref, theme")
+  await reportSandbox(db, connector.id, b);
+  const { data: agents } = await db.from("yui_agents").select("id, name, handle, remote_ref, theme, client_safe")
     .eq("connector_id", connector.id).order("sort");
   return json({
     access_token: await mintConnectorToken(connector.user_id, connector.id),

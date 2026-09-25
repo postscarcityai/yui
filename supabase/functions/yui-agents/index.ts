@@ -129,6 +129,40 @@ async function mintPairCode(db: any, userId: string, agentId: string) {
   throw new Error("could not allocate a pairing code");
 }
 
+// A shared agent (YUI-95): someone else's agent this person holds a live grant
+// for. They may mute it and move it in their list; nothing else.
+// deno-lint-ignore no-explicit-any
+async function liveGrant(db: any, userId: string, agentId: unknown): Promise<boolean> {
+  if (typeof agentId !== "string") return false;
+  const { data } = await db.from("yui_agent_grants").select("id").eq("user_id", userId)
+    .eq("agent_id", agentId).is("revoked_at", null).maybeSingle();
+  return !!data;
+}
+
+// deno-lint-ignore no-explicit-any
+async function updateGrant(db: any, userId: string, b: Body) {
+  if (["name", "color", "theme", "is_default", "remote_ref"].some((k) => b[k] !== undefined)) {
+    throw new HttpError(403, "shared_agent");
+  }
+  const patch: Record<string, unknown> = {};
+  if (b.sort !== undefined) {
+    if (!Number.isInteger(b.sort)) throw new HttpError(400, "invalid_sort");
+    patch.sort = b.sort;
+  }
+  if (b.push_muted !== undefined) {
+    if (typeof b.push_muted !== "boolean") throw new HttpError(400, "invalid_push_muted");
+    patch.push_muted = b.push_muted;
+  }
+  if (!Object.keys(patch).length) throw new HttpError(400, "nothing_to_update");
+  const { error } = await db.from("yui_agent_grants").update(patch).eq("user_id", userId)
+    .eq("agent_id", b.id).is("revoked_at", null);
+  if (error) throw error;
+  const { data, error: e2 } = await db.from("yui_agent_list").select(AGENT_COLUMNS)
+    .eq("user_id", userId).eq("id", b.id).single();
+  if (e2) throw e2;
+  return { agent: data };
+}
+
 type Action = { appOnly?: boolean; run: (userId: string, b: Body) => Promise<unknown> };
 
 const ACTIONS: Record<string, Action> = {
@@ -184,6 +218,7 @@ const ACTIONS: Record<string, Action> = {
   update: {
     async run(userId, b) {
       const db = admin();
+      if (await liveGrant(db, userId, b.id)) return await updateGrant(db, userId, b);
       await ownAgent(db, userId, b.id);
       const patch: Record<string, unknown> = {};
       if (b.name !== undefined) {
@@ -227,6 +262,7 @@ const ACTIONS: Record<string, Action> = {
   delete: {
     async run(userId, b) {
       const db = admin();
+      if (await liveGrant(db, userId, b.id)) throw new HttpError(403, "shared_agent");
       await ownAgent(db, userId, b.id);
       // A trigger hands the default to the next agent if this one had it.
       const { error } = await db.from("yui_agents").delete().eq("user_id", userId).eq("id", b.id);
@@ -244,6 +280,8 @@ const ACTIONS: Record<string, Action> = {
       const db = admin();
       for (const [i, id] of b.ids.entries()) {
         await db.from("yui_agents").update({ sort: i }).eq("user_id", userId).eq("id", id);
+        await db.from("yui_agent_grants").update({ sort: i }).eq("user_id", userId).eq("agent_id", id)
+          .is("revoked_at", null);
       }
       return { ok: true };
     },
