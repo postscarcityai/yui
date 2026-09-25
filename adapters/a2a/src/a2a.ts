@@ -56,6 +56,8 @@ export interface Task {
   state: TaskState;
   statusMessage?: Message;
   artifacts: Artifact[];
+  /** The agent's last message in the task's history (GetTask), if it sent one. */
+  lastAgentMessage?: Message;
 }
 
 /** What a stream (or a send) yields, whichever version the agent speaks. */
@@ -305,13 +307,16 @@ function artifactFromWire(a: any): Artifact {
 
 export function taskFromWire(t: any): Task {
   if (!t || typeof t !== "object" || !t.id) throw new A2AError(0, "agent sent a task with no id");
-  return {
+  const task: Task = {
     id: String(t.id),
     ...(t.contextId ? { contextId: t.contextId } : {}),
     state: normState(t.status?.state),
     ...(t.status?.message ? { statusMessage: messageFromWire(t.status.message) } : {}),
     artifacts: (t.artifacts ?? []).map(artifactFromWire),
   };
+  const said = (Array.isArray(t.history) ? t.history : []).map(messageFromWire).filter((m: Message | undefined) => m?.role === "agent");
+  if (said.length) task.lastAgentMessage = said[said.length - 1];
+  return task;
 }
 
 /** One result of a send or one stream event, from either version's shape. */
@@ -521,6 +526,7 @@ export class TaskView {
   task: Task | null = null;
   message: Message | null = null; // a reply that came as a plain Message, no task
   private artifacts = new Map<string, Artifact>();
+  private lastSaid: Message | undefined; // the agent's last status message, kept past its status
 
   apply(u: Update): void {
     if (u.kind === "message") {
@@ -532,13 +538,14 @@ export class TaskView {
       this.artifacts.clear();
       // Copies all the way down: appends edit parts in place, and the same update may feed two views.
       for (const a of u.task.artifacts) this.artifacts.set(a.artifactId, { ...a, parts: a.parts.map((p) => ({ ...p })) });
+      this.lastSaid = u.task.statusMessage ?? u.task.lastAgentMessage ?? this.lastSaid;
       return;
     }
     if (!this.task) this.task = { id: u.taskId, contextId: u.contextId, state: "submitted", artifacts: [] };
     if (u.kind === "status") {
       // The message belongs to this status: a "Looking..." from working must not outlive it.
       this.task.state = u.state;
-      if (u.message) this.task.statusMessage = u.message;
+      if (u.message) this.task.statusMessage = this.lastSaid = u.message;
       else delete this.task.statusMessage;
       return;
     }
@@ -575,6 +582,9 @@ export class TaskView {
     const bits = this.artifactList.map((a) => partsText(a.parts)).filter((s) => s.trim());
     const status = this.task?.statusMessage ? partsText(this.task.statusMessage.parts) : "";
     if (status.trim() && !bits.some((b) => b.trim() === status.trim())) bits.push(status);
+    // A task that completes with nothing to show: some agents put the answer in a working
+    // status message and complete with none (Agent Framework's A2AExecutor unless it streams).
+    if (!bits.length && this.task?.state === "completed" && this.lastSaid) return partsText(this.lastSaid.parts);
     return bits.join("\n\n");
   }
 }

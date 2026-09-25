@@ -217,6 +217,20 @@ describe("TaskView", () => {
     assert.equal(w.text(), "Step 1, step 2");
   });
 
+  test("an answer sent as a working message outlives a bare completed status", () => {
+    const v = new TaskView();
+    for (const u of [status("TASK_STATE_WORKING"), status("TASK_STATE_WORKING", "Hello there"), status("TASK_STATE_COMPLETED")]) v.apply(u);
+    assert.equal(v.text(), "Hello there");
+    const w = new TaskView(); // a snapshot from GetTask: the answer is in the history
+    w.apply(updateFromWire({ task: { id: "t", contextId: "c", status: { state: "TASK_STATE_COMPLETED" }, history: [
+      { messageId: "u", role: "ROLE_USER", parts: [{ text: "hi" }] },
+      { messageId: "a", role: "ROLE_AGENT", parts: [{ text: "Hello there" }] }] } }));
+    assert.equal(w.text(), "Hello there");
+    const f = new TaskView(); // only a completed task falls back; a failed one says why elsewhere
+    for (const u of [status("TASK_STATE_WORKING", "Looking it up"), status("TASK_STATE_FAILED")]) f.apply(u);
+    assert.equal(f.text(), "");
+  });
+
   test("a plain Message settles the turn", () => {
     const v = new TaskView();
     v.apply(updateFromWire({ message: { messageId: "m", role: "ROLE_AGENT", parts: [{ text: "pong" }] } }));

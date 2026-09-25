@@ -37,6 +37,12 @@ account (never a real one):
      local Ollama qwen2.5:7b through LiteLLM (no key). As ADK: the screen is
      drawn only because the guide reached the agent's backstory. Needs uv and
      Ollama with qwen2.5:7b.
+  Microsoft Agent Framework (--protocol maf, INT-16, not in `all`): an Agent
+     Framework agent, tests/sdk/maf_agent.py, served over A2A 1.0 by its
+     A2AExecutor on the A2A SDK's server, its model local Ollama qwen2.5:7b
+     (no key). As ADK: the screen is drawn only because the guide reached the
+     run's instructions. Plus: the agent recalls the tap on the next turn (one
+     session per contextId). Needs uv and Ollama with qwen2.5:7b.
   I. with --sim: the phone side, on its own fresh account and thread (A2A
      1.0): YuiUITests/A2ATests on a simulator shows the working row, the long
      answer, a screen and a tap (light), a question and its answer (dark).
@@ -45,7 +51,7 @@ account (never a real one):
 Pass: every person's row is handled and named by exactly one reply, and the
 agent got each turn exactly once.
 
-    python3 adapters/a2a/tests/a2a_e2e.py [--protocol 1.0|0.3|poll|phone|adk|langgraph|crewai|all] [--sim <udid>] [--out DIR]
+    python3 adapters/a2a/tests/a2a_e2e.py [--protocol 1.0|0.3|poll|phone|adk|langgraph|crewai|maf|all] [--sim <udid>] [--out DIR]
 
 `poll` is 1.0 with streaming off: the bridge sends, then follows by GetTask.
 Needs a Supabase access token like supabase/tests. Accounts are deleted.
@@ -58,7 +64,7 @@ A2A = REPO / "adapters/a2a"
 BRIDGE = ["node", str(A2A / "yui-a2a.ts")]
 
 ap = argparse.ArgumentParser()
-ap.add_argument("--protocol", choices=["1.0", "0.3", "poll", "phone", "adk", "langgraph", "crewai", "all"], default="all")
+ap.add_argument("--protocol", choices=["1.0", "0.3", "poll", "phone", "adk", "langgraph", "crewai", "maf", "all"], default="all")
 ap.add_argument("--sim", help="simulator udid: also run YuiUITests/A2ATests (phone side)")
 ap.add_argument("--out", default="/tmp/int18-proof")
 args = ap.parse_args()
@@ -288,6 +294,10 @@ SDK = {  # --protocol adk / langgraph: a real framework's own A2A server
                "what": "a CrewAI agent over A2A (INT-15)",
                "served": "A2A 0.3, served by CrewAI's A2AServerConfig and executor",
                "reached": "drawn only because the guide reached the agent's backstory"},
+    "maf": {"name": "Agent Framework", "card": "INT-16", "log": "maf.log", "boot": 300,
+            "what": "a Microsoft Agent Framework agent over A2A (INT-16)",
+            "served": "A2A 1.0, served by Agent Framework's A2AExecutor",
+            "reached": "drawn only because the guide reached the run's instructions"},
 }
 
 
@@ -304,6 +314,12 @@ def start_sdk(kind, home, port):
     elif kind == "crewai":
         proc = subprocess.Popen(["uv", "run", "--quiet", "--python", "3.12", "--with", "crewai[a2a,litellm]", "--with", "uvicorn",
                                  str(A2A / "tests/sdk/crewai_agent.py"), str(port)],
+                                stdout=out, stderr=subprocess.STDOUT, start_new_session=True)
+        card_url = [url]
+    elif kind == "maf":  # its A2A and Ollama packages are betas: allowed by name, so httpx stays on 0.x
+        proc = subprocess.Popen(["uv", "run", "--quiet", "--python", "3.12", "--with", "agent-framework-a2a>=1.0.0b0",
+                                 "--with", "agent-framework-ollama>=1.0.0b0", "--with", "a2a-sdk[http-server]", "--with", "uvicorn",
+                                 str(A2A / "tests/sdk/maf_agent.py"), str(port)],
                                 stdout=out, stderr=subprocess.STDOUT, start_new_session=True)
         card_url = [url]
     else:  # langgraph dev writes .langgraph_api/ where it runs, so it runs in a copy
@@ -440,6 +456,12 @@ def run_sdk(kind):
             check(f"{k}: the graph saw only the person's words as messages (the guide never became chat)",
                   len(humans) == 3 and not any(g.get("body") and g["body"] in str(m.get("content")) for m in humans)
                   and v.get("yui_events") == [], f"{[str(m.get('content'))[:40] for m in humans]}")
+
+        if kind == "maf":
+            back = say("Which drink did I just pick? One word.")
+            rep = wait(lambda: replies_to(back), 300, "the recall")
+            check(f"{k}: the next turn recalls the tap ({choice}): one session per contextId keeps the thread",
+                  len(rep) == 1 and choice.lower() in rep[0]["body"].lower(), rep and rep[0]["body"][:240])
 
         print("== clean stop, totals")
         wait(lambda: all(m["handled_at"] for m in thread() if m["sender"] == "user"), 20, "all handled")
