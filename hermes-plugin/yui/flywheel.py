@@ -36,6 +36,7 @@ PRESETS = {
     "deck", "page", "plan", "project", "narrate",
     "timeline", "done", "now", "next",
     "game",
+    "sketch", "row", "after",
 }
 CORE = {"say", "custom", "save", "show", "forget", "clear", "end", "theme", "close", "talk"}
 

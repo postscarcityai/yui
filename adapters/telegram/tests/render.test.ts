@@ -50,6 +50,9 @@ const LINE: Record<string, string> = {
   now: 'now "Building"',
   next: 'next "Later"',
   game: 'game tictactoe "Beat me"',
+  sketch: 'sketch "Card ids" frame=bubble\nrow "Parked t_1 in the backlog" +x note="an id"\nrow\nrow "Install" +button +hi',
+  row: 'row "Plain words" +hi',
+  after: 'sketch "Fix"\nrow Old +x\nafter Now\nrow New +hi',
   custom: 'custom {"type":"text","text":"hi"}',
 };
 

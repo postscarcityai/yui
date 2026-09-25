@@ -71,6 +71,7 @@ export const HOW: Record<string, "keyboard" | "text" | "app" | "member"> = {
   ask: "keyboard", choose: "keyboard", pick: "keyboard",
   say: "text", list: "text", card: "text", stat: "text", table: "text", step: "text", timeline: "text",
   done: "member", now: "member", next: "member",
+  sketch: "text", row: "text", after: "member",
   timer: "app", slide: "app", form: "app", image: "app", camera: "app", mic: "app",
   gallery: "app", video: "app", compare: "app", storyboard: "app",
   chart: "app", math: "app", calc: "app",
@@ -176,6 +177,13 @@ export async function renderYL(yl: string, opts: Options): Promise<Rendered> {
       case "done": case "now": case "next":
         messages.push(msg(timeline({}, [n])));
         break;
+      case "sketch":
+        messages.push(msg(sketch(p, nodes.filter((m) => m.in === n.id))));
+        break;
+      case "row":
+        messages.push(msg(sketch({}, [n])));
+        break;
+      case "after": break; // outside a sketch it draws nothing, in the app too
       case "card": messages.push(await card(n, opts)); break;
       case "ask": case "choose": case "pick":
         messages.push(await question(n, opts, link));
@@ -278,6 +286,27 @@ function timeline(p: any, members: Node[]) {
     return `${mark[m.preset]} ${m.preset === "now" ? `<b>${esc(q.text)}</b>` : esc(q.text)}${tail ? ` <i>${esc(tail)}</i>` : ""}${q.sub ? `\n    ${esc(q.sub)}` : ""}`;
   });
   return [p.title ? `<b>${esc(p.title)}</b>` : "", ...lines].filter(Boolean).join("\n");
+}
+
+// sketch (YUI-83): the drawing as text. Struck rows struck through,
+// highlighted rows bold, buttons in brackets, notes after an arrow, blank
+// filler rows left out; an `after` line starts the second half, labelled.
+function sketch(p: any, members: Node[]) {
+  const cut = members.findIndex((m) => m.preset === "after");
+  const row = (q: any) => {
+    if (!q.text) return "";
+    let t = esc(q.text);
+    if (q.button) t = `[ ${t} ]`;
+    if (q.x) t = `<s>${t}</s>`;
+    else if (q.hi) t = `<b>${t}</b>`;
+    return `${q.dim ? "  " : ""}${t}${q.note ? ` <i>← ${esc(q.note)}</i>` : ""}`;
+  };
+  const rows = (list: Node[]) => list.filter((m) => m.preset === "row").map((m) => row(m.props || {})).filter(Boolean);
+  const body = cut < 0 ? rows(members) : [
+    `<i>${esc(p.before || "Before")}</i>`, ...rows(members.slice(0, cut)),
+    `<i>${esc(members[cut].props?.label || "After")}</i>`, ...rows(members.slice(cut + 1)),
+  ];
+  return [p.title ? `<b>${esc(p.title)}</b>` : "", ...body].filter(Boolean).join("\n") || "✏️";
 }
 
 async function card(n: Node, opts: Options): Promise<Message> {
