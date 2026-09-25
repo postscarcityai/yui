@@ -21,6 +21,7 @@ This repo holds the native SwiftUI app, the Swift Yui Lines parser, the Supabase
 | `hermes-plugin/` | The `yui` Hermes platform plugin |
 | `adapters/openclaw/` | Yui channel plugin for OpenClaw: an OpenClaw agent talks in Yui like a Hermes agent |
 | `adapters/webhook/` | Webhook bridge, Python and Node: any agent that answers an HTTP POST |
+| `supabase/functions/yui-mcp/` | Yui MCP server: Claude Code, Cursor or any MCP client puts a screen on your phone and reads the taps back |
 | `supabase/` | Migrations, edge functions and live tests for accounts and agents |
 | `scripts/` | TestFlight upload, test builds by link and App Store Connect helpers |
 
@@ -70,6 +71,8 @@ Without Hermes loaded, `python3 hermes-plugin/yui/connector.py pair <code> --pro
 
 **Not on Hermes?** Any agent that answers an HTTP POST can talk in Yui through the webhook bridge in `adapters/webhook/` (Python stdlib or Node 20, no dependencies): pair it with the same code, point it at your agent's URL, and it delivers every message once, with the channel guide in each request. Ten-line example agents included. Test: `python3 adapters/webhook/tests/webhook_e2e.py`.
 
+**On Claude Code, Cursor or another MCP client?** Add the Yui MCP server: pair with the app's code as kind `mcp` to get a token, then `claude mcp add --transport http yui https://<ref>.supabase.co/functions/v1/yui-mcp --header "Authorization: Bearer yui_ct_..."`. Tools `yui_show`, `yui_answers`, `yui_say`, `yui_threads`; the channel guide is the `yui_guide` prompt. Steps and the contract: [yuigui.com/developers/mcp](https://www.yuigui.com/developers/mcp). Tests: `python3 supabase/tests/mcp_test.py`, and a real Claude Code against the simulator: `supabase/tests/mcp_claude_e2e.py --sim <udid>`. The function parses what it is sent with a copy of the YL parser; `python3 supabase/scripts/sync_yl.py` refreshes it.
+
 A live round trip test (type, get a Yui Lines screen, tap, get a timer) runs against a real session and a running gateway: `TEST_RUNNER_YUI_RT=<refresh token> TEST_RUNNER_YUI_USER=<uuid> xcodebuild test -scheme Yui -only-testing:YuiUITests`. Without those it skips. Mint a fresh `yui_sessions` row for every run: yui-auth rotates refresh tokens, and replaying a spent one reads as a leak and signs the account out on every device.
 
 Demo clips for the site and social: `python3 scripts/demo_clips.py [timer chart ...]` plays a scripted reply per preset on the demo account (`YuiUITests/YuiDemoTests`) while the simulator records, then cuts a 9:16 and a 16:9 MP4 with the caption burned in, plus a poster and a `clips.json` manifest, into `yuigui/site/public/demo/clips/`. No network, no real account. A new preset gets a test method there and a caption in the script.
@@ -97,6 +100,7 @@ Rates are token buckets: `burst` requests at once, refilled at `per minute`. A p
 | Agent replies, per host | burst 240, then 60 per minute | 429 `rate_limited` |
 | `yui-connect` calls (heartbeat, session, add), per host | burst 30, then 6 per minute | 429 `rate_limited` |
 | Push notifications (`yui-push` notify), per host | burst 60, then 10 per minute | 429 `rate_limited` |
+| MCP calls (`yui-mcp`), per MCP connection | burst 60, then 30 per minute | 429 |
 | `yui-agents` calls, per account | burst 60, then 30 per minute | 429 `rate_limited` |
 | Pairing codes, per account | burst 20, then about 20 an hour | 429 `rate_limited` |
 | Wrong pairing codes, per client address | 10 per 10 minutes | 429 `too_many_attempts` |
