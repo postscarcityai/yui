@@ -21,6 +21,8 @@ struct YuiApp: App {
                 if account.isSignedIn { ChatView() } else { SignInView() }
             }
             .animation(.default, value: account.isSignedIn)
+            // An invite that didn't work says so for a moment (YUI-56).
+            .overlay(alignment: .top) { InviteNotice() }
             .environment(account)
             .environment(agents)
             .onChange(of: account.isSignedIn) { agents.reset() }
@@ -40,7 +42,7 @@ struct YuiApp: App {
                 guard account.isSignedIn, account.session?.userID != "demo" else { return }
                 Outbox.shared.start(account: account)
             }
-            .onOpenURL { PushCenter.shared.open($0) }
+            .onOpenURL { if !account.open($0) { _ = PushCenter.shared.open($0) } }
             // Open on a thread: its answers show there, no push (YUI-24).
             .onChange(of: scenePhase, initial: true) {
                 PushCenter.shared.setForeground(scenePhase == .active)

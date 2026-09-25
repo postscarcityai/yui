@@ -3,7 +3,8 @@
 // Authorization: Bearer <yui access token>. Revokes the user's Sign in with
 // Apple token, then deletes the yui_users row; ON DELETE CASCADE removes
 // every other yui_* row (sessions, Apple token, devices, agents, pairings,
-// messages). Media in the yui-media bucket has no foreign key, so it goes
+// messages, the invite it claimed). An invite that was never claimed but
+// carries the account's email goes too. Media in the yui-media bucket has no foreign key, so it goes
 // first, through the Storage API; anything left behind is an orphan the
 // media sweep removes (supabase/scripts/media_sweep.py).
 import {
@@ -54,6 +55,13 @@ Deno.serve(async (req) => {
         .remove(names.slice(i, i + 1000));
       if (rmErr) console.error("media remove failed", rmErr);
       mediaRemoved += gone?.length ?? 0;
+    }
+
+    // Invites are stored lowercased (yuigui.com's route, invite.py).
+    const { data: me } = await db.from("yui_users").select("email").eq("id", userId).maybeSingle();
+    if (me?.email) {
+      const { error: invErr } = await db.from("yui_invites").delete().eq("email", me.email.toLowerCase());
+      if (invErr) console.error("invite delete failed", invErr);
     }
 
     // The user asked for deletion: delete even if Apple's revoke failed.

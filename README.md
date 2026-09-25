@@ -117,6 +117,18 @@ Rates are token buckets: `burst` requests at once, refilled at `per minute`. A p
 
 **Isolation.** `yui_user` and `yui_connector` hold no privilege on any table outside `yui_*` (plus the `yui-media` bucket in Storage), can run no non-Yui security-definer function, and no non-Yui policy applies to them. PROOF Auth keeps signups disabled; Yui accounts never enter it. `strangers_test.py` proves all of this on every run.
 
+## Invites
+
+The beta is by invite as well as by the public TestFlight link. A person asks on yuigui.com (first and last name, the email on their Apple ID, phone), and the request lands in `yui_invites` as `requested`. Nothing goes out until it is approved:
+
+```
+python3 supabase/scripts/invite.py list --status requested
+python3 supabase/scripts/invite.py approve <id|email> [--template client-default]
+python3 supabase/scripts/invite.py add --email E --first F --last L [--phone P]   # invite someone directly
+```
+
+`approve` makes a one-time code (only its SHA-256 is stored) and adds the person as a tester to the external TestFlight group "Invited" through the App Store Connect API. Apple sends the TestFlight email itself, so Yui sends no email of its own. Their first Sign in with Apple claims the invite by that email. Hide My Email hands Yui a relay address that matches nothing, so the invite also has a link, `https://www.yuigui.com/i/<code>`, which opens the app (a universal link), and the same code can be typed on the sign-in screen under Invite code. Wrong codes are rate limited. A claimed invite is deleted with the account; a declined one is deleted 30 days later by the daily sweep. `scripts/testflight_public.py` puts every new build in both Public and Invited. Tests: `supabase/tests/invites_test.py` (server) and `supabase/tests/invite_claim_e2e.py --sim <udid>` (the app).
+
 ## Test builds
 
 Skip TestFlight when you only want to try main on your own phone. `scripts/devbuild.sh` archives a clean worktree of `origin/main` as an ad hoc build (build number `<commit count>.<n>`, so it never collides with a TestFlight number), puts the `.ipa` and its install manifest in a private Storage bucket behind 7-day signed links, and sends a card with an Install button into your Yui thread. Tap it on the phone and iOS installs the build over the one you have; your sign-in and threads stay. Pushes keep working: ad hoc builds use the same production APNs as TestFlight.

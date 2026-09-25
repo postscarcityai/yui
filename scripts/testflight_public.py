@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-"""Put the newest VALID build in the external TestFlight group "Public".
+"""Put the newest VALID build in the external TestFlight groups "Public" and "Invited".
 
-Adds the build to the group, sets its What to Test from the commit that made
+Adds the build to both groups ("Invited" holds the people invite.py approved,
+YUI-56), sets its What to Test from the commit that made
 it, and submits it for Beta App Review when Apple allows it (one build in
 review at a time; the next run picks up anything skipped). Idempotent: run it
 after every upload and from a cron, it only acts on what is missing.
@@ -13,7 +14,7 @@ import json, os, subprocess, sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 APP = "6815454240"
-GROUP = "Public"
+GROUPS = ["Public", "Invited"]
 IN_REVIEW = {"WAITING_FOR_BETA_REVIEW", "IN_BETA_REVIEW"}
 
 
@@ -38,9 +39,9 @@ def what_to_test(number):
 def main():
     want = sys.argv[sys.argv.index("--build") + 1] if "--build" in sys.argv else None
     groups = asc("GET", f"/v1/apps/{APP}/betaGroups")["data"]
-    group = next((g for g in groups if g["attributes"]["name"] == GROUP), None)
-    if not group:
-        raise SystemExit(f'no "{GROUP}" beta group on app {APP}')
+    targets = [g for g in groups if g["attributes"]["name"] in GROUPS]
+    if not any(g["attributes"]["name"] == "Public" for g in targets):
+        raise SystemExit(f'no "Public" beta group on app {APP}')
 
     d = asc("GET", f"/v1/builds?filter[app]={APP}&sort=-uploadedDate&limit=10"
                    "&fields[builds]=version,processingState,expired,buildBetaDetail&include=buildBetaDetail")
@@ -57,11 +58,12 @@ def main():
     if build["attributes"]["processingState"] != "VALID":
         print(f"build {n} is {build['attributes']['processingState']}, try again once it is VALID"); return
 
-    in_group = asc("GET", f"/v1/betaGroups/{group['id']}/builds?limit=50&fields[builds]=version")["data"]
-    if not any(b["id"] == bid for b in in_group):
-        asc("POST", f"/v1/betaGroups/{group['id']}/relationships/builds",
-            {"data": [{"type": "builds", "id": bid}]})
-        print(f"build {n} added to {GROUP}")
+    for group in targets:
+        in_group = asc("GET", f"/v1/betaGroups/{group['id']}/builds?limit=50&fields[builds]=version")["data"]
+        if not any(b["id"] == bid for b in in_group):
+            asc("POST", f"/v1/betaGroups/{group['id']}/relationships/builds",
+                {"data": [{"type": "builds", "id": bid}]})
+            print(f"build {n} added to {group['attributes']['name']}")
 
     if not asc("GET", f"/v1/builds/{bid}/betaBuildLocalizations")["data"]:
         asc("POST", "/v1/betaBuildLocalizations", {"data": {

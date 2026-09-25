@@ -30,6 +30,9 @@ targets:
       path: Yui/Yui.entitlements
       properties:
         com.apple.developer.applesignin: [Default]
+        # Invite links yuigui.com/i/<code> open the app (YUI-56); the site serves
+        # /.well-known/apple-app-site-association.
+        com.apple.developer.associated-domains: ["applinks:www.yuigui.com", "applinks:yuigui.com"]
         # Xcode signs Debug with development; archive/export for TestFlight turns it into production.
         aps-environment: development
     info:

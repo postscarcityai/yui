@@ -9,6 +9,7 @@ struct SignInView: View {
     @State private var error: String?
     @State private var working = false
     @State private var askCode = false
+    @State private var askInvite = false
 
     var body: some View {
         let c = theme.swatch(scheme)
@@ -55,9 +56,24 @@ struct SignInView: View {
                     Text(error).font(theme.font(theme.type.caption, .semibold)).foregroundStyle(c.accent)
                         .multilineTextAlignment(.center)
                 }
+                if let invite = account.pendingInviteCode {
+                    // YUI-56: the invite rides along with Sign in with Apple.
+                    HStack(spacing: theme.spacing.s) {
+                        Image(systemName: "envelope.open.fill").foregroundStyle(c.accent)
+                        Text("Invite \(invite) is ready. Sign in to join.")
+                            .foregroundStyle(c.ink)
+                        Button("Remove", systemImage: "xmark.circle.fill") { account.pendingInviteCode = nil }
+                            .labelStyle(.iconOnly).foregroundStyle(c.inkSoft)
+                    }
+                    .font(theme.font(theme.type.caption, .semibold))
+                    .padding(.horizontal, theme.spacing.m).padding(.vertical, theme.spacing.s)
+                    .background(c.surface, in: .capsule)
+                    .accessibilityIdentifier("pendingInvite")
+                }
                 HStack(spacing: theme.spacing.l) {
                     Link("How it works", destination: YuiBackend.startGuide)
                     Link("Your data", destination: YuiBackend.privacyPolicy)
+                    Button("Invite code") { askInvite = true }
                     Button("Demo code") { askCode = true }
                 }
                 .font(theme.font(theme.type.caption, .semibold))
@@ -71,6 +87,94 @@ struct SignInView: View {
             ReviewCodeSheet()
                 .presentationDetents([.medium])
                 .presentationCornerRadius(theme.radius.card)
+        }
+        .sheet(isPresented: $askInvite) {
+            InviteCodeSheet()
+                .presentationDetents([.medium])
+                .presentationCornerRadius(theme.radius.card)
+        }
+    }
+}
+
+/// The code from an invite (YUI-56), for anyone whose link didn't open the
+/// app. Nothing is sent yet: it goes along with Sign in with Apple.
+private struct InviteCodeSheet: View {
+    @Environment(Account.self) private var account
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.yuiTheme) private var theme
+    @Environment(\.colorScheme) private var scheme
+    @State private var code = ""
+    @State private var error: String?
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        let c = theme.swatch(scheme)
+        VStack(alignment: .leading, spacing: theme.spacing.l) {
+            Text("Invite code").font(theme.font(theme.type.title, .bold)).foregroundStyle(c.ink)
+            Text("It's in your invite link, like ABCDE-FGHJK. Then sign in with Apple and your invite comes with you. Invited with the email on your Apple ID? Just sign in, no code needed.")
+                .font(theme.font(theme.type.body)).foregroundStyle(c.inkSoft)
+                .fixedSize(horizontal: false, vertical: true)
+            TextField("ABCDE-FGHJK", text: $code)
+                .font(theme.font(theme.type.body, .bold)).foregroundStyle(c.ink)
+                .textInputAutocapitalization(.characters).autocorrectionDisabled()
+                .focused($focused)
+                .submitLabel(.done).onSubmit(save)
+                .padding(theme.spacing.m)
+                .background(c.surface, in: .rect(cornerRadius: theme.radius.bubble))
+                .overlay(RoundedRectangle(cornerRadius: theme.radius.bubble).stroke(c.outline, lineWidth: 1.5))
+                .accessibilityIdentifier("inviteCode")
+            if let error {
+                Text(error).font(theme.font(theme.type.caption, .semibold)).foregroundStyle(c.accent)
+            }
+            Spacer(minLength: 0)
+            Button(action: save) {
+                Text("Use this code")
+                    .font(theme.font(theme.type.body, .bold)).foregroundStyle(c.onAccent)
+                    .frame(maxWidth: .infinity).padding(.vertical, theme.spacing.m)
+                    .background(c.accent, in: .rect(cornerRadius: theme.radius.pill))
+            }
+            .buttonStyle(BounceButtonStyle())
+            .disabled(code.trimmingCharacters(in: .whitespaces).isEmpty)
+        }
+        .padding(theme.spacing.xl)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(c.background)
+        .onAppear { focused = true }
+    }
+
+    private func save() {
+        guard let n = Account.normalizedInviteCode(code) else {
+            error = "That doesn't look like an invite code. It has 10 letters and numbers."
+            return
+        }
+        account.pendingInviteCode = n
+        dismiss()
+    }
+}
+
+/// One line when an invite didn't work, at the top for a few seconds.
+struct InviteNotice: View {
+    @Environment(Account.self) private var account
+    @Environment(\.yuiTheme) private var theme
+    @Environment(\.colorScheme) private var scheme
+
+    var body: some View {
+        let c = theme.swatch(scheme)
+        if let note = account.inviteNotice {
+            Text(note)
+                .font(theme.font(theme.type.caption, .semibold)).foregroundStyle(c.ink)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, theme.spacing.l).padding(.vertical, theme.spacing.m)
+                .background(c.surface, in: .rect(cornerRadius: theme.radius.bubble))
+                .shadow(color: .black.opacity(0.12), radius: 10, y: 4)
+                .padding(.horizontal, theme.spacing.l)
+                .transition(.move(edge: .top).combined(with: .opacity))
+                .onTapGesture { account.inviteNotice = nil }
+                .task(id: note) {
+                    try? await Task.sleep(for: .seconds(5))
+                    if account.inviteNotice == note { account.inviteNotice = nil }
+                }
+                .accessibilityIdentifier("inviteNotice")
         }
     }
 }

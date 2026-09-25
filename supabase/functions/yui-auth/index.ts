@@ -1,12 +1,14 @@
 // yui-auth: Sign in with Apple -> Yui session.
 //
-//   {grant_type: "apple", identity_token, nonce, authorization_code?}
+//   {grant_type: "apple", identity_token, nonce, authorization_code?, invite_code?}
+//   {grant_type: "invite", code}   Bearer <access token>: claim an invite later
 //   {grant_type: "refresh", refresh_token}
 //   {grant_type: "sign_out", refresh_token}
 //   {grant_type: "review", code}   App Review only, see review() below
 //
-// Returns {access_token, expires_in, refresh_token, user}. Yui users never
-// enter Supabase Auth (PROOF keeps signups disabled).
+// Returns {access_token, expires_in, refresh_token, user}; an Apple sign-in
+// also returns `invite` when it claimed one (YUI-56, see claimInvite below).
+// Yui users never enter Supabase Auth (PROOF keeps signups disabled).
 import { createRemoteJWKSet, jwtVerify } from "npm:jose@5";
 import {
   ACCESS_TTL_SECONDS,
@@ -19,8 +21,11 @@ import {
   json,
   mintAccessToken,
   randomToken,
+  Refused,
   REFRESH_TTL_DAYS,
   sha256Hex,
+  take,
+  verifyAccessToken,
 } from "../_shared/yui.ts";
 
 const appleKeys = createRemoteJWKSet(new URL(`${APPLE_ISSUER}/auth/keys`));
@@ -32,6 +37,7 @@ type Body = {
   authorization_code?: string;
   refresh_token?: string;
   code?: string;
+  invite_code?: string;
 };
 
 Deno.serve(async (req) => {
@@ -52,6 +58,8 @@ Deno.serve(async (req) => {
         return await signOut(body.refresh_token);
       case "review":
         return await review(body.code);
+      case "invite":
+        return await claimLater(req, body.code);
       default:
         return json({ error: "unsupported_grant_type" }, 400);
     }
@@ -120,7 +128,72 @@ async function signInWithApple(body: Body): Promise<Response> {
     }
   }
 
-  return json(await issueSession(user.id, user));
+  // Apple verified this address and it is the real one, not a relay.
+  const verified = claims.email_verified === true || claims.email_verified === "true";
+  const invite = await claimInvite(db, user.id, body.invite_code, verified && !relay ? email : null);
+  return json({ ...(await issueSession(user.id, user)), ...invite });
+}
+
+// Invites (YUI-56, migration 20260924110000_yui_invites.sql). The code from
+// yuigui.com/i/<code> or the sign-in screen wins; without one (or with a
+// wrong one) the Apple ID email Apple verified matches an approved invite.
+// Hide My Email gives a relay address that matches nothing, which is why the
+// code exists. Never fails the sign-in: a bad code comes back as
+// `invite_error`, and the account works either way.
+// deno-lint-ignore no-explicit-any
+async function claimInvite(db: any, userId: string, code?: string, email?: string | null) {
+  const out: Record<string, unknown> = {};
+  const norm = normCode(code);
+  if (norm) {
+    try {
+      await take(db, `invite:u:${userId}`, "invite_code");
+      const got = await claim(db, userId, await sha256Hex(norm), null);
+      if (got) return { invite: got };
+      out.invite_error = "invalid_code";
+    } catch (e) {
+      if (!(e instanceof Refused)) throw e;
+      out.invite_error = e.code;
+    }
+  }
+  if (email) {
+    const got = await claim(db, userId, null, email);
+    if (got) return { invite: got };
+  }
+  return out;
+}
+
+// deno-lint-ignore no-explicit-any
+async function claim(db: any, userId: string, codeSha: string | null, email: string | null) {
+  const { data, error } = await db.rpc("yui_claim_invite",
+    { uid: userId, code_sha: codeSha, verified_email: email });
+  if (error) throw error;
+  const row = Array.isArray(data) ? data[0] : null;
+  return row ? { first_name: row.first_name, agent_template: row.agent_template } : null;
+}
+
+// "abcde-fghjk", "ABCDE FGHJK" -> "ABCDEFGHJK". Same rule as invite.py.
+function normCode(code?: string): string | null {
+  if (typeof code !== "string") return null;
+  const n = code.toUpperCase().replace(/[^A-Z0-9]/g, "");
+  return n.length >= 6 && n.length <= 32 ? n : null;
+}
+
+// A signed-in account claims an invite with its code (the link opened after
+// sign-in, or typed in Settings).
+async function claimLater(req: Request, code?: string): Promise<Response> {
+  let userId: string;
+  try {
+    userId = await verifyAccessToken(req);
+  } catch {
+    return json({ error: "unauthorized" }, 401);
+  }
+  const db = admin();
+  await assertActive(db, userId);
+  const norm = normCode(code);
+  if (!norm) return json({ error: "invalid_code" }, 400);
+  await take(db, `invite:u:${userId}`, "invite_code");
+  const got = await claim(db, userId, await sha256Hex(norm), null);
+  return got ? json({ invite: got }) : json({ error: "invalid_code" }, 404);
 }
 
 // App Review sign-in. Apple's reviewer can't prove Yui with Sign in with

@@ -88,8 +88,66 @@ final class Account {
         if let code = credential.authorizationCode.flatMap({ String(data: $0, encoding: .utf8) }) {
             body["authorization_code"] = code
         }
+        if let invite = pendingInviteCode { body["invite_code"] = invite }
         let reply: TokenReply = try await post("yui-auth", body)
         store(reply, appleUserID: credential.user)
+        if reply.invite != nil || reply.invite_error != nil { pendingInviteCode = nil }
+        if reply.invite_error != nil { inviteNotice = Self.inviteFailed(reply.invite_error!) }
+    }
+
+    // MARK: Invites (YUI-56)
+
+    /// An invite code waiting for Sign in with Apple, from a yuigui.com/i/<code>
+    /// link or typed on the sign-in screen. Kept across launches. Without one,
+    /// the email on your Apple ID finds your invite on its own.
+    var pendingInviteCode: String? = UserDefaults.standard.string(forKey: "yuiInviteCode") {
+        didSet { UserDefaults.standard.set(pendingInviteCode, forKey: "yuiInviteCode") }
+    }
+    /// One line about the last invite that didn't work, shown for a moment.
+    var inviteNotice: String?
+
+    /// `https://www.yuigui.com/i/ABCDE-FGHJK` or `yui://invite/ABCDE-FGHJK`.
+    static func inviteCode(in url: URL) -> String? {
+        let parts = url.pathComponents.filter { $0 != "/" }
+        let raw: String? = switch url.scheme {
+        case "yui" where url.host() == "invite": parts.first
+        case "https" where ["www.yuigui.com", "yuigui.com"].contains(url.host() ?? "") && parts.first == "i": parts.dropFirst().first
+        default: nil
+        }
+        return raw.flatMap(normalizedInviteCode)
+    }
+
+    /// "abcde fghjk" -> "ABCDE-FGHJK". Nil when it can't be a code.
+    static func normalizedInviteCode(_ s: String) -> String? {
+        let n = s.uppercased().filter { $0.isASCII && ($0.isLetter || $0.isNumber) }
+        guard (6...32).contains(n.count) else { return nil }
+        return n.count == 10 ? "\(n.prefix(5))-\(n.suffix(5))" : n
+    }
+
+    /// An invite link opened. Signed out: it waits for Sign in with Apple.
+    /// Signed in: it is claimed now. False when the URL is not an invite.
+    func open(_ url: URL) -> Bool {
+        guard let code = Self.inviteCode(in: url) else { return false }
+        if isSignedIn { Task { await claimInvite(code) } } else { pendingInviteCode = code }
+        return true
+    }
+
+    func claimInvite(_ code: String) async {
+        do {
+            let token = try await validAccessToken()
+            let _: InviteReply = try await post("yui-auth", ["grant_type": "invite", "code": code], bearer: token)
+            inviteNotice = nil
+        } catch AccountError.server(let reason) {
+            inviteNotice = Self.inviteFailed(reason)
+        } catch {
+            inviteNotice = "Couldn't open that invite. Check your connection and open the link again."
+        }
+    }
+
+    private static func inviteFailed(_ reason: String) -> String {
+        reason == "rate_limited"
+            ? "Too many invite codes tried. Wait a few minutes and open the link again."
+            : "That invite code didn't work. It may be used already. Ask for a new link."
     }
 
     /// App Review: the code in the review notes signs in to the one demo
@@ -174,7 +232,11 @@ final class Account {
         let expires_in: Int
         let refresh_token: String
         let user: User
+        var invite: Invite?
+        var invite_error: String?
     }
+    private struct Invite: Decodable { let first_name: String?; let agent_template: String? }
+    private struct InviteReply: Decodable { let invite: Invite }
     private struct DeleteReply: Decodable { let deleted: Bool }
     private struct OKReply: Decodable { let ok: Bool }
     private struct ErrorReply: Decodable { let error: String }
