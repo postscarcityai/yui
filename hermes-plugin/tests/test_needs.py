@@ -115,6 +115,28 @@ class RealBoard(unittest.TestCase):
         self.assertIn("typed in the Yui war room): me@example.com",
                       self.rows("SELECT body FROM task_comments WHERE task_id = 't_aa02'")[0][0])
 
+    def test_you_decide_hands_the_call_back_and_unblocks(self):
+        r = self.answer("t_aa01", "You decide")
+        self.assertEqual((r["ok"], r["unblocked"], r["status"]), (True, True, "ready"))
+        self.assertEqual(self.rows("SELECT body FROM task_comments WHERE task_id = 't_aa01'")[0][0],
+                         "ANSWER (Chris, tapped in the Yui war room): You decide. Pick the option you recommend and go.")
+        self.assertEqual(needs.reply(r), "YUI-60 will pick what it recommends and go.")
+
+    def test_not_yet_comments_and_stays_blocked(self):
+        r = self.answer("t_aa01", "Not yet")
+        self.assertEqual((r["ok"], r["unblocked"], r["waiting"], r["status"]), (True, False, True, "blocked"))
+        self.assertEqual(self.rows("SELECT author, body FROM task_comments WHERE task_id = 't_aa01'"),
+                         [("chris (yui-app)", "NOT YET (Chris, tapped in the Yui war room): he hasn't done this yet. "
+                                              "The card stays blocked until he answers.")])
+        self.assertEqual(needs.reply(r), "Noted on YUI-60: not yet. It stays in Needs you until you've done it.")
+        self.assertNotIn("unblocked", needs.note(r))
+        # Later he does it and taps the real answer: that one unblocks.
+        r2 = self.answer("t_aa01", "Works", changed=True)
+        self.assertEqual((r2["unblocked"], r2["status"]), (True, "ready"))
+        # Typing "not yet" as his own words is an answer, not the button.
+        r3 = self.answer("t_aa02", "Not yet", other=True)
+        self.assertTrue(r3["unblocked"])
+
     def test_a_card_with_an_open_parent_goes_to_todo(self):
         r = self.answer("t_aa06", "Build it")
         self.assertEqual((r["unblocked"], r["status"]), (True, "todo"))

@@ -10,9 +10,10 @@ A tap sends one event row:
     meta = {"id": "need-t_049464c4", "preset": "choose",
             "value": {"choice": "a: board kit"}}
 
-A card that wants a typed answer ("or say skip") is a one-field form instead,
-`form@need-<task id> "YUI-56: ..." answer:text! submit=Send`, which sends
-`{"form": {"answer": "..."}}`.
+A card that wants a typed answer is the same `choose` with `+other` (Type your
+own), which sends `{"choice": "...", "other": true}`. Older war rooms sent a
+one-field form, `form@need-<task id> "..." answer:text! submit=Send`, which
+sends `{"form": {"answer": "..."}}`; that still lands.
 
 The adapter hands it here instead of to the agent. The answer lands on the
 card as a comment, and a blocked card goes back to the queue (ready, or todo
@@ -20,6 +21,12 @@ while a parent is unfinished), so the worker that respawns reads the answer
 first. Only this profile's cards and unassigned ones, only for the paired
 owner. A changed answer (`changed: true`) comments again; the card is already
 back in the queue by then.
+
+Two answers ride every ask (t_f493137c): "You decide" hands the call back to
+the worker (pick the option you recommend and go) and unblocks like any
+answer. "Not yet" says the person has not done what the ask assumes (a browser
+step, "how did it go"): it lands on the card as a comment and the card stays
+blocked, so no worker respawns into nothing; a later real answer unblocks it.
 """
 
 import re
@@ -27,6 +34,12 @@ from typing import Optional
 
 ID = re.compile(r"^need-(t_[0-9a-f]{4,})$")
 AUTHOR = "chris (yui-app)"
+YOU_DECIDE = "You decide"
+NOT_YET = "Not yet"
+
+
+def is_(choice: str, word: str) -> bool:
+    return choice.strip().rstrip(".").lower() == word.lower()
 
 
 def answer_of(row: dict) -> Optional[dict]:
@@ -53,12 +66,17 @@ def card_name(title: str) -> str:
 
 def comment(ans: dict) -> str:
     how = "typed" if ans["typed"] else "tapped"
+    who = f"(Chris, {how} in the Yui war room)"
+    if not ans["typed"] and is_(ans["choice"], NOT_YET):
+        return f"NOT YET {who}: he hasn't done this yet. The card stays blocked until he answers."
     head = "ANSWER CHANGED" if ans["changed"] else "ANSWER"
-    return f"{head} (Chris, {how} in the Yui war room): {ans['choice']}"
+    if not ans["typed"] and is_(ans["choice"], YOU_DECIDE):
+        return f"{head} {who}: You decide. Pick the option you recommend and go."
+    return f"{head} {who}: {ans['choice']}"
 
 
 def apply(board: str, ans: dict, db_path=None) -> dict:
-    """Comment the answer on the card and unblock it. Returns what happened."""
+    """Comment the answer on the card and unblock it ("Not yet" leaves it blocked). Returns what happened."""
     from hermes_cli import kanban_db as kb  # the gateway runs inside hermes-agent
 
     with kb.connect_closing(db_path) as conn:
@@ -72,15 +90,20 @@ def apply(board: str, ans: dict, db_path=None) -> dict:
         if status in ("archived", "done"):
             return {**out, "ok": False, "why": status}
         kb.add_comment(conn, ans["task"], AUTHOR, comment(ans))
-        unblocked = status == "blocked" and kb.unblock_task(conn, ans["task"])
+        wait = not ans["typed"] and is_(ans["choice"], NOT_YET)
+        unblocked = not wait and status == "blocked" and kb.unblock_task(conn, ans["task"])
         now = conn.execute("SELECT status FROM tasks WHERE id = ?", (ans["task"],)).fetchone()[0]
-        return {**out, "ok": True, "unblocked": bool(unblocked), "status": now}
+        return {**out, "ok": True, "unblocked": bool(unblocked), "status": now, "waiting": wait}
 
 
 def reply(r: dict) -> str:
     """The short line the person sees in the thread."""
     if not r.get("ok"):
         return f"Couldn't answer {r.get('card') or 'that card'}: {r.get('why')}."
+    if r.get("waiting"):
+        return f"Noted on {r['card']}: not yet. It stays in Needs you until you've done it."
+    if r["unblocked"] and is_(r["choice"], YOU_DECIDE):
+        return f"{r['card']} will pick what it recommends and go."
     if r["unblocked"]:
         where = "back in the queue" if r["status"] == "ready" else "waiting on its parent card"
         return f"Sent to {r['card']}: {r['choice']}. It's {where}."

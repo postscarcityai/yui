@@ -255,7 +255,22 @@ struct ChoosePreset: View {
         let options = c.strings("options") ?? []
         let cap = c.number("max").map { Int($0) }
         PresetCard {
-            if let q = c.string("q") { PresetTitle(text: q) }
+            // Context and question in one card (t_f493137c): `tag=`, `title=` and
+            // `body=` say what is being asked about, the question and options follow.
+            if let tag = c.string("tag") {
+                Text(tag).font(theme.font(theme.type.caption, .heavy)).foregroundStyle(s.userInk)
+                    .padding(.horizontal, theme.spacing.s).padding(.vertical, 3).background(s.butter, in: Capsule())
+            }
+            if let t = c.string("title") { PresetTitle(text: t) }
+            if let b = c.string("body") {
+                Text(b).font(theme.font(theme.type.body)).foregroundStyle(s.ink).fixedSize(horizontal: false, vertical: true)
+            }
+            if let q = c.string("q") {
+                if c.string("title") != nil {
+                    Text(q).font(theme.font(theme.type.body, .bold)).foregroundStyle(s.ink)
+                        .fixedSize(horizontal: false, vertical: true).padding(.top, theme.spacing.xs)
+                } else { PresetTitle(text: q) }
+            }
             if multi, let cap {
                 Text("Pick up to \(cap)").font(theme.font(theme.type.caption, .semibold)).foregroundStyle(s.inkSoft)
             }
