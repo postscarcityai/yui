@@ -25,6 +25,11 @@ On a fresh throwaway account (never a real one):
      rotation and reuse revoking the grant; removing the computer in the app
      kills its tokens; deny; expiry; confidential clients; RFC 7009 revoke;
      step 1 bearer tokens still work.
+  I. MCP App (INT-7): the ui://yui/screen resource (HTML, mcp-app mime, CSP),
+     yui_show names it and returns structuredContent, the app-only yui_tap
+     writes the same event row a phone tap writes (only components on that
+     screen, quiet events dropped), told_model marks it handled so
+     yui_answers does not return it twice.
   G. the rate limit: a burst past `mcp_burst` answers 429.
 
     python3 supabase/tests/mcp_test.py
@@ -69,6 +74,9 @@ def tool(token, name, args=None):
 print("== yl.mjs copy")
 p = subprocess.run([sys.executable, str(HERE.parent / "scripts/sync_yl.py"), "--check"], capture_output=True, text=True)
 check("the function's YL parser matches yuigui's", p.returncode == 0, (p.stdout + p.stderr).strip())
+
+p = subprocess.run([sys.executable, str(HERE.parent / "scripts/sync_mcp_app.py"), "--check"], capture_output=True, text=True)
+check("the function's MCP App copy matches yuigui's mcp-app", p.returncode == 0, (p.stdout + p.stderr).strip())
 
 T = str(uuid.uuid4())
 sql(f"insert into yui_users(id, apple_sub) values ('{T}','test.{T}')")
@@ -115,7 +123,11 @@ try:
     check("ping", s == 200 and r["result"] == {}, r)
     s, r = rpc(ct, "tools/list")
     names = [t["name"] for t in r["result"]["tools"]]
-    check("tools/list: the four tools", names == ["yui_show", "yui_answers", "yui_say", "yui_threads"], names)
+    check("tools/list: the four tools plus the app-only yui_tap", names == ["yui_show", "yui_answers", "yui_say", "yui_threads", "yui_tap"], names)
+    tl = {t["name"]: t for t in r["result"]["tools"]}
+    check("yui_show names the MCP App, yui_tap is app-only",
+          tl["yui_show"].get("_meta", {}).get("ui", {}).get("resourceUri") == "ui://yui/screen"
+          and tl["yui_tap"]["_meta"]["ui"]["visibility"] == ["app"], [tl["yui_show"].get("_meta"), tl["yui_tap"].get("_meta")])
     show_desc = r["result"]["tools"][0]["description"]
     check("yui_show carries the short guide", "choose" in show_desc and "timer" in show_desc and "[yui] n1" in show_desc)
     s, r = rpc(ct, "prompts/get", {"name": "yui_guide"})
@@ -194,6 +206,52 @@ try:
     check("an agent on another connector is out of reach", res.get("isError") and 'No agent "hermes-box"' in text, text)
     res, text, _ = tool(ct, "yui_show", {"lines": "say hi", "agent": "claude"})
     check("picking its own agent by ref works", not res.get("isError"), text)
+
+    print("== I. MCP App (INT-7)")
+    s, r = rpc(ct, "resources/list")
+    check("resources/list: the guide and the screen", [(x["uri"], x["mimeType"]) for x in r["result"]["resources"]]
+          == [("yui://guide", "text/markdown"), ("ui://yui/screen", "text/html;profile=mcp-app")], r)
+    s, r = rpc(ct, "resources/read", {"uri": "ui://yui/screen"})
+    c0 = r["result"]["contents"][0]
+    check("ui://yui/screen: one HTML document with the bridge and the renderer",
+          c0["mimeType"] == "text/html;profile=mcp-app" and c0["text"].startswith("<!doctype html>")
+          and "ui/initialize" in c0["text"] and "yui_tap" in c0["text"] and "<script src" not in c0["text"], len(c0["text"]))
+    csp = c0.get("_meta", {}).get("ui", {}).get("csp", {})
+    check("its CSP loads images from Yui's storage and fal only, connects nowhere",
+          csp.get("resourceDomains", [None])[0] == BASE and "connectDomains" not in csp, csp)
+    res, text, d = tool(ct, "yui_show", {"text": "Lunch?", "lines": 'choose "Lunch?" Salad|Soup\ntimer@t 1m Steep'})
+    sc = res.get("structuredContent") or {}
+    app_screen = d["screen_id"]
+    check("yui_show: structuredContent carries the screen id and the lines for the view",
+          sc.get("screen_id") == app_screen and sc.get("lines") == 'choose "Lunch?" Salad|Soup\ntimer@t 1m Steep', sc)
+    res, text, _ = tool(ct, "yui_tap", {"screen_id": app_screen, "event": {"id": "n9", "preset": "choose", "choice": "Salad"}})
+    check("yui_tap: a component not on that screen is refused", res.get("isError") and "No choose with id n9" in text, text)
+    res, text, _ = tool(ct, "yui_tap", {"screen_id": screen["id"], "event": {"id": "n1", "preset": "ask", "answer": "x"}})
+    check("yui_tap: a component on another screen is refused", res.get("isError"), text)
+    res, text, _ = tool(ct, "yui_tap", {"screen_id": str(uuid.uuid4()), "event": {"id": "n1", "preset": "choose", "choice": "Salad"}})
+    check("yui_tap: a screen outside its threads is refused", res.get("isError") and "No screen" in text, text)
+    n0 = len(thread())
+    res, text, d = tool(ct, "yui_tap", {"screen_id": app_screen, "event": {"id": "t", "preset": "timer", "started": True}})
+    check("yui_tap: a quiet event (timer started) writes nothing", d == {"sent": False} and len(thread()) == n0, (d, len(thread())))
+    res, text, d = tool(ct, "yui_tap", {"screen_id": app_screen, "event": {"id": "n1", "preset": "choose", "choice": "Soup"}})
+    row = next(m for m in thread() if m["id"] == d.get("message_id"))
+    check("yui_tap: the same event row a phone tap writes",
+          row["sender"] == "user" and row["kind"] == "event" and row["body"] == "[yui] n1 choose choice=Soup"
+          and row["meta"] == {"id": "n1", "preset": "choose", "value": {"choice": "Soup"}, "echo": "Soup", "via": "mcp-app"}
+          and not row["handled_at"], row)
+    res, text, d = tool(ct, "yui_answers", {"screen_id": app_screen})
+    check("yui_answers returns the embedded tap like a phone tap",
+          [a["text"] for a in d["answers"]] == ["[yui] n1 choose choice=Soup"] and d["answers"][0]["event"]["echo"] == "Soup", d)
+    res, text, d = tool(ct, "yui_tap", {"screen_id": app_screen, "told_model": True,
+                                       "event": {"id": "n1", "preset": "choose", "choice": "Salad", "changed": True}})
+    row = next(m for m in thread() if m["id"] == d.get("message_id"))
+    check("told_model: written handled (the model already has it), changed flag kept",
+          row["body"] == "[yui] n1 choose changed choice=Salad" and row["handled_at"] and row["delivered_at"], row)
+    res, text, d = tool(ct, "yui_answers", {"screen_id": app_screen})
+    check("...so yui_answers does not return it a second time", d["answers"] == [], d)
+    res, text, d = tool(ct, "yui_tap", {"screen_id": app_screen, "event": {"id": "t", "preset": "timer", "done": True, "rounds": 1}})
+    check("a finished timer goes back (done), no echo", d.get("sent") and d.get("line") == "[yui] t timer done rounds=1" and d.get("echo") is None, d)
+    tool(ct, "yui_answers", {})
 
     print("== H. OAuth (INT-19)")
     import base64 as _b64, hashlib as _hl, secrets as _sec, urllib.parse as up

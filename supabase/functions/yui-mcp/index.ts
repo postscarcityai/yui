@@ -26,6 +26,13 @@
 //                is marked delivered and handled.
 //   yui_say      A plain message.
 //   yui_threads  The agents this token serves, with unread counts.
+//   yui_tap      App-only (MCP Apps visibility ["app"]): a tap in the screen
+//                drawn inside the host, written as the same event row the
+//                phone writes.
+// MCP App (INT-7): yui_show names the resource ui://yui/screen in
+// _meta.ui.resourceUri, so hosts that render MCP Apps (Claude, ChatGPT) draw
+// the screen inline with the site's web renderer (yuigui mcp-app, copied here
+// by scripts/sync_mcp_app.py). Hosts that do not just show the text result.
 // The channel guide: short form in the tool descriptions, the full text as the
 // prompt `yui_guide` and the resource `yui://guide`.
 import {
@@ -38,11 +45,16 @@ import {
   take,
 } from "../_shared/yui.ts";
 import { parse } from "./yl.mjs";
+import SCREEN_HTML from "./screen_html.mjs";
+import { echoFor, eventLine, relays, valueOf } from "./app_events.mjs";
 
 const VERSIONS = ["2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05"];
-const SERVER = { name: "yui", title: "Yui", version: "0.1.0" };
+const SERVER = { name: "yui", title: "Yui", version: "0.2.0" };
 const MAX_BODY = 32000;
 const MAX_WAIT = 25;
+const MAX_EVENT = 4000;
+const SCREEN_URI = "ui://yui/screen";
+const APP_MIME = "text/html;profile=mcp-app";
 const SIGN_SECONDS = 3600;
 const USER_PATH = /[0-9a-f-]{36}\/[0-9a-f-]{36}\/user\/[A-Za-z0-9._-]{1,80}/g;
 
@@ -186,10 +198,16 @@ async function dispatch(db: DB, c: Connector, method: string, p: Json): Promise<
       return { description: GUIDE_BLURB, messages: [{ role: "user", content: { type: "text", text: g.text } }] };
     }
     case "resources/list":
-      return { resources: [{ uri: "yui://guide", name: "yui_guide", title: "Yui channel guide", description: GUIDE_BLURB, mimeType: "text/markdown" }] };
+      return {
+        resources: [
+          { uri: "yui://guide", name: "yui_guide", title: "Yui channel guide", description: GUIDE_BLURB, mimeType: "text/markdown" },
+          { uri: SCREEN_URI, name: "yui_screen", title: "Yui screen", description: SCREEN_BLURB, mimeType: APP_MIME },
+        ],
+      };
     case "resources/templates/list":
       return { resourceTemplates: [] };
     case "resources/read": {
+      if (p.uri === SCREEN_URI) return { contents: [{ uri: SCREEN_URI, mimeType: APP_MIME, text: SCREEN_HTML, _meta: SCREEN_META }] };
       if (p.uri !== "yui://guide") throw new RpcError(-32002, `Resource not found: ${p.uri}`);
       const g = await guide(db);
       return { contents: [{ uri: "yui://guide", mimeType: "text/markdown", text: g.text }] };
@@ -218,6 +236,8 @@ async function callTool(db: DB, c: Connector, name: string, a: Json): Promise<Js
         return await say(db, c, a);
       case "yui_threads":
         return await threads(db, c);
+      case "yui_tap":
+        return await tap(db, c, a);
       default:
         throw new RpcError(-32602, `Unknown tool: ${name}`);
     }
@@ -304,11 +324,16 @@ async function show(db: DB, c: Connector, a: Json): Promise<Json> {
   const agent = await pick(db, c, a.agent);
   const row = await write(db, c, agent, body);
   const ids = ops.filter((o: Json) => o.op === "add").map((o: Json) => ({ id: o.id, preset: o.preset }));
-  return ok(
-    `On ${agent.name}'s screen in Yui. Screen id ${row.id}. Taps come back as [yui] <id> <preset> key=value; ` +
-      `read them with yui_answers(screen_id="${row.id}", wait=25).`,
-    { screen_id: row.id, agent: agent.name, ids },
-  );
+  const data = { screen_id: row.id, agent: agent.name, ids };
+  return {
+    ...ok(
+      `On ${agent.name}'s screen in Yui. Screen id ${row.id}. Taps come back as [yui] <id> <preset> key=value; ` +
+        `read them with yui_answers(screen_id="${row.id}", wait=25).`,
+      data,
+    ),
+    // For the MCP App view: what to draw, and the screen its taps belong to.
+    structuredContent: { ...data, lines },
+  };
 }
 
 async function say(db: DB, c: Connector, a: Json): Promise<Json> {
@@ -400,6 +425,62 @@ async function threads(db: DB, c: Connector): Promise<Json> {
   );
 }
 
+// A tap in the screen the host drew (MCP App). It becomes the same event row a
+// tap on the phone writes (spec/RELAY.md): body `[yui] <id> <preset> k=v`,
+// meta {id, preset, value, echo}. The line and echo are worked out here from
+// the event, never taken from the view. Only components that are on that
+// screen can answer, and quiet events (a timer starting) are not written.
+// told_model: the view already handed the line to the model with ui/message,
+// so the row is written handled and yui_answers will not return it again.
+async function tap(db: DB, c: Connector, a: Json): Promise<Json> {
+  if (typeof a.screen_id !== "string" || !/^[0-9a-f-]{36}$/i.test(a.screen_id)) return bad("`screen_id` is the id yui_show returned.");
+  const ev = a.event;
+  if (!ev || typeof ev !== "object" || Array.isArray(ev) || typeof ev.id !== "string" || typeof ev.preset !== "string") {
+    return bad("`event` is {id, preset, ...value}.");
+  }
+  if (JSON.stringify(ev).length > MAX_EVENT) return bad(`Event too large (limit ${MAX_EVENT} characters).`);
+  const list = await agents(db, c);
+  const { data: screen } = await db.from("yui_messages").select("agent_id, body")
+    .eq("id", a.screen_id).eq("user_id", c.user_id).eq("sender", "agent").maybeSingle();
+  const agent = screen && list.find((x) => x.id === screen.agent_id);
+  if (!agent) return bad(`No screen ${a.screen_id} in a thread this token serves.`);
+  const on = new Set<string>();
+  for (const [, block] of String(screen.body).matchAll(/```yui\n([\s\S]*?)(?:```|$)/g)) {
+    for (const o of parse(block)) if (o.op === "add") on.add(`${o.id} ${o.preset}`);
+  }
+  if (!on.has(`${ev.id} ${ev.preset}`)) return bad(`No ${ev.preset} with id ${ev.id} on screen ${a.screen_id}.`);
+  const echo = echoFor(ev);
+  if (!relays(ev, echo)) return ok("Quiet event: it stays on the screen, nothing was sent.", { sent: false });
+  const now = new Date().toISOString();
+  const told = a.told_model === true;
+  const meta: Json = { id: ev.id, preset: ev.preset, value: valueOf(ev), via: "mcp-app" };
+  if (echo != null) meta.echo = echo;
+  const { data: row, error } = await db.from("yui_messages").insert({
+    user_id: c.user_id,
+    agent_id: agent.id,
+    sender: "user",
+    kind: "event",
+    body: eventLine(ev),
+    meta,
+    ...(told ? { delivered_at: now, handled_at: now } : {}),
+  }).select("id, body").single();
+  if (error) throw error;
+  return ok(row.body, { sent: true, message_id: row.id, line: row.body, echo, handled: told });
+}
+
+// -- the MCP App -----------------------------------------------------------------
+
+const SCREEN_BLURB = "The Yui screen drawn inside the chat: the same Yui Lines the phone shows, tappable here too.";
+
+// Images on a screen come from Yui's own storage or from fal renders; the
+// sandbox loads nothing else (no scripts, fonts or connections from outside).
+const SCREEN_META = {
+  ui: {
+    csp: { resourceDomains: [Deno.env.get("SUPABASE_URL") ?? "https://ewzzaoperdpxqxkshynx.supabase.co", "https://fal.media", "https://*.fal.media"] },
+    prefersBorder: false,
+  },
+};
+
 // -- the channel guide ----------------------------------------------------------
 
 const GUIDE_BLURB = "How to talk in Yui: every screen you can draw with Yui Lines, how taps come back, and the rules.";
@@ -413,7 +494,7 @@ async function guide(db: DB): Promise<{ version: string; text: string }> {
   return { version: data.version, text: MCP_PREAMBLE + data.body };
 }
 
-const INSTRUCTIONS = `Yui is an app on the person's phone that draws what you send as native screens: buttons, pickers, sliders, forms, timers, cards, charts, decks. The conversation stays here; Yui is their second screen. Use yui_show when a screen beats text (a choice, a timer, a check-in, a plan), then yui_answers with wait=25 to get their taps. Read the yui_guide prompt (or resource yui://guide) for the full grammar. Never ask for passwords, keys or card numbers on a screen.`;
+const INSTRUCTIONS = `Yui is an app on the person's phone that draws what you send as native screens: buttons, pickers, sliders, forms, timers, cards, charts, decks. The conversation stays here; Yui is their second screen. Use yui_show when a screen beats text (a choice, a timer, a check-in, a plan), then yui_answers with wait=25 to get their taps. Read the yui_guide prompt (or resource yui://guide) for the full grammar. In apps that draw MCP Apps the screen also shows right here in the chat; a tap there reaches you as a user message holding the same [yui] line, so answer it like a tap from yui_answers. Never ask for passwords, keys or card numbers on a screen.`;
 
 const SHOW_DESC = `Put a screen on the person's phone in Yui. \`lines\` is Yui Lines: one component per line, no fence. Returns the screen id and the ids its taps will carry; then call yui_answers(screen_id, wait=25).
 
@@ -455,6 +536,7 @@ const TOOLS = [
       },
       required: ["lines"],
     },
+    _meta: { ui: { resourceUri: SCREEN_URI, visibility: ["model", "app"] }, "ui/resourceUri": SCREEN_URI },
     annotations: { title: "Show a screen in Yui", readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
   },
   {
@@ -489,5 +571,21 @@ const TOOLS = [
     description: "The Yui agents (threads) this connection can write to, with how many of the person's messages are unread. The first is the default for the other tools.",
     inputSchema: { type: "object", properties: {} },
     annotations: { title: "List Yui threads", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  },
+  {
+    name: "yui_tap",
+    title: "A tap in the Yui screen",
+    description: "Called by the Yui screen drawn in the chat (MCP App) when the person taps it. Not for the model: to read taps, call yui_answers.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        screen_id: { type: "string", description: "The screen id yui_show returned." },
+        event: { type: "object", description: "The event: {id, preset, ...value}." },
+        told_model: { type: "boolean", description: "The view already handed the line to the model with ui/message." },
+      },
+      required: ["screen_id", "event"],
+    },
+    _meta: { ui: { resourceUri: SCREEN_URI, visibility: ["app"] } },
+    annotations: { title: "A tap in the Yui screen", readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
   },
 ];

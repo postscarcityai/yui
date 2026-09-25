@@ -15,7 +15,14 @@ Pass: the UI test passed (it saw the ask, tapped Yes, saw the timer), the
 thread holds Claude's screens as agent rows via mcp, and the tap is handled.
 Screenshots land in --out.
 
-    python3 supabase/tests/mcp_claude_e2e.py --sim <udid> [--out DIR]
+    python3 supabase/tests/mcp_claude_e2e.py --sim <udid> [--out DIR] [--oauth]
+
+--oauth (INT-7) adds Yui the way the Claude guide on yuigui.com/developers
+says: `claude mcp add --transport http yui <url>` with no header, then
+`claude mcp login yui --no-browser`. The authorize URL it prints goes to
+www.yuigui.com/connect/<id>; the script approves it with the Add agent code,
+as a person types it on that page, and pastes the redirect back. Claude Code
+then holds its own OAuth tokens, and the round trip runs the same.
 
 Needs full Xcode, the `claude` CLI and a Supabase access token like the other
 tests. The account is deleted at the end.
@@ -31,6 +38,7 @@ ap = argparse.ArgumentParser()
 ap.add_argument("--sim", required=True)
 ap.add_argument("--out", default="/tmp/yui-int3-e2e")
 ap.add_argument("--model", default=None, help="claude --model (default: the CLI's)")
+ap.add_argument("--oauth", action="store_true", help="add Yui over OAuth (claude mcp login), not a pasted token")
 args = ap.parse_args()
 OUT = Path(args.out)
 shots = OUT / "shots"
@@ -57,16 +65,93 @@ ui = None
 try:
     s, r = fn("yui-agents", {"action": "create", "name": "Claude", "pair": True}, tok)
     agent = r["agent"]["id"]
-    s, r = fn("yui-connect", {"action": "pair", "code": r["pairing"]["code"], "remote_ref": "claude-code",
-                              "kind": "mcp", "host_name": "Claude Code"})
-    ct = r["connector_token"]
-    check("paired as kind mcp", s == 200 and ct.startswith("yui_ct_"), s)
+    MCP = f"{BASE}/functions/v1/yui-mcp"
+    if args.oauth:
+        ct = "yui_at_***"  # nothing to scrub: Claude Code keeps its own tokens
+        code = r["pairing"]["code"]
+        p = subprocess.run(["claude", "mcp", "add", "--transport", "http", "yui", MCP], cwd=work, env=cenv, capture_output=True, text=True)
+        check("claude mcp add --transport http, no header", p.returncode == 0, (p.stdout + p.stderr).strip())
+        # A cold `mcp login` never calls the server, so it never sees the 401
+        # that names Yui's metadata (under /functions/v1/yui-mcp; Supabase's
+        # shared host root has no /.well-known of ours) and falls back to
+        # {host}/register. `mcp get` makes the call and Claude Code keeps the
+        # resource_metadata URL for the login. The guide says the same.
+        p = subprocess.run(["claude", "mcp", "get", "yui"], cwd=work, env=cenv, capture_output=True, text=True, timeout=120)
+        check("claude mcp get before login: needs authentication", "Needs authentication" in p.stdout, p.stdout[:200])
+        # login wants a terminal (it prompts for the redirect URL), so give it a pty.
+        import pty, re, select
+        import fcntl, struct, termios
+        master, slave = pty.openpty()
+        # Wide enough that the authorize URL prints on one line.
+        fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 50, 4000, 0, 0))
+        login = subprocess.Popen(["claude", "mcp", "login", "yui", "--no-browser"], cwd=work, env={**cenv, "COLUMNS": "4000"},
+                                 stdin=slave, stdout=slave, stderr=slave, close_fds=True)
+        os.close(slave)
+        buf, url = "", None
+        def pump(secs):
+            global buf
+            end = time.time() + secs
+            while time.time() < end:
+                r, _, _ = select.select([master], [], [], 0.5)
+                if r:
+                    try: chunk = os.read(master, 65536).decode(errors="replace")
+                    except OSError: return
+                    buf += chunk
+                elif login.poll() is not None:
+                    return
+        t0 = time.time()
+        while time.time() - t0 < 60 and url is None and login.poll() is None:
+            pump(1)
+            # The terminal prints the URL as an OSC 8 hyperlink; strip escapes
+            # on the whole buffer, since one can straddle two reads.
+            clean = re.sub(r"\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b\[[0-9;?]*[A-Za-z]", "", buf)
+            m = re.search(r"https://\S+/yui-oauth/authorize\?\S*state=\S+", clean)
+            if m:
+                url = m.group(0)
+        seen = re.sub(r"\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b\[[0-9;?]*[A-Za-z]", "", buf).splitlines()
+        check("claude mcp login prints Yui's authorize URL", url is not None, "\n".join(seen[-8:]))
+        if url is None:
+            raise SystemExit("no authorize URL")
+        # What the browser would do: /authorize answers 302 to the connect page.
+        class _NoRedirect(urllib.request.HTTPRedirectHandler):
+            def redirect_request(self, *a, **k): return None
+        try:
+            urllib.request.build_opener(_NoRedirect).open(urllib.request.Request(url, headers={"user-agent": "yui-tests"}))
+            loc = ""
+        except urllib.error.HTTPError as e:
+            loc = e.headers.get("location", "")
+        rid = loc.rsplit("/", 1)[1] if loc.startswith("https://www.yuigui.com/connect/") else None
+        check("/authorize sends the browser to www.yuigui.com/connect/<id>", rid, loc)
+        OAUTH = f"{BASE}/functions/v1/yui-oauth"
+        s, r = http("POST", OAUTH, None, {"action": "code", "id": rid, "code": code})
+        check("the connect page takes the Add agent code", s == 200 and r.get("status") == "approved"
+              and r["agent"]["id"] == agent, (s, r))
+        s, r = http("POST", OAUTH, None, {"action": "request", "id": rid})
+        back = r.get("redirect", "")
+        check("...and sends the browser back to Claude Code's callback", back.startswith("http://localhost"), back[:80])
+        buf = ""
+        os.write(master, (back + "\r").encode())
+        t0 = time.time()
+        while login.poll() is None and time.time() - t0 < 90:
+            pump(1)
+        if login.poll() is None:
+            login.kill()
+        out = re.sub(r"\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b\[[0-9;?]*[A-Za-z]", "", buf)
+        check("claude mcp login finished", login.returncode == 0, "\n".join((out or "").splitlines()[-6:]))
+    else:
+        s, r = fn("yui-connect", {"action": "pair", "code": r["pairing"]["code"], "remote_ref": "claude-code",
+                                  "kind": "mcp", "host_name": "Claude Code"})
+        ct = r["connector_token"]
+        check("paired as kind mcp", s == 200 and ct.startswith("yui_ct_"), s)
 
-    p = subprocess.run(["claude", "mcp", "add", "--transport", "http", "yui", f"{BASE}/functions/v1/yui-mcp",
-                        "--header", f"Authorization: Bearer {ct}"], cwd=work, env=cenv, capture_output=True, text=True)
-    check("claude mcp add --transport http", p.returncode == 0, (p.stdout + p.stderr).replace(ct, "yui_ct_***").strip())
+        p = subprocess.run(["claude", "mcp", "add", "--transport", "http", "yui", MCP,
+                            "--header", f"Authorization: Bearer {ct}"], cwd=work, env=cenv, capture_output=True, text=True)
+        check("claude mcp add --transport http", p.returncode == 0, (p.stdout + p.stderr).replace(ct, "yui_ct_***").strip())
     p = subprocess.run(["claude", "mcp", "get", "yui"], cwd=work, env=cenv, capture_output=True, text=True, timeout=120)
     check("claude mcp get: connected", "Connected" in p.stdout or "✓" in p.stdout, p.stdout.replace(ct, "yui_ct_***")[:300])
+    if args.oauth:
+        k = sql(f"select c.kind, c.name from yui_connectors c join yui_agents a on a.connector_id = c.id where a.id = '{agent}'")
+        check("the approval made a kind-mcp connection named after Claude Code", k and k[0]["kind"] == "mcp", k)
 
     rt = secrets.token_urlsafe(32)
     sql(f"insert into yui_sessions(user_id, refresh_hash, expires_at) values "
@@ -114,6 +199,8 @@ try:
 finally:
     if ui and ui.poll() is None:
         ui.kill()
+    if args.oauth:
+        subprocess.run(["claude", "mcp", "logout", "yui"], cwd=work, env=cenv, capture_output=True)
     subprocess.run(["claude", "mcp", "remove", "yui", "-s", "local"], cwd=work, env=cenv, capture_output=True)
     s, _ = fn("yui-delete", {}, tok)
     left = sql(f"select (select count(*) from yui_users where id = '{T}') + "
