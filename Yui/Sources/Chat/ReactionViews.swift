@@ -33,10 +33,13 @@ struct BubbleText: View {
     }
 }
 
-/// An agent bubble you can react to: hold it (or tap its badge) for the bar,
-/// or use the named accessibility actions. The emoji sits on its corner.
+/// A bubble or card you can hold: the agent's get the reaction bar (or tap its
+/// badge), every one gets Reply, Copy and Select text, also as named
+/// accessibility actions. A reaction's emoji sits on its corner.
 struct Reactable: ViewModifier {
     let text: String
+    /// Only the agent's messages take reactions; the person's own get the menu alone.
+    var reacts = true
     let reaction: Reaction?
     /// The bar is open on it: the overlay draws the lifted copy in its place.
     let lifted: Bool
@@ -44,8 +47,25 @@ struct Reactable: ViewModifier {
     let react: (Reaction?) -> Void
     /// Opens the words read-only, to copy just a part.
     var select: () -> Void = {}
+    /// Quotes it above the composer (YUI-68).
+    var reply: () -> Void = {}
+    /// A card is a container: accessibility modifiers on it would land on every
+    /// button inside, so its named actions live beside it (`ReactActions`).
+    var card = false
 
     func body(content: Content) -> some View {
+        if card {
+            gestures(content)
+        } else {
+            gestures(content)
+                .accessibilityValue(reaction.map { "Reacted \($0.emoji), \($0.meaning)" } ?? "")
+                .accessibilityActions {
+                    ReactActions(text: text, reacts: reacts, reaction: reaction, react: react, select: select, reply: reply)
+                }
+        }
+    }
+
+    private func gestures(_ content: Content) -> some View {
         content
             .anchorPreference(key: ReactionAnchor.self, value: .bounds) { lifted ? $0 : nil }
             .overlay(alignment: .bottomTrailing) {
@@ -61,15 +81,28 @@ struct Reactable: ViewModifier {
             .padding(.bottom, reaction == nil ? 0 : 14)
             .onLongPressGesture(minimumDuration: 0.35, maximumDistance: 12, perform: open)
             .sensoryFeedback(.impact(weight: .medium), trigger: lifted) { _, now in now }
-            .accessibilityValue(reaction.map { "Reacted \($0.emoji), \($0.meaning)" } ?? "")
-            .accessibilityActions {
-                ForEach(Reaction.all) { r in
-                    Button("React \(r.emoji) \(r.meaning)") { react(r) }
-                }
-                if reaction != nil { Button("Remove reaction") { react(nil) } }
-                Button("Copy") { UIPasteboard.general.string = text }
-                Button("Select text", action: select)
+    }
+}
+
+/// The hold menu as named accessibility actions: Reply, the reactions, Copy, Select text.
+struct ReactActions: View {
+    let text: String
+    var reacts = true
+    let reaction: Reaction?
+    let react: (Reaction?) -> Void
+    let select: () -> Void
+    let reply: () -> Void
+
+    var body: some View {
+        Button("Reply", action: reply)
+        if reacts {
+            ForEach(Reaction.all) { r in
+                Button("React \(r.emoji) \(r.meaning)") { react(r) }
             }
+        }
+        if reaction != nil { Button("Remove reaction") { react(nil) } }
+        Button("Copy") { UIPasteboard.general.string = text }
+        Button("Select text", action: select)
     }
 }
 
@@ -92,9 +125,13 @@ struct ReactionBadge: View {
 }
 
 /// Held bubble: the thread dims, the bubble lifts, the six reactions float
-/// above it and Copy and Select text sit below (a tapback, the Telegram and iMessage way).
-struct ReactionOverlay: View {
-    let message: ChatMessage
+/// above it and Reply, Copy and Select text sit below (a tapback, the Telegram
+/// and iMessage way). The person's own bubbles get the menu without the bar.
+struct ReactionOverlay<Lifted: View>: View {
+    /// What Copy copies: a bubble's words, a card's lines.
+    let text: String
+    /// The agent's message: the reaction bar is there.
+    var reacts = true
     /// The held bubble, in this view's space.
     let rect: CGRect
     let size: CGSize
@@ -103,13 +140,19 @@ struct ReactionOverlay: View {
     let dismiss: () -> Void
     /// Select text: the words open read-only, to copy any part of them.
     var select: () -> Void = {}
+    /// Reply: its quote goes above the composer.
+    var reply: () -> Void = {}
+    /// The held bubble or card, drawn again over the dimmed thread.
+    @ViewBuilder let lifted: () -> Lifted
     @Environment(\.yuiTheme) private var theme
     @Environment(\.colorScheme) private var scheme
     @State private var up = false
     @State private var chosen: Reaction?
 
     private let item = CGSize(width: 48, height: 58)
-    private var barSize: CGSize { CGSize(width: item.width * CGFloat(Reaction.all.count) + 12, height: item.height + 12) }
+    private var barSize: CGSize {
+        reacts ? CGSize(width: item.width * CGFloat(Reaction.all.count) + 12, height: item.height + 12) : .zero
+    }
     private let menuSize = CGSize(width: 210, height: 48)
 
     var body: some View {
@@ -125,7 +168,10 @@ struct ReactionOverlay: View {
         let barX = min(max(rect.minX - 6 + barSize.width / 2, barSize.width / 2 + 8), size.width - barSize.width / 2 - 8)
         let menuTop = above ? rect.maxY + 12 : barY + barSize.height / 2 + 10
         let menuY = min(menuTop + menuHeight / 2, size.height - menuHeight / 2 - 8)
-        let menuX = min(max(rect.minX + menuSize.width / 2, menuSize.width / 2 + 8), size.width - menuSize.width / 2 - 8)
+        // Under the bubble's leading edge; the person's own (on the right) under its trailing edge.
+        let menuX = reacts || rect.width < menuSize.width
+            ? min(max(rect.minX + menuSize.width / 2, menuSize.width / 2 + 8), size.width - menuSize.width / 2 - 8)
+            : min(rect.maxX - menuSize.width / 2, size.width - menuSize.width / 2 - 8)
         ZStack(alignment: .topLeading) {
             Rectangle()
                 .fill(.ultraThinMaterial)
@@ -137,7 +183,7 @@ struct ReactionOverlay: View {
                 .accessibilityAddTraits(.isButton)
                 .accessibilityIdentifier("reaction-dismiss")
 
-            BubbleText(text: message.text, fromUser: false)
+            lifted()
                 .frame(width: rect.width, height: rect.height)
                 .overlay(alignment: .bottomTrailing) {
                     if let shown = chosen ?? current {
@@ -149,10 +195,12 @@ struct ReactionOverlay: View {
                 .position(x: rect.midX, y: rect.midY)
                 .accessibilityHidden(true)
 
-            bar(c)
-                .scaleEffect(up ? 1 : 0.4, anchor: above ? .bottomLeading : .topLeading)
-                .opacity(up ? 1 : 0)
-                .position(x: barX, y: barY)
+            if reacts {
+                bar(c)
+                    .scaleEffect(up ? 1 : 0.4, anchor: above ? .bottomLeading : .topLeading)
+                    .opacity(up ? 1 : 0)
+                    .position(x: barX, y: barY)
+            }
 
             menu(c)
                 .scaleEffect(up ? 1 : 0.6, anchor: above ? .topLeading : .topLeading)
@@ -166,7 +214,7 @@ struct ReactionOverlay: View {
         .sensoryFeedback(.selection, trigger: chosen)
     }
 
-    private var menuHeight: CGFloat { menuSize.height * (current == nil ? 2 : 3) }
+    private var menuHeight: CGFloat { menuSize.height * (current == nil ? 3 : 4) }
 
     private func bar(_ c: Swatch) -> some View {
         HStack(spacing: 0) {
@@ -205,8 +253,11 @@ struct ReactionOverlay: View {
 
     private func menu(_ c: Swatch) -> some View {
         VStack(spacing: 0) {
+            menuRow("Reply", icon: "arrowshape.turn.up.left", c, action: reply)
+                .accessibilityIdentifier("react-reply")
+            Divider().overlay(c.outline)
             menuRow("Copy", icon: "doc.on.doc", c) {
-                UIPasteboard.general.string = message.text
+                UIPasteboard.general.string = text
                 dismiss()
             }
             .accessibilityIdentifier("react-copy")

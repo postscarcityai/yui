@@ -62,10 +62,20 @@ try:
     s, r = rest("POST", "yui_messages", tokA, {**msg(A, a_agent, body="[yui] n1 ask answer=Yes", kind="event"),
                                                "meta": {"id": "n1", "preset": "ask", "value": {"answer": "Yes"}}})
     check("app writes an event with metadata", s == 201, f"{s}")
+    reply_body = f'[yui] reply to={a_msg} from=user quote="hi"\nThis one'
+    s, r = rest("POST", "yui_messages", tokA, {**msg(A, a_agent, body=reply_body),
+                                               "meta": {"reply_to": {"msg": a_msg, "from": "user", "quote": "hi"}}},
+                prefer="return=representation")
+    check("app writes a reply: the line in the body, reply_to in meta (YUI-68)", s == 201, f"{s} {code(r)}")
+    reply_id = r[0]["id"] if s == 201 else None
 
     print("== Host side (yui_connector)")
     s, r = rest("GET", "yui_messages?select=id,sender,kind", ctA)
-    check("host reads its thread", s == 200 and len(r) == 2, f"{s} {len(r) if isinstance(r, list) else r}")
+    check("host reads its thread", s == 200 and len(r) == 3, f"{s} {len(r) if isinstance(r, list) else r}")
+    s, r = rest("GET", f"yui_messages?select=body,meta&id=eq.{reply_id}", ctA)
+    check("host reads the reply line first and the quote in meta (YUI-68)", s == 200 and len(r) == 1
+          and r[0]["body"].splitlines()[0].startswith(f"[yui] reply to={a_msg} ")
+          and r[0]["meta"]["reply_to"]["msg"] == a_msg, f"{s} {r}")
     print("== Delivery acks and client ids (YUI-28)")
     now = "2026-09-24T12:00:00+00:00"
     s, r = rest("PATCH", f"yui_messages?id=eq.{a_msg}", ctA, {"delivered_at": now, "handled_at": now},

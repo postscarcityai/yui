@@ -27,6 +27,8 @@ Transport: the gateway dials OUT to Supabase (PROOF). No inbound ports.
      structured event. A reaction is one too (`[yui] react msg=<id> emoji=👍
      meaning="build it"`, then the reacted message quoted; spec
      yuigui/spec/REACTIONS.md) and passes through like any other turn.
+     A reply (YUI-68) is a text row whose body the app starts with
+     `[yui] reply to=<row id> from=agent quote="..."`; it passes through too.
   5. A heartbeat every 45 s keeps the agent "online" in the app. A clean stop
      says goodbye (action=bye), so the app shows offline, not asleep.
   6. Every agent message is pushed to the user's phones (yui-push

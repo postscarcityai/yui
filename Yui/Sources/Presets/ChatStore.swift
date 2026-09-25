@@ -11,6 +11,8 @@ struct ChatMessage: Identifiable, Equatable {
     var yl: YLScreen?
     /// The person's photos on this message (composer attachments).
     var photos: [MessagePhoto] = []
+    /// The person's reply to an earlier message: its quote (YUI-68).
+    var replyTo: ReplyQuote? = nil
 }
 
 /// The chat's messages plus the event log going back to the agent.
@@ -154,9 +156,12 @@ final class ChatStore {
 
     var reactingMessage: ChatMessage? { reacting.flatMap { id in messages.first { $0.id == id } } }
 
-    /// The bubble that wears a row's badge: its last text bubble.
+    /// The bubble that wears a row's badge: its last text bubble, or its last
+    /// card when the reply is all cards (a held card takes reactions too, YUI-68).
     func wearsReaction(_ m: ChatMessage) -> Bool {
-        !m.fromUser && m.yl == nil && messages.last { $0.rowID == m.rowID && !$0.fromUser && $0.yl == nil }?.id == m.id
+        guard !m.fromUser else { return false }
+        let row = messages.filter { $0.rowID == m.rowID && !$0.fromUser }
+        return (row.last { $0.yl == nil } ?? row.last)?.id == m.id
     }
 
     func reaction(for m: ChatMessage) -> Reaction? { Reaction.named(reactions[m.rowID]) }
@@ -179,6 +184,40 @@ final class ChatStore {
     private func applyReaction(meta: YLValue?) {
         guard let r = Reaction.from(meta: meta) else { return }
         reactions[r.msg] = r.emoji
+    }
+
+    // MARK: Replies (YUI-68)
+
+    /// The message the next send answers: its quote sits above the composer.
+    var replying: ReplyQuote?
+    /// The bubble just scrolled to from a reply's chip: it glows for a moment.
+    private(set) var flashing: String?
+
+    /// Hold menu Reply, or a left swipe: quote this bubble or card in the composer.
+    func startReply(_ messageID: String) {
+        guard let m = messages.first(where: { $0.id == messageID }), let q = ReplyQuote(m) else { return }
+        withAnimation(spring) { replying = q }
+    }
+
+    func cancelReply() { withAnimation(spring) { replying = nil } }
+
+    /// Where a reply's chip goes: the first bubble of the row it quotes, if it is loaded.
+    func original(of q: ReplyQuote) -> String? { messages.first { $0.rowID.lowercased() == q.msg }?.id }
+
+    /// The original lights up once it is on screen.
+    func flash(_ id: String) {
+        flashing = id
+        Task {
+            try? await Task.sleep(for: .seconds(2))
+            if flashing == id { withAnimation(.easeOut(duration: 0.4)) { flashing = nil } }
+        }
+    }
+
+    /// The reply set now, taken for one send. A slash command goes out bare.
+    private func takeReply(for text: String) -> ReplyQuote? {
+        guard let q = replying, !text.hasPrefix("/") else { return nil }
+        replying = nil
+        return q
     }
 
     // MARK: Answers
@@ -326,6 +365,7 @@ final class ChatStore {
         shelf = agent.map { Shelf.load(agentID: $0.id) } ?? Shelf()
         reactions = [:]
         reacting = nil
+        replying = nil
         stageID = nil
         stageOpen = false
         page = agent.flatMap { pages[$0.id] } ?? 1
@@ -353,7 +393,8 @@ final class ChatStore {
         #if DEBUG
         // -yuiDemoReply "<lines>": on the demo account the agent answers what you send with these lines (SOC-3 videos).
         if client == nil, agent != nil, let reply = UserDefaults.standard.string(forKey: "yuiDemoReply") {
-            withAnimation(Self.sendSpring) { messages.append(ChatMessage(text: text, fromUser: true)) }
+            let q = takeReply(for: text)
+            withAnimation(Self.sendSpring) { messages.append(ChatMessage(text: text, fromUser: true, replyTo: q)) }
             waiting = true
             waitingSince = .now
             Task {
@@ -365,9 +406,10 @@ final class ChatStore {
         }
         #endif
         guard client != nil, agent != nil, account?.session?.userID != nil else { return false }
-        let m = ChatMessage(id: UUID().uuidString.lowercased(), text: text, fromUser: true)
+        let q = takeReply(for: text)
+        let m = ChatMessage(id: UUID().uuidString.lowercased(), text: text, fromUser: true, replyTo: q)
         withAnimation(Self.sendSpring) { messages.append(m) }
-        post(id: m.id, body: text, kind: "text", meta: nil)
+        post(id: m.id, body: ReplyQuote.body(text, replyingTo: q), kind: "text", meta: ReplyQuote.meta(nil, replyingTo: q))
         return true
     }
 
@@ -382,17 +424,20 @@ final class ChatStore {
         for p in photos { paths.append(try await media.upload(photo: p.jpeg)) }
         guard agent?.id == agentID else { throw AccountError.signedOut }  // switched threads mid-upload
         let body = Attachments.body(text: text, photos: paths.count)
+        let q = takeReply(for: body)
         let m = ChatMessage(id: UUID().uuidString.lowercased(), text: Attachments.caption(body: body, photos: paths.count),
-                            fromUser: true, photos: photos.map { .local($0.preview) })
+                            fromUser: true, photos: photos.map { .local($0.preview) }, replyTo: q)
         withAnimation(Self.sendSpring) { messages.append(m) }
-        post(id: m.id, body: body, kind: "text", meta: Attachments.meta(paths: paths))
+        post(id: m.id, body: ReplyQuote.body(body, replyingTo: q), kind: "text",
+             meta: ReplyQuote.meta(Attachments.meta(paths: paths), replyingTo: q))
     }
 
-    /// A person's text row (or outbox item) as a bubble, photos included.
-    private static func userMessage(id: String, body: String, meta: YLValue?) -> ChatMessage {
+    /// A person's text row (or outbox item) as a bubble, photos and reply quote included.
+    static func userMessage(id: String, body: String, meta: YLValue?) -> ChatMessage {
         let paths = Attachments.paths(meta)
-        return ChatMessage(id: id, text: Attachments.caption(body: body, photos: paths.count), fromUser: true,
-                           photos: paths.map { .stored($0) })
+        let words = ReplyQuote.words(body: body, meta: meta)
+        return ChatMessage(id: id, text: Attachments.caption(body: words, photos: paths.count), fromUser: true,
+                           photos: paths.map { .stored($0) }, replyTo: ReplyQuote.from(meta: meta))
     }
 
     /// Into the outbox first (on disk), then out: a dropped network or a killed

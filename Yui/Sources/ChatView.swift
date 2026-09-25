@@ -24,6 +24,8 @@ struct ChatView: View {
     @State private var addFirst = false
     /// The message open in Select text.
     @State private var selecting: ChatMessage?
+    /// A reply's chip was tapped: the thread scrolls to this bubble (YUI-68).
+    @State private var scrollTarget: String?
     @FocusState private var focused: Bool
     /// Photos waiting in the composer, and the pickers that fill it.
     @State private var photos: [ComposerPhoto] = []
@@ -98,11 +100,13 @@ struct ChatView: View {
                     .animation(theme.spring, value: onChat)
                 }
             }
-            // Held agent bubble: the tapback bar over a dimmed thread (YUI-49).
+            // Held bubble or card: the tapback bar (agent's only) and Reply, Copy,
+            // Select text over a dimmed thread (YUI-49, YUI-68).
             .overlayPreferenceValue(ReactionAnchor.self) { anchor in
                 GeometryReader { geo in
                     if let anchor, let m = store.reactingMessage {
-                        ReactionOverlay(message: m, rect: geo[anchor], size: geo.size, current: store.reaction(for: m)) { pick in
+                        ReactionOverlay(text: m.words, reacts: !m.fromUser, rect: geo[anchor], size: geo.size,
+                                        current: m.fromUser ? nil : store.reaction(for: m)) { pick in
                             store.react(m.id, with: pick)
                             Task {
                                 try? await Task.sleep(for: .milliseconds(260))
@@ -113,6 +117,15 @@ struct ChatView: View {
                         } select: {
                             closeReactions()
                             selecting = m
+                        } reply: {
+                            closeReactions()
+                            startReply(m.id)
+                        } lifted: {
+                            if let yl = m.yl {
+                                YLReplyItems(screen: yl, scope: m.id, style: agentStyle).allowsHitTesting(false)
+                            } else {
+                                BubbleText(text: m.text, fromUser: m.fromUser)
+                            }
                         }
                         .id(m.id)
                         .transition(.opacity)
@@ -168,7 +181,7 @@ struct ChatView: View {
             }
             // Select text: the held message's words, read-only, to copy any part.
             .sheet(item: $selecting) { m in
-                SelectTextSheet(text: m.text)
+                SelectTextSheet(text: m.words)
                     .presentationDetents([.medium, .large])
                     .presentationCornerRadius(theme.radius.card)
             }
@@ -312,16 +325,40 @@ struct ChatView: View {
                 // so VoiceOver and UI tests saw only the plain bubbles.
                 VStack(spacing: theme.spacing.m) {
                     ForEach(store.messages) { m in
-                        if let yl = m.yl {
-                            YLReply(screen: yl, scope: m.id, agent: store.agent, style: agentStyle) { store.openStage(m.id) }
-                        } else {
-                            Bubble(message: m, agent: store.agent, pending: outbox.isPending(m.id),
-                                   reaction: store.wearsReaction(m) ? store.reaction(for: m) : nil,
-                                   lifted: store.reacting == m.id,
-                                   open: { openReactions(m.id) },
-                                   react: { store.react(m.id, with: $0) },
-                                   select: { selecting = m })
+                        Group {
+                            if let yl = m.yl {
+                                YLReply(screen: yl, scope: m.id, agent: store.agent, style: agentStyle,
+                                        reaction: store.wearsReaction(m) ? store.reaction(for: m) : nil,
+                                        lifted: store.reacting == m.id, reduceMotion: reduceMotion,
+                                        open: { openReactions(m.id) },
+                                        react: { store.react(m.id, with: $0) },
+                                        select: { selecting = m },
+                                        reply: { startReply(m.id) }) { store.openStage(m.id) }
+                            } else {
+                                Bubble(message: m, agent: store.agent, pending: outbox.isPending(m.id),
+                                       reaction: store.wearsReaction(m) ? store.reaction(for: m) : nil,
+                                       lifted: store.reacting == m.id,
+                                       reduceMotion: reduceMotion,
+                                       open: { openReactions(m.id) },
+                                       react: { store.react(m.id, with: $0) },
+                                       select: { selecting = m },
+                                       reply: { startReply(m.id) },
+                                       goToQuote: { goToOriginal(of: $0) })
+                            }
                         }
+                        // Scrolled to from a reply's chip: a short glow says "this one".
+                        .background {
+                            if store.flashing == m.id {
+                                RoundedRectangle(cornerRadius: theme.radius.bubble)
+                                    .fill(c.accent.opacity(0.18))
+                                    .padding(-6)
+                                    .transition(.opacity)
+                                    .accessibilityElement()
+                                    .accessibilityLabel("The message you replied to")
+                                    .accessibilityIdentifier("reply-original")
+                            }
+                        }
+                        .id(m.id)
                     }
                     if let agent = store.agent, outbox.offline, !outbox.pending(agentID: agent.id).isEmpty {
                         // On the phone, not on Yui yet: it sends itself when the connection is back.
@@ -348,6 +385,15 @@ struct ChatView: View {
             }
             .defaultScrollAnchor(.bottom)
             .scrollPosition($position)
+            // A reply's chip: back up to what it quoted, then it glows.
+            .onChange(of: scrollTarget) {
+                guard let id = scrollTarget else { return }
+                scrollTarget = nil
+                withAnimation(reduceMotion ? nil : .spring(response: 0.45, dampingFraction: 0.9)) {
+                    position.scrollTo(id: id, anchor: .center)
+                }
+                store.flash(id)
+            }
             .scrollDismissesKeyboard(.interactively)
             // How far above the newest message the view sits, in screens.
             .onScrollGeometryChange(for: CGFloat.self) { geo in
@@ -385,6 +431,10 @@ struct ChatView: View {
 
     private func inputBar(_ c: Swatch) -> some View {
         VStack(alignment: .leading, spacing: theme.spacing.s) {
+            if let q = store.replying {
+                ReplyBar(quote: q, agent: store.agent?.name) { store.cancelReply() }
+                    .transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
+            }
             if !photos.isEmpty { attachmentStrip(c) }
             if let note = composerNote {
                 Label(note, systemImage: "info.circle")
@@ -404,6 +454,7 @@ struct ChatView: View {
         .background(c.background)
         .animation(theme.spring, value: talk.listening)
         .animation(theme.spring, value: photos)
+        .animation(reduceMotion ? .easeInOut(duration: 0.2) : theme.spring, value: store.replying)
         .fullScreenCover(isPresented: $shooting) {
             CameraCapture(front: false) { data in
                 shooting = false
@@ -672,9 +723,11 @@ struct ChatView: View {
             return
         }
         let body = Attachments.body(text: text, photos: photos.count)
+        let q = text.hasPrefix("/") ? nil : store.replying
+        store.replying = nil
         withAnimation(ChatStore.sendSpring) {
             store.messages.append(ChatMessage(text: Attachments.caption(body: body, photos: photos.count), fromUser: true,
-                                              photos: photos.map { .local($0.preview) }))
+                                              photos: photos.map { .local($0.preview) }, replyTo: q))
         }
         photos = []
         clearComposer()
@@ -693,6 +746,19 @@ struct ChatView: View {
 
     private func closeReactions() {
         withAnimation(.easeOut(duration: 0.2)) { store.reacting = nil }
+    }
+
+    /// Reply (hold menu or left swipe): the quote goes above the composer and the keyboard comes up.
+    private func startReply(_ id: String) {
+        store.startReply(id)
+        focused = true
+    }
+
+    /// A reply's chip: scroll back to the message it quotes, when it is still in the thread.
+    private func goToOriginal(of q: ReplyQuote) {
+        guard let id = store.original(of: q) else { return }
+        focused = false
+        scrollTarget = id
     }
 
     /// More than about a screen above the newest message: the arrow shows. It
@@ -796,19 +862,38 @@ struct ChatView: View {
 
 /// An agent reply in Yui Lines: the presets in line order, errors underneath.
 /// Components that open on the stage show here as one pill that reopens it.
+/// Hold it for reactions and Reply, Copy, Select text; swipe it left to reply (YUI-68).
 private struct YLReply: View {
     let screen: YLScreen
     let scope: String
     var agent: YuiAgent?
     var style: [String: String] = [:]
+    var reaction: Reaction?
+    var lifted = false
+    var reduceMotion = false
+    var open: () -> Void = {}
+    var react: (Reaction?) -> Void = { _ in }
+    var select: () -> Void = {}
+    var reply: () -> Void = {}
     let openStage: () -> Void
     @Environment(\.yuiTheme) private var theme
 
     var body: some View {
+        let words = ReplyQuote.words(screen)
         HStack(alignment: .top, spacing: theme.spacing.s) {
+            // VoiceOver: the card's Reply, reactions, Copy and Select text sit on the face beside it.
             AgentFace(agent: agent)
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel("\(agent?.name ?? "Yui")'s screen\(words.isEmpty ? "" : ", " + ReplyQuote.firstLine(words))")
+                .accessibilityValue(reaction.map { "Reacted \($0.emoji), \($0.meaning)" } ?? "")
+                .accessibilityActions {
+                    ReactActions(text: words, reaction: reaction, react: react, select: select, reply: reply)
+                }
             VStack(alignment: .leading, spacing: theme.spacing.m) {
-                YLItemsView(items: YLItem.layout(screen.top, pills: style), openStage: openStage)
+                YLReplyItems(screen: screen, scope: scope, style: style, openStage: openStage)
+                    .modifier(Reactable(text: words, reaction: reaction, lifted: lifted,
+                                        open: open, react: react, select: select, reply: reply, card: true))
+                    .modifier(SwipeToReply(reply: reply, reduceMotion: reduceMotion))
                 ForEach(Array(screen.errors.enumerated()), id: \.offset) { YLErrorRow(node: $1) }
                 ForEach(Array(screen.looks.enumerated()), id: \.offset) { _ in LookNote(agent: agent) }
             }
@@ -816,6 +901,23 @@ private struct YLReply: View {
             .environment(\.ylComponents, screen.components)
         }
         .transition(.opacity)
+    }
+}
+
+/// A reply's presets in line order: in the thread, and lifted over it while held.
+struct YLReplyItems: View {
+    let screen: YLScreen
+    let scope: String
+    var style: [String: String] = [:]
+    var openStage: () -> Void = {}
+    @Environment(\.yuiTheme) private var theme
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: theme.spacing.m) {
+            YLItemsView(items: YLItem.layout(screen.top, pills: style), openStage: openStage)
+        }
+        .environment(\.ylScope, scope)
+        .environment(\.ylComponents, screen.components)
     }
 }
 
@@ -827,27 +929,33 @@ private struct Bubble: View {
     /// Agent bubbles: the reaction it wears, and the reaction bar (YUI-49).
     var reaction: Reaction?
     var lifted = false
+    /// The system setting or `-yuiReduceMotion`: a left swipe doesn't slide the bubble.
+    var reduceMotion = false
     var open: () -> Void = {}
     var react: (Reaction?) -> Void = { _ in }
     var select: () -> Void = {}
+    /// Hold menu Reply or a left swipe (YUI-68).
+    var reply: () -> Void = {}
+    /// The chip on a sent reply: back to the message it quotes.
+    var goToQuote: (ReplyQuote) -> Void = { _ in }
     @Environment(\.yuiTheme) private var theme
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         HStack(alignment: .bottom, spacing: theme.spacing.s) {
             if message.fromUser { Spacer(minLength: 48) } else { AgentFace(agent: agent) }
             VStack(alignment: .trailing, spacing: theme.spacing.xs) {
+                if let q = message.replyTo {
+                    ReplyChip(quote: q, agent: agent?.name) { goToQuote(q) }
+                }
                 ForEach(Array(message.photos.enumerated()), id: \.offset) { BubblePhoto(photo: $1) }
                 if !message.text.isEmpty {
-                    let words = BubbleText(text: message.text, fromUser: message.fromUser)
+                    BubbleText(text: message.text, fromUser: message.fromUser)
                         .accessibilityLabel(pending ? "\(message.text), not sent yet" : message.text)
-                    if message.fromUser {
-                        words
-                    } else {
-                        words.modifier(Reactable(text: message.text, reaction: reaction, lifted: lifted, open: open, react: react, select: select))
-                    }
+                        .modifier(Reactable(text: message.text, reacts: !message.fromUser, reaction: reaction,
+                                            lifted: lifted, open: open, react: react, select: select, reply: reply))
                 }
             }
+            .modifier(SwipeToReply(reply: reply, reduceMotion: reduceMotion))
             .opacity(pending ? 0.6 : 1)
             if !message.fromUser { Spacer(minLength: 48) }
         }
