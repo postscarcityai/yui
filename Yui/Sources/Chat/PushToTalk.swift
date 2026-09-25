@@ -46,23 +46,25 @@ final class PushToTalk {
             req.requiresOnDeviceRecognition = recognizer.supportsOnDeviceRecognition
             request = req
             let input = engine.inputNode
-            input.removeTap(onBus: 0)
-            input.installTap(onBus: 0, bufferSize: 1024, format: input.outputFormat(forBus: 0)) { [weak self] buffer, _ in
-                req.append(buffer)
-                let level = Self.level(buffer)
-                Task { @MainActor in self?.level = level }
+            let format = input.outputFormat(forBus: 0)
+            // No usable mic (a call has it, a route is changing, the simulator): a 0 Hz
+            // format makes installTap raise an exception Swift can't catch.
+            guard format.sampleRate > 0, format.channelCount > 0 else {
+                try? session.setActive(false, options: .notifyOthersOnDeactivation)
+                request = nil
+                phase = .failed
+                return
             }
+            input.removeTap(onBus: 0)
+            input.installTap(onBus: 0, bufferSize: 1024, format: format,
+                             block: Self.tap(req) { [weak self] level in self?.level = level })
             engine.prepare()
             try engine.start()
-            task = recognizer.recognitionTask(with: req) { [weak self] result, error in
-                let text = result?.bestTranscription.formattedString
-                let done = error != nil || result?.isFinal == true
-                Task { @MainActor in
-                    guard let self else { return }
-                    if let text { self.transcript = text }
-                    if done { self.finish?.resume(); self.finish = nil }
-                }
-            }
+            task = recognizer.recognitionTask(with: req, resultHandler: Self.heard { [weak self] text, done in
+                guard let self else { return }
+                if let text { self.transcript = text }
+                if done { self.finish?.resume(); self.finish = nil }
+            })
             phase = .listening
         } catch {
             stopEngine()
@@ -102,12 +104,37 @@ final class PushToTalk {
         engine.inputNode.removeTap(onBus: 0)
     }
 
-    private static func authorized() async -> Bool {
+    // The system calls these back on its own threads. A closure written inside this
+    // @MainActor class is main-actor isolated, and Swift 6 traps when one runs off the
+    // main thread (TestFlight crash ANv4a2bHdXMMaEjjhTva5ZA, build 57: hold the mic the
+    // first time). So they are built in nonisolated code and hop to the main actor.
+
+    nonisolated private static func authorized() async -> Bool {
         let speech = await withCheckedContinuation { c in
             SFSpeechRecognizer.requestAuthorization { c.resume(returning: $0 == .authorized) }
         }
         guard speech else { return false }
         return await AVAudioApplication.requestRecordPermission()
+    }
+
+    /// The mic tap, on the audio thread: feeds the recognizer and reports loudness.
+    nonisolated static func tap(_ req: SFSpeechAudioBufferRecognitionRequest,
+                                level: @escaping @MainActor @Sendable (Double) -> Void) -> AVAudioNodeTapBlock {
+        { buffer, _ in
+            req.append(buffer)
+            let l = Self.level(buffer)
+            Task { @MainActor in level(l) }
+        }
+    }
+
+    /// The recognizer's results, on its queue: the words so far, and whether it is done.
+    nonisolated static func heard(_ update: @escaping @MainActor @Sendable (String?, Bool) -> Void)
+        -> (SFSpeechRecognitionResult?, Error?) -> Void {
+        { result, error in
+            let text = result?.bestTranscription.formattedString
+            let done = error != nil || result?.isFinal == true
+            Task { @MainActor in update(text, done) }
+        }
     }
 
     nonisolated private static func level(_ buffer: AVAudioPCMBuffer) -> Double {
