@@ -134,7 +134,7 @@ extension YLComponent {
     /// The page this component lives on (spec section 5, Pages): 2 to 12, else the chat.
     var page: Int { YuiLines.page(of: screen) }
 
-    static let groupHeads: Set<String> = ["deck", "plan", "narrate"]
+    static let groupHeads: Set<String> = ["deck", "plan", "narrate", "timeline"]
 }
 
 extension Array where Element == YLComponent {

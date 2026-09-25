@@ -87,6 +87,7 @@ struct PresetView: View {
         case "plan": PlanPreset(c: component)
         case "project": ProjectPreset(c: component)
         case "narrate": NarratePreset(c: component)
+        case "timeline", "done", "now", "next": TimelinePreset(c: component)
         default: LaterPreset(c: component)
         }
     }

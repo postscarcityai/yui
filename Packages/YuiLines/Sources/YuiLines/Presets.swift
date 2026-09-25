@@ -11,6 +11,7 @@ let presets: Set<String> = [
     "gallery", "video", "compare", "storyboard",
     "chart", "stat", "math", "step", "calc",
     "deck", "page", "plan", "project", "narrate",
+    "timeline", "done", "now", "next",
 ]
 
 /// Groups (spec section 6): a head collects the member lines that follow it on
@@ -19,6 +20,7 @@ let groups: [String: Set<String>] = [
     "deck": ["page", "ask", "choose", "pick"],
     "plan": ["page", "ask", "choose", "pick", "slide", "form", "mic", "camera"],
     "narrate": ["page", "compare", "image", "video", "card", "stat", "chart", "math", "storyboard", "gallery", "deck"],
+    "timeline": ["done", "now", "next"],
 ]
 
 let chartTypes: Set<String> = ["line", "bar", "area", "scatter", "pie", "donut"]
@@ -369,8 +371,16 @@ private func positional(_ preset: String, _ pos: [Token]) -> Props {
             if text.count > 1 { o["body"] = .string(joinText(Array(text.dropFirst()))) }
         }
 
-    case "calc", "deck", "plan", "narrate":
+    case "calc", "deck", "plan", "narrate", "timeline":
         if !pos.isEmpty { o["title"] = .string(joinText(pos)) }
+
+    case "done", "now", "next":
+        // One timeline row: the first bare https token is url, the rest is text.
+        var text: [Token] = []
+        for t in pos {
+            if o["url"] == nil, t.parts == nil, !t.quoted, t.text.hasPrefix("https://") { o["url"] = .string(t.text) } else { text.append(t) }
+        }
+        if !text.isEmpty { o["text"] = .string(joinText(text)) }
 
     case "project":
         if let first = pos.first { o["title"] = .string(first.text) }

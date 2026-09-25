@@ -56,7 +56,7 @@ public struct YLParser: Sendable {
         if node.op == .close { open = []; return node }
         if node.op == .end {
             guard let g = open.popLast() else {
-                return YLNode(op: .error, screen: node.screen, message: "end: no open deck, plan or narrate", line: node.line)
+                return YLNode(op: .error, screen: node.screen, message: "end: no open deck, plan, narrate or timeline", line: node.line)
             }
             node.target = g.id
             return node
