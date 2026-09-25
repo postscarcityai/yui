@@ -21,6 +21,7 @@ This repo holds the native SwiftUI app, the Swift Yui Lines parser, the Supabase
 | `hermes-plugin/` | The `yui` Hermes platform plugin |
 | `adapters/openclaw/` | Yui channel plugin for OpenClaw: an OpenClaw agent talks in Yui like a Hermes agent |
 | `adapters/webhook/` | Webhook bridge, Python and Node: any agent that answers an HTTP POST |
+| `adapters/n8n/` | n8n: the Yui node (ask on the phone, wait for the tap), MCP Client Tool and webhook workflows |
 | `supabase/functions/yui-mcp/` | Yui MCP server: Claude Code, Cursor or any MCP client puts a screen on your phone and reads the taps back |
 | `supabase/functions/yui-oauth/` | OAuth 2.1 for the MCP server: discovery, dynamic client registration, PKCE, approve in the app or with a pairing code, rotating refresh tokens |
 | `supabase/` | Migrations, edge functions and live tests for accounts and agents |

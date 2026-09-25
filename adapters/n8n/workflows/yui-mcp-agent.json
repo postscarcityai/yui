@@ -1,0 +1,136 @@
+{
+  "id": "yuiInt17McpAgnt",
+  "name": "Yui: AI Agent + MCP Client Tool",
+  "active": false,
+  "nodes": [
+    {
+      "id": "0b7d6f6e-0001-4a51-9d3b-2b1f7c1a0001",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "0b7d6f6e-0001-4a51-9d3b-2b1f7c1aaaa1",
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "yui-agent",
+        "responseMode": "lastNode",
+        "options": {}
+      }
+    },
+    {
+      "id": "0b7d6f6e-0002-4a51-9d3b-2b1f7c1a0002",
+      "name": "AI Agent",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        260,
+        0
+      ],
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.body.ask }}",
+        "options": {
+          "systemMessage": "You reach the person's phone through the Yui tools.\n1. To ask a question with set answers, call yui_show. Its `lines` argument is one line that starts with the word choose, then the question in double quotes, then the options joined by |. Example lines: choose \"Lunch?\" Salad|Soup|Tacos\n2. yui_show returns a screen_id. Call yui_answers with that exact screen_id and wait=25. If it says nothing yet, call it again.\n3. Their tap comes back as a line like [yui] n1 choose choice=Soup. Then answer in one short sentence that names what they picked.",
+          "maxIterations": 12,
+          "enableStreaming": false
+        }
+      }
+    },
+    {
+      "id": "0b7d6f6e-0003-4a51-9d3b-2b1f7c1a0003",
+      "name": "Ollama Chat Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOllama",
+      "typeVersion": 1,
+      "position": [
+        200,
+        220
+      ],
+      "parameters": {
+        "model": "qwen2.5:7b",
+        "options": {
+          "temperature": 0,
+          "numCtx": 8192,
+          "think": false
+        }
+      },
+      "credentials": {
+        "ollamaApi": {
+          "id": "ollamaLocal00001",
+          "name": "Ollama"
+        }
+      }
+    },
+    {
+      "id": "0b7d6f6e-0004-4a51-9d3b-2b1f7c1a0004",
+      "name": "Yui (MCP)",
+      "type": "@n8n/n8n-nodes-langchain.mcpClientTool",
+      "typeVersion": 1.4,
+      "position": [
+        380,
+        220
+      ],
+      "parameters": {
+        "endpointUrl": "https://ewzzaoperdpxqxkshynx.supabase.co/functions/v1/yui-mcp",
+        "serverTransport": "httpStreamable",
+        "authentication": "bearerAuth",
+        "include": "selected",
+        "includeTools": [
+          "yui_show",
+          "yui_answers",
+          "yui_say"
+        ],
+        "options": {
+          "timeout": 40000
+        }
+      },
+      "credentials": {
+        "httpBearerAuth": {
+          "id": "yuiBearer000001",
+          "name": "Yui token"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ollama Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Yui (MCP)": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {}
+}

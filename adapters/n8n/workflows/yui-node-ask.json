@@ -1,0 +1,123 @@
+{
+  "id": "yuiInt17NodeAsk",
+  "name": "Yui: ask on the phone and wait (Yui node)",
+  "active": false,
+  "nodes": [
+    {
+      "id": "4c1e2a10-0001-4f7e-8a55-6d0c9b2e0001",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "4c1e2a10-0001-4f7e-8a55-6d0c9b2eaaa1",
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "yui-ask",
+        "responseMode": "responseNode",
+        "options": {}
+      }
+    },
+    {
+      "id": "4c1e2a10-0002-4f7e-8a55-6d0c9b2e0002",
+      "name": "Ask on the phone",
+      "type": "n8n-nodes-yui.yui",
+      "typeVersion": 1,
+      "position": [
+        240,
+        0
+      ],
+      "parameters": {
+        "operation": "ask",
+        "lines": "=choose \"{{ $json.body.question || 'Lunch?' }}\" Salad|Soup|Tacos",
+        "text": "Quick one from n8n",
+        "timeout": 90,
+        "onTimeout": "empty",
+        "additional": {}
+      },
+      "credentials": {
+        "yuiApi": {
+          "id": "yuiApi0000000001",
+          "name": "Yui account"
+        }
+      }
+    },
+    {
+      "id": "4c1e2a10-0003-4f7e-8a55-6d0c9b2e0003",
+      "name": "Say what happens next",
+      "type": "n8n-nodes-yui.yui",
+      "typeVersion": 1,
+      "position": [
+        480,
+        0
+      ],
+      "parameters": {
+        "operation": "say",
+        "message": "={{ $json.choice }} it is. Ordering now.",
+        "additional": {}
+      },
+      "credentials": {
+        "yuiApi": {
+          "id": "yuiApi0000000001",
+          "name": "Yui account"
+        }
+      }
+    },
+    {
+      "id": "4c1e2a10-0004-4f7e-8a55-6d0c9b2e0004",
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        720,
+        0
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $('Ask on the phone').item.json }}",
+        "options": {}
+      }
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Ask on the phone",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ask on the phone": {
+      "main": [
+        [
+          {
+            "node": "Say what happens next",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Say what happens next": {
+      "main": [
+        [
+          {
+            "node": "Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {}
+}

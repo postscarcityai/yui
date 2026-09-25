@@ -1,0 +1,80 @@
+{
+  "id": "yuiInt17Webhook",
+  "name": "Yui: answer turns from the webhook bridge",
+  "active": false,
+  "nodes": [
+    {
+      "id": "9a3f5b20-0001-4b8c-9e11-3c7d2a4f0001",
+      "name": "Turn from Yui",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "9a3f5b20-0001-4b8c-9e11-3c7d2a4faaa1",
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "yui-turn",
+        "responseMode": "responseNode",
+        "options": {}
+      }
+    },
+    {
+      "id": "9a3f5b20-0002-4b8c-9e11-3c7d2a4f0002",
+      "name": "Screen or answer",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        0
+      ],
+      "parameters": {
+        "jsCode": "// One POST per turn from the Yui webhook bridge (spec/WEBHOOK.md).\n// A tap arrives as a message with kind \"event\" and its JSON in `event`.\nconst turn = $input.first().json.body;\nconst tap = (turn.messages || []).filter((m) => m.kind === 'event' && m.event).pop();\nif (tap) {\n  const picked = tap.event.echo ?? tap.event.value?.choice;\n  return [{ json: { reply: `${picked} it is. n8n got your tap.` } }];\n}\nreturn [{ json: { reply: \"Hi from n8n! What's for lunch?\\n```yui\\nchoose \\\"Lunch?\\\" Salad|Soup|Tacos\\n```\" } }];\n"
+      }
+    },
+    {
+      "id": "9a3f5b20-0003-4b8c-9e11-3c7d2a4f0003",
+      "name": "Reply",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        480,
+        0
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      }
+    }
+  ],
+  "connections": {
+    "Turn from Yui": {
+      "main": [
+        [
+          {
+            "node": "Screen or answer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Screen or answer": {
+      "main": [
+        [
+          {
+            "node": "Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {}
+}

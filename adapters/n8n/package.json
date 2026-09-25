@@ -1,0 +1,28 @@
+{
+  "name": "n8n-nodes-yui",
+  "version": "0.1.0",
+  "description": "Yui for n8n: put a screen on the person's phone and wait for their tap (INT-17)",
+  "keywords": ["n8n-community-node-package", "yui", "mcp", "generative-ui"],
+  "license": "Apache-2.0",
+  "homepage": "https://www.yuigui.com/developers",
+  "author": { "name": "PostScarcity AI", "email": "cjohndesign@gmail.com" },
+  "repository": { "type": "git", "url": "https://github.com/postscarcityai/yui", "directory": "adapters/n8n" },
+  "main": "index.js",
+  "files": ["dist"],
+  "scripts": {
+    "build": "rm -rf dist && tsc && cp nodes/Yui/yui.svg nodes/Yui/Yui.node.json dist/nodes/Yui/",
+    "test": "npm run build && node --test tests/*.test.mjs"
+  },
+  "n8n": {
+    "n8nNodesApiVersion": 1,
+    "strict": true,
+    "credentials": ["dist/credentials/YuiApi.credentials.js"],
+    "nodes": ["dist/nodes/Yui/Yui.node.js"]
+  },
+  "devDependencies": {
+    "n8n-workflow": "^2.16.0",
+    "typescript": "^5.9.0"
+  },
+  "peerDependencies": { "n8n-workflow": "*" },
+  "engines": { "node": ">=20" }
+}

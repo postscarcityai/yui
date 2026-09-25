@@ -1,0 +1,11 @@
+{
+  "node": "n8n-nodes-yui.yui",
+  "nodeVersion": "1.0",
+  "codexVersion": "1.0",
+  "categories": ["Communication", "Utility"],
+  "resources": {
+    "credentialDocumentation": [{ "url": "https://www.yuigui.com/developers/mcp#pair-with-a-code-three-steps" }],
+    "primaryDocumentation": [{ "url": "https://github.com/postscarcityai/yui/tree/main/adapters/n8n" }]
+  },
+  "alias": ["phone", "screen", "ask", "approval", "human in the loop", "generative ui"]
+}
