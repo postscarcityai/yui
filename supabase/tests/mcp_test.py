@@ -16,6 +16,15 @@ On a fresh throwaway account (never a real one):
      text comes back too.
   F. yui_say, yui_threads (unread count), a screen id from outside the token's
      threads is refused.
+  H. OAuth (INT-19): 401 names the protected resource metadata; discovery
+     of yui-oauth; dynamic client registration (bad redirect URIs refused);
+     /authorize (unknown client, unregistered redirect, PKCE required, wrong
+     resource); approval in the app (never onto a Hermes agent) and with a
+     pairing code on the web page; /token with PKCE (wrong verifier, other
+     client, code once); the token opens yui-mcp for that one agent; refresh
+     rotation and reuse revoking the grant; removing the computer in the app
+     kills its tokens; deny; expiry; confidential clients; RFC 7009 revoke;
+     step 1 bearer tokens still work.
   G. the rate limit: a burst past `mcp_burst` answers 429.
 
     python3 supabase/tests/mcp_test.py
@@ -186,6 +195,209 @@ try:
     res, text, _ = tool(ct, "yui_show", {"lines": "say hi", "agent": "claude"})
     check("picking its own agent by ref works", not res.get("isError"), text)
 
+    print("== H. OAuth (INT-19)")
+    import base64 as _b64, hashlib as _hl, secrets as _sec, urllib.parse as up
+    OAUTH = f"{BASE}/functions/v1/yui-oauth"
+    CB = "https://client.example.com/callback"
+
+    class _NoRedirect(urllib.request.HTTPRedirectHandler):
+        def redirect_request(self, *a, **k): return None
+    _opener = urllib.request.build_opener(_NoRedirect)
+    def get(url):
+        try:
+            with _opener.open(urllib.request.Request(url, headers={"user-agent": "yui-tests"})) as r:
+                txt = r.read().decode(); return r.status, dict(r.headers), (json.loads(txt) if txt else None)
+        except urllib.error.HTTPError as e:
+            txt = e.read().decode()
+            try: body = json.loads(txt)
+            except ValueError: body = txt
+            return e.code, dict(e.headers), body
+    def form(path, fields, basic=None):
+        h = {"content-type": "application/x-www-form-urlencoded", "user-agent": "yui-tests"}
+        if basic: h["authorization"] = "Basic " + _b64.b64encode(basic.encode()).decode()
+        req = urllib.request.Request(f"{OAUTH}{path}", data=up.urlencode(fields).encode(), method="POST", headers=h)
+        try:
+            with urllib.request.urlopen(req) as r:
+                txt = r.read().decode(); return r.status, (json.loads(txt) if txt else None)
+        except urllib.error.HTTPError as e:
+            txt = e.read().decode()
+            try: return e.code, json.loads(txt)
+            except ValueError: return e.code, txt
+    def pkce():
+        v = _sec.token_urlsafe(48)
+        return v, _b64.urlsafe_b64encode(_hl.sha256(v.encode()).digest()).rstrip(b"=").decode()
+    def authorize(client_id, challenge, state="st-1", **extra):
+        q = {"response_type": "code", "client_id": client_id, "redirect_uri": CB, "state": state,
+             "code_challenge": challenge, "code_challenge_method": "S256", "scope": "yui", "resource": MCP, **extra}
+        return get(f"{OAUTH}/authorize?{up.urlencode({k: v for k, v in q.items() if v is not None})}")
+    def request_id(headers):
+        loc = headers.get("Location") or headers.get("location") or ""
+        return loc.rsplit("/", 1)[1] if loc.startswith("https://www.yuigui.com/connect/") else None
+    def web(action, **kw):
+        return http("POST", OAUTH, None, {"action": action, **kw})
+    def app(action, token, **kw):
+        return http("POST", OAUTH, {"authorization": f"Bearer {token}"}, {"action": action, **kw})
+    def code_of(redirect):
+        q = dict(up.parse_qsl(up.urlparse(redirect).query)); return q
+    oauth_clients = []
+
+    # discovery
+    s, r = rpc(None, "initialize", {})
+    req0 = urllib.request.Request(MCP, data=b"{}", method="POST", headers={"content-type": "application/json", "user-agent": "yui-tests"})
+    try: urllib.request.urlopen(req0); www = ""
+    except urllib.error.HTTPError as e: www = e.headers.get("www-authenticate", "")
+    check("401 names the protected resource metadata", s == 401 and f'resource_metadata="{MCP}/.well-known/oauth-protected-resource"' in www, www)
+    _, _, prm = get(MCP + "/.well-known/oauth-protected-resource")
+    check("protected resource metadata: resource + yui-oauth", prm.get("resource") == MCP and prm.get("authorization_servers") == [OAUTH], prm)
+    _, _, meta = get(OAUTH + "/.well-known/oauth-authorization-server")
+    _, _, oidc = get(OAUTH + "/.well-known/openid-configuration")
+    check("auth server metadata: issuer, S256, DCR, both discovery paths",
+          meta.get("issuer") == OAUTH and meta.get("code_challenge_methods_supported") == ["S256"]
+          and meta.get("registration_endpoint") == OAUTH + "/register" and oidc == meta, meta)
+
+    # dynamic client registration
+    s, r = http("POST", OAUTH + "/register", None, {"client_name": "Evil", "redirect_uris": ["http://evil.example.com/cb"]})
+    check("DCR: plain http off loopback refused", s == 400 and r.get("error") == "invalid_redirect_uri", (s, r))
+    s, r = http("POST", OAUTH + "/register", None, {"client_name": "Evil", "redirect_uris": ["javascript:alert(1)"]})
+    check("DCR: javascript: refused", s == 400, (s, r))
+    s, reg = http("POST", OAUTH + "/register", None, {"client_name": "Test Claude", "redirect_uris": [CB],
+                  "grant_types": ["authorization_code", "refresh_token"], "token_endpoint_auth_method": "none"})
+    cid = reg.get("client_id", "")
+    oauth_clients.append(cid)
+    check("DCR: public client registered, no secret", s == 201 and cid.startswith("yui_oc_") and "client_secret" not in reg, (s, reg))
+
+    # authorize
+    v, ch = pkce()
+    s, h, _ = authorize("yui_oc_nope" + "x" * 20, ch)
+    check("authorize: unknown client goes to our error page", s == 302 and h.get("Location", "").endswith("/connect?error=unknown_client"), h.get("Location"))
+    s, h, _ = get(f"{OAUTH}/authorize?" + up.urlencode({"response_type": "code", "client_id": cid, "redirect_uri": "https://evil.example.com/cb", "code_challenge": ch, "code_challenge_method": "S256"}))
+    check("authorize: unregistered redirect_uri never redirected to", s == 302 and h.get("Location", "").endswith("/connect?error=bad_redirect"), h.get("Location"))
+    s, h, _ = authorize(cid, ch, code_challenge_method="plain")
+    loc = code_of(h.get("Location", ""))
+    check("authorize: PKCE S256 required", s == 302 and loc.get("error") == "invalid_request" and loc.get("state") == "st-1", h.get("Location"))
+    s, h, _ = authorize(cid, ch, resource="https://elsewhere.example.com/mcp")
+    check("authorize: another resource refused", code_of(h.get("Location", "")).get("error") == "invalid_target", h.get("Location"))
+    s, h, _ = authorize(cid, ch)
+    rid = request_id(h)
+    check("authorize: sends the browser to www.yuigui.com/connect/<id>", s == 302 and rid, h.get("Location"))
+    s, r = web("request", id=rid)
+    check("web: request pending, client name and site", s == 200 and r["status"] == "pending"
+          and r["client"] == {"name": "Test Claude", "site": "client.example.com", "url": None} and "redirect" not in r, r)
+
+    # the app hand-off
+    s, r = app("app_request", mint(str(uuid.uuid4())), id=rid)
+    check("app: a token for no account is refused", s == 401, (s, r))
+    s, r = app("app_request", tok, id=rid)
+    names = [a["name"] for a in r.get("agents", [])]
+    check("app: offers MCP and unbound agents, never a Hermes one", s == 200 and "Claude" in names and "Hermes box" not in names
+          and r["suggested_name"] == "Test Claude", r)
+    hermes_agent = sql(f"select id from yui_agents where user_id = '{T}' and name = 'Hermes box'")[0]["id"]
+    s, r = app("app_approve", tok, id=rid, agent_id=hermes_agent)
+    check("app: approving onto a Hermes agent is refused", s == 400, (s, r))
+    s, r = app("app_approve", tok, id=rid)
+    oauth_agent = (r.get("agent") or {}).get("id")
+    check("app: approve makes a new agent named after the client", s == 200 and r["status"] == "approved"
+          and r["agent"]["name"] == "Test Claude", r)
+    s, r = app("app_approve", tok, id=rid)
+    check("app: a second approve is refused", s == 409, (s, r))
+    k = sql(f"select c.kind ck, c.name cn, a.kind ak from yui_connectors c join yui_agents a on a.connector_id = c.id where a.id = '{oauth_agent}'")
+    check("the grant is a kind-mcp connector named after the client", k == [{"ck": "mcp", "cn": "Test Claude", "ak": "mcp"}], k)
+    s, r = web("request", id=rid)
+    q = code_of(r.get("redirect", ""))
+    check("web: first poll after approval redirects back with code, state, iss",
+          r.get("redirect", "").startswith(CB + "?") and q.get("code", "").startswith("yui_ac_") and q.get("state") == "st-1" and q.get("iss") == OAUTH, r)
+    s, r2 = web("request", id=rid)
+    check("web: the code is handed out once", "redirect" not in r2, r2)
+    code = q.get("code", "")
+
+    # token
+    s, r = form("/token", {"grant_type": "authorization_code", "code": code, "redirect_uri": CB, "client_id": cid, "code_verifier": pkce()[0]})
+    check("token: a wrong code_verifier fails PKCE", s == 400 and r.get("error") == "invalid_grant" and "PKCE" in r.get("error_description", ""), (s, r))
+    s, r = form("/token", {"grant_type": "authorization_code", "code": code, "redirect_uri": CB, "client_id": "yui_oc_" + "y" * 32, "code_verifier": v})
+    check("token: another client can't use the code", s == 401 and r.get("error") == "invalid_client", (s, r))
+    s, t1 = form("/token", {"grant_type": "authorization_code", "code": code, "redirect_uri": CB, "client_id": cid, "code_verifier": v})
+    at, rt = t1.get("access_token", ""), t1.get("refresh_token", "")
+    check("token: code + verifier gives access and refresh tokens", s == 200 and at.startswith("yui_at_") and rt.startswith("yui_rt_")
+          and t1["token_type"] == "Bearer" and t1["expires_in"] == 3600, (s, {k: v for k, v in t1.items() if "token" not in k}))
+    hashes = sql(f"select count(*) n from yui_oauth_tokens where token_hash in ('{hashlib.sha256(at.encode()).hexdigest()}','{hashlib.sha256(rt.encode()).hexdigest()}')")[0]["n"]
+    plain = sql(f"select count(*) n from yui_oauth_tokens where token_hash like 'yui_%'")[0]["n"]
+    check("only token hashes are stored", hashes == 2 and plain == 0, (hashes, plain))
+
+    # the MCP server with an OAuth token
+    s, r = rpc(at, "initialize", {"protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": {"name": "oauth", "version": "1"}})
+    check("MCP: the access token opens yui-mcp", s == 200 and r["result"]["serverInfo"]["name"] == "yui", (s, r))
+    res, text, d = tool(at, "yui_threads")
+    check("MCP: it serves only the approved agent", [t["agent"] for t in d["threads"]] == ["Test Claude"], d)
+    res, text, d = tool(at, "yui_show", {"lines": 'ask "Ready?" Yes|No'})
+    row = sql(f"select agent_id, meta->>'via' via from yui_messages where id = '{d['screen_id']}'") if d else []
+    check("MCP: yui_show lands in that agent's thread", row == [{"agent_id": oauth_agent, "via": "mcp"}], row)
+
+    # refresh rotation and reuse
+    s, t2 = form("/token", {"grant_type": "refresh_token", "refresh_token": rt, "client_id": cid})
+    check("refresh: rotates to a new pair", s == 200 and t2["refresh_token"] != rt and t2["access_token"] != at, (s, t2.get("error")))
+    s, r = rpc(t2.get("access_token"), "ping")
+    check("refresh: the new access token works", s == 200, (s, r))
+    s, r = form("/token", {"grant_type": "refresh_token", "refresh_token": rt, "client_id": cid})
+    check("refresh: an old refresh token played again is refused", s == 400 and r.get("error") == "invalid_grant" and "reused" in r["error_description"], (s, r))
+    s, r = rpc(t2.get("access_token"), "ping")
+    check("refresh: ...and that revokes the whole grant", s == 401, (s, r))
+    s, r = form("/token", {"grant_type": "authorization_code", "code": code, "redirect_uri": CB, "client_id": cid, "code_verifier": v})
+    check("token: a code works once", s == 400 and r.get("error") == "invalid_grant", (s, r))
+
+    # the pairing-code way in, and revoke in the app
+    v2, ch2 = pkce()
+    _, h, _ = authorize(cid, ch2, state="st-2")
+    rid2 = request_id(h)
+    s, r = web("code", id=rid2, code="000000")
+    check("web code: a wrong code is refused", s == 401 and r.get("error") == "invalid_or_expired_code", (s, r))
+    s, r = fn("yui-agents", {"action": "create", "name": "Cursor", "pair": True}, tok)
+    cursor_agent, pair_code = r["agent"]["id"], r["pairing"]["code"]
+    s, r = web("code", id=rid2, code=pair_code)
+    check("web code: Add agent's code approves for that agent", s == 200 and r["status"] == "approved" and r["agent"]["id"] == cursor_agent, (s, r))
+    s, r = web("request", id=rid2)
+    q2 = code_of(r.get("redirect", ""))
+    s, t3 = form("/token", {"grant_type": "authorization_code", "code": q2.get("code", ""), "redirect_uri": CB, "client_id": cid, "code_verifier": v2})
+    at3, rt3 = t3.get("access_token"), t3.get("refresh_token")
+    res, text, d = tool(at3, "yui_threads")
+    check("web code: the token serves the Cursor agent", s == 200 and [t["agent"] for t in d["threads"]] == ["Cursor"], d)
+    conn = sql(f"select connector_id from yui_agents where id = '{cursor_agent}'")[0]["connector_id"]
+    s, r = fn("yui-agents", {"action": "connector_revoke", "id": conn}, tok)
+    s1, _ = rpc(at3, "ping")
+    s2, r2 = form("/token", {"grant_type": "refresh_token", "refresh_token": rt3, "client_id": cid})
+    check("removing the computer in the app kills its tokens", s == 200 and s1 == 401 and s2 == 400 and r2.get("error") == "invalid_grant", (s, s1, s2, r2))
+
+    # deny, expiry, confidential clients, RFC 7009
+    _, h, _ = authorize(cid, pkce()[1], state="st-3")
+    s, r = web("deny", id=request_id(h))
+    dq = code_of(r.get("redirect", ""))
+    check("deny: back to the client with access_denied and state", dq.get("error") == "access_denied" and dq.get("state") == "st-3", r)
+    _, h, _ = authorize(cid, pkce()[1])
+    rid4 = request_id(h)
+    sql(f"update yui_oauth_requests set expires_at = now() - interval '1 minute' where id = '{rid4}'")
+    s, r = app("app_approve", tok, id=rid4)
+    s2, r2 = web("request", id=rid4)
+    check("an expired request can't be approved", s == 410 and r2["status"] == "expired", (s, r, r2))
+    s, conf = http("POST", OAUTH + "/register", None, {"client_name": "Conf", "redirect_uris": [CB], "token_endpoint_auth_method": "client_secret_post"})
+    oauth_clients.append(conf.get("client_id"))
+    check("DCR: a confidential client gets a secret", s == 201 and conf.get("client_secret", "").startswith("yui_cs_"), (s, conf.get("token_endpoint_auth_method")))
+    v5, ch5 = pkce()
+    _, h, _ = authorize(conf["client_id"], ch5)
+    rid5 = request_id(h)
+    app("app_approve", tok, id=rid5, name="Conf agent")
+    c5 = code_of(web("request", id=rid5)[1].get("redirect", "")).get("code")
+    s, r = form("/token", {"grant_type": "authorization_code", "code": c5, "redirect_uri": CB, "client_id": conf["client_id"], "code_verifier": v5})
+    check("token: a confidential client without its secret is refused", s == 401 and r.get("error") == "invalid_client", (s, r))
+    s, t5 = form("/token", {"grant_type": "authorization_code", "code": c5, "redirect_uri": CB, "code_verifier": v5},
+                 basic=f"{conf['client_id']}:{conf['client_secret']}")
+    check("token: ...and with it (HTTP Basic) gets tokens", s == 200 and t5.get("access_token", "").startswith("yui_at_"), (s, t5.get("error")))
+    s, _ = form("/revoke", {"token": t5.get("refresh_token", ""), "client_id": conf["client_id"], "client_secret": conf["client_secret"]})
+    s1, _ = rpc(t5.get("access_token"), "ping")
+    gone = sql(f"select revoked_at is not null r from yui_connectors c join yui_agents a on a.connector_id = c.id where a.user_id = '{T}' and a.name = 'Conf agent'")
+    check("revoke (RFC 7009): a refresh token ends the grant", s == 200 and s1 == 401 and gone == [{"r": True}], (s, s1, gone))
+    s, r = rpc(ct, "ping")
+    check("step 1 bearer tokens still work beside OAuth", s == 200, (s, r))
+    sql("delete from yui_oauth_clients where id in (" + ",".join(f"'{c}'" for c in oauth_clients if c) + ")")
+
     print("== G. rate limit")
     with ThreadPoolExecutor(16) as ex:
         codes = list(ex.map(lambda _: rpc(ct, "ping")[0], range(80)))
@@ -195,7 +407,9 @@ finally:
     s, _ = fn("yui-delete", {}, tok)
     left = sql(f"select (select count(*) from yui_messages where user_id = '{T}') + "
                f"(select count(*) from yui_users where id = '{T}') + "
-               f"(select count(*) from yui_connectors where user_id = '{T}') n")[0]["n"]
+               f"(select count(*) from yui_connectors where user_id = '{T}') + "
+               f"(select count(*) from yui_oauth_tokens where user_id = '{T}') + "
+               f"(select count(*) from yui_oauth_requests where user_id = '{T}') n")[0]["n"]
     check("throwaway account deleted, nothing left", s == 200 and left == 0, f"{s} {left}")
 
 print(f"\n{sum(results)}/{len(results)} passed")

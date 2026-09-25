@@ -22,6 +22,7 @@ This repo holds the native SwiftUI app, the Swift Yui Lines parser, the Supabase
 | `adapters/openclaw/` | Yui channel plugin for OpenClaw: an OpenClaw agent talks in Yui like a Hermes agent |
 | `adapters/webhook/` | Webhook bridge, Python and Node: any agent that answers an HTTP POST |
 | `supabase/functions/yui-mcp/` | Yui MCP server: Claude Code, Cursor or any MCP client puts a screen on your phone and reads the taps back |
+| `supabase/functions/yui-oauth/` | OAuth 2.1 for the MCP server: discovery, dynamic client registration, PKCE, approve in the app or with a pairing code, rotating refresh tokens |
 | `supabase/` | Migrations, edge functions and live tests for accounts and agents |
 | `scripts/` | TestFlight upload, test builds by link and App Store Connect helpers |
 
@@ -71,7 +72,7 @@ Without Hermes loaded, `python3 hermes-plugin/yui/connector.py pair <code> --pro
 
 **Not on Hermes?** Any agent that answers an HTTP POST can talk in Yui through the webhook bridge in `adapters/webhook/` (Python stdlib or Node 20, no dependencies): pair it with the same code, point it at your agent's URL, and it delivers every message once, with the channel guide in each request. Ten-line example agents included. Test: `python3 adapters/webhook/tests/webhook_e2e.py`.
 
-**On Claude Code, Cursor or another MCP client?** Add the Yui MCP server: pair with the app's code as kind `mcp` to get a token, then `claude mcp add --transport http yui https://<ref>.supabase.co/functions/v1/yui-mcp --header "Authorization: Bearer yui_ct_..."`. Tools `yui_show`, `yui_answers`, `yui_say`, `yui_threads`; the channel guide is the `yui_guide` prompt. Steps and the contract: [yuigui.com/developers/mcp](https://www.yuigui.com/developers/mcp). Tests: `python3 supabase/tests/mcp_test.py`, and a real Claude Code against the simulator: `supabase/tests/mcp_claude_e2e.py --sim <udid>`. The function parses what it is sent with a copy of the YL parser; `python3 supabase/scripts/sync_yl.py` refreshes it.
+**On Claude Code, Cursor or another MCP client?** Add the Yui MCP server: pair with the app's code as kind `mcp` to get a token, then `claude mcp add --transport http yui https://<ref>.supabase.co/functions/v1/yui-mcp --header "Authorization: Bearer yui_ct_..."`. Tools `yui_show`, `yui_answers`, `yui_say`, `yui_threads`; the channel guide is the `yui_guide` prompt. Steps and the contract: [yuigui.com/developers/mcp](https://www.yuigui.com/developers/mcp). On an app that only does OAuth (the Claude and ChatGPT apps' custom connectors)? Paste the same URL with no header: it signs in through `yui-oauth` and you approve it in Yui. Tests: `python3 supabase/tests/mcp_test.py` (OAuth included), a real Claude Code against the simulator: `supabase/tests/mcp_claude_e2e.py --sim <udid>`, and the MCP SDK's own OAuth client against the simulator: `supabase/tests/mcp_oauth_e2e.py --sim <udid>`. The function parses what it is sent with a copy of the YL parser; `python3 supabase/scripts/sync_yl.py` refreshes it.
 
 A live round trip test (type, get a Yui Lines screen, tap, get a timer) runs against a real session and a running gateway: `TEST_RUNNER_YUI_RT=<refresh token> TEST_RUNNER_YUI_USER=<uuid> xcodebuild test -scheme Yui -only-testing:YuiUITests`. Without those it skips. Mint a fresh `yui_sessions` row for every run: yui-auth rotates refresh tokens, and replaying a spent one reads as a leak and signs the account out on every device.
 
@@ -101,6 +102,7 @@ Rates are token buckets: `burst` requests at once, refilled at `per minute`. A p
 | `yui-connect` calls (heartbeat, session, add), per host | burst 30, then 6 per minute | 429 `rate_limited` |
 | Push notifications (`yui-push` notify), per host | burst 60, then 10 per minute | 429 `rate_limited` |
 | MCP calls (`yui-mcp`), per MCP connection | burst 60, then 30 per minute | 429 |
+| OAuth calls (`yui-oauth` register, authorize, token), per address or client | burst 30, then 10 per minute | 429 `slow_down` |
 | `yui-agents` calls, per account | burst 60, then 30 per minute | 429 `rate_limited` |
 | Pairing codes, per account | burst 20, then about 20 an hour | 429 `rate_limited` |
 | Wrong pairing codes, per client address | 10 per 10 minutes | 429 `too_many_attempts` |

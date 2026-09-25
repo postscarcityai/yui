@@ -106,6 +106,61 @@ export function bearer(req: Request): string {
   return (req.headers.get("authorization") ?? "").replace(/^Bearer\s+/i, "").trim();
 }
 
+// OAuth tokens for the MCP server (INT-19, functions/yui-oauth). Each points at
+// a kind-mcp connector row, so the connector's revoke, suspend and limits
+// apply to it.
+export const OAUTH_ACCESS_PREFIX = "yui_at_";
+export const OAUTH_REFRESH_PREFIX = "yui_rt_";
+
+// RFC 8414 metadata for yui-oauth. yui-oauth serves it, and so does yui-mcp at
+// its own .well-known paths: a client that lost the 401's resource_metadata
+// (the MCP SDK after the redirect back) falls back to treating the MCP URL as
+// the authorization server, and must still find these endpoints.
+export function oauthMetadata() {
+  const ISSUER = `${env("SUPABASE_URL")}/functions/v1/yui-oauth`;
+  return {
+    issuer: ISSUER,
+    authorization_endpoint: `${ISSUER}/authorize`,
+    token_endpoint: `${ISSUER}/token`,
+    registration_endpoint: `${ISSUER}/register`,
+    revocation_endpoint: `${ISSUER}/revoke`,
+    scopes_supported: ["yui"],
+    response_types_supported: ["code"],
+    response_modes_supported: ["query"],
+    grant_types_supported: ["authorization_code", "refresh_token"],
+    token_endpoint_auth_methods_supported: ["none", "client_secret_post", "client_secret_basic"],
+    revocation_endpoint_auth_methods_supported: ["none", "client_secret_post", "client_secret_basic"],
+    code_challenge_methods_supported: ["S256"],
+    authorization_response_iss_parameter_supported: true,
+    client_id_metadata_document_supported: false,
+    service_documentation: "https://www.yuigui.com/developers/mcp",
+    // OpenID discovery asks for these; Yui issues no id tokens.
+    jwks_uri: `${ISSUER}/jwks`,
+    subject_types_supported: ["public"],
+    id_token_signing_alg_values_supported: ["ES256"],
+  };
+}
+
+// The live connector row behind a connector token or an OAuth access token,
+// or null (unknown, expired or revoked). Suspension is the caller's check.
+// deno-lint-ignore no-explicit-any
+export async function connectorByToken(db: any, token: string, columns: string): Promise<any | null> {
+  let id: string | null = null;
+  if (token.startsWith(OAUTH_ACCESS_PREFIX)) {
+    const { data } = await db.from("yui_oauth_tokens").select("connector_id")
+      .eq("token_hash", await sha256Hex(token)).eq("kind", "access").is("revoked_at", null)
+      .gt("expires_at", new Date().toISOString()).maybeSingle();
+    if (!data) return null;
+    id = data.connector_id;
+  } else if (!token.startsWith(CONNECTOR_PREFIX)) {
+    return null;
+  }
+  let q = db.from("yui_connectors").select(columns).is("revoked_at", null);
+  q = id ? q.eq("id", id) : q.eq("token_hash", await sha256Hex(token));
+  const { data } = await q.maybeSingle();
+  return data ?? null;
+}
+
 export const AGENT_COLORS = ["lavender", "mint", "butter", "brand"] as const;
 const REMOTE_REF = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$/;
 

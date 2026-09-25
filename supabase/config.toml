@@ -22,3 +22,6 @@ verify_jwt = false
 
 [functions.yui-mcp]
 verify_jwt = false
+
+[functions.yui-oauth]
+verify_jwt = false

@@ -282,6 +282,34 @@ final class AgentStore {
 
     // MARK: Network
 
+    // MARK: Connect an MCP client (INT-19)
+
+    /// A connect request opened from `yui://connect/<id>` or yuigui.com/a/<id>,
+    /// waiting for its sheet (and for sign-in, when signed out).
+    var pendingConnect: ConnectRequestID?
+
+    func connectRequest(_ id: String) async throws -> ConnectRequest {
+        try await call(["action": "app_request", "id": id], function: "yui-oauth")
+    }
+
+    /// Allow: for an existing agent, or a new one named `name`. Returns the agent's id.
+    func approveConnect(_ id: String, agentID: String?, name: String?) async throws -> String {
+        var body: [String: Any] = ["action": "app_approve", "id": id]
+        if let agentID { body["agent_id"] = agentID } else if let name { body["name"] = name }
+        let r: ConnectApproved = try await call(body, function: "yui-oauth")
+        await refresh()
+        return r.agent.id
+    }
+
+    func denyConnect(_ id: String) async throws {
+        let _: ConnectRequest.Brief = try await call(["action": "app_deny", "id": id], function: "yui-oauth")
+    }
+
+    private struct ConnectApproved: Decodable {
+        struct Agent: Decodable { let id: String }
+        let agent: Agent
+    }
+
     private struct ListReply: Decodable { let agents: [YuiAgent] }
     private struct CreateReply: Decodable { let agent: YuiAgent; let pairing: PairingCode? }
     private struct AgentReply: Decodable { let agent: YuiAgent }
@@ -292,10 +320,10 @@ final class AgentStore {
     private struct TokenCreateReply: Decodable { let token: String }
     private struct ErrorReply: Decodable { let error: String }
 
-    private func call<T: Decodable>(_ body: [String: Any]) async throws -> T {
+    private func call<T: Decodable>(_ body: [String: Any], function: String = "yui-agents") async throws -> T {
         let payload = try JSONSerialization.data(withJSONObject: body)
         let token = try await account.validAccessToken()
-        var req = URLRequest(url: YuiBackend.function("yui-agents"))
+        var req = URLRequest(url: YuiBackend.function(function))
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.setValue(YuiBackend.publishableKey, forHTTPHeaderField: "apikey")

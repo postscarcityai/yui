@@ -8,11 +8,14 @@
 // (or batch), answered with application/json. No sessions, no SSE, so GET and
 // DELETE answer 405.
 //
-// Auth (step 1): Bearer yui_ct_..., a connector token of kind 'mcp', minted by
-// the same pairing as every host (yui-connect pair with kind "mcp"). OAuth
-// (Sign in with Apple through Yui) is step 2. A bad token answers 401, a
-// suspended host or account 403, an empty rate bucket (`mcp` in yui_limits)
-// 429.
+// Auth: Bearer yui_ct_..., a connector token of kind 'mcp', minted by the same
+// pairing as every host (yui-connect pair with kind "mcp"), or Bearer yui_at_...,
+// an OAuth access token from functions/yui-oauth (INT-19) that points at a
+// kind-mcp connector row. A bad token answers 401 with a WWW-Authenticate that
+// names this server's protected resource metadata (RFC 9728, served at
+// GET .../yui-mcp/.well-known/oauth-protected-resource), which is how OAuth-only
+// clients find yui-oauth. A suspended host or account answers 403, an empty
+// rate bucket (`mcp` in yui_limits) 429.
 //
 // Tools:
 //   yui_show     Yui Lines -> one agent row in the thread; returns its id (the
@@ -28,10 +31,10 @@
 import {
   admin,
   bearer,
-  CONNECTOR_PREFIX,
+  connectorByToken,
   failure,
+  oauthMetadata,
   Refused,
-  sha256Hex,
   take,
 } from "../_shared/yui.ts";
 import { parse } from "./yl.mjs";
@@ -66,8 +69,32 @@ function reply(body: unknown, status = 200, extra: Record<string, string> = {}):
 
 const rpcError = (id: Json, code: number, message: string) => ({ jsonrpc: "2.0", id: id ?? null, error: { code, message } });
 
+const FUNCTIONS = `${Deno.env.get("SUPABASE_URL")}/functions/v1`;
+const RESOURCE = `${FUNCTIONS}/yui-mcp`;
+const RESOURCE_METADATA = `${RESOURCE}/.well-known/oauth-protected-resource`;
+
+// RFC 9728: where to get a token for this server.
+const PROTECTED_RESOURCE = {
+  resource: RESOURCE,
+  authorization_servers: [`${FUNCTIONS}/yui-oauth`],
+  scopes_supported: ["yui"],
+  bearer_methods_supported: ["header"],
+  resource_name: "Yui",
+  resource_documentation: "https://www.yuigui.com/developers/mcp",
+};
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return reply(null, 204);
+  if (req.method === "GET") {
+    const path = new URL(req.url).pathname;
+    if (path.endsWith("/.well-known/oauth-protected-resource")) {
+      return reply(PROTECTED_RESOURCE, 200, { "cache-control": "public, max-age=300" });
+    }
+    // For clients that treat this URL as the authorization server (see oauthMetadata).
+    if (path.endsWith("/.well-known/oauth-authorization-server") || path.endsWith("/.well-known/openid-configuration")) {
+      return reply(oauthMetadata(), 200, { "cache-control": "public, max-age=300" });
+    }
+  }
   if (req.method !== "POST") return reply(rpcError(null, -32000, "Use POST (stateless server, no SSE stream)"), 405, { allow: "POST" });
   let msg: Json;
   try {
@@ -84,8 +111,8 @@ Deno.serve(async (req) => {
     return failure("yui-mcp auth", e);
   }
   if (!c) {
-    return reply(rpcError(null, -32001, "Unauthorized: pair with a code from the Yui app, then send Authorization: Bearer yui_ct_..."),
-      401, { "www-authenticate": 'Bearer realm="yui", error="invalid_token"' });
+    return reply(rpcError(null, -32001, "Unauthorized: sign in with OAuth, or pair with a code from the Yui app and send Authorization: Bearer yui_ct_..."),
+      401, { "www-authenticate": `Bearer realm="yui", error="invalid_token", resource_metadata="${RESOURCE_METADATA}", scope="yui"` });
   }
   const batch = Array.isArray(msg);
   const out = [];
@@ -97,13 +124,12 @@ Deno.serve(async (req) => {
   return reply(batch ? out : out[0]);
 });
 
-// The connector behind the bearer token: kind mcp, not revoked, not suspended.
-// Every authenticated request takes one token from its `mcp` bucket.
+// The connector behind the bearer token (a connector token or an OAuth access
+// token): kind mcp, not revoked, not suspended. Every authenticated request
+// takes one token from its `mcp` bucket.
 async function connectorFor(db: DB, req: Request): Promise<Connector | null> {
   const token = bearer(req);
-  if (!token.startsWith(CONNECTOR_PREFIX)) return null;
-  const { data } = await db.from("yui_connectors").select("id, user_id, name, kind, suspended_at")
-    .eq("token_hash", await sha256Hex(token)).is("revoked_at", null).maybeSingle();
+  const data = await connectorByToken(db, token, "id, user_id, name, kind, suspended_at");
   if (!data) return null;
   if (data.kind !== "mcp") throw new Refused(403, "not_an_mcp_connector");
   const { data: owner } = await db.from("yui_users").select("suspended_at").eq("id", data.user_id).maybeSingle();

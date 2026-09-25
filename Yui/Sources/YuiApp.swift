@@ -23,6 +23,11 @@ struct YuiApp: App {
             .animation(.default, value: account.isSignedIn)
             // An invite that didn't work says so for a moment (YUI-56).
             .overlay(alignment: .top) { InviteNotice() }
+            // An MCP client asking to connect (INT-19). Signed out, it waits for sign-in.
+            .sheet(item: Binding(
+                get: { account.isSignedIn ? agents.pendingConnect : nil },
+                set: { agents.pendingConnect = $0 }
+            )) { ConnectApprovalSheet(request: $0) }
             .environment(account)
             .environment(agents)
             .onChange(of: account.isSignedIn) { agents.reset() }
@@ -42,7 +47,10 @@ struct YuiApp: App {
                 guard account.isSignedIn, account.session?.userID != "demo" else { return }
                 Outbox.shared.start(account: account)
             }
-            .onOpenURL { if !account.open($0) { _ = PushCenter.shared.open($0) } }
+            .onOpenURL { url in
+                if let connect = ConnectRequestID.parse(url) { agents.pendingConnect = connect }
+                else if !account.open(url) { _ = PushCenter.shared.open(url) }
+            }
             // Open on a thread: its answers show there, no push (YUI-24).
             .onChange(of: scenePhase, initial: true) {
                 PushCenter.shared.setForeground(scenePhase == .active)

@@ -31,11 +31,10 @@ import {
   admin,
   bearer,
   cleanName,
-  CONNECTOR_PREFIX,
+  connectorByToken,
   failure,
   json,
   Refused,
-  sha256Hex,
   take,
   verifyAccessToken,
 } from "../_shared/yui.ts";
@@ -133,10 +132,8 @@ async function presence(userId: string, b: Body): Promise<Response> {
 }
 
 async function connectorFor(db: DB, req: Request) {
-  const token = bearer(req);
-  if (!token.startsWith(CONNECTOR_PREFIX)) return null;
-  const { data } = await db.from("yui_connectors").select("id, user_id, suspended_at")
-    .eq("token_hash", await sha256Hex(token)).is("revoked_at", null).maybeSingle();
+  // A host's connector token, or an MCP client's OAuth access token (INT-19).
+  const data = await connectorByToken(db, bearer(req), "id, user_id, suspended_at");
   if (!data) return null;
   // YUI-26: a suspended host or account pushes nothing; each host has a push budget.
   const { data: owner } = await db.from("yui_users").select("suspended_at").eq("id", data.user_id).maybeSingle();
