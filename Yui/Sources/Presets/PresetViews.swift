@@ -138,6 +138,8 @@ struct OptionPill: View {
     var dim = false
     var check = false
     var grow = false
+    /// A trailing SF Symbol, e.g. the arrow on a button that leaves the app.
+    var icon: String? = nil
     let action: () -> Void
     @Environment(\.yuiTheme) private var theme
     @Environment(\.colorScheme) private var scheme
@@ -148,6 +150,7 @@ struct OptionPill: View {
             HStack(spacing: theme.spacing.xs) {
                 if check { Image(systemName: on ? "checkmark.circle.fill" : "circle") }
                 Text(text).fixedSize(horizontal: false, vertical: true)
+                if let icon { Image(systemName: icon).accessibilityHidden(true) }
             }
             .font(theme.font(theme.type.body, .bold))
             .foregroundStyle(on ? ink ?? c.userInk : c.ink)

@@ -228,7 +228,8 @@ struct MathPreset: View {
 
 // MARK: - card
 
-/// `card title [body] sub= tag= img= cta= url=`. The button emits `{cta}`.
+/// `card title [body] sub= tag= img= cta= url=`. The button emits `{cta}`, or with
+/// `url=` opens the link instead.
 struct CardPreset: View {
     let c: YLComponent
     @Environment(\.ylEmit) private var emit
@@ -254,9 +255,12 @@ struct CardPreset: View {
             if let b = c.string("body") {
                 Text(b).font(theme.font(theme.type.body)).foregroundStyle(s.ink).fixedSize(horizontal: false, vertical: true)
             }
-            if let cta = c.string("cta") ?? (link == nil ? nil : "Open") {
+            if let link {
+                OptionPill(text: c.string("cta") ?? "Open", fill: s.accent, ink: s.onAccent, grow: true,
+                           icon: "arrow.up.right") { openURL(link) }
+                    .accessibilityHint("Opens in Safari")
+            } else if let cta = c.string("cta") {
                 OptionPill(text: cta, fill: s.accent, ink: s.onAccent, grow: true) {
-                    if let link { openURL(link) }
                     emit(c.event(["cta": .string(cta)], echo: cta))
                 }
             }
@@ -264,8 +268,10 @@ struct CardPreset: View {
         .disabled(c.locked)
     }
 
-    /// `url=` makes the button open a web page or install a test build
-    /// (`itms-services:`) as well as emit `{cta}`. Other schemes are ignored.
+    /// `url=` makes the button a link: it carries an arrow, opens the page in
+    /// Safari (or installs a test build, `itms-services:`) and sends nothing to
+    /// the chat, so the agent does not answer a tap that already did its job.
+    /// Other schemes are ignored and the button emits `{cta}` as usual.
     private var link: URL? {
         guard let raw = c.string("url"), let u = URL(string: raw),
               ["https", "itms-services"].contains(u.scheme?.lowercased() ?? "") else { return nil }

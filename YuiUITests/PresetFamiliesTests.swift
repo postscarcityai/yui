@@ -218,6 +218,31 @@ final class PresetFamiliesTests: XCTestCase {
         attachEvents()
     }
 
+    /// A card with `url=` is a link (TestFlight feedback AHbFq_lhBMRFGDoCfVzMf4A):
+    /// its button opens Safari and sends nothing; a card without one still emits `{cta}`.
+    func testCardLink() throws {
+        launch("card-link", [
+            #"card "Yui 65.1" sub="Test build" body="Tap to install" cta=Install url=https://www.yuigui.com/install.html"#,
+            #"card "Sunday plan" body="3 sessions" cta=Start"#,
+        ])
+        let start = app.buttons["Start"]
+        XCTAssertTrue(start.waitForExistence(timeout: 15), "the reply never finished")
+        let install = app.buttons["Install"]
+        XCTAssertTrue(install.exists)
+        sleep(1)
+        shot("1-cards")
+
+        start.tap()
+        XCTAssertEqual(waitEvent("card", "cta")?["cta"] as? String, "Start")
+
+        install.tap()
+        let safari = XCUIApplication(bundleIdentifier: "com.apple.mobilesafari")
+        XCTAssertTrue(safari.wait(for: .runningForeground, timeout: 15), "Install did not open Safari")
+        let ctas = events().filter { $0["preset"] as? String == "card" }.compactMap { $0["cta"] as? String }
+        XCTAssertEqual(ctas, ["Start"], "the link button sent something to the chat")
+        attachEvents()
+    }
+
     func testScienceDark() throws {
         launch("science-dark", [
             #"chart line "Weight" x=Mon|Tue|Wed|Thu y=180|179|178.5|178.9 y2=180|179.5|179|178.5 names=Actual|Plan unit=lb"#,

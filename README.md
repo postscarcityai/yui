@@ -131,7 +131,7 @@ python3 supabase/scripts/invite.py add --email E --first F --last L [--phone P] 
 
 ## Test builds
 
-Skip TestFlight when you only want to try main on your own phone. `scripts/devbuild.sh` archives a clean worktree of `origin/main` as an ad hoc build (build number `<commit count>.<n>`, so it never collides with a TestFlight number), puts the `.ipa` and its install manifest in a private Storage bucket behind 7-day signed links, and sends a card with an Install button into your Yui thread. Tap it on the phone and iOS installs the build over the one you have; your sign-in and threads stay. Pushes keep working: ad hoc builds use the same production APNs as TestFlight.
+Skip TestFlight when you only want to try main on your own phone. `scripts/devbuild.sh` archives a clean worktree of `origin/main` as an ad hoc build (build number `<commit count>.<n>`, so it never collides with a TestFlight number), puts the `.ipa` and its install manifest in a private Storage bucket behind 7-day signed links, and sends a card with an Install button into your Yui thread. Tap it on the phone: Safari opens yuigui.com/install.html, tap Install there and iOS installs the build over the one you have; your sign-in and threads stay. Pushes keep working: ad hoc builds use the same production APNs as TestFlight.
 
 ```sh
 scripts/devbuild.sh --force      # build now and send the card
@@ -141,7 +141,7 @@ scripts/devbuild.sh --no-send    # build and host, print the link, send nothing
 
 - Ad hoc builds install only on iPhones registered to your Apple developer account, so a forwarded link installs nowhere else. Register the phone once in the developer portal; `-allowProvisioningUpdates` puts it in the profile on the next build.
 - No upload to Apple, so no daily upload limit.
-- The card's button is a Yui Lines `card` with `url=`. An app from before that button existed can't open it: open the `page` link from the script's output (`yuigui.com/install.html#...`) in Safari instead. The link rides in the URL fragment, which never reaches the server.
+- The card's button is a Yui Lines `card` with `url=`: it shows an arrow, opens Safari and sends nothing to the chat. An app from before that button existed only posts Install: open the `page` link from the script's output (`yuigui.com/install.html#...`) in Safari instead. The link rides in the URL fragment, which never reaches the server.
 - The bucket (`yui-builds`, migration `20260924100000_yui_builds.sql`) has no policies: only the service role reads or writes it. `supabase/scripts/media_sweep.py` removes builds older than 8 days.
 - Needs the same App Store Connect key as `testflight.sh`, a Supabase access token, and `hermes` for the send.
 

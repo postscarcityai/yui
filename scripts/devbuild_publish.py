@@ -4,8 +4,8 @@
 Called by scripts/devbuild.sh. Uploads the .ipa and its itms-services manifest
 to the private `yui-builds` bucket in Supabase Storage, signs both for 7 days,
 and with --send posts a card with an Install button to the agent's Yui thread
-(`hermes -p <profile> send --to yui`). Storage serves HTML as text/plain, so the
-Safari fallback page is yuigui.com/install.html, which reads the manifest link
+(`hermes -p <profile> send --to yui`). The button opens yuigui.com/install.html
+in Safari (Storage serves HTML as text/plain, so the page lives on the site), which reads the manifest link
 from the URL fragment (never sent to a server).
 
     devbuild_publish.py --ipa Yui.ipa --build 57.1 --sha <sha> --changes changes.txt \\
@@ -143,7 +143,7 @@ def main() -> int:
         msg = (f"Test build {a.build} is ready. Tap Install on your phone.\n"
                "```yui\n"
                f"card {yl('Yui ' + a.build)} body={yl(changed)} sub={yl('Test build, straight from main. Link works 7 days.')} "
-               f"cta=Install url={yl(install)}\n"
+               f"cta=Install url={yl(page_url)}\n"
                "```\n")
         with tempfile.NamedTemporaryFile("w", suffix=".txt", delete=False) as f:
             f.write(msg)
