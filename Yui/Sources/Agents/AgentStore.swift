@@ -36,12 +36,25 @@ struct YuiAgent: Codable, Identifiable, Equatable, Sendable {
     var pushMuted: Bool? = nil
     /// online / asleep / offline / pending (YUI-28). Nil from older servers.
     var presence: String? = nil
+    /// The /commands its host accepts, as its plugin reports them (YUI-61).
+    /// Nil: the host has no registry (MCP, OpenClaw, webhook), so no suggestions.
+    var commands: [AgentCommand]? = nil
 
     enum CodingKeys: String, CodingKey {
         case id, name, handle, color, avatar, kind, status, sort, theme
         case connectorID = "connector_id", connectorName = "connector_name", remoteRef = "remote_ref"
-        case lastSeenAt = "last_seen_at", isDefault = "is_default", pushMuted = "push_muted", presence
+        case lastSeenAt = "last_seen_at", isDefault = "is_default", pushMuted = "push_muted", presence, commands
     }
+}
+
+/// One slash command an agent's host accepts: `/new [name]`, "Start a new session".
+/// Spec: yuigui/spec/AGENTS.md "Commands".
+struct AgentCommand: Codable, Equatable, Hashable, Sendable, Identifiable {
+    let name: String
+    var description: String
+    /// What goes after it, e.g. `[name]` or `<prompt>`. Nil when it takes nothing.
+    var args: String? = nil
+    var id: String { name }
 }
 
 extension YuiAgent {

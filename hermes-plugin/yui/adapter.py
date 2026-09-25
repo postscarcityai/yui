@@ -95,6 +95,7 @@ from gateway.platforms.base import (BasePlatformAdapter, MessageEvent, MessageTy
                                     SendResult)
 
 from . import board, connector, flywheel, media, needs, outbox
+from . import commands as slash
 
 logger = logging.getLogger(__name__)
 
@@ -229,6 +230,7 @@ class YuiAdapter(BasePlatformAdapter):
         self._outbox = outbox.Outbox(self._state_dir() / "outbox.jsonl")
         self._outbox_wake = asyncio.Event()
         self._notes: Dict[str, List[str]] = {}       # agent id -> notes for its next turn (board order)
+        self._commands_sent: Optional[str] = None    # fingerprint of the /command list Yui has (YUI-61)
 
     # Inbound is authorized upstream: RLS on yui_messages only ever shows this
     # connector the threads of its own paired user.
@@ -283,6 +285,7 @@ class YuiAdapter(BasePlatformAdapter):
             # First run for an agent: its last day of unanswered messages, not all history.
             self._cursor.setdefault(aid, floor)
         self._save_cursor()
+        await self._report_commands()
         self._mark_connected()
         self._tasks = [
             asyncio.create_task(self._heartbeat_loop()),
@@ -361,10 +364,30 @@ class YuiAdapter(BasePlatformAdapter):
                 else:
                     data = await self._connect_call({"action": "heartbeat"})
                     self._set_agents(data.get("agents") or [])
+                await self._report_commands()
             except asyncio.CancelledError:
                 raise
             except Exception as e:
                 logger.warning("[yui] heartbeat: %s", e)
+
+    async def _report_commands(self) -> None:
+        """Tell Yui which /commands this profile takes (YUI-61), the composer's
+        suggestions: on start, when it serves a new agent, and when the list
+        changes (a skill installed, a plugin command added). Never fatal."""
+        if not self._agents:
+            return
+        try:
+            cmds = await asyncio.to_thread(slash.registry)
+            if cmds is None:
+                return
+            fp = slash.fingerprint(cmds) + ":" + ",".join(sorted(self._agents))
+            if fp == self._commands_sent:
+                return
+            await self._connect_call({"action": "commands", "remote_ref": self._remote_ref, "commands": cmds})
+            self._commands_sent = fp
+            logger.info("[yui] reported %d commands for %s", len(cmds), self._remote_ref)
+        except Exception as e:
+            logger.warning("[yui] commands not reported: %s", e)
 
     def _rest_headers(self) -> dict:
         return {"apikey": connector.PUBLISHABLE, "authorization": f"Bearer {self._token}"}

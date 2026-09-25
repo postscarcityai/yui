@@ -8,6 +8,7 @@ They also run without Hermes loaded:
     connector.py add --profile monk [--name Monk] [--color mint]
     connector.py heartbeat
     connector.py status
+    connector.py commands [--send]      # the /commands the composer suggests (YUI-61)
     connector.py media ~/out/frame.png "Frame 1" --profile monk   # send a picture
     connector.py media --prompt "storyboard frame: ..." --aspect 16:9  # render + send
 
@@ -152,6 +153,25 @@ def notify_body(message_id: str, sender: str | None, handoff: bool) -> dict:
     return body
 
 
+def _slash():
+    try:
+        from . import commands
+    except ImportError:  # run as a script
+        import commands
+    return commands
+
+
+def report_commands(profile: str) -> tuple[int, dict]:
+    """Send this profile's /command list to Yui (YUI-61). (0, {error: no_registry}) outside Hermes."""
+    token = load().get("token")
+    if not token:
+        return 401, {"error": "not_paired"}
+    cmds = _slash().registry()
+    if cmds is None:
+        return 0, {"error": "no_registry"}
+    return call({"action": "commands", "remote_ref": profile, "commands": cmds}, token)
+
+
 def heartbeat() -> tuple[int, dict]:
     token = load().get("token")
     if not token:
@@ -177,6 +197,7 @@ def cmd_pair(args) -> int:
         print(f"pair failed: {r.get('error', s)}", file=sys.stderr)
         return 1
     print(f"paired: {show(r['agent'])} on {r['connector']['name']}")
+    report_commands(_profile(args))  # the composer's / suggestions; the gateway repeats it on start
     prof = r["agent"].get("remote_ref")
     flag = "" if prof in (None, "default") else f" -p {prof}"
     print(f"next: start the gateway so it answers in the app: hermes{flag} gateway restart"
@@ -213,6 +234,22 @@ def cmd_status(args) -> int:
     state = load()
     print(f"connector: {state.get('name') or 'not paired'} ({STATE})")
     return cmd_heartbeat(args) if state.get("token") else 0
+
+
+def cmd_commands(args) -> int:
+    """Print the /commands Yui suggests for this profile; --send reports them now."""
+    cmds = _slash().registry()
+    if cmds is None:
+        sys.exit("no command registry here: run it through hermes (`hermes -p <profile> yui commands`)")
+    for c in cmds:
+        print(f"/{c['name']}" + (f" {c['args']}" if c.get("args") else "") + f"  {c['description']}")
+    if args.send:
+        s, r = report_commands(_profile(args))
+        if s != 200:
+            print(f"report failed: {r.get('error', s)}", file=sys.stderr)
+            return 1
+        print(f"sent {r['commands']} commands to {r['agents']} agent(s)")
+    return 0
 
 
 def cmd_media(args) -> int:
@@ -285,6 +322,9 @@ def build_parser(ap: argparse.ArgumentParser, with_profile: bool = True) -> None
     h.set_defaults(fn=cmd_heartbeat)
     st = sub.add_parser("status", help="show the connector and its agents")
     st.set_defaults(fn=cmd_status, quiet=False)
+    c = sub.add_parser("commands", help="list the /commands the Yui composer suggests; --send reports them")
+    c.add_argument("--send", action="store_true")
+    c.set_defaults(fn=cmd_commands)
     m = sub.add_parser("media", help="send a picture or video into the thread; --prompt renders one first (fal)")
     m.add_argument("src", nargs="?", help="file or URL (with --prompt: the image to edit)")
     m.add_argument("caption", nargs="?")
@@ -294,7 +334,7 @@ def build_parser(ap: argparse.ArgumentParser, with_profile: bool = True) -> None
     m.add_argument("--to", help="which Yui agent's thread (default: this profile's)")
     m.set_defaults(fn=cmd_media)
     if with_profile:
-        for sp in (p, a, m):
+        for sp in (p, a, c, m):
             sp.add_argument("--profile", "-p", help="Hermes profile (default: the active one)")
 
 

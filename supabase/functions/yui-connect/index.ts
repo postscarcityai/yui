@@ -17,6 +17,10 @@
 //   {action: "bye"}                                      Bearer yui_ct_...
 //       The host is stopping cleanly (YUI-28): its agents read offline at
 //       once instead of asleep. The next heartbeat or session clears it.
+//   {action: "commands", remote_ref, commands}           Bearer yui_ct_...
+//       The /commands that profile accepts (YUI-61): [{name, description,
+//       args?}], cleaned here, stored on its agents for the composer's
+//       suggestions. commands: null clears them.
 //   {action: "guide"}                                    no auth
 //       The current channel guide {version, body}: the text any agent gets
 //       on the Yui channel (yuigui/spec/CHANNEL.md).
@@ -74,6 +78,8 @@ Deno.serve(async (req) => {
         return await session(req);
       case "bye":
         return await bye(req);
+      case "commands":
+        return await commands(req, body);
       case "guide":
         return json({ guide: await guide(admin()) });
       default:
@@ -208,6 +214,46 @@ async function bye(req: Request): Promise<Response> {
   const now = new Date().toISOString();
   await db.from("yui_connectors").update({ last_seen_at: now, stopped_at: now }).eq("id", connector.id);
   return json({ stopped_at: now });
+}
+
+// A slash command as the composer shows it. Names are what the host accepts
+// after the slash; anything else is dropped, never an error, so one odd
+// plugin command can't cost the person the whole list.
+const COMMAND_NAME = /^[a-z0-9][a-z0-9_-]{0,31}$/;
+const MAX_COMMANDS = 200;
+
+// deno-lint-ignore no-explicit-any
+function cleanCommands(list: any): { name: string; description: string; args?: string }[] | null {
+  if (!Array.isArray(list)) return null;
+  const seen = new Set<string>();
+  const out = [];
+  for (const c of list) {
+    if (!c || typeof c !== "object") continue;
+    const name = typeof c.name === "string" ? c.name.trim().replace(/^\//, "").toLowerCase() : "";
+    if (!COMMAND_NAME.test(name) || seen.has(name)) continue;
+    const line = (v: unknown, max: number) =>
+      typeof v === "string" ? v.replace(/\s+/g, " ").trim().slice(0, max) : "";
+    const description = line(c.description, 100);
+    const args = line(c.args, 60);
+    seen.add(name);
+    out.push(args ? { name, description, args } : { name, description });
+    if (out.length >= MAX_COMMANDS) break;
+  }
+  return out;
+}
+
+async function commands(req: Request, b: Body): Promise<Response> {
+  const db = admin();
+  const connector = await connectorFor(db, req);
+  if (!connector) return json({ error: "unauthorized" }, 401);
+  if (!validRemoteRef(b.remote_ref)) return json({ error: "invalid_remote_ref" }, 400);
+  const list = b.commands === null ? null : cleanCommands(b.commands);
+  if (b.commands !== null && list === null) return json({ error: "invalid_commands" }, 400);
+  const now = new Date().toISOString();
+  const { data, error } = await db.from("yui_agents").update({ commands: list, commands_at: now })
+    .eq("connector_id", connector.id).eq("remote_ref", b.remote_ref).select("id");
+  if (error) throw error;
+  return json({ agents: (data ?? []).length, commands: list?.length ?? 0, at: now });
 }
 
 // deno-lint-ignore no-explicit-any

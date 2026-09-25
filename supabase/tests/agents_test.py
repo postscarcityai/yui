@@ -113,6 +113,33 @@ try:
     s, r = rest("GET", f"yui_agent_list?select=status&id=eq.{b_agent}", tokB)
     check("a heartbeat brings them back online", r == [{"status": "connected"}], f"{r}")
 
+    print("\n== Slash commands (YUI-61)")
+    s, r = rest("GET", f"yui_agent_list?select=commands&id=eq.{b_agent}", tokB)
+    check("an agent with no report has no commands", r == [{"commands": None}], f"{r}")
+    cmds = [{"name": "new", "description": "Start a new session\n(fresh)", "args": "[name]"},
+            {"name": "/Model", "description": "Switch model"}, {"name": "new", "description": "dupe"},
+            {"name": "bad name", "description": "x"}, {"name": "x" * 40, "description": "too long"},
+            {"name": "stop", "description": "d" * 300, "args": ""}, "junk", {"description": "no name"}]
+    s, r = fn("yui-connect", {"action": "commands", "remote_ref": "monk", "commands": cmds}, b_ct)
+    check("the host reports its commands", s == 200 and r["agents"] == 1 and r["commands"] == 3, f"{s} {r}")
+    s, r = fn("yui-agents", {"action": "list"}, tokB)
+    got = next(a for a in r["agents"] if a["id"] == b_agent)["commands"]
+    check("the app's list carries them, cleaned", got == [
+        {"name": "new", "description": "Start a new session (fresh)", "args": "[name]"},
+        {"name": "model", "description": "Switch model"}, {"name": "stop", "description": "d" * 100}], f"{got}")
+    others = [a["commands"] for a in r["agents"] if a["id"] != b_agent]
+    check("only that profile's agent gets them", others and all(c is None for c in others), f"{others}")
+    s, r = fn("yui-connect", {"action": "commands", "remote_ref": "monk", "commands": "nope"}, b_ct)
+    check("a list that is not a list is refused", s == 400 and code(r) == "invalid_commands", f"{s} {r}")
+    s, r = fn("yui-connect", {"action": "commands", "remote_ref": "monk", "commands": []})
+    check("no connector token, no report", s == 401, f"{s} {r}")
+    s, r = rest("PATCH", f"yui_agents?id=eq.{b_agent}", tokB, {"commands": [{"name": "x", "description": "y"}]})
+    check("the app cannot write commands itself", s in (401, 403), f"{s} {r}")
+    s, r = fn("yui-connect", {"action": "commands", "remote_ref": "monk", "commands": None}, b_ct)
+    s2, r2 = rest("GET", f"yui_agent_list?select=commands&id=eq.{b_agent}", tokB)
+    check("commands: null clears them", s == 200 and r2 == [{"commands": None}], f"{s} {r2}")
+    fn("yui-connect", {"action": "commands", "remote_ref": "monk", "commands": cmds[:1]}, b_ct)
+
     print("\n== Cross-user isolation (app tokens)")
     s, r = fn("yui-agents", {"action": "create", "name": "Yui", "remote_ref": "yui"}, tokA)
     a_agent = r["agent"]["id"]

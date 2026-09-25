@@ -429,8 +429,20 @@ struct ChatView: View {
             && agents.agents.isEmpty
     }
 
+    /// Typing / at the start: the agent's own commands (YUI-61). Hosts with no
+    /// command list (MCP, the demo) show nothing.
+    private var slashSuggestions: [Suggestion] {
+        talk.listening ? [] : SlashCommands.suggestions(draft, in: store.agent?.commands)
+    }
+
     private func inputBar(_ c: Swatch) -> some View {
-        VStack(alignment: .leading, spacing: theme.spacing.s) {
+        let suggestions = slashSuggestions
+        return VStack(alignment: .leading, spacing: theme.spacing.s) {
+            if !suggestions.isEmpty {
+                SuggestionPopover(items: suggestions, pick: { draft = $0.fill; focused = true },
+                                  identifier: "slash")
+                    .transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
+            }
             if let q = store.replying {
                 ReplyBar(quote: q, agent: store.agent?.name) { store.cancelReply() }
                     .transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
@@ -454,6 +466,7 @@ struct ChatView: View {
         .background(c.background)
         .animation(theme.spring, value: talk.listening)
         .animation(theme.spring, value: photos)
+        .animation(reduceMotion ? .easeInOut(duration: 0.15) : theme.spring, value: suggestions.isEmpty)
         .animation(reduceMotion ? .easeInOut(duration: 0.2) : theme.spring, value: store.replying)
         .fullScreenCover(isPresented: $shooting) {
             CameraCapture(front: false) { data in
