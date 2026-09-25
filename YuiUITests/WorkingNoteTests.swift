@@ -67,7 +67,7 @@ final class WorkingNoteTests: XCTestCase {
             }
             let app = XCUIApplication()
             app.launchArguments = ["-yuiDemoAccount", "-yuiDemoAgents", "-yuiAgent", "wizard", "-appearance", appearance,
-                                   "-yuiDemoReply", "Here you go.", "-yuiDemoPickupAfter", "3", "-yuiDemoReplyAfter", "14"]
+                                   "-yuiDemoReply", "say Here you go.", "-yuiDemoPickupAfter", "3", "-yuiDemoReplyAfter", "14"]
             app.launch()
             let input = app.descendants(matching: .any)["composer"].firstMatch
             XCTAssertTrue(input.waitForExistence(timeout: 20), "no composer")

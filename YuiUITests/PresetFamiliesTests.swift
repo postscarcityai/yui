@@ -109,8 +109,12 @@ final class PresetFamiliesTests: XCTestCase {
         XCTAssertEqual(picked?["picked"] as? [Int], [0, 2])
         shot("2-gallery-picked")
 
-        // Tap a tile: full screen, {open, index}.
-        app.otherElements["On the wheel"].firstMatch.tap()
+        // Tap a tile: full screen, {open, index}. The picks went out as your message and
+        // the chat followed them down, so go back up to the grid first.
+        let wheel = app.otherElements["On the wheel"].firstMatch
+        n = 0
+        while !ready(wheel), n < 10 { gutterSwipeDown(); n += 1 }
+        wheel.tap()
         let open = waitEvent("gallery", "open")
         XCTAssertEqual(open?["index"] as? Int, 0)
         sleep(2)
