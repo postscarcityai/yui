@@ -33,6 +33,9 @@
 // _meta.ui.resourceUri, so hosts that render MCP Apps (Claude, ChatGPT) draw
 // the screen inline with the site's web renderer (yuigui mcp-app, copied here
 // by scripts/sync_mcp_app.py). Hosts that do not just show the text result.
+// ChatGPT (INT-8) reads the same standard keys; the openai/* aliases, the
+// per-tool securitySchemes and the status lines are for its older paths and
+// its UI (OpenAI Apps SDK reference). Other hosts ignore them.
 // The channel guide: short form in the tool descriptions, the full text as the
 // prompt `yui_guide` and the resource `yui://guide`.
 import {
@@ -49,7 +52,7 @@ import SCREEN_HTML from "./screen_html.mjs";
 import { echoFor, eventLine, relays, valueOf } from "./app_events.mjs";
 
 const VERSIONS = ["2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05"];
-const SERVER = { name: "yui", title: "Yui", version: "0.2.0" };
+const SERVER = { name: "yui", title: "Yui", version: "0.3.0" };
 const MAX_BODY = 32000;
 const MAX_WAIT = 25;
 const MAX_EVENT = 4000;
@@ -71,6 +74,10 @@ const CORS = {
   "access-control-allow-headers": "authorization, content-type, accept, mcp-protocol-version, mcp-session-id",
   "access-control-expose-headers": "mcp-session-id, www-authenticate",
 };
+
+// Every tool needs the OAuth grant (or a connector token). ChatGPT reads this
+// per tool, top level and, for older clients, in _meta.
+const SECURITY = [{ type: "oauth2", scopes: ["yui"] }];
 
 function reply(body: unknown, status = 200, extra: Record<string, string> = {}): Response {
   return new Response(body === null ? null : JSON.stringify(body), {
@@ -201,7 +208,7 @@ async function dispatch(db: DB, c: Connector, method: string, p: Json): Promise<
       return {
         resources: [
           { uri: "yui://guide", name: "yui_guide", title: "Yui channel guide", description: GUIDE_BLURB, mimeType: "text/markdown" },
-          { uri: SCREEN_URI, name: "yui_screen", title: "Yui screen", description: SCREEN_BLURB, mimeType: APP_MIME },
+          { uri: SCREEN_URI, name: "yui_screen", title: "Yui screen", description: SCREEN_BLURB, mimeType: APP_MIME, _meta: SCREEN_META },
         ],
       };
     case "resources/templates/list":
@@ -474,11 +481,14 @@ const SCREEN_BLURB = "The Yui screen drawn inside the chat: the same Yui Lines t
 
 // Images on a screen come from Yui's own storage or from fal renders; the
 // sandbox loads nothing else (no scripts, fonts or connections from outside).
+// ChatGPT's openai/* keys say the same in its older shape (snake_case CSP).
+const IMAGE_DOMAINS = [Deno.env.get("SUPABASE_URL") ?? "https://ewzzaoperdpxqxkshynx.supabase.co", "https://fal.media", "https://*.fal.media"];
 const SCREEN_META = {
-  ui: {
-    csp: { resourceDomains: [Deno.env.get("SUPABASE_URL") ?? "https://ewzzaoperdpxqxkshynx.supabase.co", "https://fal.media", "https://*.fal.media"] },
-    prefersBorder: false,
-  },
+  ui: { csp: { resourceDomains: IMAGE_DOMAINS }, prefersBorder: false },
+  "openai/widgetCSP": { connect_domains: [], resource_domains: IMAGE_DOMAINS },
+  "openai/widgetPrefersBorder": false,
+  "openai/widgetDescription":
+    "The Yui screen you sent is drawn here and on the person's phone. Their taps come back as a user message holding a [yui] line; answer it, and do not repeat the screen in text.",
 };
 
 // -- the channel guide ----------------------------------------------------------
@@ -536,7 +546,15 @@ const TOOLS = [
       },
       required: ["lines"],
     },
-    _meta: { ui: { resourceUri: SCREEN_URI, visibility: ["model", "app"] }, "ui/resourceUri": SCREEN_URI },
+    securitySchemes: SECURITY,
+    _meta: {
+      ui: { resourceUri: SCREEN_URI, visibility: ["model", "app"] },
+      "ui/resourceUri": SCREEN_URI,
+      "openai/outputTemplate": SCREEN_URI,
+      "openai/toolInvocation/invoking": "Putting it on your phone",
+      "openai/toolInvocation/invoked": "On your phone",
+      securitySchemes: SECURITY,
+    },
     annotations: { title: "Show a screen in Yui", readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
   },
   {
@@ -552,6 +570,12 @@ const TOOLS = [
         agent: agentArg,
       },
     },
+    securitySchemes: SECURITY,
+    _meta: {
+      "openai/toolInvocation/invoking": "Waiting for your answer",
+      "openai/toolInvocation/invoked": "Read your answers",
+      securitySchemes: SECURITY,
+    },
     annotations: { title: "Read taps and replies from Yui", readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
   },
   {
@@ -563,6 +587,12 @@ const TOOLS = [
       properties: { text: { type: "string", description: "The message." }, agent: agentArg },
       required: ["text"],
     },
+    securitySchemes: SECURITY,
+    _meta: {
+      "openai/toolInvocation/invoking": "Sending to Yui",
+      "openai/toolInvocation/invoked": "Sent to Yui",
+      securitySchemes: SECURITY,
+    },
     annotations: { title: "Send a message in Yui", readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
   },
   {
@@ -570,6 +600,8 @@ const TOOLS = [
     title: "List Yui threads",
     description: "The Yui agents (threads) this connection can write to, with how many of the person's messages are unread. The first is the default for the other tools.",
     inputSchema: { type: "object", properties: {} },
+    securitySchemes: SECURITY,
+    _meta: { securitySchemes: SECURITY },
     annotations: { title: "List Yui threads", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   },
   {
@@ -585,7 +617,15 @@ const TOOLS = [
       },
       required: ["screen_id", "event"],
     },
-    _meta: { ui: { resourceUri: SCREEN_URI, visibility: ["app"] } },
+    securitySchemes: SECURITY,
+    // Hidden from the model, callable from the view: MCP Apps visibility, and
+    // ChatGPT's older private + widgetAccessible pair.
+    _meta: {
+      ui: { resourceUri: SCREEN_URI, visibility: ["app"] },
+      "openai/visibility": "private",
+      "openai/widgetAccessible": true,
+      securitySchemes: SECURITY,
+    },
     annotations: { title: "A tap in the Yui screen", readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
   },
 ];

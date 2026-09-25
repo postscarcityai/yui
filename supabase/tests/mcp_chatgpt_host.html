@@ -1,0 +1,154 @@
+<!doctype html>
+<!-- INT-8 test host for mcp_chatgpt_e2e.py: plays ChatGPT's side of the Apps
+     SDK against yui-mcp (through the e2e's local relay, which holds the OAuth
+     token). ?mode=bridge speaks the MCP Apps bridge like ChatGPT today;
+     ?mode=openai only gives the frame window.openai, ChatGPT's older API.
+     State for the driver: window.__state. -->
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Apps SDK test host</title>
+<style>
+  body { margin: 0; font: 15px/1.45 -apple-system, system-ui, sans-serif; background: #212121; color: #ececec; }
+  body.light { background: #fff; color: #0d0d0d; }
+  main { max-width: 720px; margin: 0 auto; padding: 20px 16px 40px; }
+  .tag { font-size: 12px; opacity: .55; margin-bottom: 18px; }
+  .you { margin-left: auto; width: fit-content; max-width: 70%; background: #303030; border-radius: 18px; padding: 10px 16px; }
+  .light .you { background: #f0f0f0; }
+  .tool { margin: 18px 0 10px; font-size: 13px; opacity: .7; }
+  iframe { display: block; width: 100%; height: 260px; border: 0; border-radius: 14px; overflow: hidden; }
+  .said { margin-top: 12px; font-size: 13px; opacity: .8; }
+</style>
+</head>
+<body>
+<main>
+  <div class="tag">Apps SDK test host (plays ChatGPT's side; not ChatGPT)</div>
+  <div class="you">Ask me on my phone what we are having for lunch.</div>
+  <div class="tool" id="tool"></div>
+  <div id="slot"></div>
+  <div id="said"></div>
+</main>
+<script>
+const P = new URLSearchParams(location.search);
+const MODE = P.get("mode") || "bridge";
+const THEME = P.get("theme") || "dark";
+const LINES = P.get("lines") || 'ask "Ready?" Yes|No';
+if (THEME === "light") document.body.classList.add("light");
+const S = window.__state = { followups: [], viewCalls: [], bridgeInit: false, openaiCalls: 0, cspErrors: [], errors: [] };
+
+let rid = 1;
+async function mcp(method, params) {
+  const r = await fetch("/mcp", { method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ jsonrpc: "2.0", id: rid++, method, params }) });
+  const j = await r.json();
+  if (j.error) throw new Error(`${method}: ${j.error.message}`);
+  return j.result;
+}
+
+(async () => {
+  const { tools } = await mcp("tools/list", {});
+  const byName = Object.fromEntries(tools.map((t) => [t.name, t]));
+  const show = byName.yui_show;
+  const tpl = show._meta["openai/outputTemplate"];
+  const res = (await mcp("resources/read", { uri: tpl })).contents[0];
+  const w = res._meta["openai/widgetCSP"] || {};
+  const rd = (w.resource_domains || []).join(" ");
+  const cd = (w.connect_domains || []).join(" ") || "'none'";
+  const csp = `default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob: ${rd}; ` +
+    `font-src data: ${rd}; media-src blob: ${rd}; connect-src ${cd}`;
+  // A tool the view may call: MCP Apps visibility "app", or ChatGPT's widgetAccessible.
+  const viewMay = (t) => !!t && (t._meta?.["openai/widgetAccessible"] === true || (t._meta?.ui?.visibility || []).includes("app"));
+
+  const input = { text: "Lunch?", lines: LINES };
+  const shim = MODE !== "openai" ? "" : `<script>(function(){var n=0,p={};
+addEventListener("message",function(e){var m=e.data;if(!m||!m.__openai||e.source!==parent)return;
+if(m.reply){var r=p[m.reply];delete p[m.reply];if(r){m.error?r[1](new Error(m.error)):r[0](m.result);}return;}
+if(m.globals){Object.assign(window.openai,m.globals);dispatchEvent(new CustomEvent("openai:set_globals",{detail:{globals:m.globals}}));}});
+function call(method,args){return new Promise(function(res,rej){var id=++n;p[id]=[res,rej];parent.postMessage({__openai:1,id:id,method:method,args:args},"*");});}
+window.openai={toolInput:${JSON.stringify(input)},toolOutput:null,toolResponseMetadata:null,theme:${JSON.stringify(THEME)},displayMode:"inline",locale:"en-US",maxHeight:600,
+callTool:function(name,args){return call("callTool",{name:name,args:args});},
+sendFollowUpMessage:function(o){return call("sendFollowUpMessage",o);},
+requestDisplayMode:function(o){return call("requestDisplayMode",o);},
+notifyIntrinsicHeight:function(h){parent.postMessage({__openai:1,height:h},"*");},
+setWidgetState:function(){}};})();<\/script>`;
+  const guard = `<script>document.addEventListener("securitypolicyviolation",function(e){parent.postMessage({__csp:e.violatedDirective+" "+e.blockedURI},"*");});<\/script>`;
+  const html = res.text.replace(/<head>/i, `<head><meta http-equiv="Content-Security-Policy" content="${csp}">${guard}${shim}`);
+
+  document.getElementById("tool").textContent = show._meta["openai/toolInvocation/invoking"] + "...";
+  const frame = document.createElement("iframe");
+  frame.id = "widget";
+  frame.setAttribute("sandbox", "allow-scripts");
+  frame.srcdoc = html;
+  document.getElementById("slot").appendChild(frame);
+  const toFrame = (m) => frame.contentWindow.postMessage(m, "*");
+
+  let result = null, initialized = false;
+  const sendResult = () => {
+    if (!result) return;
+    if (MODE === "openai") toFrame({ __openai: 1, globals: { toolOutput: result.structuredContent, toolResponseMetadata: result._meta || {} } });
+    else if (initialized) toFrame({ jsonrpc: "2.0", method: "ui/notifications/tool-result", params: result });
+  };
+  async function viewTool(name, args) {
+    S.viewCalls.push(name);
+    if (!viewMay(byName[name])) throw new Error(`${name} is not callable from the view`);
+    return await mcp("tools/call", { name, arguments: args || {} });
+  }
+  const said = (text) => {
+    S.followups.push(text);
+    const d = document.createElement("div"); d.className = "said"; d.textContent = `Follow-up message: ${text}`;
+    document.getElementById("said").appendChild(d);
+  };
+
+  window.addEventListener("message", async (e) => {
+    if (e.source !== frame.contentWindow) return;
+    const m = e.data || {};
+    if (m.__csp) { S.cspErrors.push(m.__csp); return; }
+    if (m.__openai) {
+      if (m.height) { frame.style.height = `${Math.min(900, m.height)}px`; return; }
+      S.openaiCalls++;
+      try {
+        let r = null;
+        if (m.method === "callTool") r = await viewTool(m.args.name, m.args.args);
+        else if (m.method === "sendFollowUpMessage") said(m.args.prompt);
+        toFrame({ __openai: 1, reply: m.id, result: r });
+      } catch (err) { toFrame({ __openai: 1, reply: m.id, error: String(err.message || err) }); }
+      return;
+    }
+    if (m.jsonrpc !== "2.0" || MODE === "openai") return; // the older host has no bridge
+    const answer = (result) => toFrame({ jsonrpc: "2.0", id: m.id, result });
+    const fail = (message) => toFrame({ jsonrpc: "2.0", id: m.id, error: { code: -32000, message } });
+    try {
+      switch (m.method) {
+        case "ui/initialize":
+          S.bridgeInit = true;
+          return answer({ protocolVersion: "2026-01-26", hostInfo: { name: "apps-sdk-test-host", version: "1" },
+            hostCapabilities: { serverTools: {}, message: {} },
+            hostContext: { theme: THEME, displayMode: "inline", availableDisplayModes: ["inline", "fullscreen", "pip"], locale: "en-US", platform: "web" } });
+        case "ui/notifications/initialized":
+          initialized = true;
+          toFrame({ jsonrpc: "2.0", method: "ui/notifications/tool-input", params: { arguments: input } });
+          return sendResult();
+        case "ui/notifications/size-changed":
+          frame.style.height = `${Math.min(900, m.params.height)}px`;
+          return;
+        case "ui/message":
+          said(m.params.content.map((c) => c.text).join(""));
+          return answer({});
+        case "tools/call":
+          return answer(await viewTool(m.params.name, m.params.arguments));
+        default:
+          if (m.id !== undefined) fail(`Method not found: ${m.method}`);
+      }
+    } catch (err) { fail(String(err.message || err)); }
+  });
+
+  // The model calls the tool.
+  result = await mcp("tools/call", { name: "yui_show", arguments: input,
+    _meta: { "openai/locale": "en-US", "openai/subject": "v1/test-subject", "openai/session": "v1/test-session" } });
+  document.getElementById("tool").textContent = show._meta["openai/toolInvocation/invoked"];
+  sendResult();
+})().catch((e) => { S.errors.push(String(e.message || e)); document.getElementById("tool").textContent = `Host error: ${e.message}`; });
+</script>
+</body>
+</html>

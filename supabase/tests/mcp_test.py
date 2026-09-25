@@ -30,6 +30,12 @@ On a fresh throwaway account (never a real one):
      writes the same event row a phone tap writes (only components on that
      screen, quiet events dropped), told_model marks it handled so
      yui_answers does not return it twice.
+  J. ChatGPT shape (INT-8): every tool declares the OAuth securitySchemes,
+     yui_show carries openai/outputTemplate and status lines, yui_tap is
+     private + widgetAccessible, the screen resource carries openai/widgetCSP
+     (the same domains), widgetDescription; calls carrying ChatGPT's client
+     _meta work; DCR takes ChatGPT's two redirect URLs and /authorize takes
+     its resource parameter.
   G. the rate limit: a burst past `mcp_burst` answers 429.
 
     python3 supabase/tests/mcp_test.py
@@ -219,6 +225,36 @@ try:
     csp = c0.get("_meta", {}).get("ui", {}).get("csp", {})
     check("its CSP loads images from Yui's storage and fal only, connects nowhere",
           csp.get("resourceDomains", [None])[0] == BASE and "connectDomains" not in csp, csp)
+
+    print("== J. ChatGPT shape (INT-8)")
+    SEC = [{"type": "oauth2", "scopes": ["yui"]}]
+    check("every tool declares the OAuth securitySchemes, top level and in _meta",
+          all(t.get("securitySchemes") == SEC and t.get("_meta", {}).get("securitySchemes") == SEC for t in tl.values()),
+          {n: t.get("securitySchemes") for n, t in tl.items()})
+    sm = tl["yui_show"]["_meta"]
+    check("yui_show: openai/outputTemplate is the MCP App, with status lines under 64 characters",
+          sm.get("openai/outputTemplate") == sm["ui"]["resourceUri"] == "ui://yui/screen"
+          and 0 < len(sm.get("openai/toolInvocation/invoking", "")) <= 64 and 0 < len(sm.get("openai/toolInvocation/invoked", "")) <= 64, sm)
+    tm = tl["yui_tap"]["_meta"]
+    check("yui_tap: hidden from the model, callable from the view (private + widgetAccessible)",
+          tm.get("openai/visibility") == "private" and tm.get("openai/widgetAccessible") is True, tm)
+    check("the model tools have ChatGPT's annotations (readOnly, destructive, openWorld)",
+          all({"readOnlyHint", "destructiveHint", "openWorldHint"} <= set(t.get("annotations", {})) for t in tl.values())
+          and tl["yui_threads"]["annotations"]["readOnlyHint"] is True)
+    m0 = c0.get("_meta", {})
+    wcsp = m0.get("openai/widgetCSP", {})
+    check("the screen: openai/widgetCSP names the same image domains, connects nowhere",
+          wcsp.get("resource_domains") == csp.get("resourceDomains") and wcsp.get("connect_domains") == [], wcsp)
+    check("the screen: widgetDescription and no border", "[yui]" in m0.get("openai/widgetDescription", "")
+          and m0.get("openai/widgetPrefersBorder") is False and m0["ui"]["prefersBorder"] is False, m0)
+    s, r = rpc(ct, "resources/list")
+    check("resources/list carries the screen's _meta too",
+          [x.get("_meta") for x in r["result"]["resources"] if x["uri"] == "ui://yui/screen"] == [m0], r["result"]["resources"][1].get("_meta"))
+    s, r = rpc(ct, "tools/call", {"name": "yui_threads", "arguments": {},
+                                  "_meta": {"openai/locale": "en-US", "openai/subject": "v1/abc", "openai/session": "v1/def",
+                                            "openai/userLocation": {"country": "US", "timezone": "America/New_York"}}})
+    check("a call carrying ChatGPT's client _meta works", s == 200 and not r["result"].get("isError"), r)
+
     res, text, d = tool(ct, "yui_show", {"text": "Lunch?", "lines": 'choose "Lunch?" Salad|Soup\ntimer@t 1m Steep'})
     sc = res.get("structuredContent") or {}
     app_screen = d["screen_id"]
@@ -323,6 +359,24 @@ try:
     cid = reg.get("client_id", "")
     oauth_clients.append(cid)
     check("DCR: public client registered, no secret", s == 201 and cid.startswith("yui_oc_") and "client_secret" not in reg, (s, reg))
+
+    # ChatGPT registers with one of its two callbacks (Apps SDK auth docs) and
+    # sends resource=<the MCP URL> on /authorize.
+    for cb in ("https://chatgpt.com/connector_platform_oauth_redirect", "https://chatgpt.com/connector/oauth/cb_test123"):
+        s, gr = http("POST", OAUTH + "/register", None, {"client_name": "ChatGPT", "redirect_uris": [cb],
+                     "grant_types": ["authorization_code", "refresh_token"], "response_types": ["code"],
+                     "token_endpoint_auth_method": "client_secret_post"})
+        oauth_clients.append(gr.get("client_id", ""))
+        check(f"DCR (ChatGPT): {cb.split('/', 3)[3]} registered as a confidential client",
+              s == 201 and gr.get("client_secret") and gr.get("redirect_uris") == [cb], (s, {k: v for k, v in gr.items() if k != "client_secret"}))
+        _, gch = pkce()
+        q = {"response_type": "code", "client_id": gr.get("client_id"), "redirect_uri": cb, "state": "gpt",
+             "code_challenge": gch, "code_challenge_method": "S256", "scope": "yui", "resource": MCP}
+        s, h, _ = get(f"{OAUTH}/authorize?{up.urlencode(q)}")
+        check("authorize (ChatGPT): its redirect and resource go to the connect page", s == 302 and request_id(h), h.get("Location"))
+    check("auth server metadata: what ChatGPT reads (S256, DCR, iss in the response, token auth methods)",
+          meta.get("authorization_response_iss_parameter_supported") is True and "client_secret_post" in meta.get("token_endpoint_auth_methods_supported", [])
+          and "none" in meta.get("token_endpoint_auth_methods_supported", []) and prm.get("scopes_supported") == ["yui"], meta)
 
     # authorize
     v, ch = pkce()
