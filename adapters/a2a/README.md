@@ -73,7 +73,7 @@ When a card lists both, 1.0 wins. 1.0 calls carry `A2A-Version: 1.0`. The gRPC a
 
 ## The client on its own
 
-`src/a2a.ts` is the A2A client, and `src/sse.ts` the event stream parser. They only use `fetch`, `TextDecoder` and streams, so the same code runs in Node, a Cloudflare Worker or a browser.
+`src/a2a.ts` is the A2A client, and `src/sse.ts` the event stream parser. `src/relay.ts` is the Yui side (pairing, the session, acks, the outbox), shared with the [Flue channel](../flue/); `src/bridge.ts` joins the two. They only use `fetch`, `TextDecoder` and streams, so the same code runs in Node, a Cloudflare Worker or a browser.
 
 ```ts
 import { A2AClient, TaskView } from "./src/a2a.ts";

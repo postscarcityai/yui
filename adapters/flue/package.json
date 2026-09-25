@@ -1,0 +1,28 @@
+{
+  "name": "yui-flue",
+  "version": "0.1.0",
+  "description": "Yui channel for Flue: a Flue agent answers in Yui with screens, not paragraphs",
+  "type": "module",
+  "bin": {
+    "yui-flue": "yui-flue.ts"
+  },
+  "exports": {
+    ".": "./src/yui.ts",
+    "./channel": "./src/channel.ts"
+  },
+  "scripts": {
+    "test": "node --test tests/*.test.ts"
+  },
+  "peerDependencies": {
+    "@flue/runtime": "^2.1.1"
+  },
+  "engines": {
+    "node": ">=22.18"
+  },
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/postscarcityai/yui",
+    "directory": "adapters/flue"
+  }
+}
