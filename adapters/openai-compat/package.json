@@ -1,0 +1,12 @@
+{
+  "name": "yui-openai",
+  "version": "0.1.0",
+  "description": "Yui model bridge: any OpenAI-compatible model (Ollama, LM Studio, vLLM) in Yui",
+  "type": "module",
+  "bin": { "yui-openai": "yui-openai.ts" },
+  "exports": { "./client": "./src/openai.ts", "./thread": "./src/thread.ts", "./sse": "./src/sse.ts" },
+  "scripts": { "test": "node --test tests/*.test.ts" },
+  "engines": { "node": ">=22.18" },
+  "license": "Apache-2.0",
+  "repository": { "type": "git", "url": "https://github.com/postscarcityai/yui", "directory": "adapters/openai-compat" }
+}
