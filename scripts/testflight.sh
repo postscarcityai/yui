@@ -19,7 +19,7 @@ BUILD=${YUI_BUILD:-$BUILD}
 xcodegen generate --quiet
 rm -rf build && mkdir build
 xcodebuild -project Yui.xcodeproj -scheme Yui -destination 'generic/platform=iOS' \
-  -archivePath build/Yui.xcarchive CURRENT_PROJECT_VERSION="$BUILD" "${AUTH[@]}" archive | tail -5
+  -archivePath build/Yui.xcarchive CURRENT_PROJECT_VERSION="$BUILD" $(scripts/build_stamp.sh) "${AUTH[@]}" archive | tail -5
 cat > build/export.plist <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">

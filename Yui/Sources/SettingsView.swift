@@ -13,6 +13,8 @@ struct SettingsView: View {
                     Wordmark(height: 56)
                     Text("Make Yui feel like yours.").font(theme.font(theme.type.body, .semibold)).foregroundStyle(c.inkSoft)
                 }
+                // Clear of the sheet's grabber (Chris, build 96: the wordmark sat under it).
+                .padding(.top, theme.spacing.l)
                 VStack(alignment: .leading, spacing: theme.spacing.m) {
                     Text("Appearance").font(theme.font(theme.type.caption, .bold)).foregroundStyle(c.inkSoft)
                     HStack(spacing: theme.spacing.s) {
@@ -29,6 +31,7 @@ struct SettingsView: View {
                 AgentAccessSection()
                 HelpSection()
                 AccountSection()
+                AboutSection()
             }
             .padding(theme.spacing.xl)
         }
@@ -203,6 +206,49 @@ private struct AccountSection: View {
                 .presentationDetents([.medium])
                 .presentationCornerRadius(theme.radius.card)
         }
+    }
+}
+
+/// Settings > About this build (YUI-92): exactly which Yui is on the phone.
+/// Tap to copy it all, ready to paste into feedback.
+private struct AboutSection: View {
+    @Environment(\.yuiTheme) private var theme
+    @Environment(\.colorScheme) private var scheme
+    @State private var copied = false
+
+    var body: some View {
+        let c = theme.swatch(scheme)
+        Button {
+            UIPasteboard.general.string = BuildInfo.summary
+            withAnimation(theme.spring) { copied = true }
+            Task {
+                try? await Task.sleep(for: .seconds(2))
+                withAnimation(theme.spring) { copied = false }
+            }
+        } label: {
+            VStack(alignment: .leading, spacing: theme.spacing.xs) {
+                HStack {
+                    Text("About this build").font(theme.font(theme.type.caption, .bold)).foregroundStyle(c.inkSoft)
+                    Spacer(minLength: 0)
+                    Label(copied ? "Copied" : "Tap to copy", systemImage: copied ? "checkmark" : "doc.on.doc")
+                        .font(theme.font(theme.type.caption, .bold))
+                        .foregroundStyle(copied ? c.accent : c.inkSoft)
+                        .contentTransition(.symbolEffect(.replace))
+                }
+                Text(BuildInfo.summary)
+                    .font(.system(size: 13, weight: .medium, design: .monospaced))
+                    .foregroundStyle(c.inkSoft)
+                    .multilineTextAlignment(.leading)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, theme.spacing.l)
+            .contentShape(.rect)
+        }
+        .buttonStyle(BounceButtonStyle())
+        .sensoryFeedback(.success, trigger: copied) { _, now in now }
+        .accessibilityIdentifier("aboutBuild")
+        .accessibilityHint("Copies the version, build and commit")
     }
 }
 

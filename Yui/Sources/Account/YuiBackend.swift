@@ -14,8 +14,7 @@ enum YuiBackend {
 
     /// A mail draft with the app version filled in, so a report says which build it is about.
     static func feedbackMail() -> URL {
-        let info = Bundle.main.infoDictionary
-        let version = "\(info?["CFBundleShortVersionString"] as? String ?? "?") (\(info?["CFBundleVersion"] as? String ?? "?"))"
+        let version = BuildInfo.commit.map { "\(BuildInfo.versionLine), \($0)" } ?? BuildInfo.versionLine
         var c = URLComponents()
         c.scheme = "mailto"
         c.path = feedbackEmail

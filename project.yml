@@ -14,6 +14,10 @@ settings:
   base:
     MARKETING_VERSION: "0.2.0"
     CURRENT_PROJECT_VERSION: "1"
+    # Stamped by scripts/build_stamp.sh (YUI-92); empty on a plain Xcode build.
+    YUI_COMMIT: ""
+    YUI_BUILD_DATE: ""
+    YUI_CHANNEL_GUIDE: ""
     SWIFT_VERSION: "6.0"
     DEVELOPMENT_TEAM: ${YUI_TEAM_ID}
     CODE_SIGN_STYLE: Automatic
@@ -41,6 +45,10 @@ targets:
         CFBundleDisplayName: Yui
         UILaunchScreen: {}
         ITSAppUsesNonExemptEncryption: false
+        # Settings > About this build (YUI-92).
+        YuiCommit: $(YUI_COMMIT)
+        YuiBuildDate: $(YUI_BUILD_DATE)
+        YuiChannelGuide: $(YUI_CHANNEL_GUIDE)
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
         # A running timer on the lock screen and in the Dynamic Island (YUI-30).
         NSSupportsLiveActivities: true

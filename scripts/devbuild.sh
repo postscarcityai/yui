@@ -85,7 +85,7 @@ swift "$REPO/scripts/devbuild_icon.swift" Yui/Resources/Assets.xcassets/AppIcon.
 xcodegen generate --quiet
 rm -rf build && mkdir build
 xcodebuild -project Yui.xcodeproj -scheme Yui -destination 'generic/platform=iOS' \
-  -archivePath build/Yui.xcarchive CURRENT_PROJECT_VERSION="$BUILD" "${AUTH[@]}" archive > build/archive.log 2>&1 \
+  -archivePath build/Yui.xcarchive CURRENT_PROJECT_VERSION="$BUILD" $(scripts/build_stamp.sh) "${AUTH[@]}" archive > build/archive.log 2>&1 \
   || { tail -20 build/archive.log; exit 1; }
 # release-testing = ad hoc: signed for the registered devices, production APNs
 # like TestFlight, so pushes keep working.

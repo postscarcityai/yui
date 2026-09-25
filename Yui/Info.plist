@@ -51,5 +51,11 @@
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>
 	</array>
+	<key>YuiBuildDate</key>
+	<string>$(YUI_BUILD_DATE)</string>
+	<key>YuiChannelGuide</key>
+	<string>$(YUI_CHANNEL_GUIDE)</string>
+	<key>YuiCommit</key>
+	<string>$(YUI_COMMIT)</string>
 </dict>
 </plist>
