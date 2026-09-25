@@ -22,6 +22,8 @@ struct ChatView: View {
     @State private var showAgents = ProcessInfo.processInfo.arguments.contains("-yuiAgents")
     /// The first-run button opens Add agent straight from the chat.
     @State private var addFirst = false
+    /// The message open in Select text.
+    @State private var selecting: ChatMessage?
     @FocusState private var focused: Bool
     /// Photos waiting in the composer, and the pickers that fill it.
     @State private var photos: [ComposerPhoto] = []
@@ -108,6 +110,9 @@ struct ChatView: View {
                             }
                         } dismiss: {
                             closeReactions()
+                        } select: {
+                            closeReactions()
+                            selecting = m
                         }
                         .id(m.id)
                         .transition(.opacity)
@@ -161,6 +166,12 @@ struct ChatView: View {
                 .presentationDetents([.large])
                 .presentationCornerRadius(theme.radius.card)
             }
+            // Select text: the held message's words, read-only, to copy any part.
+            .sheet(item: $selecting) { m in
+                SelectTextSheet(text: m.text)
+                    .presentationDetents([.medium, .large])
+                    .presentationCornerRadius(theme.radius.card)
+            }
             .sheet(isPresented: $showAgents) {
                 AgentsView()
                     .presentationDetents([.medium, .large])
@@ -213,11 +224,12 @@ struct ChatView: View {
         .onChange(of: store.screens) { if !store.screens.contains(store.page), store.loaded { store.goToPage(1) } }
         .onChange(of: store.loaded) { keepPage() }
         #if DEBUG
-        // -yuiReactDemo bar|<meaning> ("love it"): the reaction bar open, or a reacted bubble, for screenshots.
+        // -yuiReactDemo bar|select|<meaning> ("love it"): the reaction bar open, Select text open, or a reacted bubble, for screenshots.
         .task {
             guard let mode = UserDefaults.standard.string(forKey: "yuiReactDemo") else { return }
             try? await Task.sleep(for: .seconds(1))
             guard let m = store.messages.last(where: { !$0.fromUser && $0.yl == nil }) else { return }
+            if mode == "select" { selecting = m; return }
             if mode == "bar" { openReactions(m.id) } else { store.react(m.id, with: Reaction.all.first { $0.meaning == mode } ?? Reaction.all[0]) }
         }
         // -yuiThemeDemo "say Autumn it is.\ntheme autumn": the agent restyles itself, live, for screenshots.
@@ -307,7 +319,8 @@ struct ChatView: View {
                                    reaction: store.wearsReaction(m) ? store.reaction(for: m) : nil,
                                    lifted: store.reacting == m.id,
                                    open: { openReactions(m.id) },
-                                   react: { store.react(m.id, with: $0) })
+                                   react: { store.react(m.id, with: $0) },
+                                   select: { selecting = m })
                         }
                     }
                     if let agent = store.agent, outbox.offline, !outbox.pending(agentID: agent.id).isEmpty {
@@ -816,6 +829,7 @@ private struct Bubble: View {
     var lifted = false
     var open: () -> Void = {}
     var react: (Reaction?) -> Void = { _ in }
+    var select: () -> Void = {}
     @Environment(\.yuiTheme) private var theme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -830,7 +844,7 @@ private struct Bubble: View {
                     if message.fromUser {
                         words
                     } else {
-                        words.modifier(Reactable(text: message.text, reaction: reaction, lifted: lifted, open: open, react: react))
+                        words.modifier(Reactable(text: message.text, reaction: reaction, lifted: lifted, open: open, react: react, select: select))
                     }
                 }
             }

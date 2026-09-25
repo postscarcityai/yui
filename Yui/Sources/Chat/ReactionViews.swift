@@ -42,6 +42,8 @@ struct Reactable: ViewModifier {
     let lifted: Bool
     let open: () -> Void
     let react: (Reaction?) -> Void
+    /// Opens the words read-only, to copy just a part.
+    var select: () -> Void = {}
 
     func body(content: Content) -> some View {
         content
@@ -66,6 +68,7 @@ struct Reactable: ViewModifier {
                 }
                 if reaction != nil { Button("Remove reaction") { react(nil) } }
                 Button("Copy") { UIPasteboard.general.string = text }
+                Button("Select text", action: select)
             }
     }
 }
@@ -89,7 +92,7 @@ struct ReactionBadge: View {
 }
 
 /// Held bubble: the thread dims, the bubble lifts, the six reactions float
-/// above it and Copy sits below (a tapback, the Telegram and iMessage way).
+/// above it and Copy and Select text sit below (a tapback, the Telegram and iMessage way).
 struct ReactionOverlay: View {
     let message: ChatMessage
     /// The held bubble, in this view's space.
@@ -98,6 +101,8 @@ struct ReactionOverlay: View {
     let current: Reaction?
     let pick: (Reaction?) -> Void
     let dismiss: () -> Void
+    /// Select text: the words open read-only, to copy any part of them.
+    var select: () -> Void = {}
     @Environment(\.yuiTheme) private var theme
     @Environment(\.colorScheme) private var scheme
     @State private var up = false
@@ -111,6 +116,11 @@ struct ReactionOverlay: View {
         let c = theme.swatch(scheme)
         // Above the bubble when there is room, else under it (a message at the very top).
         let above = rect.minY - barSize.height - 12 > 4
+        // A bubble at the bottom lifts until the menu fits under it (the iMessage way),
+        // never so far that the bar leaves the screen.
+        let lift = above ? max(0, min(rect.maxY + 12 + menuHeight + 8 - size.height,
+                                      rect.minY - barSize.height - 16)) : 0
+        let rect = rect.offsetBy(dx: 0, dy: -lift)
         let barY = above ? rect.minY - 12 - barSize.height / 2 : rect.maxY + 12 + barSize.height / 2
         let barX = min(max(rect.minX - 6 + barSize.width / 2, barSize.width / 2 + 8), size.width - barSize.width / 2 - 8)
         let menuTop = above ? rect.maxY + 12 : barY + barSize.height / 2 + 10
@@ -156,7 +166,7 @@ struct ReactionOverlay: View {
         .sensoryFeedback(.selection, trigger: chosen)
     }
 
-    private var menuHeight: CGFloat { menuSize.height * (current == nil ? 1 : 2) }
+    private var menuHeight: CGFloat { menuSize.height * (current == nil ? 2 : 3) }
 
     private func bar(_ c: Swatch) -> some View {
         HStack(spacing: 0) {
@@ -199,6 +209,10 @@ struct ReactionOverlay: View {
                 UIPasteboard.general.string = message.text
                 dismiss()
             }
+            .accessibilityIdentifier("react-copy")
+            Divider().overlay(c.outline)
+            menuRow("Select text", icon: "text.cursor", c, action: select)
+                .accessibilityIdentifier("react-select")
             if let current {
                 Divider().overlay(c.outline)
                 menuRow("Remove \(current.emoji)", icon: "xmark.circle", c) { pick(nil) }
@@ -223,5 +237,79 @@ struct ReactionOverlay: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+    }
+}
+
+/// A message's words, read-only, for copying any part of them (TestFlight
+/// feedback AG9JzU4LeWl-TFeKWftiFIE). Drag to select, then Copy.
+struct SelectTextSheet: View {
+    let text: String
+    @Environment(\.yuiTheme) private var theme
+    @Environment(\.colorScheme) private var scheme
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        let c = theme.swatch(scheme)
+        NavigationStack {
+            ReadOnlyText(text: text, font: theme.uiFont(theme.type.body), ink: UIColor(c.ink))
+                .padding(.horizontal, theme.spacing.m)
+                .background(c.background.ignoresSafeArea())
+                .navigationTitle("Select text")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("Done") { dismiss() }
+                    }
+                    ToolbarItem(placement: .topBarLeading) {
+                        Button("Copy all", systemImage: "doc.on.doc") {
+                            UIPasteboard.general.string = text
+                            dismiss()
+                        }
+                    }
+                }
+                .toolbarBackground(c.background, for: .navigationBar)
+        }
+        .tint(c.ink)
+    }
+}
+
+/// A UITextView you can select in but not type in: SwiftUI's Text only
+/// selects the whole string on iOS.
+struct ReadOnlyText: UIViewRepresentable {
+    let text: String
+    let font: UIFont
+    let ink: UIColor
+
+    func makeUIView(context: Context) -> UITextView {
+        let v = UITextView()
+        v.isEditable = false
+        v.isSelectable = true
+        v.backgroundColor = .clear
+        v.textContainerInset = UIEdgeInsets(top: 16, left: 4, bottom: 24, right: 4)
+        v.adjustsFontForContentSizeCategory = true
+        v.dataDetectorTypes = [.link]
+        v.accessibilityIdentifier = "select-text"
+        return v
+    }
+
+    func updateUIView(_ v: UITextView, context: Context) {
+        v.text = text
+        v.font = font
+        v.textColor = ink
+    }
+}
+
+extension YuiTheme {
+    /// `font(_:_:)` for UIKit text, in the theme's design, scaled with Dynamic Type.
+    func uiFont(_ size: Double, _ weight: UIFont.Weight = .medium) -> UIFont {
+        let base = UIFont.systemFont(ofSize: size, weight: weight)
+        let design: UIFontDescriptor.SystemDesign = switch type.design {
+        case "serif": .serif
+        case "monospaced": .monospaced
+        case "default": .default
+        default: .rounded
+        }
+        let font = base.fontDescriptor.withDesign(design).map { UIFont(descriptor: $0, size: size) } ?? base
+        return UIFontMetrics(forTextStyle: .body).scaledFont(for: font)
     }
 }
