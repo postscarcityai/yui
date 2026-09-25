@@ -1,8 +1,9 @@
 /// Yui Lines v0. Spec: `yuigui/spec/YL.md`. Conformance: `yuigui/spec/conformance`.
 public enum YuiLines {
-    /// Parses a whole reply. Blank and comment lines produce nothing.
-    public static func parse(_ text: String) -> [YLNode] {
-        var p = YLParser()
+    /// Parses a whole reply. Blank and comment lines produce nothing. `known` is
+    /// the ids that last from earlier replies (spec section 5), id -> preset.
+    public static func parse(_ text: String, known: [String: String] = [:]) -> [YLNode] {
+        var p = YLParser(known: known)
         return splitLines(Array(text.utf8)).compactMap { p.line($0) }
     }
 
@@ -35,15 +36,17 @@ public enum YuiLines {
 
 /// Line-at-a-time parser. Stateful: it remembers the focused screen, the
 /// auto-id counter and which preset each id belongs to, so `~hiit rounds=10`
-/// knows to parse its args as a timer. Use one per reply.
+/// knows to parse its args as a timer. Use one per reply. `known` is the ids
+/// that last from earlier replies (spec section 5, Ids that last), id -> preset;
+/// this reply's own ids shadow them.
 public struct YLParser: Sendable {
     public private(set) var screen = "1"
-    private var ids: [String: String] = [:]
+    private var ids: [String: String]
     private var auto = 0
     /// Open groups, innermost last.
     private var open: [(id: String, preset: String, screen: String)] = []
 
-    public init() {}
+    public init(known: [String: String] = [:]) { ids = known }
 
     /// Parses one line (no `\n`). Returns nil for blank and comment lines.
     public mutating func line(_ src: String) -> YLNode? { group(parseLine(src)) }
@@ -113,7 +116,7 @@ public struct YLParser: Sendable {
 
         if head.hasPrefix("~") {
             var target = String(head.dropFirst())
-            // ~preset@id (spec section 5): the id when this reply made it, else the preset name.
+            // ~preset@id (spec section 5): the id when this reply made it or it lasts, else the preset name.
             if let at = target.firstIndex(of: "@") {
                 let name = String(target[..<at]), id = String(target[target.index(after: at)...])
                 if name.range(of: "^[a-z]+$", options: .regularExpression) != nil,
@@ -221,9 +224,9 @@ public struct YLParser: Sendable {
 /// Buffers bytes, so a chunk may split a line (or a CRLF) anywhere.
 public struct YLStreamParser: Sendable {
     private var buf: [UInt8] = []
-    private var parser = YLParser()
+    private var parser: YLParser
 
-    public init() {}
+    public init(known: [String: String] = [:]) { parser = YLParser(known: known) }
 
     public mutating func push(_ chunk: String) -> [YLNode] { push(bytes: chunk.utf8) }
 

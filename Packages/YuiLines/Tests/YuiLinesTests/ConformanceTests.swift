@@ -24,6 +24,8 @@ struct Vector: Sendable, CustomTestStringConvertible {
     /// Words typed on a screen and the body the agent reads: screen, words, body.
     let typed: [String: String]?
     let style: [String: String]
+    /// Ids that last from earlier replies, id -> preset (spec section 5).
+    let known: [String: String]
     var testDescription: String { "\(file) :: \(name)" }
 }
 
@@ -50,7 +52,8 @@ enum Vectors {
                 pages: v["pages"]?.array?.map { Int($0.number!) },
                 talk: v["talk"]?.array?.map { Int($0.number!) },
                 typed: v["typed"]?.object?.compactMapValues { $0.string },
-                style: v["style"]?.object?.compactMapValues { $0.string } ?? [:]
+                style: v["style"]?.object?.compactMapValues { $0.string } ?? [:],
+                known: v["known"]?.object?.compactMapValues { $0.string } ?? [:]
             )
         }
     }
@@ -76,10 +79,10 @@ func json(_ v: some Encodable) -> String {
 
 @Test("conformance vector", arguments: Vectors.all)
 func conformance(_ v: Vector) {
-    let whole = YuiLines.parse(v.input).map(comparable)
+    let whole = YuiLines.parse(v.input, known: v.known).map(comparable)
     #expect(whole == v.expected, "parse: \(json(whole)) != \(json(v.expected))")
 
-    var s = YLStreamParser()
+    var s = YLStreamParser(known: v.known)
     var streamed: [YLNode] = []
     for ch in v.input.unicodeScalars { streamed += s.push(String(ch)) }
     streamed += s.flush()
@@ -87,24 +90,24 @@ func conformance(_ v: Vector) {
     #expect(byChar == v.expected, "stream by char: \(json(byChar))")
 
     if let chunks = v.chunks, let emits = v.emits {
-        var s = YLStreamParser()
+        var s = YLStreamParser(known: v.known)
         var got = chunks.map { s.push($0).map(comparable) }
         got.append(s.flush().map(comparable))
         #expect(got == emits, "stream by chunk: \(json(got))")
     }
 
     if let stage = v.stage {
-        let staged = YuiLines.parse(v.input).filter { YuiLines.opensOnStage($0, style: v.style) }.compactMap(\.id)
+        let staged = YuiLines.parse(v.input, known: v.known).filter { YuiLines.opensOnStage($0, style: v.style) }.compactMap(\.id)
         #expect(staged == stage, "stage: \(staged)")
     }
 
     if let pages = v.pages {
-        let got = YuiLines.parse(v.input).filter { $0.op == .add }.map { YuiLines.page(of: $0.screen) }
+        let got = YuiLines.parse(v.input, known: v.known).filter { $0.op == .add }.map { YuiLines.page(of: $0.screen) }
         #expect(got == pages, "pages: \(got)")
     }
 
     if let talk = v.talk {
-        let got = YuiLines.talking(YuiLines.parse(v.input))
+        let got = YuiLines.talking(YuiLines.parse(v.input, known: v.known))
         #expect(got == talk, "talk: \(got)")
     }
 
@@ -129,7 +132,7 @@ func conformance(_ v: Vector) {
 
 @Test func streamSurvivesByteSplitsInsideCharacters() {
     for v in Vectors.all {
-        var s = YLStreamParser()
+        var s = YLStreamParser(known: v.known)
         var out: [YLNode] = []
         for b in v.input.utf8 { out += s.push(bytes: [b]) }
         out += s.flush()
