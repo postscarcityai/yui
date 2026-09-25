@@ -16,5 +16,6 @@ sig=r.lstrip(b"\0").rjust(32,b"\0")+s.lstrip(b"\0").rjust(32,b"\0")
 tok=(h+b"."+p+b"."+b(sig)).decode()
 method,path=sys.argv[1],sys.argv[2]; data=sys.argv[3].encode() if len(sys.argv)>3 else None
 req=urllib.request.Request("https://api.appstoreconnect.apple.com"+path,data=data,method=method,headers={"Authorization":"Bearer "+tok,"Content-Type":"application/json"})
-try: print(urllib.request.urlopen(req).read().decode())
+# timeout: a stalled Apple connection once hung the TestFlight watch cron for 50 min.
+try: print(urllib.request.urlopen(req,timeout=60).read().decode())
 except urllib.error.HTTPError as e: print(e.code,e.read().decode())
