@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // Yui model bridge (INT-12): any OpenAI-compatible model in Yui. Ollama,
 // LM Studio, vLLM, llama.cpp, Gemini (--server gemini, INT-9), Grok (--server
-// grok, INT-10), or any server with /v1/chat/completions.
+// grok, INT-10), Meta Muse Spark (--server meta, INT-11), or any server with
+// /v1/chat/completions.
 //
 //   node yui-openai.ts models [--server ollama]                  # what the server has
 //   node yui-openai.ts try "hi" --model qwen2.5:7b              # one answer, guide included, nothing paired
@@ -33,7 +34,7 @@ const USAGE = `usage: yui-openai.ts [--state FILE] <command>
   status                                       the connector, its agents and their models
   guide                                        print the channel guide (the system message)
 
-SERVER: --server ollama|lmstudio|vllm|llamacpp|openrouter|gemini|grok, or --url http://host:port/v1 (default ollama)
+SERVER: --server ollama|lmstudio|vllm|llamacpp|openrouter|gemini|grok|meta, or --url http://host:port/v1 (default ollama)
         --key-env VAR   read the key from $VAR when it runs (nothing stored)
         --key-stdin     read the key from stdin once and keep it in the state file (mode 600)
 MODEL OPTIONS: --system "text"  --context 4096  --max-tokens N  --temperature T  --no-stream`;

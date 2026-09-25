@@ -3,7 +3,7 @@
 // picked by the last line the person sent. Streams like Ollama and vLLM do
 // (SSE, "data: [DONE]"), or not at all.
 //
-//   node tests/fake-model.ts [--port 0] [--no-streaming] [--refuse-stream] [--key K] [--no-done] [--gemini] [--grok]
+//   node tests/fake-model.ts [--port 0] [--no-streaming] [--refuse-stream] [--key K] [--no-done] [--gemini] [--grok] [--meta]
 //
 // Prints "fake-model <base url>" first. GET /_log lists every request.
 //
@@ -36,6 +36,20 @@
 //   busy             -> 429 rate limit the first time, then "Back in line."
 //   broke            -> 403, the team is out of credits
 //   decline          -> no content, a refusal saying why
+//
+// --meta answers the way Meta's Model API does for Muse Spark (INT-11):
+// errors as {"error": {"message", "type", "param", "code"}}, a bad key as 401
+// invalid_api_key, a 404 with no body for a path it doesn't have, a 400 for
+// stop, n > 1, logit_bias and the other arguments it refuses, and
+// reasoning_content always there but redacted to "". More lines:
+//   reason           -> an empty reasoning_content first (as Muse Spark sends), then "Tea, then."
+//   busy             -> 429 rate_limit_exceeded with Retry-After: 2 the first time, then "Back in line."
+//   broke            -> 402 billing_error, insufficient balance
+//   locked           -> 403, the key has no access to this model
+//   unsafe           -> 400, content policy violation
+//   long             -> 400, input_tokens + max_output_tokens must fit the window
+//   timeout          -> plain: 504 gateway_timeout; streamed: "Streamed in time."
+//   overload         -> streamed: a piece, then an "error" event (service_overloaded) the first time; then "Calm again."
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { parseArgs } from "node:util";
 
@@ -47,6 +61,7 @@ export interface FakeOptions {
   done?: boolean; // false: ends streams on finish_reason, no [DONE]
   gemini?: boolean; // Gemini's shapes, see above
   grok?: boolean; // xAI's shapes, see above
+  meta?: boolean; // Meta Model API's shapes, see above
 }
 
 export interface Fake {
@@ -71,22 +86,26 @@ export function startFake(opts: FakeOptions = {}): Promise<Fake> {
   async function handle(req: IncomingMessage, res: ServerResponse) {
     const url = new URL(req.url ?? "/", "http://x");
     if (req.method === "GET" && url.pathname === "/_log") return json(res, 200, log);
-    const fail = (status: number, message: string, word: string) => opts.gemini
+    const fail = (status: number, message: string, word: string | null) => opts.gemini
       ? json(res, status, [{ error: { code: status, message, status: word } }])
-      : opts.grok ? json(res, status, { code: XAI_CODES[word] ?? word, error: message })
+      : opts.grok ? json(res, status, { code: XAI_CODES[word ?? ""] ?? word, error: message })
+      : opts.meta ? json(res, status, { error: { message, type: META_TYPES[status] ?? "invalid_request_error", param: null, code: word } })
       : json(res, status, { error: { message, type: "invalid_request_error" } });
     if (opts.key && req.headers.authorization !== `Bearer ${opts.key}`) {
       if (opts.gemini) return fail(400, "API key not valid. Please pass a valid API key.", "INVALID_ARGUMENT");
       if (opts.grok) return fail(400, "Incorrect API key provided: wr***ng. You can obtain an API key from https://console.x.ai.", "INVALID_ARGUMENT");
+      if (opts.meta) return fail(401, "Invalid API key provided.", "invalid_api_key");
       return fail(401, "Incorrect API key provided", "UNAUTHENTICATED");
     }
     if (req.method === "GET" && url.pathname === "/v1/models") {
       const id = (x: string) => (opts.gemini ? `models/${x}` : x);
-      const owner = opts.gemini ? "google" : opts.grok ? "xai" : "fake";
+      const owner = opts.gemini ? "google" : opts.grok ? "xai" : opts.meta ? "meta" : "fake";
       return json(res, 200, { object: "list", data: [{ id: id("fake-1"), object: "model", owned_by: owner },
                                                      { id: id("fake-2"), object: "model", owned_by: owner }] });
     }
-    if (req.method !== "POST" || url.pathname !== "/v1/chat/completions") return fail(404, "no such route", "NOT_FOUND");
+    if (req.method !== "POST" || url.pathname !== "/v1/chat/completions") {
+      return opts.meta ? void res.writeHead(404).end() : fail(404, "no such route", "NOT_FOUND");
+    }
     let raw = "";
     for await (const c of req) raw += c;
     const body = JSON.parse(raw);
@@ -96,10 +115,14 @@ export function startFake(opts: FakeOptions = {}): Promise<Fake> {
     log.push({ model: body.model, stream: !!body.stream, messages: msgs, text: last, auth: req.headers.authorization ?? null,
                max_tokens: body.max_tokens, temperature: body.temperature, keys: Object.keys(body), at: Date.now() });
     if (body.model !== "fake-1" && body.model !== "fake-2") {
+      if (opts.meta) return fail(404, `The model \`${body.model}\` does not exist or you do not have access to it.`, "model_not_found");
       return fail(404, `model "${body.model}" not found, try pulling it first`, "NOT_FOUND");
     }
     const refused = ["stop", "presence_penalty", "frequency_penalty"].find((k) => opts.grok && k in body);
     if (refused) return fail(400, `Argument not supported on this model: ${refused}`, "INVALID_ARGUMENT");
+    const metaRefused = opts.meta && (["stop", "logit_bias", "prediction", "web_search_options", "modalities", "audio", "verbosity"].find((k) => k in body)
+      ?? ((body.n ?? 1) > 1 ? "n" : body.reasoning_effort === "none" ? "reasoning_effort" : undefined));
+    if (metaRefused) return fail(400, `'${metaRefused}' is not supported with this model.`, null);
     if (body.stream && opts.refuseStream) return json(res, 400, { error: { message: "stream is not supported by this server" } });
     const n = (seen.get(line) ?? 0) + 1;
     seen.set(line, n);
@@ -110,6 +133,7 @@ export function startFake(opts: FakeOptions = {}): Promise<Fake> {
     let reasoning = "";
     let refusal = "";
     let fin = "stop";
+    let failMidStream = false;
     let m: RegExpMatchArray | null;
     if (line === "hello") pieces = ["You said: ", "hello"];
     else if (line === "screen") pieces = ["Pick one:\n", "```yui\nchoose \"Pick one\" Tea|Coffee\n```"];
@@ -155,6 +179,28 @@ export function startFake(opts: FakeOptions = {}): Promise<Fake> {
       pieces = [];
       refusal = "I can't help with that one.";
     }
+    else if (opts.meta && line === "reason") pieces = ["Tea, ", "then."]; // reasoning_content comes, empty
+    else if (opts.meta && line === "busy") {
+      if (n === 1) {
+        res.setHeader("retry-after", "2");
+        return fail(429, "Rate limit exceeded: too many requests per minute. Please retry after a short wait.", "rate_limit_exceeded");
+      }
+      pieces = ["Back in line."];
+    } else if (opts.meta && line === "broke") {
+      return fail(402, "Insufficient balance. Add funds to your account to continue.", "insufficient_balance");
+    } else if (opts.meta && line === "locked") {
+      return fail(403, "Your API key does not have access to this model.", "permission_denied");
+    } else if (opts.meta && line === "unsafe") {
+      return fail(400, "The request was rejected because it violates the content policy.", "content_policy_violation");
+    } else if (opts.meta && line === "long") {
+      return fail(400, "Request too long: input_tokens + max_output_tokens must fit within the model's context window.", "context_length_exceeded");
+    } else if (opts.meta && line === "timeout") {
+      if (!body.stream) return fail(504, "The request timed out. Use stream: true for long requests.", "gateway_timeout");
+      pieces = ["Streamed in time."];
+    } else if (opts.meta && line === "overload") {
+      failMidStream = n === 1;
+      pieces = failMidStream ? ["Half"] : ["Calm again."];
+    }
     else pieces = [`You said: ${line}`];
 
     const id = `chatcmpl-${log.length}`;
@@ -164,7 +210,8 @@ export function startFake(opts: FakeOptions = {}): Promise<Fake> {
       const text = thought ? `<thought>${thought}</thought>${said}` : said;
       return json(res, 200, { id, object: "chat.completion", model: body.model,
         choices: [{ index: 0, message: { role: "assistant", content: (opts.gemini && fin !== "stop") || refusal ? null : text,
-                                         ...(reasoning ? { reasoning_content: reasoning } : {}), ...(refusal ? { refusal } : {}) },
+                                         ...(reasoning ? { reasoning_content: reasoning } : opts.meta ? { reasoning_content: "" } : {}),
+                                         ...(refusal ? { refusal } : {}) },
                     finish_reason: fin }],
         usage: { prompt_tokens: raw.length >> 2, completion_tokens: text.length >> 2,
                  ...(opts.grok ? { completion_tokens_details: { reasoning_tokens: reasoning.length >> 2 } } : {}) },
@@ -188,6 +235,8 @@ export function startFake(opts: FakeOptions = {}): Promise<Fake> {
       return void res.end();
     }
     send({ id, object: "chat.completion.chunk", choices: [{ index: 0, delta: { role: "assistant", content: "" }, finish_reason: null }] });
+    // Muse Spark's reasoning, redacted to "" for callers outside Meta.
+    if (opts.meta) send({ id, object: "chat.completion.chunk", choices: [{ index: 0, delta: { reasoning_content: "" }, finish_reason: null }] });
     for (const r of reasoning ? [reasoning.slice(0, 4), reasoning.slice(4)] : []) {
       send({ id, object: "chat.completion.chunk", choices: [{ index: 0, delta: { reasoning_content: r }, finish_reason: null }] });
     }
@@ -200,6 +249,11 @@ export function startFake(opts: FakeOptions = {}): Promise<Fake> {
       }
       if (wait) await sleep(wait);
       send({ id, object: "chat.completion.chunk", choices: [{ index: 0, delta: { content: p }, finish_reason: null }] });
+    }
+    if (failMidStream) {
+      res.write(`event: error\ndata: ${JSON.stringify({ error: { message: "The service is temporarily overloaded.", type: "server_error",
+                                                                  param: null, code: "service_overloaded" } })}\n\n`);
+      return void res.end();
     }
     send({ id, object: "chat.completion.chunk", choices: [{ index: 0, delta: {}, finish_reason: "stop" }] });
     if (opts.done !== false) res.write("data: [DONE]\n\n");
@@ -214,6 +268,12 @@ export function startFake(opts: FakeOptions = {}): Promise<Fake> {
     });
   });
 }
+
+/** Meta's error "type" by status. */
+const META_TYPES: Record<number, string> = {
+  400: "invalid_request_error", 401: "authentication_error", 402: "billing_error", 403: "permission_error",
+  404: "invalid_request_error", 429: "rate_limit_error", 500: "server_error", 503: "server_error", 504: "server_error",
+};
 
 /** The words xAI puts in "code", by the status word Google's APIs use. */
 const XAI_CODES: Record<string, string> = {
@@ -230,9 +290,9 @@ function json(res: ServerResponse, status: number, body: unknown) {
 if (import.meta.url === `file://${process.argv[1]}`) {
   const { values: o } = parseArgs({ options: {
     port: { type: "string", default: "0" }, "no-streaming": { type: "boolean" }, "refuse-stream": { type: "boolean" },
-    key: { type: "string" }, "no-done": { type: "boolean" }, gemini: { type: "boolean" }, grok: { type: "boolean" },
+    key: { type: "string" }, "no-done": { type: "boolean" }, gemini: { type: "boolean" }, grok: { type: "boolean" }, meta: { type: "boolean" },
   } });
   const f = await startFake({ port: Number(o.port), streaming: !o["no-streaming"], refuseStream: o["refuse-stream"],
-                              key: o.key, done: !o["no-done"], gemini: o.gemini, grok: o.grok });
+                              key: o.key, done: !o["no-done"], gemini: o.gemini, grok: o.grok, meta: o.meta });
   console.log(`fake-model ${f.url}`);
 }

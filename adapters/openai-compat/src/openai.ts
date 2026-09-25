@@ -28,8 +28,15 @@ export interface Completion {
   usage?: { prompt_tokens?: number; completion_tokens?: number };
 }
 
-/** Try again later: the network, a 408/409/425/429/5xx, a stream that stopped short. */
-export class ModelUnavailable extends Error {}
+/** Try again later: the network, a 408/409/425/429/5xx, a stream that stopped short.
+ *  retryAfter is the server's Retry-After in seconds, when it sent one. */
+export class ModelUnavailable extends Error {
+  retryAfter?: number;
+  constructor(message: string, retryAfter?: number) {
+    super(message);
+    if (retryAfter !== undefined) this.retryAfter = retryAfter;
+  }
+}
 
 /** The server said no for this request: bad key, unknown model, too long. Retrying won't help. */
 export class ModelError extends Error {
@@ -57,7 +64,12 @@ export const SERVERS: Record<string, { url: string; keyEnv?: string; context?: n
   // xAI's API (INT-10). grok-4.7 is the model xAI points chat at; its window is
   // 500k, 32k keeps a long thread without sending all of it every turn.
   grok: { url: "https://api.x.ai/v1", keyEnv: "XAI_API_KEY", context: 32768, model: "grok-4.7" },
+  // Meta Model API (INT-11): Muse Spark. MODEL_API_KEY is the name Meta's docs
+  // use. The window is a million tokens; 32k keeps a long thread without
+  // sending all of it every turn.
+  meta: { url: "https://api.meta.ai/v1", keyEnv: "MODEL_API_KEY", context: 32768, model: "muse-spark-1.3" },
 };
+SERVERS.muse = SERVERS.meta; // what people call it
 
 /** "http://host:11434/v1/" or ".../v1/chat/completions" -> "http://host:11434/v1". */
 export function baseUrl(url: string): string {
@@ -108,8 +120,13 @@ export class ChatClient {
     }
     if (r.ok) return r;
     const text = await r.text().catch(() => "");
+    // Meta answers an unknown path with 404 and no body at all.
     const msg = errorMessage(text) || r.statusText || `HTTP ${r.status}`;
-    if ([408, 409, 425, 429].includes(r.status) || r.status >= 500) throw new ModelUnavailable(`${r.status}: ${msg}`);
+    // Meta's 504 gateway_timeout is a plain answer that took too long: asking again takes as long.
+    if (r.status === 504 && /gateway_timeout/.test(text)) {
+      throw new ModelError(r.status, `the answer took too long to come back plain (${msg}). Let it stream (drop --no-stream)`);
+    }
+    if ([408, 409, 425, 429].includes(r.status) || r.status >= 500) throw new ModelUnavailable(`${r.status}: ${msg}`, retryAfter(r.headers.get("retry-after")));
     if (r.status === 400 && /stream/i.test(msg)) throw new StreamRefused(r.status, msg);
     throw new ModelError(r.status, explain(r.status, msg));
   }
@@ -183,9 +200,11 @@ export class ChatClient {
         } catch {
           continue; // a keep-alive or a line the server should not have sent
         }
+        // Meta sends a failure mid-stream as an "error" event carrying the usual {"error": {...}}.
         if (chunk.error) {
           const msg = errorMessage(JSON.stringify(chunk));
-          if (/overload|rate|capacity|timeout|unavailable/i.test(msg)) throw new ModelUnavailable(msg);
+          const kind = `${chunk.error?.type ?? ""} ${chunk.error?.code ?? ""}`;
+          if (/overload|rate|capacity|timeout|unavailable|shutting/i.test(msg) || /rate_limit|server_error/.test(kind)) throw new ModelUnavailable(msg);
           throw new ModelError(200, msg);
         }
         if (chunk.usage) usage = chunk.usage;
@@ -234,6 +253,13 @@ function finish(raw: string, reasoning: string, fin: string | null, streamed: bo
   return { text: text.trim(), reasoning: (reasoning || thinking).trim(), finish: fin, streamed, ...(usage ? { usage } : {}) };
 }
 
+/** Retry-After as seconds ("7") or a date; nothing when missing or odd. */
+export function retryAfter(h: string | null): number | undefined {
+  if (!h) return undefined;
+  const n = /^\s*\d+(\.\d+)?\s*$/.test(h) ? Number(h) : (Date.parse(h) - Date.now()) / 1000;
+  return Number.isFinite(n) ? Math.min(Math.max(Math.ceil(n), 0), 3600) : undefined;
+}
+
 function reason(e: any): string {
   return String(e?.cause?.code ?? e?.cause?.message ?? e?.message ?? e);
 }
@@ -253,10 +279,16 @@ export function errorMessage(text: string): string {
 }
 
 function explain(status: number, msg: string): string {
-  // xAI answers a team with no credits left, or at its spending limit, with 403.
-  if (status === 402 || /credits|spending limit/i.test(msg)) return `the account is out of credits or at its spending limit (${status}: ${msg})`;
+  // xAI answers a team with no credits left, or at its spending limit, with 403; Meta with 402 billing_error.
+  if (status === 402 || /credits|spending limit|insufficient balance/i.test(msg)) return `the account is out of credits or at its spending limit (${status}: ${msg})`;
+  // Meta: a good key without access to this model or feature is 403.
+  if (status === 403 && /access|permission/i.test(msg)) return `the key works but has no access to this model (${status}: ${msg})`;
   // Gemini ("API key not valid") and xAI ("Incorrect API key provided") answer a bad key with 400.
   if (status === 401 || status === 403 || /api key/i.test(msg)) return `the server turned the key down (${status}: ${msg})`;
+  // Meta turns down a message its content policy blocks with a 400.
+  if (/content policy|safety|moderation/i.test(msg)) return `the model's safety filter turned this down (${status}: ${msg}). Try saying it another way`;
+  // "maximum context length" (OpenAI, vLLM), "input_tokens + max_output_tokens must fit" (Meta).
+  if (status === 400 && /context (length|window)|must fit/i.test(msg)) return `${status}: ${msg}. Lower --context or --max-tokens`;
   if (status === 404) return `not found (${msg}). Check the model name and the base URL`;
   return `${status}: ${msg}`;
 }

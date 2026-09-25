@@ -377,8 +377,9 @@ export class Bridge {
           this.fatal = e;
           return;
         }
-        const wait = Math.min((this.backoff.get(aid) ?? 1) * 2, BACKOFF_MAX);
-        this.backoff.set(aid, wait);
+        // A server's Retry-After (429 from Meta, OpenAI) beats our own guess.
+        const wait = Math.max(Math.min((this.backoff.get(aid) ?? 1) * 2, BACKOFF_MAX), e?.retryAfter ?? 0);
+        this.backoff.set(aid, Math.min(wait, BACKOFF_MAX));
         this.retryAt.set(aid, Date.now() / 1000 + wait + Math.random());
         log(`${agent.name}: ${e?.message ?? e}; trying again in ${wait}s`);
       }).finally(() => this.jobs.delete(aid));

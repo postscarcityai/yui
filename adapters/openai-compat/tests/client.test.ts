@@ -3,7 +3,7 @@
 //   node --test tests/client.test.ts
 import assert from "node:assert/strict";
 import { after, before, describe, test } from "node:test";
-import { ChatClient, ModelError, ModelUnavailable, SERVERS, StreamRefused, baseUrl, errorMessage, splitThinking } from "../src/openai.ts";
+import { ChatClient, ModelError, ModelUnavailable, SERVERS, StreamRefused, baseUrl, errorMessage, retryAfter, splitThinking } from "../src/openai.ts";
 import { alternate, buildMessages, toMessage, tokens, type ThreadRow } from "../src/thread.ts";
 import { startFake, type Fake } from "./fake-model.ts";
 
@@ -260,6 +260,98 @@ describe("client, Grok-shaped server (INT-10)", () => {
   });
 });
 
+describe("client, Meta-shaped server (INT-11)", () => {
+  let f: Fake;
+  let c: ChatClient;
+  // Meta's keys carry "|" between their parts; this one only has the shape.
+  const key = "LLM|test|meta-key";
+  before(async () => {
+    f = await startFake({ meta: true, key });
+    c = new ChatClient(f.url, { key });
+  });
+  after(() => f.close());
+
+  test("the preset is Meta's base, key from MODEL_API_KEY, Muse Spark by default, a bigger window; muse is the same", () => {
+    assert.equal(SERVERS.meta.url, "https://api.meta.ai/v1");
+    assert.equal(baseUrl(`${SERVERS.meta.url}/chat/completions`), SERVERS.meta.url);
+    assert.equal(SERVERS.meta.keyEnv, "MODEL_API_KEY");
+    assert.match(SERVERS.meta.model ?? "", /^muse-spark-/);
+    assert.ok((SERVERS.meta.context ?? 0) > 4096);
+    assert.equal(SERVERS.muse, SERVERS.meta);
+  });
+  test("lists the models, the key with its | goes through whole", async () => {
+    assert.deepEqual(await c.models(), ["fake-1", "fake-2"]);
+    assert.equal(f.log.length, 0);
+    await ask(c, "hello");
+    assert.equal(f.log.at(-1).auth, `Bearer ${key}`);
+  });
+  test("streams, and sends none of the arguments Muse Spark refuses", async () => {
+    const r = await ask(c, "hello");
+    assert.equal(r.text, "You said: hello");
+    assert.equal(r.finish, "stop");
+    for (const k of ["stop", "n", "logit_bias", "reasoning_effort"]) assert.ok(!f.log.at(-1).keys.includes(k), k);
+  });
+  test("a screen streams through whole", async () => {
+    assert.equal((await ask(c, "screen")).text, "Pick one:\n```yui\nchoose \"Pick one\" Tea|Coffee\n```");
+  });
+  test("the redacted, empty reasoning_content changes nothing, streamed or plain", async () => {
+    for (const stream of [true, false]) {
+      const seen: string[] = [];
+      const r = await ask(c, "reason", stream, (d) => seen.push(d));
+      assert.equal(r.text, "Tea, then.");
+      assert.equal(r.reasoning, "");
+      if (stream) assert.deepEqual(seen, ["Tea, ", "then."]);
+    }
+  });
+  test("a bad key is 401 invalid_api_key, and reads as a key problem", async () => {
+    const bad = new ChatClient(f.url, { key: "wrong" });
+    await assert.rejects(ask(bad, "hello"), (e: any) => e instanceof ModelError && e.status === 401 && /turned the key down/.test(e.message));
+    await assert.rejects(bad.models(), (e: any) => e instanceof ModelError && /key/.test(e.message));
+  });
+  test("an unknown model reads as not found, with Meta's message", async () => {
+    await assert.rejects(c.complete({ model: "muse-nope", messages: [{ role: "user", content: "hi" }] }),
+      (e: any) => e instanceof ModelError && e.status === 404 && /`muse-nope` does not exist/.test(e.message) && /Check the model name/.test(e.message));
+  });
+  test("a 404 with no body still says not found", async () => {
+    const wrong = new ChatClient(`${f.url}/nope`, { key });
+    await assert.rejects(ask(wrong, "hello"), (e: any) => e instanceof ModelError && e.status === 404 && /not found \(Not Found\)/.test(e.message));
+  });
+  test("429 waits as long as Retry-After says, then it answers", async () => {
+    await assert.rejects(ask(c, "busy"), (e: any) => e instanceof ModelUnavailable && e.retryAfter === 2 && /429: Rate limit exceeded/.test(e.message));
+    assert.equal((await ask(c, "busy")).text, "Back in line.");
+  });
+  test("402 billing_error says the account is out of funds, and does not wait", async () => {
+    await assert.rejects(ask(c, "broke"), (e: any) => e instanceof ModelError && !(e instanceof ModelUnavailable)
+      && e.status === 402 && /out of credits/.test(e.message) && !/turned the key down/.test(e.message));
+  });
+  test("403 for a model the key can't use says so, not that the key is bad", async () => {
+    await assert.rejects(ask(c, "locked"), (e: any) => e instanceof ModelError && e.status === 403
+      && /no access to this model/.test(e.message) && !/turned the key down/.test(e.message));
+  });
+  test("a content policy 400 reads as the safety filter, not a broken request", async () => {
+    await assert.rejects(ask(c, "unsafe"), (e: any) => e instanceof ModelError && !(e instanceof StreamRefused)
+      && e.status === 400 && /safety filter/.test(e.message) && /another way/.test(e.message));
+  });
+  test("a thread over the window says which knob to turn", async () => {
+    await assert.rejects(ask(c, "long"), (e: any) => e instanceof ModelError && e.status === 400 && /must fit/.test(e.message) && /Lower --context/.test(e.message));
+  });
+  test("504 gateway_timeout on a plain answer does not retry and says to stream; streamed it answers", async () => {
+    await assert.rejects(ask(c, "timeout", false), (e: any) => e instanceof ModelError && !(e instanceof ModelUnavailable)
+      && e.status === 504 && /--no-stream/.test(e.message));
+    assert.equal((await ask(c, "timeout")).text, "Streamed in time.");
+  });
+  test("an error event mid-stream (overloaded) is ModelUnavailable, then it answers", async () => {
+    await assert.rejects(ask(c, "overload"), (e: any) => e instanceof ModelUnavailable && /overloaded/.test(e.message));
+    assert.equal((await ask(c, "overload")).text, "Calm again.");
+  });
+  test("the fake refuses what Muse Spark refuses", async () => {
+    for (const extra of [{ stop: ["x"] }, { n: 2 }, { logit_bias: {} }, { reasoning_effort: "none" }]) {
+      await assert.rejects(c.complete({ model: "fake-1", messages: [{ role: "user", content: "hi" }], ...extra } as any),
+        (e: any) => e instanceof ModelError && e.status === 400 && /is not supported with this model/.test(e.message));
+    }
+  });
+});
+
 describe("helpers", () => {
   test("baseUrl takes the endpoint or the base, with or without a slash", () => {
     assert.equal(baseUrl("http://127.0.0.1:11434/v1/"), "http://127.0.0.1:11434/v1");
@@ -274,6 +366,13 @@ describe("helpers", () => {
     assert.equal(errorMessage("Bad Gateway"), "Bad Gateway");
     assert.equal(errorMessage('[{"error":{"code":400,"message":"API key not valid.","status":"INVALID_ARGUMENT"}}]'), "API key not valid.");
     assert.equal(errorMessage('{"code":"Client specified an invalid argument","error":"Incorrect API key provided: xa***."}'), "Incorrect API key provided: xa***.");
+  });
+  test("retryAfter reads seconds or a date, and ignores the rest", () => {
+    assert.equal(retryAfter("2"), 2);
+    assert.equal(retryAfter(null), undefined);
+    assert.equal(retryAfter("soon"), undefined);
+    assert.ok((retryAfter(new Date(Date.now() + 5000).toUTCString()) ?? 0) >= 4);
+    assert.equal(retryAfter("99999"), 3600);
   });
   test("splitThinking only takes a leading block", () => {
     assert.deepEqual(splitThinking("<think>a</think>\nhi"), { text: "\nhi", thinking: "a" });
