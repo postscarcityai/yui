@@ -55,6 +55,11 @@ Transport: the gateway dials OUT to Supabase (PROOF). No inbound ports.
      turn, and only for the paired owner. The person gets a one-line
      confirmation (no push); the agent reads a note on its next turn.
 
+ 10. One-tap answers (YUI-73, needs.py): a `choose@need-<task id>` answer
+     from the war room's Needs you panel is commented on that kanban card
+     and unblocks it, with no agent turn, only for the paired owner. Same
+     confirmation and note as a board order.
+
 The channel guide (CHANNEL.md, synced verbatim from yuigui/spec/CHANNEL.md by
 ../sync_channel.py) is this platform's system-prompt hint, so it is in the
 system prompt on every turn on the Yui channel, and only there.
@@ -89,7 +94,7 @@ from gateway.config import Platform, PlatformConfig
 from gateway.platforms.base import (BasePlatformAdapter, MessageEvent, MessageType, ProcessingOutcome,
                                     SendResult)
 
-from . import board, connector, flywheel, media, outbox
+from . import board, connector, flywheel, media, needs, outbox
 
 logger = logging.getLogger(__name__)
 
@@ -410,7 +415,7 @@ class YuiAdapter(BasePlatformAdapter):
                         logger.info("[yui] %s was answered before a restart, not replaying", row["id"][:8])
                         self._acks.add(row["id"])
                         continue
-                    if await self._board_order(aid, row):
+                    if await self._board_order(aid, row) or await self._need_answer(aid, row):
                         continue
                     self._queue.setdefault(aid, []).append(row)
                 await self._pump(aid)
@@ -466,6 +471,33 @@ class YuiAdapter(BasePlatformAdapter):
             except Exception as e:
                 logger.warning("[yui] board order %s: %s", row["id"][:8], e)
                 text = "Couldn't reach the board to save that order. Try again in a minute."
+        await self._confirm(aid, row, text)
+        return True
+
+    async def _need_answer(self, aid: str, row: dict) -> bool:
+        """A one-tap answer from the war room's Needs you panel (YUI-73): straight onto the card, no turn."""
+        ans = needs.answer_of(row)
+        if not ans or not self._remote_ref:
+            return False
+        await self._mark([row["id"]], "delivered_at")
+        if row.get("user_id") != self._user_id:
+            text = "Only the owner can answer these cards."
+        else:
+            try:
+                result = await asyncio.to_thread(needs.apply, self._remote_ref, ans)
+                text = needs.reply(result)
+                if result.get("ok"):
+                    self._notes.setdefault(aid, []).append(needs.note(result))
+                logger.info("[yui] needs-you answer %s on %s: %s", row["id"][:8], ans["task"],
+                            "ok" if result.get("ok") else result.get("why"))
+            except Exception as e:
+                logger.warning("[yui] needs-you answer %s: %s", row["id"][:8], e)
+                text = "Couldn't reach the board to send that answer. Try again in a minute."
+        await self._confirm(aid, row, text)
+        return True
+
+    async def _confirm(self, aid: str, row: dict, text: str) -> None:
+        """One line back for a tap the gateway handled itself, named by the row so a restart never replays it."""
         reply = {"id": str(uuid.uuid4()), "user_id": self._user_id, "agent_id": aid, "sender": "agent",
                  "body": text, "kind": "text", "meta": {"turn": [row["id"]], "board": True}}
         # A confirmation of the person's own tap: no push.
@@ -473,7 +505,6 @@ class YuiAdapter(BasePlatformAdapter):
             await asyncio.to_thread(self._outbox.add, reply, None, False)
             self._outbox_wake.set()
         self._acks.add(row["id"])
-        return True
 
     async def _answered(self, row: dict) -> bool:
         """True when an agent reply already names this row in its meta.turn:
