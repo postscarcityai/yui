@@ -151,6 +151,15 @@ final class ChatStore {
         goToPage(n)
     }
 
+    /// Ids that last into the next reply (spec section 5, YUI-75), id -> preset,
+    /// newest wins: so `~need-t_x +lock` reaches one ask among many on page 2
+    /// and the war room patches a panel instead of re-sending the page.
+    var lastingIds: [String: String] {
+        var out: [String: String] = [:]
+        for m in messages { for c in m.yl?.components ?? [] where c.lasts { out[c.ylID] = c.preset } }
+        return out
+    }
+
     /// `>2 clear` empties the page, which holds what earlier replies put there too.
     private func clearPage(_ node: YLNode, except id: String? = nil) {
         guard node.op == .clear, YuiLines.page(of: node.screen) != 1 else { return }
@@ -363,6 +372,11 @@ final class ChatStore {
         var changed = false
         for op in ops { changed = shelf.apply(op, at: at) || changed }
         if changed, let agentID = agent?.id { shelf.store(agentID: agentID) }
+    }
+
+    /// A patch to an id that lasts reaches the shelf's copies of it (YUI-75).
+    private func shelve(_ node: YLNode, at: Date) {
+        if shelf.patch(node, at: at), let agentID = agent?.id { shelf.store(agentID: agentID) }
     }
 
     /// A tap on the shelf: the saved screen opens on the stage, fresh, with no turn.
@@ -653,7 +667,9 @@ final class ChatStore {
                 case .text(let t): new.append(ChatMessage(id: "\(id)#\(i)", text: t, fromUser: false))
                 case .yl(let y):
                     var screen = YLScreen()
-                    let nodes = YuiLines.parse(y)
+                    let known = lastingIds
+                    let at = YuiTime.date(row.createdAt) ?? .now
+                    let nodes = YuiLines.parse(y, known: known)
                     for node in nodes {
                         clearPage(node)
                         // A patch for something an earlier reply drew (`~choose +lock`
@@ -661,11 +677,12 @@ final class ChatStore {
                         if node.op == .patch, let t = node.target, !screen.has(t),
                            let j = messages.lastIndex(where: { $0.yl?.has(t) == true }) {
                             messages[j].yl?.apply(node)
+                            if known[t] != nil { shelve(node, at: at) }
                         } else {
                             apply(node, to: &screen)
                         }
                     }
-                    file(screen.shelfOps, at: YuiTime.date(row.createdAt) ?? .now)
+                    file(screen.shelfOps, at: at)
                     if let agentID = agent?.id { for look in screen.looks { onLook?(agentID, look, row.createdAt) } }
                     new.append(ChatMessage(id: "\(id)#\(i)", text: "", fromUser: false, yl: screen))
                     if loaded { live += nodes }
@@ -685,7 +702,7 @@ final class ChatStore {
         let msg = ChatMessage(text: "", fromUser: false, yl: YLScreen())
         withAnimation(spring) { messages.append(msg) }
         Task {
-            var parser = YLStreamParser()
+            var parser = YLStreamParser(known: lastingIds)
             for line in text.split(separator: "\n", omittingEmptySubsequences: false) {
                 apply(parser.push(line + "\n"), to: msg.id)
                 try? await Task.sleep(for: lineDelay)
@@ -698,6 +715,7 @@ final class ChatStore {
         guard !nodes.isEmpty, let i = messages.firstIndex(where: { $0.id == id }) else { return }
         guard var yl = messages[i].yl else { return }
         let before = yl
+        let known = lastingIds
         // A patch for something an earlier reply drew lands on the newest match, as in history.
         var earlier: [(Int, YLNode)] = []
         for n in nodes {
@@ -713,6 +731,7 @@ final class ChatStore {
             messages[i].yl = yl
             for (j, n) in earlier { messages[j].yl?.apply(n) }
         }
+        for (_, n) in earlier where known[n.target ?? ""] != nil { shelve(n, at: .now) }
         file(Array(yl.shelfOps.dropFirst(before.shelfOps.count)), at: .now)
         pageUpdate(nodes)
         stageUpdate(id, before: before)

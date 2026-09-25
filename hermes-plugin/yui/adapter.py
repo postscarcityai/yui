@@ -37,6 +37,7 @@ Transport: the gateway dials OUT to Supabase (PROOF). No inbound ports.
   6. Every agent message is pushed to the user's phones (yui-push
      action=notify): "<Agent> has something for you in Yui" for handoffs,
      a text preview for replies. The tap opens yui://agent/<id>/thread.
+     A reply of only patches (connector.quiet, YUI-75) gets no push.
      Any profile with this plugin can hand off from another channel
      (send_message target "yui"), even one with no Yui agent of its own:
      it lands in the user's first agent's thread, signed with its name.
@@ -766,7 +767,8 @@ class YuiAdapter(BasePlatformAdapter):
                         body[:80].replace("\n", " | "))
             return SendResult(success=True, message_id=mid)
         logger.info("[yui] outbound %s: %s", mid[:8], body[:80].replace("\n", " | "))
-        self._spawn(self._notify(mid, sender, handoff))
+        if not connector.quiet(body):  # patches only (YUI-75): nothing new to look at, no push
+            self._spawn(self._notify(mid, sender, handoff))
         return SendResult(success=True, message_id=mid)
 
     def _spawn(self, coro) -> None:
@@ -822,7 +824,8 @@ class YuiAdapter(BasePlatformAdapter):
                 if result == "sent":
                     logger.info("[yui] outbound %s delivered from the outbox after %.0fs", row["id"][:8],
                                 time.time() - item.get("queued_at", time.time()))
-                    self._spawn(self._notify(row["id"], item.get("sender"), item.get("handoff", False)))
+                    if not connector.quiet(row.get("body", "")):  # patches only: no push (YUI-75)
+                        self._spawn(self._notify(row["id"], item.get("sender"), item.get("handoff", False)))
             except asyncio.CancelledError:
                 raise
             except Exception as e:
@@ -963,6 +966,9 @@ async def _standalone_send(pconfig, chat_id: str, message: str, *, thread_id: Op
             return {"success": True, "platform": "yui", "chat_id": target["id"], "message_id": mid, "queued": True}
         if status >= 300 and status != 409:
             return {"error": f"yui send: HTTP {status}: {r.text[:200]}"}
+        if connector.quiet(body):  # patches only (YUI-75): the page updates in place, no push
+            logger.info("[yui] standalone send %s, patches only, no push", mid[:8])
+            return {"success": True, "platform": "yui", "chat_id": target["id"], "message_id": mid, "pushed_to": 0}
         # Out of process (cron, another channel's session): always a handoff.
         p = await c.post(connector.PUSH, json=connector.notify_body(mid, sender, True),
                          headers={"apikey": connector.PUBLISHABLE, "authorization": f"Bearer {token}"})

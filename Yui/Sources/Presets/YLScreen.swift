@@ -152,6 +152,14 @@ extension YLComponent {
     /// The page this component lives on (spec section 5, Pages): 2 to 12, else the chat.
     var page: Int { YuiLines.page(of: screen) }
 
+    /// Its id lasts past its reply (spec section 5, Ids that last): an explicit
+    /// id on a page, or one back from a saved screen. Auto ids (n1, c2) restart
+    /// every reply, and custom blocks are never patched.
+    var lasts: Bool {
+        (page != 1 || saved != nil) && preset != "custom"
+            && ylID.range(of: #"^[nc]\d+$"#, options: .regularExpression) == nil
+    }
+
     static let groupHeads: Set<String> = ["deck", "plan", "narrate", "timeline", "sketch"]
 }
 

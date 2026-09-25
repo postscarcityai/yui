@@ -70,6 +70,22 @@ struct Shelf: Codable, Equatable, Sendable {
         }
     }
 
+    /// A later reply's patch to an id that lasts (YUI-75, spec section 5) reaches the
+    /// saved copies holding that id too, so a page kept current by patches (the war
+    /// room) reopens current from the shelf. Only saves older than the patch take it:
+    /// history replays, and a newer save already has what the patch said.
+    @discardableResult
+    mutating func patch(_ node: YLNode, at: Date) -> Bool {
+        guard node.op == .patch, let target = node.target else { return false }
+        var changed = false
+        for (name, s) in entries where s.at <= at {
+            guard let i = s.parts.lastIndex(where: { $0.ylID == target }) else { continue }
+            entries[name]?.parts[i].props.merge(node.props ?? [:]) { $1 }
+            changed = true
+        }
+        return changed
+    }
+
     /// The person held it and chose Remove.
     mutating func remove(_ name: String, at: Date = .now) {
         entries[name] = nil

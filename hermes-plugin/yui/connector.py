@@ -15,7 +15,7 @@ They also run without Hermes loaded:
 One connector per machine: its token lives in ~/.hermes/yui/connector.json
 (mode 600) and every profile on this machine shares it. Stdlib only.
 """
-import argparse, json, os, socket, subprocess, sys, urllib.error, urllib.request
+import argparse, json, os, re, socket, subprocess, sys, urllib.error, urllib.request
 from pathlib import Path
 
 SUPABASE_URL = "https://ewzzaoperdpxqxkshynx.supabase.co"
@@ -144,6 +144,22 @@ def nice_name(ref: str) -> str:
 
 
 PUSH = f"{SUPABASE_URL}/functions/v1/yui-push"
+
+
+_FENCE = re.compile(r"```yui[^\n]*\n(.*?)```", re.S)
+_QUIET_LINE = re.compile(r"^(>[\w-]+|(>[\w-]+\s+)?~\S.*)$")
+
+
+def quiet(body: str) -> bool:
+    """A reply that only patches what is already on screen (YUI-75: the war room
+    keeping page 2 current): no words, and every line in its ```yui fences is a
+    patch or a bare `>S`. It draws nothing new and moves no page, so it gets no push."""
+    body = body or ""
+    if not _FENCE.search(body) or _FENCE.sub("", body).strip():
+        return False
+    lines = [ln.strip() for m in _FENCE.finditer(body) for ln in m.group(1).splitlines()]
+    lines = [ln for ln in lines if ln and not re.match(r"^#(\s|$)", ln)]
+    return bool(lines) and all(_QUIET_LINE.match(ln) for ln in lines)
 
 
 def notify_body(message_id: str, sender: str | None, handoff: bool) -> dict:
