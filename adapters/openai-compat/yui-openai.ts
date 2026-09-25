@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Yui model bridge (INT-12): any OpenAI-compatible model in Yui. Ollama,
-// LM Studio, vLLM, llama.cpp, Gemini (--server gemini, INT-9), or any server
-// with /v1/chat/completions.
+// LM Studio, vLLM, llama.cpp, Gemini (--server gemini, INT-9), Grok (--server
+// grok, INT-10), or any server with /v1/chat/completions.
 //
 //   node yui-openai.ts models [--server ollama]                  # what the server has
 //   node yui-openai.ts try "hi" --model qwen2.5:7b              # one answer, guide included, nothing paired
@@ -33,7 +33,7 @@ const USAGE = `usage: yui-openai.ts [--state FILE] <command>
   status                                       the connector, its agents and their models
   guide                                        print the channel guide (the system message)
 
-SERVER: --server ollama|lmstudio|vllm|llamacpp|openrouter|gemini, or --url http://host:port/v1 (default ollama)
+SERVER: --server ollama|lmstudio|vllm|llamacpp|openrouter|gemini|grok, or --url http://host:port/v1 (default ollama)
         --key-env VAR   read the key from $VAR when it runs (nothing stored)
         --key-stdin     read the key from stdin once and keep it in the state file (mode 600)
 MODEL OPTIONS: --system "text"  --context 4096  --max-tokens N  --temperature T  --no-stream`;
@@ -75,7 +75,7 @@ async function main(argv: string[]): Promise<number> {
     if (o.server && !SERVERS[o.server]) throw new Refused(`--server is one of ${Object.keys(SERVERS).join(", ")}`);
     const preset = SERVERS[o.server ?? (o.url ? "" : "ollama")];
     const url = baseUrl(o.url ?? preset.url);
-    const r: Remote = { url, model: o.model ?? "" };
+    const r: Remote = { url, model: o.model ?? preset?.model ?? "" };
     const keyEnv = o["key-env"] ?? (!o["key-stdin"] ? preset?.keyEnv : undefined);
     if (keyEnv) r.keyEnv = keyEnv;
     if (o["key-stdin"]) r.key = await readStdin();
@@ -97,8 +97,8 @@ async function main(argv: string[]): Promise<number> {
   }
   if (cmd === "try") {
     if (!arg) throw new Refused(`try needs the words to send, like: try "help me pick lunch" --model <name>`);
-    if (!o.model) throw new Refused("try needs --model (see `models`)");
     const r = await remoteFromArgs();
+    if (!r.model) throw new Refused("try needs --model (see `models`)");
     const g = (await connectCall({ action: "guide" })).guide ?? {};
     const { messages } = buildMessages([], [{ id: "try", sender: "user", kind: "text", body: arg }],
                                        { guide: g.body ?? "", system: r.system, context: r.context, reserve: r.maxTokens });
@@ -113,9 +113,9 @@ async function main(argv: string[]): Promise<number> {
     return 0;
   }
   if (cmd === "pair" || cmd === "add") {
-    if (!o.model) throw new Refused(`${cmd} needs --model <name> (see \`models\`)`);
     if (cmd === "pair" && !arg) throw new Refused("pair needs the 6-digit code from the app");
     const remote = await remoteFromArgs();
+    if (!remote.model) throw new Refused(`${cmd} needs --model <name> (see \`models\`)`);
     // A dead server, a refused key or a wrong model fails here, before the code is spent.
     const names = await clientFor(remote).models().catch((e) => {
       throw e instanceof ModelUnavailable ? new Refused(`${e.message}. Is the model server running?`) : e;

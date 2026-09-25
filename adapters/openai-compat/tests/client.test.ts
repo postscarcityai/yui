@@ -191,6 +191,75 @@ describe("client, Gemini-shaped server (INT-9)", () => {
   });
 });
 
+describe("client, Grok-shaped server (INT-10)", () => {
+  let f: Fake;
+  let c: ChatClient;
+  before(async () => {
+    f = await startFake({ grok: true, key: "xai-test-key" });
+    c = new ChatClient(f.url, { key: "xai-test-key" });
+  });
+  after(() => f.close());
+
+  test("the preset is xAI's base, key from XAI_API_KEY, a default model, a bigger window", () => {
+    assert.equal(SERVERS.grok.url, "https://api.x.ai/v1");
+    assert.equal(baseUrl(`${SERVERS.grok.url}/chat/completions`), SERVERS.grok.url);
+    assert.equal(SERVERS.grok.keyEnv, "XAI_API_KEY");
+    assert.match(SERVERS.grok.model ?? "", /^grok-/);
+    assert.ok((SERVERS.grok.context ?? 0) > 4096);
+  });
+  test("lists the models", async () => {
+    assert.deepEqual(await c.models(), ["fake-1", "fake-2"]);
+  });
+  test("streams, and sends none of the arguments reasoning models refuse", async () => {
+    const r = await ask(c, "hello");
+    assert.equal(r.text, "You said: hello");
+    assert.equal(r.finish, "stop");
+    for (const k of ["stop", "presence_penalty", "frequency_penalty"]) assert.ok(!f.log.at(-1).keys.includes(k), k);
+  });
+  test("a screen streams through whole", async () => {
+    assert.equal((await ask(c, "screen")).text, "Pick one:\n```yui\nchoose \"Pick one\" Tea|Coffee\n```");
+  });
+  test("reasoning_content is reasoning, not the answer, streamed or plain", async () => {
+    for (const stream of [true, false]) {
+      const seen: string[] = [];
+      const r = await ask(c, "reason", stream, (d) => seen.push(d));
+      assert.equal(r.text, "Tea, then.");
+      assert.equal(r.reasoning, "Tea suits the afternoon.");
+      if (stream) assert.deepEqual(seen, ["Tea, ", "then."]);
+    }
+  });
+  test("a refusal with no content is the answer, streamed or plain", async () => {
+    for (const stream of [true, false]) {
+      const seen: string[] = [];
+      const r = await ask(c, "decline", stream, (d) => seen.push(d));
+      assert.equal(r.text, "I can't help with that one.");
+      if (stream) assert.deepEqual(seen, ["I can't help with that one."]);
+    }
+  });
+  test("an error as {code, error} reads as its message", async () => {
+    await assert.rejects(c.complete({ model: "grok-nope", messages: [{ role: "user", content: "hi" }] }),
+      (e: any) => e instanceof ModelError && e.status === 404 && /"grok-nope" not found/.test(e.message) && !/Some requested/.test(e.message));
+  });
+  test("429 is ModelUnavailable (wait), then it answers", async () => {
+    await assert.rejects(ask(c, "busy"), (e: any) => e instanceof ModelUnavailable && /429: Rate limit reached/.test(e.message));
+    assert.equal((await ask(c, "busy")).text, "Back in line.");
+  });
+  test("403 out of credits says so, not that the key is bad, and does not wait", async () => {
+    await assert.rejects(ask(c, "broke"), (e: any) => e instanceof ModelError && !(e instanceof ModelUnavailable)
+      && e.status === 403 && /out of credits/.test(e.message) && !/turned the key down/.test(e.message));
+  });
+  test("a bad key is xAI's 400, and reads as a key problem", async () => {
+    const bad = new ChatClient(f.url, { key: "wrong" });
+    await assert.rejects(ask(bad, "hello"), (e: any) => e instanceof ModelError && !(e instanceof StreamRefused)
+      && e.status === 400 && /turned the key down/.test(e.message) && /Incorrect API key/.test(e.message));
+    await assert.rejects(bad.models(), (e: any) => e instanceof ModelError && /key/.test(e.message));
+  });
+  test("the fake refuses what Grok's reasoning models refuse", async () => {
+    await assert.rejects(c.complete({ model: "fake-1", messages: [{ role: "user", content: "hi" }], stop: ["x"] } as any),
+      (e: any) => e instanceof ModelError && e.status === 400 && /not supported on this model: stop/.test(e.message));
+  });
+});
+
 describe("helpers", () => {
   test("baseUrl takes the endpoint or the base, with or without a slash", () => {
     assert.equal(baseUrl("http://127.0.0.1:11434/v1/"), "http://127.0.0.1:11434/v1");
@@ -204,6 +273,7 @@ describe("helpers", () => {
     assert.equal(errorMessage('{"detail":[{"msg":"field required"}]}'), "field required");
     assert.equal(errorMessage("Bad Gateway"), "Bad Gateway");
     assert.equal(errorMessage('[{"error":{"code":400,"message":"API key not valid.","status":"INVALID_ARGUMENT"}}]'), "API key not valid.");
+    assert.equal(errorMessage('{"code":"Client specified an invalid argument","error":"Incorrect API key provided: xa***."}'), "Incorrect API key provided: xa***.");
   });
   test("splitThinking only takes a leading block", () => {
     assert.deepEqual(splitThinking("<think>a</think>\nhi"), { text: "\nhi", thinking: "a" });

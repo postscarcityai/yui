@@ -44,7 +44,7 @@ export class ModelError extends Error {
 export class StreamRefused extends ModelError {}
 
 /** Local servers people run, by the port they ship with, and the cloud APIs with a preset. */
-export const SERVERS: Record<string, { url: string; keyEnv?: string; context?: number }> = {
+export const SERVERS: Record<string, { url: string; keyEnv?: string; context?: number; model?: string }> = {
   ollama: { url: "http://127.0.0.1:11434/v1" },
   lmstudio: { url: "http://127.0.0.1:1234/v1" },
   vllm: { url: "http://127.0.0.1:8000/v1" },
@@ -54,6 +54,9 @@ export const SERVERS: Record<string, { url: string; keyEnv?: string; context?: n
   // Gemini's window is a million tokens; 32k keeps a long thread without
   // sending all of it every turn.
   gemini: { url: "https://generativelanguage.googleapis.com/v1beta/openai", keyEnv: "GEMINI_API_KEY", context: 32768 },
+  // xAI's API (INT-10). grok-4.7 is the model xAI points chat at; its window is
+  // 500k, 32k keeps a long thread without sending all of it every turn.
+  grok: { url: "https://api.x.ai/v1", keyEnv: "XAI_API_KEY", context: 32768, model: "grok-4.7" },
 };
 
 /** "http://host:11434/v1/" or ".../v1/chat/completions" -> "http://host:11434/v1". */
@@ -152,7 +155,8 @@ export class ChatClient {
       if (!choice) throw new ModelError(r.status, "the answer had no choices");
       const m = choice.message ?? {};
       if (isThought(m)) return finish("", String(m.content ?? ""), choice.finish_reason ?? null, false, data.usage);
-      return finish(String(m.content ?? choice.text ?? ""), String(m.reasoning_content ?? m.reasoning ?? ""),
+      // A model that declines can leave content empty and say why in refusal (OpenAI, xAI).
+      return finish(String(m.content || m.refusal || choice.text || ""), String(m.reasoning_content ?? m.reasoning ?? ""),
                     choice.finish_reason ?? null, false, data.usage);
     } finally {
       clearTimeout(timer);
@@ -163,6 +167,7 @@ export class ChatClient {
                            onDelta?: (text: string) => void): Promise<Completion> {
     let text = "";
     let reasoning = "";
+    let refusal = "";
     let fin: string | null = null;
     let done = false;
     let usage: Completion["usage"];
@@ -193,6 +198,7 @@ export class ChatClient {
           text += d.content;
           onDelta?.(d.content);
         }
+        if (typeof d.refusal === "string") refusal += d.refusal;
         if (choice.finish_reason) fin = choice.finish_reason;
       }
     } catch (e) {
@@ -201,6 +207,10 @@ export class ChatClient {
     }
     // Some servers end without [DONE] but with a finish_reason; neither means it stopped short.
     if (!done && !fin) throw new ModelUnavailable(ctl.signal.aborted ? `the stream went quiet for ${this.idle}s` : "the stream stopped before the answer finished");
+    if (!text && refusal) {
+      text = refusal;
+      onDelta?.(refusal);
+    }
     return finish(text, reasoning, fin, true, usage);
   }
 }
@@ -228,7 +238,7 @@ function reason(e: any): string {
   return String(e?.cause?.code ?? e?.cause?.message ?? e?.message ?? e);
 }
 
-/** {"error": {"message": ...}} (OpenAI, Ollama, vLLM), {"error": "..."} (llama.cpp), {"detail": ...},
+/** {"error": {"message": ...}} (OpenAI, Ollama, vLLM), {"error": "..."} (llama.cpp, and xAI next to a "code"), {"detail": ...},
  *  [{"error": {...}}] (Gemini wraps it in a list), or the text. */
 export function errorMessage(text: string): string {
   try {
@@ -243,7 +253,9 @@ export function errorMessage(text: string): string {
 }
 
 function explain(status: number, msg: string): string {
-  // Gemini answers a bad key with 400 INVALID_ARGUMENT "API key not valid".
+  // xAI answers a team with no credits left, or at its spending limit, with 403.
+  if (status === 402 || /credits|spending limit/i.test(msg)) return `the account is out of credits or at its spending limit (${status}: ${msg})`;
+  // Gemini ("API key not valid") and xAI ("Incorrect API key provided") answer a bad key with 400.
   if (status === 401 || status === 403 || /api key/i.test(msg)) return `the server turned the key down (${status}: ${msg})`;
   if (status === 404) return `not found (${msg}). Check the model name and the base URL`;
   return `${status}: ${msg}`;

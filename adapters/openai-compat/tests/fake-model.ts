@@ -3,7 +3,7 @@
 // picked by the last line the person sent. Streams like Ollama and vLLM do
 // (SSE, "data: [DONE]"), or not at all.
 //
-//   node tests/fake-model.ts [--port 0] [--no-streaming] [--refuse-stream] [--key K] [--no-done] [--gemini]
+//   node tests/fake-model.ts [--port 0] [--no-streaming] [--refuse-stream] [--key K] [--no-done] [--gemini] [--grok]
 //
 // Prints "fake-model <base url>" first. GET /_log lists every request.
 //
@@ -27,6 +27,15 @@
 //                       streamed, a <thought> block when plain), then "Tea, then."
 //   blocked          -> no text, finish_reason content_filter
 //   quota            -> 429 RESOURCE_EXHAUSTED the first time, then "Quota back."
+//
+// --grok answers the way xAI's API does (INT-10): every error as
+// {"code": "<words>", "error": "<message>"}, a bad key as 400 "Incorrect API
+// key provided", and a 400 for stop, presence_penalty or frequency_penalty
+// (reasoning models refuse them). More lines:
+//   reason           -> reasoning_content first (deltas, or on the message), then "Tea, then."
+//   busy             -> 429 rate limit the first time, then "Back in line."
+//   broke            -> 403, the team is out of credits
+//   decline          -> no content, a refusal saying why
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { parseArgs } from "node:util";
 
@@ -37,6 +46,7 @@ export interface FakeOptions {
   key?: string; // wants Authorization: Bearer <key>
   done?: boolean; // false: ends streams on finish_reason, no [DONE]
   gemini?: boolean; // Gemini's shapes, see above
+  grok?: boolean; // xAI's shapes, see above
 }
 
 export interface Fake {
@@ -63,15 +73,18 @@ export function startFake(opts: FakeOptions = {}): Promise<Fake> {
     if (req.method === "GET" && url.pathname === "/_log") return json(res, 200, log);
     const fail = (status: number, message: string, word: string) => opts.gemini
       ? json(res, status, [{ error: { code: status, message, status: word } }])
+      : opts.grok ? json(res, status, { code: XAI_CODES[word] ?? word, error: message })
       : json(res, status, { error: { message, type: "invalid_request_error" } });
     if (opts.key && req.headers.authorization !== `Bearer ${opts.key}`) {
       if (opts.gemini) return fail(400, "API key not valid. Please pass a valid API key.", "INVALID_ARGUMENT");
+      if (opts.grok) return fail(400, "Incorrect API key provided: wr***ng. You can obtain an API key from https://console.x.ai.", "INVALID_ARGUMENT");
       return fail(401, "Incorrect API key provided", "UNAUTHENTICATED");
     }
     if (req.method === "GET" && url.pathname === "/v1/models") {
       const id = (x: string) => (opts.gemini ? `models/${x}` : x);
-      return json(res, 200, { object: "list", data: [{ id: id("fake-1"), object: "model", owned_by: opts.gemini ? "google" : "fake" },
-                                                     { id: id("fake-2"), object: "model", owned_by: opts.gemini ? "google" : "fake" }] });
+      const owner = opts.gemini ? "google" : opts.grok ? "xai" : "fake";
+      return json(res, 200, { object: "list", data: [{ id: id("fake-1"), object: "model", owned_by: owner },
+                                                     { id: id("fake-2"), object: "model", owned_by: owner }] });
     }
     if (req.method !== "POST" || url.pathname !== "/v1/chat/completions") return fail(404, "no such route", "NOT_FOUND");
     let raw = "";
@@ -81,10 +94,12 @@ export function startFake(opts: FakeOptions = {}): Promise<Fake> {
     const last = msgs[msgs.length - 1]?.content ?? "";
     const line = last.split("\n").pop()!.trim();
     log.push({ model: body.model, stream: !!body.stream, messages: msgs, text: last, auth: req.headers.authorization ?? null,
-               max_tokens: body.max_tokens, temperature: body.temperature, at: Date.now() });
+               max_tokens: body.max_tokens, temperature: body.temperature, keys: Object.keys(body), at: Date.now() });
     if (body.model !== "fake-1" && body.model !== "fake-2") {
       return fail(404, `model "${body.model}" not found, try pulling it first`, "NOT_FOUND");
     }
+    const refused = ["stop", "presence_penalty", "frequency_penalty"].find((k) => opts.grok && k in body);
+    if (refused) return fail(400, `Argument not supported on this model: ${refused}`, "INVALID_ARGUMENT");
     if (body.stream && opts.refuseStream) return json(res, 400, { error: { message: "stream is not supported by this server" } });
     const n = (seen.get(line) ?? 0) + 1;
     seen.set(line, n);
@@ -92,6 +107,8 @@ export function startFake(opts: FakeOptions = {}): Promise<Fake> {
     let pieces: string[];
     let wait = 0;
     let thought = "";
+    let reasoning = "";
+    let refusal = "";
     let fin = "stop";
     let m: RegExpMatchArray | null;
     if (line === "hello") pieces = ["You said: ", "hello"];
@@ -125,6 +142,19 @@ export function startFake(opts: FakeOptions = {}): Promise<Fake> {
       if (n === 1) return fail(429, "Resource has been exhausted (e.g. check quota).", "RESOURCE_EXHAUSTED");
       pieces = ["Quota back."];
     }
+    else if (opts.grok && line === "reason") {
+      reasoning = "Tea suits the afternoon.";
+      pieces = ["Tea, ", "then."];
+    } else if (opts.grok && line === "busy") {
+      if (n === 1) return fail(429, "Rate limit reached for requests. Try again in a moment.", "RESOURCE_EXHAUSTED");
+      pieces = ["Back in line."];
+    } else if (opts.grok && line === "broke") {
+      return fail(403, "Your team has either used all available credits or reached its monthly spending limit. "
+        + "To continue making API requests, please purchase more credits or raise your spending limit.", "PERMISSION_DENIED");
+    } else if (opts.grok && line === "decline") {
+      pieces = [];
+      refusal = "I can't help with that one.";
+    }
     else pieces = [`You said: ${line}`];
 
     const id = `chatcmpl-${log.length}`;
@@ -133,8 +163,12 @@ export function startFake(opts: FakeOptions = {}): Promise<Fake> {
       const said = pieces.filter((p) => p !== "DROP").join("");
       const text = thought ? `<thought>${thought}</thought>${said}` : said;
       return json(res, 200, { id, object: "chat.completion", model: body.model,
-        choices: [{ index: 0, message: { role: "assistant", content: opts.gemini && fin !== "stop" ? null : text }, finish_reason: fin }],
-        usage: { prompt_tokens: raw.length >> 2, completion_tokens: text.length >> 2 } });
+        choices: [{ index: 0, message: { role: "assistant", content: (opts.gemini && fin !== "stop") || refusal ? null : text,
+                                         ...(reasoning ? { reasoning_content: reasoning } : {}), ...(refusal ? { refusal } : {}) },
+                    finish_reason: fin }],
+        usage: { prompt_tokens: raw.length >> 2, completion_tokens: text.length >> 2,
+                 ...(opts.grok ? { completion_tokens_details: { reasoning_tokens: reasoning.length >> 2 } } : {}) },
+        ...(opts.grok ? { system_fingerprint: "fp_fake" } : {}) });
     }
     res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache" });
     const send = (d: unknown) => res.write(`data: ${JSON.stringify(d)}\n\n`);
@@ -154,6 +188,10 @@ export function startFake(opts: FakeOptions = {}): Promise<Fake> {
       return void res.end();
     }
     send({ id, object: "chat.completion.chunk", choices: [{ index: 0, delta: { role: "assistant", content: "" }, finish_reason: null }] });
+    for (const r of reasoning ? [reasoning.slice(0, 4), reasoning.slice(4)] : []) {
+      send({ id, object: "chat.completion.chunk", choices: [{ index: 0, delta: { reasoning_content: r }, finish_reason: null }] });
+    }
+    if (refusal) send({ id, object: "chat.completion.chunk", choices: [{ index: 0, delta: { refusal }, finish_reason: null }] });
     for (const p of pieces) {
       if (p === "DROP") {
         await sleep(150); // let the first pieces reach the client
@@ -177,6 +215,14 @@ export function startFake(opts: FakeOptions = {}): Promise<Fake> {
   });
 }
 
+/** The words xAI puts in "code", by the status word Google's APIs use. */
+const XAI_CODES: Record<string, string> = {
+  INVALID_ARGUMENT: "Client specified an invalid argument",
+  NOT_FOUND: "Some requested entity was not found",
+  PERMISSION_DENIED: "The caller does not have permission to execute the specified operation",
+  RESOURCE_EXHAUSTED: "Some resource has been exhausted",
+};
+
 function json(res: ServerResponse, status: number, body: unknown) {
   res.writeHead(status, { "content-type": "application/json" }).end(JSON.stringify(body));
 }
@@ -184,9 +230,9 @@ function json(res: ServerResponse, status: number, body: unknown) {
 if (import.meta.url === `file://${process.argv[1]}`) {
   const { values: o } = parseArgs({ options: {
     port: { type: "string", default: "0" }, "no-streaming": { type: "boolean" }, "refuse-stream": { type: "boolean" },
-    key: { type: "string" }, "no-done": { type: "boolean" }, gemini: { type: "boolean" },
+    key: { type: "string" }, "no-done": { type: "boolean" }, gemini: { type: "boolean" }, grok: { type: "boolean" },
   } });
   const f = await startFake({ port: Number(o.port), streaming: !o["no-streaming"], refuseStream: o["refuse-stream"],
-                              key: o.key, done: !o["no-done"], gemini: o.gemini });
+                              key: o.key, done: !o["no-done"], gemini: o.gemini, grok: o.grok });
   console.log(`fake-model ${f.url}`);
 }
