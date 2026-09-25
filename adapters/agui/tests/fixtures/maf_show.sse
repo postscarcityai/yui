@@ -1,0 +1,18 @@
+data: {"type":"RUN_STARTED","threadId":"t1","runId":"r1"}
+
+data: {"type":"TEXT_MESSAGE_START","messageId":"dc82e858-a74d-4ea9-8218-136c5c3b3ba3","role":"assistant"}
+
+data: {"type":"TOOL_CALL_START","toolCallId":"833db261-7395-4e96-be99-f9f194af3923","toolCallName":"yui_show","parentMessageId":"dc82e858-a74d-4ea9-8218-136c5c3b3ba3"}
+
+data: {"type":"TOOL_CALL_ARGS","toolCallId":"833db261-7395-4e96-be99-f9f194af3923","delta":"{\"lines\": \"Which fruit? | Apple | Pear | Banana\"}"}
+
+data: {"type":"CUSTOM","name":"usage","value":{"input_token_count":240,"output_token_count":29,"total_token_count":269}}
+
+data: {"type":"TOOL_CALL_END","toolCallId":"833db261-7395-4e96-be99-f9f194af3923"}
+
+data: {"type":"TEXT_MESSAGE_END","messageId":"dc82e858-a74d-4ea9-8218-136c5c3b3ba3"}
+
+data: {"type":"MESSAGES_SNAPSHOT","messages":[{"id":"g","role":"system","content":"You are in Yui, a phone app. When the person has to choose, call yui_show with a choose line instead of listing options in text."},{"id":"u1","role":"user","content":"Help me pick a fruit for lunch: apple, pear or banana. Let me tap one."},{"id":"dc82e858-a74d-4ea9-8218-136c5c3b3ba3","role":"assistant","toolCalls":[{"id":"833db261-7395-4e96-be99-f9f194af3923","type":"function","function":{"name":"yui_show","arguments":"{\"lines\": \"Which fruit? | Apple | Pear | Banana\"}"}}]}]}
+
+data: {"type":"RUN_FINISHED","threadId":"t1","runId":"r1"}
+

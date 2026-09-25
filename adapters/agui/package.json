@@ -1,0 +1,12 @@
+{
+  "name": "yui-agui",
+  "version": "0.1.0",
+  "description": "Yui AG-UI bridge: add any agent served over AG-UI to Yui by its URL",
+  "type": "module",
+  "bin": { "yui-agui": "yui-agui.ts" },
+  "exports": { "./client": "./src/agui.ts" },
+  "scripts": { "test": "node --test tests/*.test.ts" },
+  "engines": { "node": ">=22.18" },
+  "license": "Apache-2.0",
+  "repository": { "type": "git", "url": "https://github.com/postscarcityai/yui", "directory": "adapters/agui" }
+}

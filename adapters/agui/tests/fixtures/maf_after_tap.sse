@@ -1,0 +1,38 @@
+data: {"type":"RUN_STARTED","threadId":"t1","runId":"r2"}
+
+data: {"type":"TEXT_MESSAGE_START","messageId":"7368c4fc-b7a7-42e3-b6d2-51f0c9661fce","role":"assistant"}
+
+data: {"type":"TEXT_MESSAGE_CONTENT","messageId":"7368c4fc-b7a7-42e3-b6d2-51f0c9661fce","delta":"Great"}
+
+data: {"type":"TEXT_MESSAGE_CONTENT","messageId":"7368c4fc-b7a7-42e3-b6d2-51f0c9661fce","delta":"!"}
+
+data: {"type":"TEXT_MESSAGE_CONTENT","messageId":"7368c4fc-b7a7-42e3-b6d2-51f0c9661fce","delta":" You"}
+
+data: {"type":"TEXT_MESSAGE_CONTENT","messageId":"7368c4fc-b7a7-42e3-b6d2-51f0c9661fce","delta":" chose"}
+
+data: {"type":"TEXT_MESSAGE_CONTENT","messageId":"7368c4fc-b7a7-42e3-b6d2-51f0c9661fce","delta":" a"}
+
+data: {"type":"TEXT_MESSAGE_CONTENT","messageId":"7368c4fc-b7a7-42e3-b6d2-51f0c9661fce","delta":" pear"}
+
+data: {"type":"TEXT_MESSAGE_CONTENT","messageId":"7368c4fc-b7a7-42e3-b6d2-51f0c9661fce","delta":" for"}
+
+data: {"type":"TEXT_MESSAGE_CONTENT","messageId":"7368c4fc-b7a7-42e3-b6d2-51f0c9661fce","delta":" lunch"}
+
+data: {"type":"TEXT_MESSAGE_CONTENT","messageId":"7368c4fc-b7a7-42e3-b6d2-51f0c9661fce","delta":"."}
+
+data: {"type":"TEXT_MESSAGE_CONTENT","messageId":"7368c4fc-b7a7-42e3-b6d2-51f0c9661fce","delta":" Enjoy"}
+
+data: {"type":"TEXT_MESSAGE_CONTENT","messageId":"7368c4fc-b7a7-42e3-b6d2-51f0c9661fce","delta":" your"}
+
+data: {"type":"TEXT_MESSAGE_CONTENT","messageId":"7368c4fc-b7a7-42e3-b6d2-51f0c9661fce","delta":" meal"}
+
+data: {"type":"TEXT_MESSAGE_CONTENT","messageId":"7368c4fc-b7a7-42e3-b6d2-51f0c9661fce","delta":"!"}
+
+data: {"type":"CUSTOM","name":"usage","value":{"input_token_count":293,"output_token_count":14,"total_token_count":307}}
+
+data: {"type":"TEXT_MESSAGE_END","messageId":"7368c4fc-b7a7-42e3-b6d2-51f0c9661fce"}
+
+data: {"type":"MESSAGES_SNAPSHOT","messages":[{"id":"g","role":"system","content":"You are in Yui, a phone app. When the person has to choose, call yui_show with a choose line instead of listing options in text."},{"id":"u1","role":"user","content":"Help me pick a fruit for lunch: apple, pear or banana. Let me tap one."},{"id":"a1","role":"assistant","content":"","toolCalls":[{"id":"833db261-7395-4e96-be99-f9f194af3923","type":"function","function":{"name":"yui_show","arguments":"{\"lines\": \"Which fruit? | Apple | Pear | Banana\"}"}}]},{"id":"t1r","role":"tool","content":"[yui] choose choice=Pear","toolCallId":"833db261-7395-4e96-be99-f9f194af3923"},{"id":"7368c4fc-b7a7-42e3-b6d2-51f0c9661fce","role":"assistant","content":"Great! You chose a pear for lunch. Enjoy your meal!"}]}
+
+data: {"type":"RUN_FINISHED","threadId":"t1","runId":"r2"}
+
