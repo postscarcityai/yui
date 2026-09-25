@@ -75,7 +75,7 @@ final class PushCenter: NSObject {
         do {
             let bearer = try await account.validAccessToken()
             try await call(["action": "register", "token": token, "environment": Self.environment,
-                            "name": UIDevice.current.name], bearer: bearer)
+                            "name": UIDevice.current.name, "build": Self.build], bearer: bearer)
             registeredFor = "\(user):\(token)"
             if foreground { await reportPresence() }
         } catch {
@@ -110,10 +110,13 @@ final class PushCenter: NSObject {
     private func reportPresence() async {
         guard let token = deviceToken, registeredFor != nil, let account, account.isSignedIn,
               let bearer = try? await account.validAccessToken() else { return }
-        var body: [String: Any] = ["action": "presence", "token": token, "active": foreground]
+        var body: [String: Any] = ["action": "presence", "token": token, "active": foreground, "build": Self.build]
         if foreground, let agent = visibleAgentID { body["agent_id"] = agent }
         _ = try? await call(body, bearer: bearer)
     }
+
+    /// This app's build ("112", a test build "112.1"): hosts send only the presets it can draw.
+    static let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? ""
 
     /// `yui://agent/<id>/thread` (also `yui://agent/<id>`).
     @discardableResult

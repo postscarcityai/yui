@@ -552,6 +552,35 @@ struct YLErrorRow: View {
     }
 }
 
+/// Lines from a newer Yui (presets this build can't draw) as one quiet chip that opens
+/// TestFlight, instead of a red row of raw Yui Lines each (beta feedback ANJPrtB7CHynwGR5mqNVPSM).
+struct UpdateChip: View {
+    static let testFlight = URL(string: "https://testflight.apple.com/join/ykrYHwet")!
+    @Environment(\.yuiTheme) private var theme
+    @Environment(\.colorScheme) private var scheme
+    @Environment(\.openURL) private var openURL
+
+    static func covers(_ node: YLNode) -> Bool {
+        let m = node.message ?? ""
+        return m.hasPrefix("unknown preset") || m.hasPrefix("patch: unknown preset")
+    }
+
+    var body: some View {
+        let s = theme.swatch(scheme)
+        Button { openURL(Self.testFlight) } label: {
+            Label("Update Yui to see this", systemImage: "arrow.down.circle")
+                .font(theme.font(theme.type.caption, .semibold))
+                .foregroundStyle(s.inkSoft)
+                .padding(.horizontal, theme.spacing.m)
+                .padding(.vertical, theme.spacing.s)
+                .background(Capsule().fill(s.accent.opacity(0.12)))
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("update-chip")
+        .accessibilityHint("Opens TestFlight")
+    }
+}
+
 // MARK: - Layout
 
 /// Wraps children onto new rows like words in a sentence.

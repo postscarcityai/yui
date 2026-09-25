@@ -1124,6 +1124,15 @@ struct ChatView: View {
         Details on [yuigui.com](https://www.yuigui.com).
         """
 
+    /// A card this build draws, then a drawing in presets it doesn't know (as build 96 got a sketch).
+    static let newerPresets = """
+        card "Not yet + You decide" body="Every Needs you ask now ends with both."
+        hologram "INT-7 ask" frame=phone
+        beam "Works | Phone only | Connector failed" +x note="assumed you'd tested"
+        split
+        beam "Not yet | You decide" +hi note="new, on every ask"
+        """
+
     /// The message from TestFlight feedback on build 96 (YUI-82): a card-it answer
     /// with a list, word for word, so the pages it folds into can be shot before and after.
     static let cardedAnswer = """
@@ -1226,6 +1235,11 @@ struct ChatView: View {
                     ChatMessage(text: "Yui build 96 is ready in TestFlight.", fromUser: false),
                     ChatMessage(text: "", fromUser: false, yl: YLScreen(buildReady))]
         }
+        // -yuiDemoUnknown: a reply with presets from a newer Yui (beta feedback ANJPrtB7CHynwGR5mqNVPSM).
+        if ProcessInfo.processInfo.arguments.contains("-yuiDemoUnknown") {
+            return [ChatMessage(text: "What changed on the INT-7 ask?", fromUser: true),
+                    ChatMessage(text: "", fromUser: false, yl: YLScreen(newerPresets))]
+        }
         if let name = UserDefaults.standard.string(forKey: "yuiYL"), let text = YLSamples.text(name) {
             return [ChatMessage(text: "Show me the \(name) one", fromUser: true),
                     ChatMessage(text: "", fromUser: false, yl: YLScreen(text))]
@@ -1268,7 +1282,11 @@ private struct YLReply: View {
                     .modifier(Reactable(text: words, reaction: reaction, lifted: lifted,
                                         open: open, react: react, select: select, reply: reply, card: true))
                     .modifier(SwipeToReply(reply: reply, reduceMotion: reduceMotion))
-                ForEach(Array(screen.errors.enumerated()), id: \.offset) { YLErrorRow(node: $1) }
+                // Presets this build can't draw fold into one Update chip, never raw lines (ANJPrtB7CHynwGR5mqNVPSM).
+                if screen.errors.contains(where: UpdateChip.covers) { UpdateChip() }
+                ForEach(Array(screen.errors.filter { !UpdateChip.covers($0) }.enumerated()), id: \.offset) {
+                    YLErrorRow(node: $1)
+                }
                 ForEach(Array(screen.looks.enumerated()), id: \.offset) { _ in LookNote(agent: agent) }
             }
             .environment(\.ylScope, scope)
