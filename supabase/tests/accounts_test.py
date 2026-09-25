@@ -87,7 +87,9 @@ schemas = [r["nspname"] for r in rows]
 # YUI-21: storage too, for the yui-media bucket (policies in media_test.py).
 check("yui_user can use no schema but public, storage (+ pg built-ins)", set(schemas) <= {"public", "storage", "pg_catalog", "information_schema"}, ",".join(schemas))
 rows = sql("select p.proname from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.prosecdef and has_function_privilege('yui_user', p.oid, 'EXECUTE')")
-check("yui_user can execute no SECURITY DEFINER function in public", not rows, str(rows))
+# YUI-95: the grant checks the message policies call (true/false or a time, nothing else).
+rows = [r for r in rows if r["proname"] not in ("yui_granted", "yui_grant_since", "yui_grant_serves")]
+check("yui_user can execute no SECURITY DEFINER function in public but the grant checks", not rows, str(rows))
 rows = sql("select c.relname from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and c.relname like 'yui\\_%' and c.relkind='r' and not c.relrowsecurity")
 check("RLS enabled on every yui_ table", not rows, str(rows))
 rows = sql("select rolcanlogin, pg_has_role('authenticator','yui_user','member') m, pg_has_role('yui_user','authenticated','member') a from pg_roles where rolname='yui_user'")[0]
