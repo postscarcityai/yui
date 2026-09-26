@@ -1193,6 +1193,52 @@ struct ChatView: View {
         row
         """
 
+    /// Ideas drawn with shapes that move (YUI-104): a flow in one row with arrows,
+    /// a crowded row whose labels wrap, placed shapes with a dashed arrow and a path,
+    /// and a card that glides from one column to the next.
+    static let shapesDemo = [
+        """
+        shapes "How an ask reaches your phone" caption="You ask, it lands on the board, a lane builds it, and it ships to your phone."
+        shape@you circle You +grow
+        shape arrow
+        shape box Board +fill
+        shape arrow
+        shape pill Lane +pulse
+        shape arrow label=ships
+        shape circle Phone tone=mint +grow
+        """,
+        """
+        say Cold air still holds heat. The pump grabs it, squeezes it hot, and lets it out inside.
+        shapes "Heat pump loop" caption="Refrigerant colder than the outdoor air soaks up heat, the compressor squeezes it hot, and the indoor coil lets it out into the house."
+        shape blob "Outside air" tone=mute
+        shape arrow
+        shape box "Outdoor coil" tone=lavender +fill
+        shape arrow
+        shape pill Compressor +pulse
+        shape arrow
+        shape box "Indoor coil" tone=butter +fill
+        """,
+        """
+        shapes "Picture or shapes" caption="A generated picture is a round trip to a GPU for every idea. Shapes are drawn on the phone from a few lines."
+        shape@img box Picture at=2.2,1.5 size=3,1.4 tone=mute +dash
+        shape@gpu blob GPU at=7.7,1.5 size=2.8,2 tone=butter +fill +grow
+        shape arrow from=img to=gpu label="wait" tone=mute +dash
+        shape@lines box Lines at=2.2,4.5 size=3,1.4 +fill +grow
+        shape@phone circle Phone at=7.7,4.5 size=1.8 tone=mint +pulse
+        shape arrow from=lines to=phone label="drawn here"
+        """,
+        """
+        shapes "Where your idea is" h=4 caption="Your shapes idea left the backlog. A lane is building it now."
+        shape text Backlog at=1.7,0.5 tone=mute
+        shape text Running at=5,0.5 tone=mute
+        shape text Shipped at=8.3,0.5 tone=mute
+        shape line at=3.35,0.2 to=3.35,3.8 tone=mute +dash
+        shape line at=6.65,0.2 to=6.65,3.8 tone=mute +dash
+        shape pill Shapes at=1.7,2.3 size=2.6 +fill move=5,2.3
+        shape@dot dot at=5,3.4 tone=mint +pulse
+        """,
+    ]
+
     /// `-yuiDemo` seeds a chat; `-yuiYL <sample>` seeds one YL reply (see `YLSamples`).
     static var seed: [ChatMessage] {
         if UserDefaults.standard.string(forKey: "yuiReactDemo") != nil {
@@ -1255,6 +1301,14 @@ struct ChatView: View {
                     ChatMessage(text: "Warmer. Make Yui feel like autumn", fromUser: true),
                     ChatMessage(text: "", fromUser: false,
                                 yl: YLScreen("say Here's autumn, next to Yui as it is now.\ntheme app autumn"))]
+        }
+        // -yuiDemoShapes: ideas drawn with shapes that move (YUI-104).
+        if ProcessInfo.processInfo.arguments.contains("-yuiDemoShapes") {
+            let asks = ["How does an ask reach my phone?", "How does a heat pump work?",
+                        "Why shapes and not pictures?", "Where's my shapes idea?"]
+            return zip(asks, shapesDemo).flatMap { ask, yl in
+                [ChatMessage(text: ask, fromUser: true), ChatMessage(text: "", fromUser: false, yl: YLScreen(yl))]
+            }
         }
         // -yuiDemoUnknown: a reply with presets from a newer Yui (beta feedback ANJPrtB7CHynwGR5mqNVPSM).
         if ProcessInfo.processInfo.arguments.contains("-yuiDemoUnknown") {

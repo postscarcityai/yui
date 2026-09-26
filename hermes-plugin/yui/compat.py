@@ -17,6 +17,8 @@ An unknown build (no phone has said yet) counts as older than all of them.
 import re
 from typing import Dict, List, Optional
 
+SHAPES_BUILD = 131  # the YUI-104 app commit (git rev-list --count)
+
 # First app build whose parser knows each preset (git rev-list --count of the
 # commit that added it to Packages/YuiLines/Sources/YuiLines/Presets.swift).
 MIN_BUILD: Dict[str, int] = {
@@ -24,8 +26,9 @@ MIN_BUILD: Dict[str, int] = {
     "game": 71,                                          # 36ecded
     "sketch": 104, "row": 104, "after": 104,             # d7214ee (YUI-84)
     "menu": 115,                                         # YUI-86: the drawer's lists; dropped before
+    "shapes": SHAPES_BUILD, "shape": SHAPES_BUILD,       # YUI-104: shapes that move
 }
-GROUPS = {"sketch": {"row", "after"}, "timeline": {"done", "now", "next"}}
+GROUPS = {"sketch": {"row", "after"}, "timeline": {"done", "now", "next"}, "shapes": {"shape"}}
 MEMBER_OF = {m: head for head, ms in GROUPS.items() for m in ms}
 STORY = {"deck", "plan"}  # a sketch in these is the picture of a page
 QUIET = {"menu"}  # draws nothing in the chat: dropped on old builds, never named in the note
@@ -135,7 +138,45 @@ def _group_text(lines: List[str]) -> str:
             out.append(f"- {preset.capitalize()}: {title}" + (f" ({at})" if at else ""))
         elif preset == "game":
             out.append("There's a game here. Update Yui to play it.")
+        elif preset == "shapes":
+            if title:
+                out.append(f"**{title}**")
+            chain = _shapes_chain(lines[i + 1:])
+            if chain:
+                out.append(chain)
+            cap = _unquote(props.get("caption", ""))
+            if cap:
+                out.append(cap)
+        elif preset == "shape" and i == 0:
+            chain = _shapes_chain(lines)
+            if chain:
+                out.append(chain)
     return "\n".join(out).strip()
+
+
+CONNECT = {"line", "arrow"}
+
+
+def _shapes_chain(lines: List[str]) -> str:
+    """A diagram's labels in line order, an arrow between two shapes an arrow joins
+    (You → Board → Lane), a comma between the rest."""
+    out = ""
+    joined = False
+    for line in lines:
+        _, _, preset, words, props, _ = _split(line)
+        if preset != "shape" or not words:
+            continue
+        kind = words[0].lower()
+        label = " ".join(words[1:]).strip() or _unquote(props.get("label", ""))
+        if kind in CONNECT:
+            if not props.get("from") and not props.get("to"):
+                joined = True
+            continue
+        if kind == "path" or not label:
+            continue
+        out += (" → " if joined else ", ") + label if out else label
+        joined = False
+    return out
 
 
 def _group_page(lines: List[str]) -> str:

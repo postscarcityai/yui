@@ -118,9 +118,10 @@ class Downgrade(unittest.TestCase):
         self.assertDrawable(out, 96)
 
     def test_note_names_what_to_skip(self):
-        self.assertIn("cannot draw sketch", compat.note(96))
+        self.assertIn("cannot draw shapes, sketch yet", compat.note(96))
         self.assertNotIn("timeline", compat.note(96))
-        self.assertEqual(compat.note(115), "")
+        self.assertEqual(compat.note(compat.SHAPES_BUILD), "")
+        self.assertIn("cannot draw shapes", compat.note(122))
         self.assertIn("an older build", compat.note(None))
 
     def test_menu_lines_go_quietly_before_the_drawer(self):
@@ -128,6 +129,24 @@ class Downgrade(unittest.TestCase):
         self.assertEqual(compat.downgrade(body, 106), fence("say Drafted."))
         self.assertEqual(compat.downgrade(body, 115), body)
         self.assertNotIn("menu", compat.note(106))
+
+    def test_build_122_gets_shapes_as_words(self):
+        body = ("Here's the flow.\n\n"
+                + fence('shapes "How an ask ships" caption="You ask, a lane builds it."',
+                        "shape@you circle You +grow", "shape arrow", 'shape box "The board" +fill',
+                        "shape arrow label=pulls", "shape pill Lane +pulse", "shape dot at=5,5",
+                        "shape path pts=1,1|2,2", "say Want the long version?"))
+        out = compat.downgrade(body, 122)
+        self.assertNotIn("shape", out.replace("shapes", "").replace("How an ask ships", ""))
+        self.assertIn("**How an ask ships**\nYou → The board → Lane\nYou ask, a lane builds it.", out)
+        self.assertIn(fence("say Want the long version?"), out)
+        self.assertDrawable(out, 122)
+        self.assertEqual(compat.downgrade(body, compat.SHAPES_BUILD), body)
+
+    def test_placed_shapes_and_a_lone_shape(self):
+        body = fence("shapes Parts", "shape box A at=2,2", "shape box B at=8,2", "shape arrow from=a to=b")
+        self.assertEqual(compat.downgrade(body, 122), "**Parts**\nA, B")
+        self.assertEqual(compat.downgrade(fence('shape circle "Just one"'), 122), "Just one")
 
 
 if __name__ == "__main__":

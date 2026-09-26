@@ -168,7 +168,7 @@ extension YLComponent {
             && ylID.range(of: #"^[nc]\d+$"#, options: .regularExpression) == nil
     }
 
-    static let groupHeads: Set<String> = ["deck", "plan", "narrate", "timeline", "sketch"]
+    static let groupHeads: Set<String> = ["deck", "plan", "narrate", "timeline", "sketch", "shapes"]
 }
 
 extension Array where Element == YLComponent {

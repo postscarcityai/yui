@@ -13,6 +13,7 @@ let presets: Set<String> = [
     "deck", "page", "plan", "project", "narrate",
     "timeline", "done", "now", "next",
     "sketch", "row", "after",
+    "shapes", "shape",
     "game",
 ]
 
@@ -25,6 +26,7 @@ let groups: [String: Set<String>] = [
     "narrate": ["page", "compare", "image", "video", "card", "stat", "chart", "math", "storyboard", "gallery", "deck"],
     "timeline": ["done", "now", "next"],
     "sketch": ["row", "after"],
+    "shapes": ["shape"],
 ]
 
 let chartTypes: Set<String> = ["line", "bar", "area", "scatter", "pie", "donut"]
@@ -77,6 +79,7 @@ private let listProps: [String: [String]] = [
     "project": ["facts", "next"],
     "pick": ["answer"],
     "game": ["items"],
+    "shape": ["pts"],
 ]
 
 private func asList(_ v: YLValue) -> YLValue {
@@ -389,7 +392,7 @@ private func positional(_ preset: String, _ pos: [Token]) -> Props {
             if text.count > 1 { o["body"] = .string(joinText(Array(text.dropFirst()))) }
         }
 
-    case "calc", "deck", "plan", "narrate", "timeline", "sketch":
+    case "calc", "deck", "plan", "narrate", "timeline", "sketch", "shapes":
         if !pos.isEmpty { o["title"] = .string(joinText(pos)) }
 
     case "row":
@@ -407,13 +410,14 @@ private func positional(_ preset: String, _ pos: [Token]) -> Props {
         }
         if !text.isEmpty { o["text"] = .string(joinText(text)) }
 
-    case "game":
-        // The first bare word (not quoted, not options) is the kind, wherever it sits.
+    case "game", "shape":
+        // The first bare word (not quoted, not options) is the kind, wherever it
+        // sits; the rest is a game's title or a shape's label.
         var text: [Token] = []
         for t in pos {
             if o["kind"] == nil, t.parts == nil, !t.quoted, gameWordRE.match(t.text) != nil { o["kind"] = .string(t.text) } else { text.append(t) }
         }
-        if !text.isEmpty { o["title"] = .string(joinText(text)) }
+        if !text.isEmpty { o[preset == "game" ? "title" : "label"] = .string(joinText(text)) }
 
     case "project":
         if let first = pos.first { o["title"] = .string(first.text) }

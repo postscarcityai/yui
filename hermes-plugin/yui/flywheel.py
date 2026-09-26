@@ -37,6 +37,7 @@ PRESETS = {
     "timeline", "done", "now", "next",
     "game", "flow",
     "sketch", "row", "after",
+    "shapes", "shape",
     "query",
 }
 CORE = {"say", "custom", "save", "show", "forget", "clear", "end", "theme", "close", "talk", "menu", "put"}
