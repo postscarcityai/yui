@@ -15,6 +15,7 @@ let presets: Set<String> = [
     "sketch", "row", "after",
     "shapes", "shape",
     "game",
+    "loop", "drums", "keys", "chords", "tuner", "metronome",
 ]
 
 /// Groups (spec section 6): a head collects the member lines that follow it on
@@ -96,6 +97,10 @@ private let listProps: [String: [String]] = [
     "pick": ["answer"],
     "game": ["items"],
     "shape": ["pts"],
+    "loop": ["rows", "p"],
+    "drums": ["pads"],
+    "chords": ["chords"],
+    "tuner": ["strings"],
 ]
 
 private func asList(_ v: YLValue) -> YLValue {
@@ -114,6 +119,11 @@ private func normalize(_ preset: String, _ o: inout Props) {
     case "game":
         for k in ["x", "o"] { if let v = o[k] { o[k] = cellList(v) } }
     case "chart": chartSeries(&o)
+    case "chords":
+        // prog=I-V-vi-IV and prog=I|V|vi|IV are the same list.
+        if let v = o["prog"], v != .bool(true) {
+            o["prog"] = strings(asList(v).array!.flatMap { jsString($0).split(separator: "-").map(String.init) })
+        }
     case "stat": if let v = o["spark"], v.array == nil { o["spark"] = .array([v]) }
     case "step": if let v = o["time"], let s = seconds(jsString(v)) { o["time"] = .number(s) }
     case "calc":
@@ -435,6 +445,20 @@ private func positional(_ preset: String, _ pos: [Token]) -> Props {
         }
         if !text.isEmpty { o[preset == "game" ? "title" : "label"] = .string(joinText(text)) }
 
+    // Music (spec/MUSIC.md). Each takes its one special positional, wherever
+    // it sits, and the rest of the positional text is the title.
+    case "loop", "metronome": o = music(pos, [("bpm", bpmRE)])
+    case "drums": o = music(pos, [("grid", gridRE)])
+    case "keys": o = music(pos, [("key", keyRE), ("scale", scaleRE)])
+    case "tuner": o = music(pos, [("instrument", instrumentRE)])
+    case "chords":
+        // chords [KEY] [I-V-vi-IV | C|G|Am|F] [title...]; normalize splits prog.
+        o = music(pos, [("key", keyRE), ("prog", romanRE)]) { t, o in
+            guard let parts = t.parts, o["chords"] == nil else { return false }
+            o["chords"] = strings(parts)
+            return true
+        }
+
     case "project":
         if let first = pos.first { o["title"] = .string(first.text) }
         if pos.count > 1 { o["body"] = .string(joinText(Array(pos.dropFirst()))) }
@@ -442,6 +466,29 @@ private func positional(_ preset: String, _ pos: [Token]) -> Props {
     default:
         break
     }
+    return o
+}
+
+// Music positionals: `specs` maps a prop to the test its bare token must
+// pass, in order; the first bare token that passes a still-empty prop's test fills it.
+private let bpmRE = JSRegex(#"^(?i)([0-9]+(?:\.[0-9]+)?)(?:bpm)?\z"#)
+private let gridRE = JSRegex(#"^(?i)[1-4]x[1-4]\z"#)
+private let keyRE = JSRegex(#"^[A-G][#b]?m?\z"#)
+private let scaleRE = JSRegex(#"^(major|minor|pentatonic|blues|dorian|mixolydian|chromatic)\z"#)
+private let romanRE = JSRegex(#"^[b#]?[ivIV]+[a-z0-9+]*(?:-[b#]?[ivIV]+[a-z0-9+]*)+\z"#)
+private let instrumentRE = JSRegex(#"^(guitar|ukulele|bass|chromatic)\z"#)
+
+private func music(_ pos: [Token], _ specs: [(String, JSRegex)], extra: ((Token, inout Props) -> Bool)? = nil) -> Props {
+    var o: Props = [:]
+    var text: [Token] = []
+    for t in pos {
+        let bare = !t.quoted && t.parts == nil
+        let k = bare ? specs.first { o[$0.0] == nil && $0.1.match(t.text) != nil }?.0 : nil
+        if k == "bpm", let n = bpmRE.match(t.text)?[1] { o["bpm"] = .number(Double(n)!) }
+        else if let k { o[k] = .string(t.text) }
+        else if !(extra?(t, &o) ?? false) { text.append(t) }
+    }
+    if !text.isEmpty { o["title"] = .string(joinText(text)) }
     return o
 }
 
