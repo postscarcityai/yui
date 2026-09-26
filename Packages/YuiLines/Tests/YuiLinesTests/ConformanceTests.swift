@@ -29,6 +29,9 @@ struct Vector: Sendable, CustomTestStringConvertible {
     let menu: YLValue?
     /// A timeline's rows after the input, {rows: [{id, kind}], mark} (YUI-111).
     let rows: YLValue?
+    /// The working row after the input (spec section 5, The working row): an
+    /// object, or .null when there is none. Nil when the vector leaves it out.
+    let doing: YLValue?
     let style: [String: String]
     /// Ids that last from earlier replies, id -> preset (spec section 5).
     let known: [String: String]
@@ -61,6 +64,7 @@ enum Vectors {
                 attach: v["attach"],
                 menu: v["menu"],
                 rows: v["rows"],
+                doing: v["doing"],
                 style: v["style"]?.object?.compactMapValues { $0.string } ?? [:],
                 known: v["known"]?.object?.compactMapValues { $0.string } ?? [:]
             )
@@ -160,6 +164,19 @@ func conformance(_ v: Vector) {
         #expect(got == want, "menu: \(json(got))")
     }
 
+    if let want = v.doing {
+        let d = YuiLines.doing(of: YuiLines.parse(v.input, known: v.known))
+        var got = YLValue.null
+        if let d {
+            var o: [String: YLValue] = [:]
+            if let t = d.text { o["text"] = .string(t) }
+            if let n = d.step { o["step"] = .number(Double(n)) }
+            if let m = d.of { o["of"] = .number(Double(m)) }
+            got = .object(o)
+        }
+        #expect(got == want, "doing: \(json(got))")
+    }
+
     if let want = v.rows {
         // Timeline rows after the input is applied to an empty screen: adds in
         // line order, a patch lands on the newest id or preset match, and
@@ -228,7 +245,7 @@ func conformance(_ v: Vector) {
 
 /// Hub areas this parser has not taken on yet. Keep in step with
 /// `scripts/sync-vectors.sh`; drop a name here once the parser passes that file.
-let notYetInApp: Set<String> = ["26-flow.json", "30-tables.json", "35-doing.json"]  // FLOW-1, YUI-89 and YUI-63 step 2 (app halves)
+let notYetInApp: Set<String> = ["26-flow.json", "30-tables.json"]  // FLOW-1 and YUI-89 (app halves)
 
 /// When the hub repo sits next to this one, the copied vectors must match it.
 @Test(.enabled(if: FileManager.default.fileExists(atPath: hubVectors.path)))

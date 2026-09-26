@@ -1,4 +1,5 @@
 import XCTest
+import YuiLines
 @testable import Yui
 
 /// Long turns (TestFlight: "assume it's always going to take a little while",
@@ -74,5 +75,49 @@ final class WorkingNoteTests: XCTestCase {
         answered.load([Self.user("u1", sent: 700, pickedUp: 699), ThreadRow(id: "a2", sender: "agent", body: "Here.", kind: "text",
                                                                            meta: nil, createdAt: Self.ts(650))])
         XCTAssertFalse(answered.waiting)
+    }
+
+    /// YUI-63 step 2: the agent's `doing` takes the working word's place, the
+    /// seconds keep counting, and VoiceOver reads the step.
+    func testDoingWordsAndStep() {
+        let now = Date.now
+        let picked = now.addingTimeInterval(-12)
+        let d = YLDoing(text: "Reading your calendar", step: 2, of: 5)
+        XCTAssertEqual(WorkingNote.label(since: now.addingTimeInterval(-14), pickedUp: picked, now: now, doing: d),
+                       "Reading your calendar, step 2 of 5 · 12s")
+        XCTAssertEqual(WorkingNote.accessibility(name: "Yui", label: WorkingNote.label(since: nil, pickedUp: picked, now: now,
+                                                                                         doing: d), long: false),
+                       "Yui: Reading your calendar, step 2 of 5 · 12s")
+        // A step alone keeps the working word.
+        let word = WorkingNote.word(pickedUp: picked, now: now)
+        XCTAssertEqual(WorkingNote.label(since: nil, pickedUp: picked, now: now, doing: YLDoing(step: 1, of: 4)),
+                       "\(word), step 1 of 4 · 12s")
+        XCTAssertEqual(YLDoing(step: 1, of: 4).progress, 0.25)
+        XCTAssertNil(YLDoing(text: "Looking").progress)
+    }
+
+    /// The host writes `doing` onto the person's row; the store reads it while
+    /// it waits, ignores anything malformed, and the reply clears it.
+    func testDoingFromTheRow() {
+        XCTAssertEqual(ChatStore.doing(.object(["text": .string("Drafting the plan"), "step": .number(3), "of": .number(3)])),
+                       YLDoing(text: "Drafting the plan", step: 3, of: 3))
+        XCTAssertEqual(ChatStore.doing(.object(["text": .string("Looking"), "step": .number(6), "of": .number(5)])),
+                       YLDoing(text: "Looking"), "a step past the end drops the bar, keeps the words")
+        XCTAssertNil(ChatStore.doing(.object(["text": .string("  ")])))
+        XCTAssertNil(ChatStore.doing(.null))
+        XCTAssertNil(ChatStore.doing(nil))
+
+        var row = Self.user("u1", sent: 30, pickedUp: 28)
+        row.doing = .object(["text": .string("Reading your notes"), "step": .number(1), "of": .number(2)])
+        let store = ChatStore()
+        store.load([Self.reply, row])
+        XCTAssertTrue(store.waiting)
+        XCTAssertEqual(store.doing, YLDoing(text: "Reading your notes", step: 1, of: 2), "reopened mid-turn: the words are gone")
+
+        var queued = Self.user("u2", sent: 5)
+        queued.doing = .object(["text": .string("Old words")])
+        let waiting = ChatStore()
+        waiting.load([Self.reply, queued])
+        XCTAssertNil(waiting.doing, "a row the host has not picked up shows no words")
     }
 }

@@ -121,6 +121,13 @@ Transport: the gateway dials OUT to Supabase (PROOF). No inbound ports.
      `choose@prop-<id>` (Apply, Keep it as is) and the conflict card's Ask
      again are taken here with no agent turn, only for the owner.
 
+ 18. The working row (YUI-63 step 2, doing.py): a `doing` line is never a
+     message. Mid-turn the newest one (the agent's own, or a tool call in
+     plain words) goes onto the rows the running turn answers
+     (yui_messages.doing), about once a second, only to a phone at or above
+     yui_limits doing_min_build. A message of only doing lines writes no row
+     and sends no push; doing lines anywhere else are taken out of the body.
+
 The channel guide (CHANNEL.md, synced verbatim from yuigui/spec/CHANNEL.md by
 ../sync_channel.py) is this platform's system-prompt hint, so it is in the
 system prompt on every turn on the Yui channel, and only there. Its restyle
@@ -157,7 +164,7 @@ from gateway.config import Platform, PlatformConfig
 from gateway.platforms.base import (BasePlatformAdapter, MessageEvent, MessageType, ProcessingOutcome,
                                     SendResult)
 
-from . import board, compat, connector, controls, flywheel, groups, media, mentions, needs, outbox, restyle, sandbox, talk, textbomb
+from . import board, compat, connector, controls, doing, flywheel, groups, media, mentions, needs, outbox, restyle, sandbox, talk, textbomb
 from . import commands as slash
 
 logger = logging.getLogger(__name__)
@@ -321,6 +328,10 @@ class YuiAdapter(BasePlatformAdapter):
         self._controls: Optional[controls.Host] = None
         self._talk: Optional[talk.Talk] = None
         self._control_changes: Dict[str, List[str]] = {}  # agent id -> settings changed since its last turn
+        # What the agent is doing mid-turn (YUI-63): newest wins, about one write a second.
+        self._doing = doing.Writer(self._write_doing)
+        self._loop: Optional[asyncio.AbstractEventLoop] = None
+        doing.ADAPTERS.add(self)
 
     # Inbound is authorized upstream: RLS on yui_messages only ever shows this
     # connector the threads of its own paired user.
@@ -359,6 +370,7 @@ class YuiAdapter(BasePlatformAdapter):
                                   f"then `hermes -p {self._remote_ref} yui pair <code>`.", retryable=False)
             return False
         self._client = httpx.AsyncClient(timeout=httpx.Timeout(20.0))
+        self._loop = asyncio.get_running_loop()
         # Load the floors BEFORE the session: it registers the agents, and an
         # agent that looks new gets a fresh floor, which would skip whatever
         # older messages this gateway missed while it was down.
@@ -450,15 +462,16 @@ class YuiAdapter(BasePlatformAdapter):
         await self._read_limits()
 
     async def _read_limits(self) -> None:
-        """yui_limits restyle_min_build (YUI-96): the oldest build `theme app`
-        lines go to. Best effort: on a failure the last value stands (none yet:
-        every such line is dropped)."""
+        """yui_limits restyle_min_build (YUI-96) and doing_min_build (YUI-63): the
+        oldest builds `theme app` and `doing` go to. Best effort: on a failure the
+        last value stands (none yet: every such line is dropped)."""
         try:
             r = await self._client.get(f"{REST}/yui_limits", headers=self._rest_headers(),
-                                       params={"select": "value", "name": "eq.restyle_min_build"})
+                                       params={"select": "name,value", "name": "in.(restyle_min_build,doing_min_build)"})
             rows = r.json() if r.status_code < 300 else []
-            if rows:
-                restyle.LIMIT["min_build"] = int(rows[0]["value"])
+            for row in rows:
+                lim = restyle.LIMIT if row.get("name") == "restyle_min_build" else doing.LIMIT
+                lim["min_build"] = int(row["value"])
         except Exception as e:
             logger.warning("[yui] limits: %s", e)
 
@@ -823,6 +836,7 @@ class YuiAdapter(BasePlatformAdapter):
             return
         if self._busy.get(key, ((),))[0] == ids:
             self._busy.pop(key, None)
+            self._doing.end(key)
         if outcome == ProcessingOutcome.SUCCESS:
             self._acks.update(ids)
             await self._flush_acks()
@@ -1043,6 +1057,11 @@ class YuiAdapter(BasePlatformAdapter):
         if not self._client:
             return SendResult(success=False, error="not connected")
         body = body.strip()
+        # `doing` (YUI-63) is never a message: the newest goes onto the turn's rows
+        # (a phone that draws it, a turn still running) and the lines leave the body.
+        body, now = doing.split(body)
+        if now is not None and key in self._busy and doing.allowed(compat.build_for(user_id, self._user_id)):
+            self._doing.note(key, now)
         if not body:
             return SendResult(success=True, message_id=None)
         if len(body) > MAX_MESSAGE_LENGTH:
@@ -1089,6 +1108,32 @@ class YuiAdapter(BasePlatformAdapter):
         if not connector.quiet(body):  # patches only (YUI-75): nothing new to look at, no push
             self._spawn(self._notify(mid, sender, handoff))
         return SendResult(success=True, message_id=mid)
+
+    async def _write_doing(self, key: str, value: Optional[dict]) -> None:
+        """Put the agent's newest doing (None: off) on the rows its running turn answers."""
+        ids = (self._busy.get(key) or (None,))[0]
+        if not ids or not self._client:
+            return
+        try:
+            r = await self._client.patch(f"{REST}/yui_messages", params={"id": f"in.({','.join(ids)})"},
+                                         json={"doing": value}, headers={**self._rest_headers(), "prefer": "return=minimal"})
+            if r.status_code >= 300:
+                logger.warning("[yui] doing: %s %s", r.status_code, r.text[:120])
+        except Exception as e:
+            logger.warning("[yui] doing: %s", e)
+
+    def doing_from_tool(self, user_id: str, props: dict) -> None:
+        """A tool call in this user's Yui turn (doing.on_tool, any thread): plain
+        words for the working row. Only when exactly one of their turns runs here."""
+        loop = self._loop
+        if not loop or loop.is_closed():
+            return
+
+        def go() -> None:
+            keys = [k for k in self._busy if self._split(k)[1] == user_id]
+            if len(keys) == 1 and doing.allowed(compat.build_for(user_id, self._user_id)):
+                self._doing.note(keys[0], props)
+        loop.call_soon_threadsafe(go)
 
     def _spawn(self, coro) -> None:
         self._tasks.append(asyncio.create_task(coro))
@@ -1240,6 +1285,9 @@ async def _standalone_send(pconfig, chat_id: str, message: str, *, thread_id: Op
     token = connector.load().get("token")
     if not token:
         return {"error": "yui: this machine is not paired"}
+    message = doing.split(message or "")[0]  # out of process there is no turn to show a doing on (YUI-63)
+    if not message.strip() and not media_files:
+        return {"success": True, "platform": "yui", "chat_id": chat_id, "message_id": None}
     ref = ((getattr(pconfig, "extra", None) or {}).get("remote_ref") or os.getenv("YUI_REMOTE_REF")
            or connector.current_profile() or "default")
     async with httpx.AsyncClient(timeout=20.0) as c:
@@ -1356,6 +1404,8 @@ def register(ctx) -> None:
     ctx.register_hook("pre_gateway_dispatch", handoff.rewrite_slash)
     ctx.register_hook("pre_llm_call", handoff.inject_howto)
     ctx.register_hook("pre_llm_call", compat.turn_note)
+    ctx.register_hook("pre_llm_call", doing.remember_session)  # which sessions are Yui turns (YUI-63)
+    ctx.register_hook("pre_tool_call", doing.on_tool)  # a tool call becomes a few words in the working row
     ctx.register_tool(name="yui_propose", toolset="yui", schema=talk.SCHEMA, handler=talk.tool_handler,
                       description=talk.SCHEMA["description"], emoji="🐰")
     ctx.register_command("yui", handoff.slash_command,

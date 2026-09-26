@@ -105,6 +105,10 @@ struct YLScreen: Equatable, Sendable {
             closedAt = serial
         case .menu:
             menuLines.append(node)
+        case .doing:
+            // The working row (YUI-63), never a screen: the host sends it mid-turn on
+            // the person's row, and a reply ends the working row anyway.
+            break
         case .theme:
             let props = (node.props ?? [:]).compactMapValues { v in v.string ?? v.number.map(YLComponent.format) }
             if props["scope"] == "app" { restyle = props } else { looks.append(props) }

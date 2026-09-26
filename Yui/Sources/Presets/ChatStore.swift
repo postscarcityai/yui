@@ -232,6 +232,9 @@ final class ChatStore {
     /// When the agent's host picked the message up (its delivered_at): from
     /// then on the agent is working on it, however long that takes.
     private(set) var pickedUpAt: Date?
+    /// What the agent says it is doing on this turn (`doing`, YUI-63): its
+    /// words and step for the working row. Nil: the working word.
+    private(set) var doing: YLDoing?
     private var turnCheckedAt = Date.distantPast
     /// A reopened thread only resumes a turn this recent (the host gives up on
     /// a turn after 30 minutes, TURN_TIMEOUT_SECONDS in the plugin).
@@ -540,6 +543,7 @@ final class ChatStore {
         cursor = nil
         waiting = false
         pickedUpAt = nil
+        doing = nil
         loaded = false
         error = nil
         guard client != nil else { return }
@@ -571,16 +575,28 @@ final class ChatStore {
             waiting = true
             waitingSince = .now
             pickedUpAt = nil
+            doing = nil
             // -yuiDemoPickupAfter / -yuiDemoReplyAfter <seconds>: stretch the turn so the working row can be watched (YUI-63).
             let d = UserDefaults.standard
             let pickup = d.object(forKey: "yuiDemoPickupAfter") == nil ? 0.5 : d.double(forKey: "yuiDemoPickupAfter")
             let answer = max(pickup, d.object(forKey: "yuiDemoReplyAfter") == nil ? 1.6 : d.double(forKey: "yuiDemoReplyAfter"))
+            // -yuiDemoDoing "Reading your calendar 1/3|Checking the weather 2/3|doing off": what the
+            // agent says it is doing (YUI-63), spread evenly between pickup and the answer.
+            let steps = (d.string(forKey: "yuiDemoDoing") ?? "").split(separator: "|").map {
+                YuiLines.doing(of: YuiLines.parse("doing \($0)"))
+            }
             Task {
                 try? await Task.sleep(for: .seconds(pickup))
                 pickedUpAt = .now
-                try? await Task.sleep(for: .seconds(answer - pickup))
+                let gap = (answer - pickup) / Double(steps.count + 1)
+                for step in steps {
+                    try? await Task.sleep(for: .seconds(gap))
+                    setDoing(step)
+                }
+                try? await Task.sleep(for: .seconds(steps.isEmpty ? answer - pickup : gap))
                 waiting = false
                 pickedUpAt = nil
+                doing = nil
                 stream(reply.replacingOccurrences(of: "\\n", with: "\n"))
             }
             return true
@@ -678,6 +694,7 @@ final class ChatStore {
             waiting = true
             waitingSince = .now
             pickedUpAt = nil
+            doing = nil
         }
         Outbox.shared.add(.init(id: id.lowercased(), userID: user, agentID: agentID, body: body, kind: kind,
                                 meta: meta, queuedAt: .now))
@@ -702,6 +719,7 @@ final class ChatStore {
         waiting = true
         waitingSince = .now
         pickedUpAt = nil
+        doing = nil
     }
 
     func refresh() async {
@@ -722,7 +740,8 @@ final class ChatStore {
             if first { Perf.shared.threadShown() }
             // No time limit on a turn: the dots stay until the reply comes or the
             // host says the turn is over. Asleep or offline agents get their own note.
-            if waiting, Date.now.timeIntervalSince(turnCheckedAt) > 4, Outbox.shared.pending(agentID: agentID).isEmpty {
+            // About once a second: the host writes the agent's `doing` onto this row (YUI-63).
+            if waiting, Date.now.timeIntervalSince(turnCheckedAt) > Self.turnCheck, Outbox.shared.pending(agentID: agentID).isEmpty {
                 turnCheckedAt = .now
                 if let row = try await client.newestFromUser(), agent?.id == agentID, waiting { track(row) }
             }
@@ -759,6 +778,26 @@ final class ChatStore {
     }
     #endif
 
+    /// How often a turn in progress is looked at (pickup, `doing`, finished).
+    static let turnCheck: TimeInterval = 0.9
+
+    /// A row's `doing` as the working row draws it: words, a step or both.
+    /// Anything else (a host bug, a step past the end) is the working word.
+    static func doing(_ v: YLValue?) -> YLDoing? {
+        guard let o = v?.object else { return nil }
+        let text = o["text"]?.string?.trimmingCharacters(in: .whitespacesAndNewlines)
+        var d = YLDoing(text: text?.isEmpty == false ? text : nil)
+        if let n = o["step"]?.number, let m = o["of"]?.number, m >= 1, n >= 0, n <= m {
+            d.step = Int(n)
+            d.of = Int(m)
+        }
+        return d.text == nil && d.step == nil ? nil : d
+    }
+
+    private func setDoing(_ d: YLDoing?) {
+        if d != doing { doing = d }
+    }
+
     /// A thread opened mid-turn: its newest row is the person's and the agent
     /// has not finished it, so the working note picks up where it was.
     private func resume(_ rows: [ThreadRow], now: Date = .now) {
@@ -767,12 +806,16 @@ final class ChatStore {
         waiting = true
         waitingSince = sent
         pickedUpAt = last.deliveredAt.flatMap(YuiTime.date)
+        doing = pickedUpAt == nil ? nil : Self.doing(last.doing)
     }
 
     /// How far the turn on the person's newest row has got. Finished with no
     /// reply after a grace period (a command, a turn that errored): stop waiting.
     private func track(_ row: ThreadRow, now: Date = .now) {
         pickedUpAt = row.deliveredAt.flatMap(YuiTime.date) ?? pickedUpAt
+        // Words for the working row only once the host has the row: a queued
+        // row has none of its own yet.
+        if row.deliveredAt != nil { setDoing(Self.doing(row.doing)) }
         if let done = row.handledAt.flatMap(YuiTime.date), now.timeIntervalSince(done) > 20 { waiting = false }
     }
 
@@ -784,7 +827,7 @@ final class ChatStore {
         // Polls overlap: only a row not seen before can end the wait.
         guard seen.insert(id).inserted else { return false }
         // Another agent's answer copied in (YUI-44) doesn't end this agent's turn.
-        if row.sender == "agent", Mentions.from(meta: row.meta) == nil { waiting = false; pickedUpAt = nil }
+        if row.sender == "agent", Mentions.from(meta: row.meta) == nil { waiting = false; pickedUpAt = nil; doing = nil }
         if row.sender == "agent", let done = TalkAbout.applied(meta: row.meta), done == about?.id {
             withAnimation(spring) { about = nil }  // its proposal was applied (YUI-69)
         }

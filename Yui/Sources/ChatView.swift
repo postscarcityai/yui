@@ -1,6 +1,7 @@
 import PhotosUI
 import QuartzCore
 import SwiftUI
+import YuiLines
 
 /// The chat with the selected agent (one thread per agent, over the relay).
 /// Agent replies in Yui Lines render inline as presets.
@@ -545,7 +546,7 @@ struct ChatView: View {
                                   : "\(agent.name) is offline. It gets this when its gateway starts again.",
                                   icon: agent.liveness == .asleep ? "moon.zzz" : "powersleep")
                     } else if store.waiting {
-                        WorkingNote(agent: store.agent, since: store.waitingSince, pickedUp: store.pickedUpAt).id("typing")
+                        WorkingNote(agent: store.agent, since: store.waitingSince, pickedUp: store.pickedUpAt, doing: store.doing).id("typing")
                     }
                     if let error = store.error {
                         Text(error)
@@ -2007,12 +2008,16 @@ private struct FirstRun: View {
 /// picks it up it is "On its way". Long turns are normal (TestFlight: "assume
 /// it's always going to take a little while"), so there is no time limit and
 /// no fix-it advice here; an agent whose computer is away gets its own
-/// asleep/offline note instead. Later the host's own few words take the
-/// word's place (YUI-63 step 2).
+/// asleep/offline note instead. When the agent says what it is doing
+/// (`doing`, YL.md section 5, The working row; YUI-63 step 2) its words take
+/// the word's place, and a thin bar in its accent shows the step when it
+/// knows how many there are. The seconds keep counting from the start.
 struct WorkingNote: View {
     var agent: YuiAgent?
     var since: Date?
     var pickedUp: Date?
+    /// The agent's newest `doing`: its words and step. Nil: the working word.
+    var doing: YLDoing? = nil
     @Environment(\.yuiTheme) private var theme
     @Environment(\.colorScheme) private var scheme
     @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
@@ -2033,11 +2038,18 @@ struct WorkingNote: View {
         return words[n % words.count]
     }
 
-    /// "Pondering · 1m 24s", or "On its way · 3s" before pickup.
-    static func label(since: Date?, pickedUp: Date?, now: Date) -> String {
-        let word = Self.word(pickedUp: pickedUp, now: now)
+    /// "Pondering · 1m 24s", or "On its way · 3s" before pickup. With a doing:
+    /// "Reading your calendar, step 2 of 5 · 12s".
+    static func label(since: Date?, pickedUp: Date?, now: Date, doing: YLDoing? = nil) -> String {
+        var word = shown(doing, pickedUp: pickedUp, now: now)
+        if let d = doing, let step = d.step, let of = d.of { word += ", step \(step) of \(of)" }
         guard let start = pickedUp ?? since else { return word }
         return "\(word) · \(elapsed(now.timeIntervalSince(start)))"
+    }
+
+    /// The agent's own words when it said what it is doing, else the working word.
+    static func shown(_ doing: YLDoing?, pickedUp: Date?, now: Date) -> String {
+        doing?.text ?? word(pickedUp: pickedUp, now: now)
     }
 
     /// 12s, 1m 24s, 1h 3m.
@@ -2055,25 +2067,35 @@ struct WorkingNote: View {
         let c = theme.swatch(scheme)
         let name = agent?.name ?? "Your agent"
         TimelineView(.periodic(from: .now, by: 1)) { ctx in
-            let word = Self.word(pickedUp: pickedUp, now: ctx.date)
+            let word = Self.shown(doing, pickedUp: pickedUp, now: ctx.date)
             let took = (pickedUp ?? since).map { Self.elapsed(ctx.date.timeIntervalSince($0)) }
             HStack(alignment: .top, spacing: theme.spacing.s) {
                 AgentFace(agent: agent)
                 VStack(alignment: .leading, spacing: theme.spacing.xs) {
-                    HStack(spacing: theme.spacing.s) {
-                        Dots(color: c.accent, still: reduceMotion)
-                        HStack(spacing: 0) {
-                            Text(word)
-                                .id(word)
-                                .transition(reduceMotion ? .identity : .push(from: .bottom).combined(with: .opacity))
-                            if let took {
-                                Text(" · \(took)")
-                                    .monospacedDigit()
-                                    .contentTransition(reduceMotion ? .identity : .numericText())
+                    VStack(alignment: .leading, spacing: theme.spacing.xs) {
+                        HStack(spacing: theme.spacing.s) {
+                            Dots(color: c.accent, still: reduceMotion)
+                            HStack(spacing: 0) {
+                                // One line: long words end in an ellipsis, the seconds always show.
+                                Text(word)
+                                    .lineLimit(1)
+                                    .truncationMode(.tail)
+                                    .id(word)
+                                    .transition(reduceMotion ? .identity : .push(from: .bottom).combined(with: .opacity))
+                                if let took {
+                                    Text(" · \(took)")
+                                        .monospacedDigit()
+                                        .fixedSize()
+                                        .layoutPriority(1)
+                                        .contentTransition(reduceMotion ? .identity : .numericText())
+                                }
                             }
+                            .foregroundStyle(c.inkSoft)
+                            .animation(reduceMotion ? nil : .snappy, value: word)
                         }
-                        .foregroundStyle(c.inkSoft)
-                        .animation(reduceMotion ? nil : .snappy, value: word)
+                        if let progress = doing?.progress {
+                            StepBar(progress: progress, color: c.accent, track: c.outline, still: reduceMotion)
+                        }
                     }
                     .font(theme.font(theme.type.caption, .semibold))
                     .padding(.horizontal, theme.spacing.m)
@@ -2091,7 +2113,7 @@ struct WorkingNote: View {
                 Spacer(minLength: 48)
             }
             .accessibilityElement(children: .ignore)
-            .accessibilityLabel(Self.accessibility(name: name, label: Self.label(since: since, pickedUp: pickedUp, now: ctx.date),
+            .accessibilityLabel(Self.accessibility(name: name, label: Self.label(since: since, pickedUp: pickedUp, now: ctx.date, doing: doing),
                                                    long: (pickedUp ?? since).map { ctx.date.timeIntervalSince($0) > Self.longTurn } ?? false))
             .accessibilityIdentifier("working")
         }
@@ -2101,6 +2123,29 @@ struct WorkingNote: View {
     /// VoiceOver: who, then the row. "Yui: Pondering · 12s".
     static func accessibility(name: String, label: String, long: Bool) -> String {
         "\(name): \(label)" + (long ? ". Long jobs are fine. Leave any time, the answer lands here." : "")
+    }
+
+    /// How far along the agent is: a thin bar in its accent, filled to the
+    /// step. It slides to each new step; under Reduce Motion it just changes.
+    private struct StepBar: View {
+        let progress: Double
+        let color: Color
+        let track: Color
+        let still: Bool
+        var body: some View {
+            Capsule()
+                .fill(track.opacity(0.6))
+                .frame(height: 3)
+                .overlay(alignment: .leading) {
+                    GeometryReader { g in
+                        Capsule().fill(color)
+                            .frame(width: max(3, g.size.width * min(1, max(0, progress))))
+                    }
+                }
+                .frame(minWidth: 96)
+                .animation(still ? nil : .snappy, value: progress)
+                .accessibilityHidden(true)
+        }
     }
 
     /// Three small dots that breathe; still under Reduce Motion.

@@ -97,4 +97,56 @@ final class WorkingNoteTests: XCTestCase {
             app.terminate()
         }
     }
+
+    /// YUI-63 step 2: the agent says what it is doing. The row steps through
+    /// three `doing` lines (its words in place of the working word, a bar for
+    /// the step, the seconds still counting), then the reply clears it.
+    func testDoingStepsThenTheReply() throws {
+        for appearance in ["light", "dark"] {
+            let shots = ProcessInfo.processInfo.environment["YUI_SHOTS"].map { URL(fileURLWithPath: $0) }
+            func shot(_ name: String) {
+                let png = XCUIScreen.main.screenshot().pngRepresentation
+                if let shots { try? png.write(to: shots.appending(path: "doing-\(appearance)-\(name).png")) }
+                let a = XCTAttachment(data: png, uniformTypeIdentifier: "public.png")
+                a.name = "doing-\(appearance)-\(name)"
+                a.lifetime = .keepAlways
+                add(a)
+            }
+            let app = XCUIApplication()
+            app.launchArguments = ["-yuiDemoAccount", "-yuiDemoAgents", "-yuiAgent", "wizard", "-appearance", appearance,
+                                   "-yuiDemoReply", "say Free at 3. Want it?", "-yuiDemoPickupAfter", "1",
+                                   "-yuiDemoReplyAfter", "17",
+                                   "-yuiDemoDoing",
+                                   "Reading your calendar 1/3|Checking the weather 2/3|Drafting the plan 3/3"]
+            app.launch()
+            let input = app.descendants(matching: .any)["composer"].firstMatch
+            XCTAssertTrue(input.waitForExistence(timeout: 20), "no composer")
+            input.tap()
+            input.typeText("Plan my afternoon")
+            app.buttons["Send"].tap()
+
+            let row = app.descendants(matching: .any)["working"]
+            XCTAssertTrue(row.waitForExistence(timeout: 3), "sending shows no working row")
+            var seconds: [String] = []
+            for (i, words) in ["Reading your calendar", "Checking the weather", "Drafting the plan"].enumerated() {
+                let want = "Wizard: \(words), step \(i + 1) of 3 · "
+                let got = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label BEGINSWITH %@", want), object: row)
+                XCTAssertEqual(XCTWaiter.wait(for: [got], timeout: 8), .completed, "no step \(i + 1): \(row.label)")
+                XCTAssertEqual(app.descendants(matching: .any).matching(identifier: "working").count, 1, "more than one working row")
+                // Never a bubble: the words live only in the working row.
+                XCTAssertFalse(app.staticTexts.matching(NSPredicate(format: "label == %@", words)).allElementsBoundByIndex
+                                .contains { $0.frame.minY > row.frame.maxY || $0.frame.maxY < row.frame.minY },
+                               "\(words) shows outside the working row")
+                seconds.append(String(row.label.split(separator: "·").last ?? ""))
+                shot("\(i + 1)-step")
+            }
+            XCTAssertNotEqual(seconds.first, seconds.last, "the seconds stopped counting: \(seconds)")
+            XCTAssertTrue(app.staticTexts["Free at 3. Want it?"].waitForExistence(timeout: 12), "the answer never landed")
+            XCTAssertTrue(row.waitForNonExistence(timeout: 3), "the working row stayed after the answer")
+            XCTAssertEqual(app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'Drafting the plan'")).count, 0,
+                           "the doing words outlived the reply")
+            shot("4-answered")
+            app.terminate()
+        }
+    }
 }
