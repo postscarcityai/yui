@@ -146,6 +146,7 @@ try:
         # YUI-95: the grant checks the message policies call.
         shared = {"yui_granted", "yui_grant_since", "yui_grant_serves"}
         allowed = {"yui_user": shared, "yui_connector": {"yui_connector_serves", "yui_group_notes"} | shared}[role]  # group notes: YUI-93
+        allowed = allowed | ({"yui_connector_live"} if role == "yui_connector" else set())  # YUI-102: the yui_perf read policy
         check(f"{role} can run only the expected yui SECURITY DEFINER functions",
               {r["proname"] for r in rows} <= allowed, str(rows))
         rows = sql(f"""select schemaname || '.' || tablename t from pg_policies

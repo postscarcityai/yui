@@ -15,6 +15,9 @@ public.yui_media_orphans(grace), migration 20260924040000_yui_media.sql.
 Invites (YUI-56): a declined invite is deleted 30 days after it was declined
 (yuigui.com/privacy says so).
 
+Speed numbers (YUI-102): public.yui_perf_retention() deletes yui_perf rows
+older than perf_retention_days (yui_limits, 90).
+
 Test builds (YUI-55): everything in the private `yui-builds` bucket older than
 8 days goes too. Its signed links last 7 days, so nothing live is removed.
 
@@ -72,6 +75,13 @@ def main() -> int:
         print(f"invite retention failed: {s} {rows}", file=sys.stderr)
         return 1
     print(("removed " if args.delete else "due: ") + f"{rows[0]['n']} declined invite(s)")
+    s, rows = http("POST", f"https://api.supabase.com/v1/projects/{REF}/database/query", mgmt,
+                   {"query": f"select * from public.yui_perf_retention({'false' if args.delete else 'true'})"})
+    if s >= 300:
+        print(f"perf retention failed: {s} {rows}", file=sys.stderr)
+        return 1
+    print(("perf retention removed " if args.delete else "perf retention due: ")
+          + ", ".join(f"{r['n_rows']} {r['what']}" for r in rows))
     grace = args.grace.replace("'", "")
     s, rows = http("POST", f"https://api.supabase.com/v1/projects/{REF}/database/query", mgmt,
                    {"query": f"select public.yui_media_orphans('{grace}'::interval) as name"})
