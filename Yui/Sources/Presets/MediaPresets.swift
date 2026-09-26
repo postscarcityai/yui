@@ -299,6 +299,7 @@ struct CameraCapture: UIViewControllerRepresentable {
     let done: (Data?) -> Void
 
     func makeUIViewController(context: Context) -> UIImagePickerController {
+        Keyboard.dismiss()
         let p = UIImagePickerController()
         p.sourceType = .camera
         p.cameraDevice = front ? .front : .rear

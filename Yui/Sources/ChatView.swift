@@ -286,6 +286,13 @@ struct ChatView: View {
         .onChange(of: agentStyle, initial: true) { store.style = agentStyle }
         // The stage's reply went, or its screens stopped being staged: close it (YUI-80).
         .onChange(of: store.stageShowing) { store.settleStage() }
+        // A full screen takes the keyboard down with it, however it opened: a tap, a pill,
+        // the agent. Closing it leaves the keyboard down (feedback ACbsyYSZ).
+        .onChange(of: store.stageOpen) { _, open in
+            guard open else { return }
+            focused = false
+            Keyboard.dismiss()
+        }
         .onAppear {
             store.spring = theme.spring
             // A `theme` line in a reply restyles that agent, and the app with it.

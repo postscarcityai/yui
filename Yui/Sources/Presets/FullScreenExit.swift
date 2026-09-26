@@ -30,6 +30,15 @@ struct FullScreenCloseButton: View {
     }
 }
 
+/// The keyboard goes when a full screen opens (TestFlight feedback ACbsyYSZ,
+/// 2026-09-26: "if I ever open a full screen, I need the keyboard to go away
+/// automatically"). Whoever holds it, the composer or a field on a page.
+enum Keyboard {
+    static func dismiss() {
+        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+    }
+}
+
 extension View {
     /// Swipe down closes a full-screen cover; the view follows the finger and
     /// springs back if the pull is short. `x: true` also pins the X top right.
@@ -46,6 +55,7 @@ private struct FullScreenExit: ViewModifier {
 
     func body(content: Content) -> some View {
         content
+            .onAppear(perform: Keyboard.dismiss)
             .overlay(alignment: .topTrailing) {
                 if x { FullScreenCloseButton(action: close).padding(.trailing, 4) }
             }
