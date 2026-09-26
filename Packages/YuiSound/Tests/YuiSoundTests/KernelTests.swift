@@ -123,6 +123,9 @@ struct KernelTests {
             if i % 10 == 0 {
                 k.noteOn(words[(i / 10) % words.count], midi: 48 + i % 24, velocity: 0.8, hold: 0.3)
             }
+            // Keys and chords (step 3): held notes let go by tag, strums scheduled ahead.
+            if i % 10 == 5 { k.noteOn(.pad, midi: 60 + i % 12, velocity: 0.7, delay: 0.025, tag: UInt32(i)) }
+            if i % 10 == 9 { k.noteOff(tag: UInt32(i - 4)) }
             if i % 2_000 == 0 {
                 k.setLoop(rows: [(.kick, -1), (.snare, -1)], masks: [0x1111, UInt32(i / 2_000) | 0x1010], steps: 16, bpm: 100 + Double(i / 2_000), swing: 10)
             }

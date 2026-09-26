@@ -9,7 +9,7 @@ import Synchronization
 
 /// A fixed-size command from the main thread to the render thread.
 struct Command {
-    enum Kind: UInt8 { case none, noteOn, loopRow, loopCommit, loopStart, loopStop }
+    enum Kind: UInt8 { case none, noteOn, noteOff, loopRow, loopCommit, loopStart, loopStop }
     var kind: Kind = .none
     var recipe: UInt8 = 0
     var row: UInt8 = 0
@@ -21,6 +21,10 @@ struct Command {
     var mask: UInt32 = 0
     /// Sample time to play at, < 0 for now.
     var time: Int64 = -1
+    /// Seconds after the render thread takes it (a strum's later strings).
+    var delay: Float = 0
+    /// Names a held note so noteOff can find it; 0 for none.
+    var tag: UInt32 = 0
     var bpm: Double = 120
     var swing: Double = 0
 }
@@ -109,7 +113,7 @@ struct DSP {
         return anchor + Int64((Double(nextN - base) * sps + swingOffset).rounded())
     }
 
-    mutating func startVoice(_ recipe: Recipe, midi: Int32, velocity: Float, hold: Float, at time: Int64) {
+    mutating func startVoice(_ recipe: Recipe, midi: Int32, velocity: Float, hold: Float, at time: Int64, tag: UInt32 = 0) {
         var slot = 0
         var oldest = Int64.max
         var i = 0
@@ -120,17 +124,36 @@ struct DSP {
         }
         seed = seed &* 1_664_525 &+ 1_013_904_223
         voices[slot].noteOn(recipe, midi: Int(midi), velocity: velocity, hold: hold, sampleRate: Float(sampleRate), at: time, seed: seed)
+        voices[slot].tag = tag
     }
 
     mutating func handle(_ c: Command) {
         switch c.kind {
         case .none: break
         case .noteOn:
+            var c = c
+            if c.delay > 0 { c.time = now + Int64(Double(c.delay) * sampleRate) }
             if c.time > now, pendingCount < Self.maxPending {
                 pending[pendingCount] = c
                 pendingCount += 1
             } else {
-                startVoice(Recipe(rawValue: c.recipe) ?? .tick, midi: c.midi, velocity: c.velocity, hold: c.hold, at: now)
+                startVoice(Recipe(rawValue: c.recipe) ?? .tick, midi: c.midi, velocity: c.velocity, hold: c.hold, at: now, tag: c.tag)
+            }
+        case .noteOff:
+            // Let go of the sounding note, and drop it if it has not started yet.
+            var i = 0
+            while i < Self.voiceCount {
+                if voices[i].active, voices[i].tag == c.tag { voices[i].letGo() }
+                i += 1
+            }
+            var p = 0
+            while p < pendingCount {
+                if pending[p].tag == c.tag {
+                    pendingCount -= 1
+                    pending[p] = pending[pendingCount]
+                } else {
+                    p += 1
+                }
             }
         case .loopRow:
             if Int(c.row) < Self.maxRows {
@@ -202,7 +225,7 @@ struct DSP {
             while p < pendingCount {
                 if pending[p].time <= t {
                     let c = pending[p]
-                    startVoice(Recipe(rawValue: c.recipe) ?? .tick, midi: c.midi, velocity: c.velocity, hold: c.hold, at: t)
+                    startVoice(Recipe(rawValue: c.recipe) ?? .tick, midi: c.midi, velocity: c.velocity, hold: c.hold, at: t, tag: c.tag)
                     pendingCount -= 1
                     pending[p] = pending[pendingCount]
                 } else {
@@ -332,9 +355,11 @@ final class SynthKernel: @unchecked Sendable {
 
     func send(_ c: Command) { producer.withLock { _ in _ = ring.push(c) } }
 
-    func noteOn(_ recipe: Recipe, midi: Int, velocity: Float, hold: Float = -1, at time: Int64 = -1) {
-        send(Command(kind: .noteOn, recipe: recipe.rawValue, midi: Int32(midi), velocity: velocity, hold: hold, time: time))
+    func noteOn(_ recipe: Recipe, midi: Int, velocity: Float, hold: Float = -1, at time: Int64 = -1, delay: Float = 0, tag: UInt32 = 0) {
+        send(Command(kind: .noteOn, recipe: recipe.rawValue, midi: Int32(midi), velocity: velocity, hold: hold, time: time, delay: delay, tag: tag))
     }
+
+    func noteOff(tag: UInt32) { send(Command(kind: .noteOff, tag: tag)) }
 
     func setLoop(rows: [(Recipe, Int)], masks: [UInt32], steps: Int, bpm: Double, swing: Double) {
         let n = min(rows.count, DSP.maxRows)

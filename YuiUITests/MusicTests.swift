@@ -115,4 +115,111 @@ final class MusicTests: XCTestCase {
         sleep(1)
         shot("1-chat")
     }
+
+    // MARK: keys and chords (step 3)
+
+    private func played(_ e: [String: Any]?) -> [String] { e?["played"] as? [String] ?? [] }
+
+    private func keys(_ appearance: String) {
+        launch("keys-\(appearance)", appearance: appearance, lines: [#"say Play along. The lock keeps you in A minor."#, #"keys Am pentatonic "Warm up" +send"#])
+        let a4 = app.buttons["key-69"]
+        XCTAssertTrue(a4.waitForExistence(timeout: 20), "the keyboard never drew")
+        XCTAssertEqual(a4.label, "A4")
+        // The scale lock: C# is not in A minor pentatonic, so it is dimmed and silent.
+        XCTAssertEqual(app.buttons["key-61"].value as? String, "locked")
+        XCTAssertNotEqual(a4.value as? String, "locked")
+        sleep(1)
+        shot("1-stage")
+
+        a4.tap()
+        app.buttons["key-61"].tap()
+        XCTAssertEqual(app.staticTexts["keys-played"].label, "A4", "a locked key made a sound")
+
+        // Glide from C4 to E4 along the white keys: C4, D4, E4, and the locked C# and D# in between stay silent.
+        app.buttons["key-60"].press(forDuration: 0.15, thenDragTo: app.buttons["key-64"], withVelocity: 300, thenHoldForDuration: 0.1)
+        XCTAssertEqual(app.staticTexts["keys-played"].label, "A4 C4 D4 E4")
+
+        // An octave up: the arrows move the keyboard, C5 is the first key.
+        app.buttons["keys-octave-up"].tap()
+        XCTAssertEqual(app.staticTexts["keys-octave"].label, "C5")
+        XCTAssertTrue(app.buttons["key-72"].exists)
+        app.buttons["key-81"].tap()
+
+        // The sound picker.
+        app.buttons["music-sound-pad"].tap()
+        XCTAssertTrue(app.buttons["music-sound-pad"].isSelected)
+        app.buttons["key-76"].tap()
+        sleep(1)
+        shot("2-played")
+
+        app.buttons["keys-send"].tap()
+        waitFor("the notes to go out") { !events("keys").isEmpty }
+        let e = events("keys").last
+        XCTAssertEqual(played(e), ["A4", "C4", "D4", "E4", "A5", "E5"])
+        XCTAssertEqual(e?["key"] as? String, "Am")
+        XCTAssertEqual(e?["scale"] as? String, "pentatonic")
+    }
+
+    func testKeysLight() { keys("light") }
+    func testKeysDark() { keys("dark") }
+
+    private func chords(_ appearance: String) {
+        launch("chords-\(appearance)", appearance: appearance, lines: [#"say Four chords, every pop song."#, #"chords G I-V-vi-IV "Four chords" +send"#])
+        let g = app.buttons["chord-0"]
+        XCTAssertTrue(g.waitForExistence(timeout: 20), "the chords never drew")
+        XCTAssertEqual(["chord-0", "chord-1", "chord-2", "chord-3"].map { app.buttons[$0].label }, ["G, I", "D, V", "Em, vi", "C, IV"])
+        XCTAssertTrue(app.buttons["chords-strum-down"].isSelected)
+        sleep(1)
+        shot("1-stage")
+
+        g.tap()
+        app.buttons["chord-1"].tap()
+        app.buttons["chords-strum-up"].tap()
+        XCTAssertTrue(app.buttons["chords-strum-up"].isSelected)
+        app.buttons["chord-2"].tap()
+        app.buttons["chords-strum-off"].tap()
+        app.buttons["chord-3"].tap()
+        XCTAssertEqual(app.staticTexts["chords-played"].label, "G · D · Em · C")
+        sleep(1)
+        shot("2-played")
+
+        app.buttons["chords-send"].tap()
+        waitFor("the chords to go out") { !events("chords").isEmpty }
+        let e = events("chords").last
+        XCTAssertEqual(played(e), ["G", "D", "Em", "C"])
+        XCTAssertEqual(e?["key"] as? String, "G")
+    }
+
+    func testChordsLight() { chords("light") }
+    func testChordsDark() { chords("dark") }
+
+    /// A patch moves every chord to the new key and keeps the numerals; a minor
+    /// key with flat degrees; chord names skip the theory; strum from the line.
+    func testChordsPatchNamesAndMinor() {
+        launch("chords-more", appearance: "light", lines: [
+            #"say Three ways to write chords."#,
+            #"chords C I-V-vi-IV +inline"#, #"~chords key=D"#,
+            #">2 chords Am i-bVII-bVI-V7 strum=up"#,
+            #">3 chords C|G|Am|F "Campfire""#,
+        ])
+        XCTAssertTrue(app.buttons["chord-0"].waitForExistence(timeout: 20), "the chords never drew")
+        XCTAssertEqual(["chord-0", "chord-1", "chord-2", "chord-3"].map { app.buttons[$0].firstMatch.label }, ["D, I", "A, V", "Bm, vi", "G, IV"])
+        app.buttons["chord-2"].firstMatch.tap()
+        sleep(1)
+        shot("1-patched")
+    }
+
+    func testKeysInlineAndPatched() {
+        launch("keys-inline", appearance: "dark", lines: [#"say A keyboard in the chat."#, #"keys C major +inline"#, #"~keys key=G octave=3"#])
+        XCTAssertTrue(app.buttons["key-48"].waitForExistence(timeout: 20), "the patched keyboard never drew")
+        XCTAssertEqual(app.staticTexts["keys-octave"].label, "C3")
+        // G major: F is out, F# is in.
+        XCTAssertEqual(app.buttons["key-53"].value as? String, "locked")
+        XCTAssertNotEqual(app.buttons["key-54"].value as? String, "locked")
+        XCTAssertEqual(app.buttons["key-54"].label, "F#3")
+        app.buttons["key-55"].tap()
+        XCTAssertEqual(app.staticTexts["keys-played"].label, "G3")
+        sleep(1)
+        shot("1-chat")
+    }
 }

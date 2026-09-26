@@ -93,6 +93,8 @@ struct PresetView: View {
         case "game": GamePreset(c: component)
         case "loop": LoopPreset(c: component)
         case "drums": DrumsPreset(c: component)
+        case "keys": KeysPreset(c: component)
+        case "chords": ChordsPreset(c: component)
         default: LaterPreset(c: component)
         }
     }

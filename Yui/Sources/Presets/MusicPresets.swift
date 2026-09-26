@@ -3,8 +3,8 @@ import YuiLines
 import YuiSound
 
 // Music presets (YUI-116, yuigui spec/MUSIC.md). Every sound comes from the
-// one engine in YuiSound: one clock, one voice bank, one limiter. Step 2 draws
-// `loop` and `drums`; keys, chords, tuner and metronome come in later steps.
+// one engine in YuiSound: one clock, one voice bank, one limiter. Step 2 drew
+// `loop` and `drums`; step 3 adds `keys` and `chords` (MusicKeys.swift).
 
 /// Patterns as the agent writes them: one string per row, `x` a hit, `.` a rest.
 enum LoopPattern {
@@ -51,12 +51,12 @@ final class MusicHost {
 }
 
 /// Row colors from the agent's theme, so a beat looks like its agent.
-private func rowColor(_ i: Int, _ s: Swatch) -> Color {
+func rowColor(_ i: Int, _ s: Swatch) -> Color {
     [s.accent, s.mint, s.lavender, s.butter, s.brand, s.inkSoft][i % 6]
 }
 
 /// Holds the engine open while an instrument is on screen.
-private struct SoundHold: ViewModifier {
+struct SoundHold: ViewModifier {
     func body(content: Content) -> some View {
         content
             .onAppear { YuiSound.shared.acquire() }
@@ -65,7 +65,7 @@ private struct SoundHold: ViewModifier {
 }
 
 /// The one line shown when the sound goes out over Bluetooth (MUSIC.md section 5).
-private struct BluetoothHint: View {
+struct BluetoothHint: View {
     @Environment(\.yuiTheme) private var theme
     @Environment(\.colorScheme) private var scheme
 
@@ -80,7 +80,7 @@ private struct BluetoothHint: View {
 }
 
 /// The title and a small line under it.
-private struct MusicHead: View {
+struct MusicHead: View {
     let title: String
     let sub: String
     @Environment(\.yuiTheme) private var theme
@@ -100,7 +100,7 @@ private struct MusicHead: View {
 }
 
 /// A small round control under the grid.
-private struct MusicButton: View {
+struct MusicButton: View {
     let text: String
     var icon: String? = nil
     var on = false
@@ -461,7 +461,7 @@ struct DrumsPreset: View {
 }
 
 /// Fires once when a finger lands, not when it lifts.
-private struct TouchDown: ViewModifier {
+struct TouchDown: ViewModifier {
     let action: () -> Void
     @State private var down = false
 

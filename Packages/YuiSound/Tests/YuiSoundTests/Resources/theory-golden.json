@@ -1,0 +1,11586 @@
+{
+ "from": "yuigui site/lib/music/theory.mjs",
+ "keys": [
+  {
+   "key": "C",
+   "root": 0,
+   "minor": false,
+   "name": "C",
+   "flats": false
+  },
+  {
+   "key": "G",
+   "root": 7,
+   "minor": false,
+   "name": "G",
+   "flats": false
+  },
+  {
+   "key": "D",
+   "root": 2,
+   "minor": false,
+   "name": "D",
+   "flats": false
+  },
+  {
+   "key": "A",
+   "root": 9,
+   "minor": false,
+   "name": "A",
+   "flats": false
+  },
+  {
+   "key": "E",
+   "root": 4,
+   "minor": false,
+   "name": "E",
+   "flats": false
+  },
+  {
+   "key": "B",
+   "root": 11,
+   "minor": false,
+   "name": "B",
+   "flats": false
+  },
+  {
+   "key": "F#",
+   "root": 6,
+   "minor": false,
+   "name": "F#",
+   "flats": false
+  },
+  {
+   "key": "Db",
+   "root": 1,
+   "minor": false,
+   "name": "Db",
+   "flats": true
+  },
+  {
+   "key": "Ab",
+   "root": 8,
+   "minor": false,
+   "name": "Ab",
+   "flats": true
+  },
+  {
+   "key": "Eb",
+   "root": 3,
+   "minor": false,
+   "name": "Eb",
+   "flats": true
+  },
+  {
+   "key": "Bb",
+   "root": 10,
+   "minor": false,
+   "name": "Bb",
+   "flats": true
+  },
+  {
+   "key": "F",
+   "root": 5,
+   "minor": false,
+   "name": "F",
+   "flats": true
+  },
+  {
+   "key": "Am",
+   "root": 9,
+   "minor": true,
+   "name": "Am",
+   "flats": false
+  },
+  {
+   "key": "Em",
+   "root": 4,
+   "minor": true,
+   "name": "Em",
+   "flats": false
+  },
+  {
+   "key": "Bm",
+   "root": 11,
+   "minor": true,
+   "name": "Bm",
+   "flats": false
+  },
+  {
+   "key": "F#m",
+   "root": 6,
+   "minor": true,
+   "name": "F#m",
+   "flats": false
+  },
+  {
+   "key": "C#m",
+   "root": 1,
+   "minor": true,
+   "name": "C#m",
+   "flats": false
+  },
+  {
+   "key": "G#m",
+   "root": 8,
+   "minor": true,
+   "name": "G#m",
+   "flats": false
+  },
+  {
+   "key": "Ebm",
+   "root": 3,
+   "minor": true,
+   "name": "Ebm",
+   "flats": true
+  },
+  {
+   "key": "Bbm",
+   "root": 10,
+   "minor": true,
+   "name": "Bbm",
+   "flats": true
+  },
+  {
+   "key": "Fm",
+   "root": 5,
+   "minor": true,
+   "name": "Fm",
+   "flats": true
+  },
+  {
+   "key": "Cm",
+   "root": 0,
+   "minor": true,
+   "name": "Cm",
+   "flats": true
+  },
+  {
+   "key": "Gm",
+   "root": 7,
+   "minor": true,
+   "name": "Gm",
+   "flats": true
+  },
+  {
+   "key": "Dm",
+   "root": 2,
+   "minor": true,
+   "name": "Dm",
+   "flats": true
+  }
+ ],
+ "rows": [
+  {
+   "key": "C",
+   "numeral": "I",
+   "name": "C",
+   "notes": [
+    48,
+    60,
+    64,
+    67
+   ]
+  },
+  {
+   "key": "C",
+   "numeral": "II",
+   "name": "D",
+   "notes": [
+    50,
+    62,
+    66,
+    69
+   ]
+  },
+  {
+   "key": "C",
+   "numeral": "III",
+   "name": "E",
+   "notes": [
+    40,
+    64,
+    68,
+    71
+   ]
+  },
+  {
+   "key": "C",
+   "numeral": "IV",
+   "name": "F",
+   "notes": [
+    41,
+    65,
+    69,
+    72
+   ]
+  },
+  {
+   "key": "C",
+   "numeral": "V",
+   "name": "G",
+   "notes": [
+    43,
+    55,
+    59,
+    62
+   ]
+  },
+  {
+   "key": "C",
+   "numeral": "VI",
+   "name": "A",
+   "notes": [
+    45,
+    57,
+    61,
+    64
+   ]
+  },
+  {
+   "key": "C",
+   "numeral": "VII",
+   "name": "B",
+   "notes": [
+    47,
+    59,
+    63,
+    66
+   ]
+  },
+  {
+   "key": "C",
+   "numeral": "i",
+   "name": "Cm",
+   "notes": [
+    48,
+    60,
+    63,
+    67
+   ]
+  },
+  {
+   "key": "C",
+   "numeral": "ii",
+   "name": "Dm",
+   "notes": [
+    50,
+    62,
+    65,
+    69
+   ]
+  },
+  {
+   "key": "C",
+   "numeral": "iii",
+   "name": "Em",
+   "notes": [
+    40,
+    64,
+    67,
+    71
+   ]
+  },
+  {
+   "key": "C",
+   "numeral": "iv",
+   "name": "Fm",
+   "notes": [
+    41,
+    65,
+    68,
+    72
+   ]
+  },
+  {
+   "key": "C",
+   "numeral": "v",
+   "name": "Gm",
+   "notes": [
+    43,
+    55,
+    58,
+    62
+   ]
+  },
+  {
+   "key": "C",
+   "numeral": "vi",
+   "name": "Am",
+   "notes": [
+    45,
+    57,
+    60,
+    64
+   ]
+  },
+  {
+   "key": "C",
+   "numeral": "vii",
+   "name": "Bm",
+   "notes": [
+    47,
+    59,
+    62,
+    66
+   ]
+  },
+  {
+   "key": "C",
+   "numeral": "bII",
+   "name": "Db",
+   "notes": [
+    49,
+    61,
+    65,
+    68
+   ]
+  },
+  {
+   "key": "C",
+   "numeral": "bIII",
+   "name": "Eb",
+   "notes": [
+    51,
+    63,
+    67,
+    70
+   ]
+  },
+  {
+   "key": "C",
+   "numeral": "bV",
+   "name": "Gb",
+   "notes": [
+    42,
+    66,
+    70,
+    73
+   ]
+  },
+  {
+   "key": "C",
+   "numeral": "bVI",
+   "name": "Ab",
+   "notes": [
+    44,
+    56,
+    60,
+    63
+   ]
+  },
+  {
+   "key": "C",
+   "numeral": "bVII",
+   "name": "Bb",
+   "notes": [
+    46,
+    58,
+    62,
+    65
+   ]
+  },
+  {
+   "key": "C",
+   "numeral": "biii",
+   "name": "Ebm",
+   "notes": [
+    51,
+    63,
+    66,
+    70
+   ]
+  },
+  {
+   "key": "C",
+   "numeral": "bvi",
+   "name": "Abm",
+   "notes": [
+    44,
+    56,
+    59,
+    63
+   ]
+  },
+  {
+   "key": "C",
+   "numeral": "bvii",
+   "name": "Bbm",
+   "notes": [
+    46,
+    58,
+    61,
+    65
+   ]
+  },
+  {
+   "key": "C",
+   "numeral": "I7",
+   "name": "C7",
+   "notes": [
+    48,
+    60,
+    64,
+    67,
+    70
+   ]
+  },
+  {
+   "key": "C",
+   "numeral": "II7",
+   "name": "D7",
+   "notes": [
+    50,
+    62,
+    66,
+    69,
+    72
+   ]
+  },
+  {
+   "key": "C",
+   "numeral": "III7",
+   "name": "E7",
+   "notes": [
+    40,
+    64,
+    68,
+    71,
+    74
+   ]
+  },
+  {
+   "key": "C",
+   "numeral": "IV7",
+   "name": "F7",
+   "notes": [
+    41,
+    65,
+    69,
+    72,
+    75
+   ]
+  },
+  {
+   "key": "C",
+   "numeral": "V7",
+   "name": "G7",
+   "notes": [
+    43,
+    55,
+    59,
+    62,
+    65
+   ]
+  },
+  {
+   "key": "C",
+   "numeral": "VI7",
+   "name": "A7",
+   "notes": [
+    45,
+    57,
+    61,
+    64,
+    67
+   ]
+  },
+  {
+   "key": "C",
+   "numeral": "VII7",
+   "name": "B7",
+   "notes": [
+    47,
+    59,
+    63,
+    66,
+    69
+   ]
+  },
+  {
+   "key": "C",
+   "numeral": "i7",
+   "name": "Cm7",
+   "notes": [
+    48,
+    60,
+    63,
+    67,
+    70
+   ]
+  },
+  {
+   "key": "C",
+   "numeral": "ii7",
+   "name": "Dm7",
+   "notes": [
+    50,
+    62,
+    65,
+    69,
+    72
+   ]
+  },
+  {
+   "key": "C",
+   "numeral": "iii7",
+   "name": "Em7",
+   "notes": [
+    40,
+    64,
+    67,
+    71,
+    74
+   ]
+  },
+  {
+   "key": "C",
+   "numeral": "iv7",
+   "name": "Fm7",
+   "notes": [
+    41,
+    65,
+    68,
+    72,
+    75
+   ]
+  },
+  {
+   "key": "C",
+   "numeral": "v7",
+   "name": "Gm7",
+   "notes": [
+    43,
+    55,
+    58,
+    62,
+    65
+   ]
+  },
+  {
+   "key": "C",
+   "numeral": "vi7",
+   "name": "Am7",
+   "notes": [
+    45,
+    57,
+    60,
+    64,
+    67
+   ]
+  },
+  {
+   "key": "C",
+   "numeral": "vii7",
+   "name": "Bm7",
+   "notes": [
+    47,
+    59,
+    62,
+    66,
+    69
+   ]
+  },
+  {
+   "key": "C",
+   "numeral": "iidim",
+   "name": "Ddim",
+   "notes": [
+    50,
+    62,
+    65,
+    68
+   ]
+  },
+  {
+   "key": "C",
+   "numeral": "viidim",
+   "name": "Bdim",
+   "notes": [
+    47,
+    59,
+    62,
+    65
+   ]
+  },
+  {
+   "key": "C",
+   "numeral": "Isus4",
+   "name": "Csus4",
+   "notes": [
+    48,
+    60,
+    65,
+    67
+   ]
+  },
+  {
+   "key": "C",
+   "numeral": "IVsus4",
+   "name": "Fsus4",
+   "notes": [
+    41,
+    65,
+    70,
+    72
+   ]
+  },
+  {
+   "key": "C",
+   "numeral": "Vsus4",
+   "name": "Gsus4",
+   "notes": [
+    43,
+    55,
+    60,
+    62
+   ]
+  },
+  {
+   "key": "G",
+   "numeral": "I",
+   "name": "G",
+   "notes": [
+    43,
+    55,
+    59,
+    62
+   ]
+  },
+  {
+   "key": "G",
+   "numeral": "II",
+   "name": "A",
+   "notes": [
+    45,
+    57,
+    61,
+    64
+   ]
+  },
+  {
+   "key": "G",
+   "numeral": "III",
+   "name": "B",
+   "notes": [
+    47,
+    59,
+    63,
+    66
+   ]
+  },
+  {
+   "key": "G",
+   "numeral": "IV",
+   "name": "C",
+   "notes": [
+    48,
+    60,
+    64,
+    67
+   ]
+  },
+  {
+   "key": "G",
+   "numeral": "V",
+   "name": "D",
+   "notes": [
+    50,
+    62,
+    66,
+    69
+   ]
+  },
+  {
+   "key": "G",
+   "numeral": "VI",
+   "name": "E",
+   "notes": [
+    40,
+    64,
+    68,
+    71
+   ]
+  },
+  {
+   "key": "G",
+   "numeral": "VII",
+   "name": "F#",
+   "notes": [
+    42,
+    66,
+    70,
+    73
+   ]
+  },
+  {
+   "key": "G",
+   "numeral": "i",
+   "name": "Gm",
+   "notes": [
+    43,
+    55,
+    58,
+    62
+   ]
+  },
+  {
+   "key": "G",
+   "numeral": "ii",
+   "name": "Am",
+   "notes": [
+    45,
+    57,
+    60,
+    64
+   ]
+  },
+  {
+   "key": "G",
+   "numeral": "iii",
+   "name": "Bm",
+   "notes": [
+    47,
+    59,
+    62,
+    66
+   ]
+  },
+  {
+   "key": "G",
+   "numeral": "iv",
+   "name": "Cm",
+   "notes": [
+    48,
+    60,
+    63,
+    67
+   ]
+  },
+  {
+   "key": "G",
+   "numeral": "v",
+   "name": "Dm",
+   "notes": [
+    50,
+    62,
+    65,
+    69
+   ]
+  },
+  {
+   "key": "G",
+   "numeral": "vi",
+   "name": "Em",
+   "notes": [
+    40,
+    64,
+    67,
+    71
+   ]
+  },
+  {
+   "key": "G",
+   "numeral": "vii",
+   "name": "F#m",
+   "notes": [
+    42,
+    66,
+    69,
+    73
+   ]
+  },
+  {
+   "key": "G",
+   "numeral": "bII",
+   "name": "Ab",
+   "notes": [
+    44,
+    56,
+    60,
+    63
+   ]
+  },
+  {
+   "key": "G",
+   "numeral": "bIII",
+   "name": "Bb",
+   "notes": [
+    46,
+    58,
+    62,
+    65
+   ]
+  },
+  {
+   "key": "G",
+   "numeral": "bV",
+   "name": "Db",
+   "notes": [
+    49,
+    61,
+    65,
+    68
+   ]
+  },
+  {
+   "key": "G",
+   "numeral": "bVI",
+   "name": "Eb",
+   "notes": [
+    51,
+    63,
+    67,
+    70
+   ]
+  },
+  {
+   "key": "G",
+   "numeral": "bVII",
+   "name": "F",
+   "notes": [
+    41,
+    65,
+    69,
+    72
+   ]
+  },
+  {
+   "key": "G",
+   "numeral": "biii",
+   "name": "Bbm",
+   "notes": [
+    46,
+    58,
+    61,
+    65
+   ]
+  },
+  {
+   "key": "G",
+   "numeral": "bvi",
+   "name": "Ebm",
+   "notes": [
+    51,
+    63,
+    66,
+    70
+   ]
+  },
+  {
+   "key": "G",
+   "numeral": "bvii",
+   "name": "Fm",
+   "notes": [
+    41,
+    65,
+    68,
+    72
+   ]
+  },
+  {
+   "key": "G",
+   "numeral": "I7",
+   "name": "G7",
+   "notes": [
+    43,
+    55,
+    59,
+    62,
+    65
+   ]
+  },
+  {
+   "key": "G",
+   "numeral": "II7",
+   "name": "A7",
+   "notes": [
+    45,
+    57,
+    61,
+    64,
+    67
+   ]
+  },
+  {
+   "key": "G",
+   "numeral": "III7",
+   "name": "B7",
+   "notes": [
+    47,
+    59,
+    63,
+    66,
+    69
+   ]
+  },
+  {
+   "key": "G",
+   "numeral": "IV7",
+   "name": "C7",
+   "notes": [
+    48,
+    60,
+    64,
+    67,
+    70
+   ]
+  },
+  {
+   "key": "G",
+   "numeral": "V7",
+   "name": "D7",
+   "notes": [
+    50,
+    62,
+    66,
+    69,
+    72
+   ]
+  },
+  {
+   "key": "G",
+   "numeral": "VI7",
+   "name": "E7",
+   "notes": [
+    40,
+    64,
+    68,
+    71,
+    74
+   ]
+  },
+  {
+   "key": "G",
+   "numeral": "VII7",
+   "name": "F#7",
+   "notes": [
+    42,
+    66,
+    70,
+    73,
+    76
+   ]
+  },
+  {
+   "key": "G",
+   "numeral": "i7",
+   "name": "Gm7",
+   "notes": [
+    43,
+    55,
+    58,
+    62,
+    65
+   ]
+  },
+  {
+   "key": "G",
+   "numeral": "ii7",
+   "name": "Am7",
+   "notes": [
+    45,
+    57,
+    60,
+    64,
+    67
+   ]
+  },
+  {
+   "key": "G",
+   "numeral": "iii7",
+   "name": "Bm7",
+   "notes": [
+    47,
+    59,
+    62,
+    66,
+    69
+   ]
+  },
+  {
+   "key": "G",
+   "numeral": "iv7",
+   "name": "Cm7",
+   "notes": [
+    48,
+    60,
+    63,
+    67,
+    70
+   ]
+  },
+  {
+   "key": "G",
+   "numeral": "v7",
+   "name": "Dm7",
+   "notes": [
+    50,
+    62,
+    65,
+    69,
+    72
+   ]
+  },
+  {
+   "key": "G",
+   "numeral": "vi7",
+   "name": "Em7",
+   "notes": [
+    40,
+    64,
+    67,
+    71,
+    74
+   ]
+  },
+  {
+   "key": "G",
+   "numeral": "vii7",
+   "name": "F#m7",
+   "notes": [
+    42,
+    66,
+    69,
+    73,
+    76
+   ]
+  },
+  {
+   "key": "G",
+   "numeral": "iidim",
+   "name": "Adim",
+   "notes": [
+    45,
+    57,
+    60,
+    63
+   ]
+  },
+  {
+   "key": "G",
+   "numeral": "viidim",
+   "name": "F#dim",
+   "notes": [
+    42,
+    66,
+    69,
+    72
+   ]
+  },
+  {
+   "key": "G",
+   "numeral": "Isus4",
+   "name": "Gsus4",
+   "notes": [
+    43,
+    55,
+    60,
+    62
+   ]
+  },
+  {
+   "key": "G",
+   "numeral": "IVsus4",
+   "name": "Csus4",
+   "notes": [
+    48,
+    60,
+    65,
+    67
+   ]
+  },
+  {
+   "key": "G",
+   "numeral": "Vsus4",
+   "name": "Dsus4",
+   "notes": [
+    50,
+    62,
+    67,
+    69
+   ]
+  },
+  {
+   "key": "D",
+   "numeral": "I",
+   "name": "D",
+   "notes": [
+    50,
+    62,
+    66,
+    69
+   ]
+  },
+  {
+   "key": "D",
+   "numeral": "II",
+   "name": "E",
+   "notes": [
+    40,
+    64,
+    68,
+    71
+   ]
+  },
+  {
+   "key": "D",
+   "numeral": "III",
+   "name": "F#",
+   "notes": [
+    42,
+    66,
+    70,
+    73
+   ]
+  },
+  {
+   "key": "D",
+   "numeral": "IV",
+   "name": "G",
+   "notes": [
+    43,
+    55,
+    59,
+    62
+   ]
+  },
+  {
+   "key": "D",
+   "numeral": "V",
+   "name": "A",
+   "notes": [
+    45,
+    57,
+    61,
+    64
+   ]
+  },
+  {
+   "key": "D",
+   "numeral": "VI",
+   "name": "B",
+   "notes": [
+    47,
+    59,
+    63,
+    66
+   ]
+  },
+  {
+   "key": "D",
+   "numeral": "VII",
+   "name": "C#",
+   "notes": [
+    49,
+    61,
+    65,
+    68
+   ]
+  },
+  {
+   "key": "D",
+   "numeral": "i",
+   "name": "Dm",
+   "notes": [
+    50,
+    62,
+    65,
+    69
+   ]
+  },
+  {
+   "key": "D",
+   "numeral": "ii",
+   "name": "Em",
+   "notes": [
+    40,
+    64,
+    67,
+    71
+   ]
+  },
+  {
+   "key": "D",
+   "numeral": "iii",
+   "name": "F#m",
+   "notes": [
+    42,
+    66,
+    69,
+    73
+   ]
+  },
+  {
+   "key": "D",
+   "numeral": "iv",
+   "name": "Gm",
+   "notes": [
+    43,
+    55,
+    58,
+    62
+   ]
+  },
+  {
+   "key": "D",
+   "numeral": "v",
+   "name": "Am",
+   "notes": [
+    45,
+    57,
+    60,
+    64
+   ]
+  },
+  {
+   "key": "D",
+   "numeral": "vi",
+   "name": "Bm",
+   "notes": [
+    47,
+    59,
+    62,
+    66
+   ]
+  },
+  {
+   "key": "D",
+   "numeral": "vii",
+   "name": "C#m",
+   "notes": [
+    49,
+    61,
+    64,
+    68
+   ]
+  },
+  {
+   "key": "D",
+   "numeral": "bII",
+   "name": "Eb",
+   "notes": [
+    51,
+    63,
+    67,
+    70
+   ]
+  },
+  {
+   "key": "D",
+   "numeral": "bIII",
+   "name": "F",
+   "notes": [
+    41,
+    65,
+    69,
+    72
+   ]
+  },
+  {
+   "key": "D",
+   "numeral": "bV",
+   "name": "Ab",
+   "notes": [
+    44,
+    56,
+    60,
+    63
+   ]
+  },
+  {
+   "key": "D",
+   "numeral": "bVI",
+   "name": "Bb",
+   "notes": [
+    46,
+    58,
+    62,
+    65
+   ]
+  },
+  {
+   "key": "D",
+   "numeral": "bVII",
+   "name": "C",
+   "notes": [
+    48,
+    60,
+    64,
+    67
+   ]
+  },
+  {
+   "key": "D",
+   "numeral": "biii",
+   "name": "Fm",
+   "notes": [
+    41,
+    65,
+    68,
+    72
+   ]
+  },
+  {
+   "key": "D",
+   "numeral": "bvi",
+   "name": "Bbm",
+   "notes": [
+    46,
+    58,
+    61,
+    65
+   ]
+  },
+  {
+   "key": "D",
+   "numeral": "bvii",
+   "name": "Cm",
+   "notes": [
+    48,
+    60,
+    63,
+    67
+   ]
+  },
+  {
+   "key": "D",
+   "numeral": "I7",
+   "name": "D7",
+   "notes": [
+    50,
+    62,
+    66,
+    69,
+    72
+   ]
+  },
+  {
+   "key": "D",
+   "numeral": "II7",
+   "name": "E7",
+   "notes": [
+    40,
+    64,
+    68,
+    71,
+    74
+   ]
+  },
+  {
+   "key": "D",
+   "numeral": "III7",
+   "name": "F#7",
+   "notes": [
+    42,
+    66,
+    70,
+    73,
+    76
+   ]
+  },
+  {
+   "key": "D",
+   "numeral": "IV7",
+   "name": "G7",
+   "notes": [
+    43,
+    55,
+    59,
+    62,
+    65
+   ]
+  },
+  {
+   "key": "D",
+   "numeral": "V7",
+   "name": "A7",
+   "notes": [
+    45,
+    57,
+    61,
+    64,
+    67
+   ]
+  },
+  {
+   "key": "D",
+   "numeral": "VI7",
+   "name": "B7",
+   "notes": [
+    47,
+    59,
+    63,
+    66,
+    69
+   ]
+  },
+  {
+   "key": "D",
+   "numeral": "VII7",
+   "name": "C#7",
+   "notes": [
+    49,
+    61,
+    65,
+    68,
+    71
+   ]
+  },
+  {
+   "key": "D",
+   "numeral": "i7",
+   "name": "Dm7",
+   "notes": [
+    50,
+    62,
+    65,
+    69,
+    72
+   ]
+  },
+  {
+   "key": "D",
+   "numeral": "ii7",
+   "name": "Em7",
+   "notes": [
+    40,
+    64,
+    67,
+    71,
+    74
+   ]
+  },
+  {
+   "key": "D",
+   "numeral": "iii7",
+   "name": "F#m7",
+   "notes": [
+    42,
+    66,
+    69,
+    73,
+    76
+   ]
+  },
+  {
+   "key": "D",
+   "numeral": "iv7",
+   "name": "Gm7",
+   "notes": [
+    43,
+    55,
+    58,
+    62,
+    65
+   ]
+  },
+  {
+   "key": "D",
+   "numeral": "v7",
+   "name": "Am7",
+   "notes": [
+    45,
+    57,
+    60,
+    64,
+    67
+   ]
+  },
+  {
+   "key": "D",
+   "numeral": "vi7",
+   "name": "Bm7",
+   "notes": [
+    47,
+    59,
+    62,
+    66,
+    69
+   ]
+  },
+  {
+   "key": "D",
+   "numeral": "vii7",
+   "name": "C#m7",
+   "notes": [
+    49,
+    61,
+    64,
+    68,
+    71
+   ]
+  },
+  {
+   "key": "D",
+   "numeral": "iidim",
+   "name": "Edim",
+   "notes": [
+    40,
+    64,
+    67,
+    70
+   ]
+  },
+  {
+   "key": "D",
+   "numeral": "viidim",
+   "name": "C#dim",
+   "notes": [
+    49,
+    61,
+    64,
+    67
+   ]
+  },
+  {
+   "key": "D",
+   "numeral": "Isus4",
+   "name": "Dsus4",
+   "notes": [
+    50,
+    62,
+    67,
+    69
+   ]
+  },
+  {
+   "key": "D",
+   "numeral": "IVsus4",
+   "name": "Gsus4",
+   "notes": [
+    43,
+    55,
+    60,
+    62
+   ]
+  },
+  {
+   "key": "D",
+   "numeral": "Vsus4",
+   "name": "Asus4",
+   "notes": [
+    45,
+    57,
+    62,
+    64
+   ]
+  },
+  {
+   "key": "A",
+   "numeral": "I",
+   "name": "A",
+   "notes": [
+    45,
+    57,
+    61,
+    64
+   ]
+  },
+  {
+   "key": "A",
+   "numeral": "II",
+   "name": "B",
+   "notes": [
+    47,
+    59,
+    63,
+    66
+   ]
+  },
+  {
+   "key": "A",
+   "numeral": "III",
+   "name": "C#",
+   "notes": [
+    49,
+    61,
+    65,
+    68
+   ]
+  },
+  {
+   "key": "A",
+   "numeral": "IV",
+   "name": "D",
+   "notes": [
+    50,
+    62,
+    66,
+    69
+   ]
+  },
+  {
+   "key": "A",
+   "numeral": "V",
+   "name": "E",
+   "notes": [
+    40,
+    64,
+    68,
+    71
+   ]
+  },
+  {
+   "key": "A",
+   "numeral": "VI",
+   "name": "F#",
+   "notes": [
+    42,
+    66,
+    70,
+    73
+   ]
+  },
+  {
+   "key": "A",
+   "numeral": "VII",
+   "name": "G#",
+   "notes": [
+    44,
+    56,
+    60,
+    63
+   ]
+  },
+  {
+   "key": "A",
+   "numeral": "i",
+   "name": "Am",
+   "notes": [
+    45,
+    57,
+    60,
+    64
+   ]
+  },
+  {
+   "key": "A",
+   "numeral": "ii",
+   "name": "Bm",
+   "notes": [
+    47,
+    59,
+    62,
+    66
+   ]
+  },
+  {
+   "key": "A",
+   "numeral": "iii",
+   "name": "C#m",
+   "notes": [
+    49,
+    61,
+    64,
+    68
+   ]
+  },
+  {
+   "key": "A",
+   "numeral": "iv",
+   "name": "Dm",
+   "notes": [
+    50,
+    62,
+    65,
+    69
+   ]
+  },
+  {
+   "key": "A",
+   "numeral": "v",
+   "name": "Em",
+   "notes": [
+    40,
+    64,
+    67,
+    71
+   ]
+  },
+  {
+   "key": "A",
+   "numeral": "vi",
+   "name": "F#m",
+   "notes": [
+    42,
+    66,
+    69,
+    73
+   ]
+  },
+  {
+   "key": "A",
+   "numeral": "vii",
+   "name": "G#m",
+   "notes": [
+    44,
+    56,
+    59,
+    63
+   ]
+  },
+  {
+   "key": "A",
+   "numeral": "bII",
+   "name": "Bb",
+   "notes": [
+    46,
+    58,
+    62,
+    65
+   ]
+  },
+  {
+   "key": "A",
+   "numeral": "bIII",
+   "name": "C",
+   "notes": [
+    48,
+    60,
+    64,
+    67
+   ]
+  },
+  {
+   "key": "A",
+   "numeral": "bV",
+   "name": "Eb",
+   "notes": [
+    51,
+    63,
+    67,
+    70
+   ]
+  },
+  {
+   "key": "A",
+   "numeral": "bVI",
+   "name": "F",
+   "notes": [
+    41,
+    65,
+    69,
+    72
+   ]
+  },
+  {
+   "key": "A",
+   "numeral": "bVII",
+   "name": "G",
+   "notes": [
+    43,
+    55,
+    59,
+    62
+   ]
+  },
+  {
+   "key": "A",
+   "numeral": "biii",
+   "name": "Cm",
+   "notes": [
+    48,
+    60,
+    63,
+    67
+   ]
+  },
+  {
+   "key": "A",
+   "numeral": "bvi",
+   "name": "Fm",
+   "notes": [
+    41,
+    65,
+    68,
+    72
+   ]
+  },
+  {
+   "key": "A",
+   "numeral": "bvii",
+   "name": "Gm",
+   "notes": [
+    43,
+    55,
+    58,
+    62
+   ]
+  },
+  {
+   "key": "A",
+   "numeral": "I7",
+   "name": "A7",
+   "notes": [
+    45,
+    57,
+    61,
+    64,
+    67
+   ]
+  },
+  {
+   "key": "A",
+   "numeral": "II7",
+   "name": "B7",
+   "notes": [
+    47,
+    59,
+    63,
+    66,
+    69
+   ]
+  },
+  {
+   "key": "A",
+   "numeral": "III7",
+   "name": "C#7",
+   "notes": [
+    49,
+    61,
+    65,
+    68,
+    71
+   ]
+  },
+  {
+   "key": "A",
+   "numeral": "IV7",
+   "name": "D7",
+   "notes": [
+    50,
+    62,
+    66,
+    69,
+    72
+   ]
+  },
+  {
+   "key": "A",
+   "numeral": "V7",
+   "name": "E7",
+   "notes": [
+    40,
+    64,
+    68,
+    71,
+    74
+   ]
+  },
+  {
+   "key": "A",
+   "numeral": "VI7",
+   "name": "F#7",
+   "notes": [
+    42,
+    66,
+    70,
+    73,
+    76
+   ]
+  },
+  {
+   "key": "A",
+   "numeral": "VII7",
+   "name": "G#7",
+   "notes": [
+    44,
+    56,
+    60,
+    63,
+    66
+   ]
+  },
+  {
+   "key": "A",
+   "numeral": "i7",
+   "name": "Am7",
+   "notes": [
+    45,
+    57,
+    60,
+    64,
+    67
+   ]
+  },
+  {
+   "key": "A",
+   "numeral": "ii7",
+   "name": "Bm7",
+   "notes": [
+    47,
+    59,
+    62,
+    66,
+    69
+   ]
+  },
+  {
+   "key": "A",
+   "numeral": "iii7",
+   "name": "C#m7",
+   "notes": [
+    49,
+    61,
+    64,
+    68,
+    71
+   ]
+  },
+  {
+   "key": "A",
+   "numeral": "iv7",
+   "name": "Dm7",
+   "notes": [
+    50,
+    62,
+    65,
+    69,
+    72
+   ]
+  },
+  {
+   "key": "A",
+   "numeral": "v7",
+   "name": "Em7",
+   "notes": [
+    40,
+    64,
+    67,
+    71,
+    74
+   ]
+  },
+  {
+   "key": "A",
+   "numeral": "vi7",
+   "name": "F#m7",
+   "notes": [
+    42,
+    66,
+    69,
+    73,
+    76
+   ]
+  },
+  {
+   "key": "A",
+   "numeral": "vii7",
+   "name": "G#m7",
+   "notes": [
+    44,
+    56,
+    59,
+    63,
+    66
+   ]
+  },
+  {
+   "key": "A",
+   "numeral": "iidim",
+   "name": "Bdim",
+   "notes": [
+    47,
+    59,
+    62,
+    65
+   ]
+  },
+  {
+   "key": "A",
+   "numeral": "viidim",
+   "name": "G#dim",
+   "notes": [
+    44,
+    56,
+    59,
+    62
+   ]
+  },
+  {
+   "key": "A",
+   "numeral": "Isus4",
+   "name": "Asus4",
+   "notes": [
+    45,
+    57,
+    62,
+    64
+   ]
+  },
+  {
+   "key": "A",
+   "numeral": "IVsus4",
+   "name": "Dsus4",
+   "notes": [
+    50,
+    62,
+    67,
+    69
+   ]
+  },
+  {
+   "key": "A",
+   "numeral": "Vsus4",
+   "name": "Esus4",
+   "notes": [
+    40,
+    64,
+    69,
+    71
+   ]
+  },
+  {
+   "key": "E",
+   "numeral": "I",
+   "name": "E",
+   "notes": [
+    40,
+    64,
+    68,
+    71
+   ]
+  },
+  {
+   "key": "E",
+   "numeral": "II",
+   "name": "F#",
+   "notes": [
+    42,
+    66,
+    70,
+    73
+   ]
+  },
+  {
+   "key": "E",
+   "numeral": "III",
+   "name": "G#",
+   "notes": [
+    44,
+    56,
+    60,
+    63
+   ]
+  },
+  {
+   "key": "E",
+   "numeral": "IV",
+   "name": "A",
+   "notes": [
+    45,
+    57,
+    61,
+    64
+   ]
+  },
+  {
+   "key": "E",
+   "numeral": "V",
+   "name": "B",
+   "notes": [
+    47,
+    59,
+    63,
+    66
+   ]
+  },
+  {
+   "key": "E",
+   "numeral": "VI",
+   "name": "C#",
+   "notes": [
+    49,
+    61,
+    65,
+    68
+   ]
+  },
+  {
+   "key": "E",
+   "numeral": "VII",
+   "name": "D#",
+   "notes": [
+    51,
+    63,
+    67,
+    70
+   ]
+  },
+  {
+   "key": "E",
+   "numeral": "i",
+   "name": "Em",
+   "notes": [
+    40,
+    64,
+    67,
+    71
+   ]
+  },
+  {
+   "key": "E",
+   "numeral": "ii",
+   "name": "F#m",
+   "notes": [
+    42,
+    66,
+    69,
+    73
+   ]
+  },
+  {
+   "key": "E",
+   "numeral": "iii",
+   "name": "G#m",
+   "notes": [
+    44,
+    56,
+    59,
+    63
+   ]
+  },
+  {
+   "key": "E",
+   "numeral": "iv",
+   "name": "Am",
+   "notes": [
+    45,
+    57,
+    60,
+    64
+   ]
+  },
+  {
+   "key": "E",
+   "numeral": "v",
+   "name": "Bm",
+   "notes": [
+    47,
+    59,
+    62,
+    66
+   ]
+  },
+  {
+   "key": "E",
+   "numeral": "vi",
+   "name": "C#m",
+   "notes": [
+    49,
+    61,
+    64,
+    68
+   ]
+  },
+  {
+   "key": "E",
+   "numeral": "vii",
+   "name": "D#m",
+   "notes": [
+    51,
+    63,
+    66,
+    70
+   ]
+  },
+  {
+   "key": "E",
+   "numeral": "bII",
+   "name": "F",
+   "notes": [
+    41,
+    65,
+    69,
+    72
+   ]
+  },
+  {
+   "key": "E",
+   "numeral": "bIII",
+   "name": "G",
+   "notes": [
+    43,
+    55,
+    59,
+    62
+   ]
+  },
+  {
+   "key": "E",
+   "numeral": "bV",
+   "name": "Bb",
+   "notes": [
+    46,
+    58,
+    62,
+    65
+   ]
+  },
+  {
+   "key": "E",
+   "numeral": "bVI",
+   "name": "C",
+   "notes": [
+    48,
+    60,
+    64,
+    67
+   ]
+  },
+  {
+   "key": "E",
+   "numeral": "bVII",
+   "name": "D",
+   "notes": [
+    50,
+    62,
+    66,
+    69
+   ]
+  },
+  {
+   "key": "E",
+   "numeral": "biii",
+   "name": "Gm",
+   "notes": [
+    43,
+    55,
+    58,
+    62
+   ]
+  },
+  {
+   "key": "E",
+   "numeral": "bvi",
+   "name": "Cm",
+   "notes": [
+    48,
+    60,
+    63,
+    67
+   ]
+  },
+  {
+   "key": "E",
+   "numeral": "bvii",
+   "name": "Dm",
+   "notes": [
+    50,
+    62,
+    65,
+    69
+   ]
+  },
+  {
+   "key": "E",
+   "numeral": "I7",
+   "name": "E7",
+   "notes": [
+    40,
+    64,
+    68,
+    71,
+    74
+   ]
+  },
+  {
+   "key": "E",
+   "numeral": "II7",
+   "name": "F#7",
+   "notes": [
+    42,
+    66,
+    70,
+    73,
+    76
+   ]
+  },
+  {
+   "key": "E",
+   "numeral": "III7",
+   "name": "G#7",
+   "notes": [
+    44,
+    56,
+    60,
+    63,
+    66
+   ]
+  },
+  {
+   "key": "E",
+   "numeral": "IV7",
+   "name": "A7",
+   "notes": [
+    45,
+    57,
+    61,
+    64,
+    67
+   ]
+  },
+  {
+   "key": "E",
+   "numeral": "V7",
+   "name": "B7",
+   "notes": [
+    47,
+    59,
+    63,
+    66,
+    69
+   ]
+  },
+  {
+   "key": "E",
+   "numeral": "VI7",
+   "name": "C#7",
+   "notes": [
+    49,
+    61,
+    65,
+    68,
+    71
+   ]
+  },
+  {
+   "key": "E",
+   "numeral": "VII7",
+   "name": "D#7",
+   "notes": [
+    51,
+    63,
+    67,
+    70,
+    73
+   ]
+  },
+  {
+   "key": "E",
+   "numeral": "i7",
+   "name": "Em7",
+   "notes": [
+    40,
+    64,
+    67,
+    71,
+    74
+   ]
+  },
+  {
+   "key": "E",
+   "numeral": "ii7",
+   "name": "F#m7",
+   "notes": [
+    42,
+    66,
+    69,
+    73,
+    76
+   ]
+  },
+  {
+   "key": "E",
+   "numeral": "iii7",
+   "name": "G#m7",
+   "notes": [
+    44,
+    56,
+    59,
+    63,
+    66
+   ]
+  },
+  {
+   "key": "E",
+   "numeral": "iv7",
+   "name": "Am7",
+   "notes": [
+    45,
+    57,
+    60,
+    64,
+    67
+   ]
+  },
+  {
+   "key": "E",
+   "numeral": "v7",
+   "name": "Bm7",
+   "notes": [
+    47,
+    59,
+    62,
+    66,
+    69
+   ]
+  },
+  {
+   "key": "E",
+   "numeral": "vi7",
+   "name": "C#m7",
+   "notes": [
+    49,
+    61,
+    64,
+    68,
+    71
+   ]
+  },
+  {
+   "key": "E",
+   "numeral": "vii7",
+   "name": "D#m7",
+   "notes": [
+    51,
+    63,
+    66,
+    70,
+    73
+   ]
+  },
+  {
+   "key": "E",
+   "numeral": "iidim",
+   "name": "F#dim",
+   "notes": [
+    42,
+    66,
+    69,
+    72
+   ]
+  },
+  {
+   "key": "E",
+   "numeral": "viidim",
+   "name": "D#dim",
+   "notes": [
+    51,
+    63,
+    66,
+    69
+   ]
+  },
+  {
+   "key": "E",
+   "numeral": "Isus4",
+   "name": "Esus4",
+   "notes": [
+    40,
+    64,
+    69,
+    71
+   ]
+  },
+  {
+   "key": "E",
+   "numeral": "IVsus4",
+   "name": "Asus4",
+   "notes": [
+    45,
+    57,
+    62,
+    64
+   ]
+  },
+  {
+   "key": "E",
+   "numeral": "Vsus4",
+   "name": "Bsus4",
+   "notes": [
+    47,
+    59,
+    64,
+    66
+   ]
+  },
+  {
+   "key": "B",
+   "numeral": "I",
+   "name": "B",
+   "notes": [
+    47,
+    59,
+    63,
+    66
+   ]
+  },
+  {
+   "key": "B",
+   "numeral": "II",
+   "name": "C#",
+   "notes": [
+    49,
+    61,
+    65,
+    68
+   ]
+  },
+  {
+   "key": "B",
+   "numeral": "III",
+   "name": "D#",
+   "notes": [
+    51,
+    63,
+    67,
+    70
+   ]
+  },
+  {
+   "key": "B",
+   "numeral": "IV",
+   "name": "E",
+   "notes": [
+    40,
+    64,
+    68,
+    71
+   ]
+  },
+  {
+   "key": "B",
+   "numeral": "V",
+   "name": "F#",
+   "notes": [
+    42,
+    66,
+    70,
+    73
+   ]
+  },
+  {
+   "key": "B",
+   "numeral": "VI",
+   "name": "G#",
+   "notes": [
+    44,
+    56,
+    60,
+    63
+   ]
+  },
+  {
+   "key": "B",
+   "numeral": "VII",
+   "name": "A#",
+   "notes": [
+    46,
+    58,
+    62,
+    65
+   ]
+  },
+  {
+   "key": "B",
+   "numeral": "i",
+   "name": "Bm",
+   "notes": [
+    47,
+    59,
+    62,
+    66
+   ]
+  },
+  {
+   "key": "B",
+   "numeral": "ii",
+   "name": "C#m",
+   "notes": [
+    49,
+    61,
+    64,
+    68
+   ]
+  },
+  {
+   "key": "B",
+   "numeral": "iii",
+   "name": "D#m",
+   "notes": [
+    51,
+    63,
+    66,
+    70
+   ]
+  },
+  {
+   "key": "B",
+   "numeral": "iv",
+   "name": "Em",
+   "notes": [
+    40,
+    64,
+    67,
+    71
+   ]
+  },
+  {
+   "key": "B",
+   "numeral": "v",
+   "name": "F#m",
+   "notes": [
+    42,
+    66,
+    69,
+    73
+   ]
+  },
+  {
+   "key": "B",
+   "numeral": "vi",
+   "name": "G#m",
+   "notes": [
+    44,
+    56,
+    59,
+    63
+   ]
+  },
+  {
+   "key": "B",
+   "numeral": "vii",
+   "name": "A#m",
+   "notes": [
+    46,
+    58,
+    61,
+    65
+   ]
+  },
+  {
+   "key": "B",
+   "numeral": "bII",
+   "name": "C",
+   "notes": [
+    48,
+    60,
+    64,
+    67
+   ]
+  },
+  {
+   "key": "B",
+   "numeral": "bIII",
+   "name": "D",
+   "notes": [
+    50,
+    62,
+    66,
+    69
+   ]
+  },
+  {
+   "key": "B",
+   "numeral": "bV",
+   "name": "F",
+   "notes": [
+    41,
+    65,
+    69,
+    72
+   ]
+  },
+  {
+   "key": "B",
+   "numeral": "bVI",
+   "name": "G",
+   "notes": [
+    43,
+    55,
+    59,
+    62
+   ]
+  },
+  {
+   "key": "B",
+   "numeral": "bVII",
+   "name": "A",
+   "notes": [
+    45,
+    57,
+    61,
+    64
+   ]
+  },
+  {
+   "key": "B",
+   "numeral": "biii",
+   "name": "Dm",
+   "notes": [
+    50,
+    62,
+    65,
+    69
+   ]
+  },
+  {
+   "key": "B",
+   "numeral": "bvi",
+   "name": "Gm",
+   "notes": [
+    43,
+    55,
+    58,
+    62
+   ]
+  },
+  {
+   "key": "B",
+   "numeral": "bvii",
+   "name": "Am",
+   "notes": [
+    45,
+    57,
+    60,
+    64
+   ]
+  },
+  {
+   "key": "B",
+   "numeral": "I7",
+   "name": "B7",
+   "notes": [
+    47,
+    59,
+    63,
+    66,
+    69
+   ]
+  },
+  {
+   "key": "B",
+   "numeral": "II7",
+   "name": "C#7",
+   "notes": [
+    49,
+    61,
+    65,
+    68,
+    71
+   ]
+  },
+  {
+   "key": "B",
+   "numeral": "III7",
+   "name": "D#7",
+   "notes": [
+    51,
+    63,
+    67,
+    70,
+    73
+   ]
+  },
+  {
+   "key": "B",
+   "numeral": "IV7",
+   "name": "E7",
+   "notes": [
+    40,
+    64,
+    68,
+    71,
+    74
+   ]
+  },
+  {
+   "key": "B",
+   "numeral": "V7",
+   "name": "F#7",
+   "notes": [
+    42,
+    66,
+    70,
+    73,
+    76
+   ]
+  },
+  {
+   "key": "B",
+   "numeral": "VI7",
+   "name": "G#7",
+   "notes": [
+    44,
+    56,
+    60,
+    63,
+    66
+   ]
+  },
+  {
+   "key": "B",
+   "numeral": "VII7",
+   "name": "A#7",
+   "notes": [
+    46,
+    58,
+    62,
+    65,
+    68
+   ]
+  },
+  {
+   "key": "B",
+   "numeral": "i7",
+   "name": "Bm7",
+   "notes": [
+    47,
+    59,
+    62,
+    66,
+    69
+   ]
+  },
+  {
+   "key": "B",
+   "numeral": "ii7",
+   "name": "C#m7",
+   "notes": [
+    49,
+    61,
+    64,
+    68,
+    71
+   ]
+  },
+  {
+   "key": "B",
+   "numeral": "iii7",
+   "name": "D#m7",
+   "notes": [
+    51,
+    63,
+    66,
+    70,
+    73
+   ]
+  },
+  {
+   "key": "B",
+   "numeral": "iv7",
+   "name": "Em7",
+   "notes": [
+    40,
+    64,
+    67,
+    71,
+    74
+   ]
+  },
+  {
+   "key": "B",
+   "numeral": "v7",
+   "name": "F#m7",
+   "notes": [
+    42,
+    66,
+    69,
+    73,
+    76
+   ]
+  },
+  {
+   "key": "B",
+   "numeral": "vi7",
+   "name": "G#m7",
+   "notes": [
+    44,
+    56,
+    59,
+    63,
+    66
+   ]
+  },
+  {
+   "key": "B",
+   "numeral": "vii7",
+   "name": "A#m7",
+   "notes": [
+    46,
+    58,
+    61,
+    65,
+    68
+   ]
+  },
+  {
+   "key": "B",
+   "numeral": "iidim",
+   "name": "C#dim",
+   "notes": [
+    49,
+    61,
+    64,
+    67
+   ]
+  },
+  {
+   "key": "B",
+   "numeral": "viidim",
+   "name": "A#dim",
+   "notes": [
+    46,
+    58,
+    61,
+    64
+   ]
+  },
+  {
+   "key": "B",
+   "numeral": "Isus4",
+   "name": "Bsus4",
+   "notes": [
+    47,
+    59,
+    64,
+    66
+   ]
+  },
+  {
+   "key": "B",
+   "numeral": "IVsus4",
+   "name": "Esus4",
+   "notes": [
+    40,
+    64,
+    69,
+    71
+   ]
+  },
+  {
+   "key": "B",
+   "numeral": "Vsus4",
+   "name": "F#sus4",
+   "notes": [
+    42,
+    66,
+    71,
+    73
+   ]
+  },
+  {
+   "key": "F#",
+   "numeral": "I",
+   "name": "F#",
+   "notes": [
+    42,
+    66,
+    70,
+    73
+   ]
+  },
+  {
+   "key": "F#",
+   "numeral": "II",
+   "name": "G#",
+   "notes": [
+    44,
+    56,
+    60,
+    63
+   ]
+  },
+  {
+   "key": "F#",
+   "numeral": "III",
+   "name": "A#",
+   "notes": [
+    46,
+    58,
+    62,
+    65
+   ]
+  },
+  {
+   "key": "F#",
+   "numeral": "IV",
+   "name": "B",
+   "notes": [
+    47,
+    59,
+    63,
+    66
+   ]
+  },
+  {
+   "key": "F#",
+   "numeral": "V",
+   "name": "C#",
+   "notes": [
+    49,
+    61,
+    65,
+    68
+   ]
+  },
+  {
+   "key": "F#",
+   "numeral": "VI",
+   "name": "D#",
+   "notes": [
+    51,
+    63,
+    67,
+    70
+   ]
+  },
+  {
+   "key": "F#",
+   "numeral": "VII",
+   "name": "F",
+   "notes": [
+    41,
+    65,
+    69,
+    72
+   ]
+  },
+  {
+   "key": "F#",
+   "numeral": "i",
+   "name": "F#m",
+   "notes": [
+    42,
+    66,
+    69,
+    73
+   ]
+  },
+  {
+   "key": "F#",
+   "numeral": "ii",
+   "name": "G#m",
+   "notes": [
+    44,
+    56,
+    59,
+    63
+   ]
+  },
+  {
+   "key": "F#",
+   "numeral": "iii",
+   "name": "A#m",
+   "notes": [
+    46,
+    58,
+    61,
+    65
+   ]
+  },
+  {
+   "key": "F#",
+   "numeral": "iv",
+   "name": "Bm",
+   "notes": [
+    47,
+    59,
+    62,
+    66
+   ]
+  },
+  {
+   "key": "F#",
+   "numeral": "v",
+   "name": "C#m",
+   "notes": [
+    49,
+    61,
+    64,
+    68
+   ]
+  },
+  {
+   "key": "F#",
+   "numeral": "vi",
+   "name": "D#m",
+   "notes": [
+    51,
+    63,
+    66,
+    70
+   ]
+  },
+  {
+   "key": "F#",
+   "numeral": "vii",
+   "name": "Fm",
+   "notes": [
+    41,
+    65,
+    68,
+    72
+   ]
+  },
+  {
+   "key": "F#",
+   "numeral": "bII",
+   "name": "G",
+   "notes": [
+    43,
+    55,
+    59,
+    62
+   ]
+  },
+  {
+   "key": "F#",
+   "numeral": "bIII",
+   "name": "A",
+   "notes": [
+    45,
+    57,
+    61,
+    64
+   ]
+  },
+  {
+   "key": "F#",
+   "numeral": "bV",
+   "name": "C",
+   "notes": [
+    48,
+    60,
+    64,
+    67
+   ]
+  },
+  {
+   "key": "F#",
+   "numeral": "bVI",
+   "name": "D",
+   "notes": [
+    50,
+    62,
+    66,
+    69
+   ]
+  },
+  {
+   "key": "F#",
+   "numeral": "bVII",
+   "name": "E",
+   "notes": [
+    40,
+    64,
+    68,
+    71
+   ]
+  },
+  {
+   "key": "F#",
+   "numeral": "biii",
+   "name": "Am",
+   "notes": [
+    45,
+    57,
+    60,
+    64
+   ]
+  },
+  {
+   "key": "F#",
+   "numeral": "bvi",
+   "name": "Dm",
+   "notes": [
+    50,
+    62,
+    65,
+    69
+   ]
+  },
+  {
+   "key": "F#",
+   "numeral": "bvii",
+   "name": "Em",
+   "notes": [
+    40,
+    64,
+    67,
+    71
+   ]
+  },
+  {
+   "key": "F#",
+   "numeral": "I7",
+   "name": "F#7",
+   "notes": [
+    42,
+    66,
+    70,
+    73,
+    76
+   ]
+  },
+  {
+   "key": "F#",
+   "numeral": "II7",
+   "name": "G#7",
+   "notes": [
+    44,
+    56,
+    60,
+    63,
+    66
+   ]
+  },
+  {
+   "key": "F#",
+   "numeral": "III7",
+   "name": "A#7",
+   "notes": [
+    46,
+    58,
+    62,
+    65,
+    68
+   ]
+  },
+  {
+   "key": "F#",
+   "numeral": "IV7",
+   "name": "B7",
+   "notes": [
+    47,
+    59,
+    63,
+    66,
+    69
+   ]
+  },
+  {
+   "key": "F#",
+   "numeral": "V7",
+   "name": "C#7",
+   "notes": [
+    49,
+    61,
+    65,
+    68,
+    71
+   ]
+  },
+  {
+   "key": "F#",
+   "numeral": "VI7",
+   "name": "D#7",
+   "notes": [
+    51,
+    63,
+    67,
+    70,
+    73
+   ]
+  },
+  {
+   "key": "F#",
+   "numeral": "VII7",
+   "name": "F7",
+   "notes": [
+    41,
+    65,
+    69,
+    72,
+    75
+   ]
+  },
+  {
+   "key": "F#",
+   "numeral": "i7",
+   "name": "F#m7",
+   "notes": [
+    42,
+    66,
+    69,
+    73,
+    76
+   ]
+  },
+  {
+   "key": "F#",
+   "numeral": "ii7",
+   "name": "G#m7",
+   "notes": [
+    44,
+    56,
+    59,
+    63,
+    66
+   ]
+  },
+  {
+   "key": "F#",
+   "numeral": "iii7",
+   "name": "A#m7",
+   "notes": [
+    46,
+    58,
+    61,
+    65,
+    68
+   ]
+  },
+  {
+   "key": "F#",
+   "numeral": "iv7",
+   "name": "Bm7",
+   "notes": [
+    47,
+    59,
+    62,
+    66,
+    69
+   ]
+  },
+  {
+   "key": "F#",
+   "numeral": "v7",
+   "name": "C#m7",
+   "notes": [
+    49,
+    61,
+    64,
+    68,
+    71
+   ]
+  },
+  {
+   "key": "F#",
+   "numeral": "vi7",
+   "name": "D#m7",
+   "notes": [
+    51,
+    63,
+    66,
+    70,
+    73
+   ]
+  },
+  {
+   "key": "F#",
+   "numeral": "vii7",
+   "name": "Fm7",
+   "notes": [
+    41,
+    65,
+    68,
+    72,
+    75
+   ]
+  },
+  {
+   "key": "F#",
+   "numeral": "iidim",
+   "name": "G#dim",
+   "notes": [
+    44,
+    56,
+    59,
+    62
+   ]
+  },
+  {
+   "key": "F#",
+   "numeral": "viidim",
+   "name": "Fdim",
+   "notes": [
+    41,
+    65,
+    68,
+    71
+   ]
+  },
+  {
+   "key": "F#",
+   "numeral": "Isus4",
+   "name": "F#sus4",
+   "notes": [
+    42,
+    66,
+    71,
+    73
+   ]
+  },
+  {
+   "key": "F#",
+   "numeral": "IVsus4",
+   "name": "Bsus4",
+   "notes": [
+    47,
+    59,
+    64,
+    66
+   ]
+  },
+  {
+   "key": "F#",
+   "numeral": "Vsus4",
+   "name": "C#sus4",
+   "notes": [
+    49,
+    61,
+    66,
+    68
+   ]
+  },
+  {
+   "key": "Db",
+   "numeral": "I",
+   "name": "Db",
+   "notes": [
+    49,
+    61,
+    65,
+    68
+   ]
+  },
+  {
+   "key": "Db",
+   "numeral": "II",
+   "name": "Eb",
+   "notes": [
+    51,
+    63,
+    67,
+    70
+   ]
+  },
+  {
+   "key": "Db",
+   "numeral": "III",
+   "name": "F",
+   "notes": [
+    41,
+    65,
+    69,
+    72
+   ]
+  },
+  {
+   "key": "Db",
+   "numeral": "IV",
+   "name": "Gb",
+   "notes": [
+    42,
+    66,
+    70,
+    73
+   ]
+  },
+  {
+   "key": "Db",
+   "numeral": "V",
+   "name": "Ab",
+   "notes": [
+    44,
+    56,
+    60,
+    63
+   ]
+  },
+  {
+   "key": "Db",
+   "numeral": "VI",
+   "name": "Bb",
+   "notes": [
+    46,
+    58,
+    62,
+    65
+   ]
+  },
+  {
+   "key": "Db",
+   "numeral": "VII",
+   "name": "C",
+   "notes": [
+    48,
+    60,
+    64,
+    67
+   ]
+  },
+  {
+   "key": "Db",
+   "numeral": "i",
+   "name": "Dbm",
+   "notes": [
+    49,
+    61,
+    64,
+    68
+   ]
+  },
+  {
+   "key": "Db",
+   "numeral": "ii",
+   "name": "Ebm",
+   "notes": [
+    51,
+    63,
+    66,
+    70
+   ]
+  },
+  {
+   "key": "Db",
+   "numeral": "iii",
+   "name": "Fm",
+   "notes": [
+    41,
+    65,
+    68,
+    72
+   ]
+  },
+  {
+   "key": "Db",
+   "numeral": "iv",
+   "name": "Gbm",
+   "notes": [
+    42,
+    66,
+    69,
+    73
+   ]
+  },
+  {
+   "key": "Db",
+   "numeral": "v",
+   "name": "Abm",
+   "notes": [
+    44,
+    56,
+    59,
+    63
+   ]
+  },
+  {
+   "key": "Db",
+   "numeral": "vi",
+   "name": "Bbm",
+   "notes": [
+    46,
+    58,
+    61,
+    65
+   ]
+  },
+  {
+   "key": "Db",
+   "numeral": "vii",
+   "name": "Cm",
+   "notes": [
+    48,
+    60,
+    63,
+    67
+   ]
+  },
+  {
+   "key": "Db",
+   "numeral": "bII",
+   "name": "D",
+   "notes": [
+    50,
+    62,
+    66,
+    69
+   ]
+  },
+  {
+   "key": "Db",
+   "numeral": "bIII",
+   "name": "E",
+   "notes": [
+    40,
+    64,
+    68,
+    71
+   ]
+  },
+  {
+   "key": "Db",
+   "numeral": "bV",
+   "name": "G",
+   "notes": [
+    43,
+    55,
+    59,
+    62
+   ]
+  },
+  {
+   "key": "Db",
+   "numeral": "bVI",
+   "name": "A",
+   "notes": [
+    45,
+    57,
+    61,
+    64
+   ]
+  },
+  {
+   "key": "Db",
+   "numeral": "bVII",
+   "name": "B",
+   "notes": [
+    47,
+    59,
+    63,
+    66
+   ]
+  },
+  {
+   "key": "Db",
+   "numeral": "biii",
+   "name": "Em",
+   "notes": [
+    40,
+    64,
+    67,
+    71
+   ]
+  },
+  {
+   "key": "Db",
+   "numeral": "bvi",
+   "name": "Am",
+   "notes": [
+    45,
+    57,
+    60,
+    64
+   ]
+  },
+  {
+   "key": "Db",
+   "numeral": "bvii",
+   "name": "Bm",
+   "notes": [
+    47,
+    59,
+    62,
+    66
+   ]
+  },
+  {
+   "key": "Db",
+   "numeral": "I7",
+   "name": "Db7",
+   "notes": [
+    49,
+    61,
+    65,
+    68,
+    71
+   ]
+  },
+  {
+   "key": "Db",
+   "numeral": "II7",
+   "name": "Eb7",
+   "notes": [
+    51,
+    63,
+    67,
+    70,
+    73
+   ]
+  },
+  {
+   "key": "Db",
+   "numeral": "III7",
+   "name": "F7",
+   "notes": [
+    41,
+    65,
+    69,
+    72,
+    75
+   ]
+  },
+  {
+   "key": "Db",
+   "numeral": "IV7",
+   "name": "Gb7",
+   "notes": [
+    42,
+    66,
+    70,
+    73,
+    76
+   ]
+  },
+  {
+   "key": "Db",
+   "numeral": "V7",
+   "name": "Ab7",
+   "notes": [
+    44,
+    56,
+    60,
+    63,
+    66
+   ]
+  },
+  {
+   "key": "Db",
+   "numeral": "VI7",
+   "name": "Bb7",
+   "notes": [
+    46,
+    58,
+    62,
+    65,
+    68
+   ]
+  },
+  {
+   "key": "Db",
+   "numeral": "VII7",
+   "name": "C7",
+   "notes": [
+    48,
+    60,
+    64,
+    67,
+    70
+   ]
+  },
+  {
+   "key": "Db",
+   "numeral": "i7",
+   "name": "Dbm7",
+   "notes": [
+    49,
+    61,
+    64,
+    68,
+    71
+   ]
+  },
+  {
+   "key": "Db",
+   "numeral": "ii7",
+   "name": "Ebm7",
+   "notes": [
+    51,
+    63,
+    66,
+    70,
+    73
+   ]
+  },
+  {
+   "key": "Db",
+   "numeral": "iii7",
+   "name": "Fm7",
+   "notes": [
+    41,
+    65,
+    68,
+    72,
+    75
+   ]
+  },
+  {
+   "key": "Db",
+   "numeral": "iv7",
+   "name": "Gbm7",
+   "notes": [
+    42,
+    66,
+    69,
+    73,
+    76
+   ]
+  },
+  {
+   "key": "Db",
+   "numeral": "v7",
+   "name": "Abm7",
+   "notes": [
+    44,
+    56,
+    59,
+    63,
+    66
+   ]
+  },
+  {
+   "key": "Db",
+   "numeral": "vi7",
+   "name": "Bbm7",
+   "notes": [
+    46,
+    58,
+    61,
+    65,
+    68
+   ]
+  },
+  {
+   "key": "Db",
+   "numeral": "vii7",
+   "name": "Cm7",
+   "notes": [
+    48,
+    60,
+    63,
+    67,
+    70
+   ]
+  },
+  {
+   "key": "Db",
+   "numeral": "iidim",
+   "name": "Ebdim",
+   "notes": [
+    51,
+    63,
+    66,
+    69
+   ]
+  },
+  {
+   "key": "Db",
+   "numeral": "viidim",
+   "name": "Cdim",
+   "notes": [
+    48,
+    60,
+    63,
+    66
+   ]
+  },
+  {
+   "key": "Db",
+   "numeral": "Isus4",
+   "name": "Dbsus4",
+   "notes": [
+    49,
+    61,
+    66,
+    68
+   ]
+  },
+  {
+   "key": "Db",
+   "numeral": "IVsus4",
+   "name": "Gbsus4",
+   "notes": [
+    42,
+    66,
+    71,
+    73
+   ]
+  },
+  {
+   "key": "Db",
+   "numeral": "Vsus4",
+   "name": "Absus4",
+   "notes": [
+    44,
+    56,
+    61,
+    63
+   ]
+  },
+  {
+   "key": "Ab",
+   "numeral": "I",
+   "name": "Ab",
+   "notes": [
+    44,
+    56,
+    60,
+    63
+   ]
+  },
+  {
+   "key": "Ab",
+   "numeral": "II",
+   "name": "Bb",
+   "notes": [
+    46,
+    58,
+    62,
+    65
+   ]
+  },
+  {
+   "key": "Ab",
+   "numeral": "III",
+   "name": "C",
+   "notes": [
+    48,
+    60,
+    64,
+    67
+   ]
+  },
+  {
+   "key": "Ab",
+   "numeral": "IV",
+   "name": "Db",
+   "notes": [
+    49,
+    61,
+    65,
+    68
+   ]
+  },
+  {
+   "key": "Ab",
+   "numeral": "V",
+   "name": "Eb",
+   "notes": [
+    51,
+    63,
+    67,
+    70
+   ]
+  },
+  {
+   "key": "Ab",
+   "numeral": "VI",
+   "name": "F",
+   "notes": [
+    41,
+    65,
+    69,
+    72
+   ]
+  },
+  {
+   "key": "Ab",
+   "numeral": "VII",
+   "name": "G",
+   "notes": [
+    43,
+    55,
+    59,
+    62
+   ]
+  },
+  {
+   "key": "Ab",
+   "numeral": "i",
+   "name": "Abm",
+   "notes": [
+    44,
+    56,
+    59,
+    63
+   ]
+  },
+  {
+   "key": "Ab",
+   "numeral": "ii",
+   "name": "Bbm",
+   "notes": [
+    46,
+    58,
+    61,
+    65
+   ]
+  },
+  {
+   "key": "Ab",
+   "numeral": "iii",
+   "name": "Cm",
+   "notes": [
+    48,
+    60,
+    63,
+    67
+   ]
+  },
+  {
+   "key": "Ab",
+   "numeral": "iv",
+   "name": "Dbm",
+   "notes": [
+    49,
+    61,
+    64,
+    68
+   ]
+  },
+  {
+   "key": "Ab",
+   "numeral": "v",
+   "name": "Ebm",
+   "notes": [
+    51,
+    63,
+    66,
+    70
+   ]
+  },
+  {
+   "key": "Ab",
+   "numeral": "vi",
+   "name": "Fm",
+   "notes": [
+    41,
+    65,
+    68,
+    72
+   ]
+  },
+  {
+   "key": "Ab",
+   "numeral": "vii",
+   "name": "Gm",
+   "notes": [
+    43,
+    55,
+    58,
+    62
+   ]
+  },
+  {
+   "key": "Ab",
+   "numeral": "bII",
+   "name": "A",
+   "notes": [
+    45,
+    57,
+    61,
+    64
+   ]
+  },
+  {
+   "key": "Ab",
+   "numeral": "bIII",
+   "name": "B",
+   "notes": [
+    47,
+    59,
+    63,
+    66
+   ]
+  },
+  {
+   "key": "Ab",
+   "numeral": "bV",
+   "name": "D",
+   "notes": [
+    50,
+    62,
+    66,
+    69
+   ]
+  },
+  {
+   "key": "Ab",
+   "numeral": "bVI",
+   "name": "E",
+   "notes": [
+    40,
+    64,
+    68,
+    71
+   ]
+  },
+  {
+   "key": "Ab",
+   "numeral": "bVII",
+   "name": "Gb",
+   "notes": [
+    42,
+    66,
+    70,
+    73
+   ]
+  },
+  {
+   "key": "Ab",
+   "numeral": "biii",
+   "name": "Bm",
+   "notes": [
+    47,
+    59,
+    62,
+    66
+   ]
+  },
+  {
+   "key": "Ab",
+   "numeral": "bvi",
+   "name": "Em",
+   "notes": [
+    40,
+    64,
+    67,
+    71
+   ]
+  },
+  {
+   "key": "Ab",
+   "numeral": "bvii",
+   "name": "Gbm",
+   "notes": [
+    42,
+    66,
+    69,
+    73
+   ]
+  },
+  {
+   "key": "Ab",
+   "numeral": "I7",
+   "name": "Ab7",
+   "notes": [
+    44,
+    56,
+    60,
+    63,
+    66
+   ]
+  },
+  {
+   "key": "Ab",
+   "numeral": "II7",
+   "name": "Bb7",
+   "notes": [
+    46,
+    58,
+    62,
+    65,
+    68
+   ]
+  },
+  {
+   "key": "Ab",
+   "numeral": "III7",
+   "name": "C7",
+   "notes": [
+    48,
+    60,
+    64,
+    67,
+    70
+   ]
+  },
+  {
+   "key": "Ab",
+   "numeral": "IV7",
+   "name": "Db7",
+   "notes": [
+    49,
+    61,
+    65,
+    68,
+    71
+   ]
+  },
+  {
+   "key": "Ab",
+   "numeral": "V7",
+   "name": "Eb7",
+   "notes": [
+    51,
+    63,
+    67,
+    70,
+    73
+   ]
+  },
+  {
+   "key": "Ab",
+   "numeral": "VI7",
+   "name": "F7",
+   "notes": [
+    41,
+    65,
+    69,
+    72,
+    75
+   ]
+  },
+  {
+   "key": "Ab",
+   "numeral": "VII7",
+   "name": "G7",
+   "notes": [
+    43,
+    55,
+    59,
+    62,
+    65
+   ]
+  },
+  {
+   "key": "Ab",
+   "numeral": "i7",
+   "name": "Abm7",
+   "notes": [
+    44,
+    56,
+    59,
+    63,
+    66
+   ]
+  },
+  {
+   "key": "Ab",
+   "numeral": "ii7",
+   "name": "Bbm7",
+   "notes": [
+    46,
+    58,
+    61,
+    65,
+    68
+   ]
+  },
+  {
+   "key": "Ab",
+   "numeral": "iii7",
+   "name": "Cm7",
+   "notes": [
+    48,
+    60,
+    63,
+    67,
+    70
+   ]
+  },
+  {
+   "key": "Ab",
+   "numeral": "iv7",
+   "name": "Dbm7",
+   "notes": [
+    49,
+    61,
+    64,
+    68,
+    71
+   ]
+  },
+  {
+   "key": "Ab",
+   "numeral": "v7",
+   "name": "Ebm7",
+   "notes": [
+    51,
+    63,
+    66,
+    70,
+    73
+   ]
+  },
+  {
+   "key": "Ab",
+   "numeral": "vi7",
+   "name": "Fm7",
+   "notes": [
+    41,
+    65,
+    68,
+    72,
+    75
+   ]
+  },
+  {
+   "key": "Ab",
+   "numeral": "vii7",
+   "name": "Gm7",
+   "notes": [
+    43,
+    55,
+    58,
+    62,
+    65
+   ]
+  },
+  {
+   "key": "Ab",
+   "numeral": "iidim",
+   "name": "Bbdim",
+   "notes": [
+    46,
+    58,
+    61,
+    64
+   ]
+  },
+  {
+   "key": "Ab",
+   "numeral": "viidim",
+   "name": "Gdim",
+   "notes": [
+    43,
+    55,
+    58,
+    61
+   ]
+  },
+  {
+   "key": "Ab",
+   "numeral": "Isus4",
+   "name": "Absus4",
+   "notes": [
+    44,
+    56,
+    61,
+    63
+   ]
+  },
+  {
+   "key": "Ab",
+   "numeral": "IVsus4",
+   "name": "Dbsus4",
+   "notes": [
+    49,
+    61,
+    66,
+    68
+   ]
+  },
+  {
+   "key": "Ab",
+   "numeral": "Vsus4",
+   "name": "Ebsus4",
+   "notes": [
+    51,
+    63,
+    68,
+    70
+   ]
+  },
+  {
+   "key": "Eb",
+   "numeral": "I",
+   "name": "Eb",
+   "notes": [
+    51,
+    63,
+    67,
+    70
+   ]
+  },
+  {
+   "key": "Eb",
+   "numeral": "II",
+   "name": "F",
+   "notes": [
+    41,
+    65,
+    69,
+    72
+   ]
+  },
+  {
+   "key": "Eb",
+   "numeral": "III",
+   "name": "G",
+   "notes": [
+    43,
+    55,
+    59,
+    62
+   ]
+  },
+  {
+   "key": "Eb",
+   "numeral": "IV",
+   "name": "Ab",
+   "notes": [
+    44,
+    56,
+    60,
+    63
+   ]
+  },
+  {
+   "key": "Eb",
+   "numeral": "V",
+   "name": "Bb",
+   "notes": [
+    46,
+    58,
+    62,
+    65
+   ]
+  },
+  {
+   "key": "Eb",
+   "numeral": "VI",
+   "name": "C",
+   "notes": [
+    48,
+    60,
+    64,
+    67
+   ]
+  },
+  {
+   "key": "Eb",
+   "numeral": "VII",
+   "name": "D",
+   "notes": [
+    50,
+    62,
+    66,
+    69
+   ]
+  },
+  {
+   "key": "Eb",
+   "numeral": "i",
+   "name": "Ebm",
+   "notes": [
+    51,
+    63,
+    66,
+    70
+   ]
+  },
+  {
+   "key": "Eb",
+   "numeral": "ii",
+   "name": "Fm",
+   "notes": [
+    41,
+    65,
+    68,
+    72
+   ]
+  },
+  {
+   "key": "Eb",
+   "numeral": "iii",
+   "name": "Gm",
+   "notes": [
+    43,
+    55,
+    58,
+    62
+   ]
+  },
+  {
+   "key": "Eb",
+   "numeral": "iv",
+   "name": "Abm",
+   "notes": [
+    44,
+    56,
+    59,
+    63
+   ]
+  },
+  {
+   "key": "Eb",
+   "numeral": "v",
+   "name": "Bbm",
+   "notes": [
+    46,
+    58,
+    61,
+    65
+   ]
+  },
+  {
+   "key": "Eb",
+   "numeral": "vi",
+   "name": "Cm",
+   "notes": [
+    48,
+    60,
+    63,
+    67
+   ]
+  },
+  {
+   "key": "Eb",
+   "numeral": "vii",
+   "name": "Dm",
+   "notes": [
+    50,
+    62,
+    65,
+    69
+   ]
+  },
+  {
+   "key": "Eb",
+   "numeral": "bII",
+   "name": "E",
+   "notes": [
+    40,
+    64,
+    68,
+    71
+   ]
+  },
+  {
+   "key": "Eb",
+   "numeral": "bIII",
+   "name": "Gb",
+   "notes": [
+    42,
+    66,
+    70,
+    73
+   ]
+  },
+  {
+   "key": "Eb",
+   "numeral": "bV",
+   "name": "A",
+   "notes": [
+    45,
+    57,
+    61,
+    64
+   ]
+  },
+  {
+   "key": "Eb",
+   "numeral": "bVI",
+   "name": "B",
+   "notes": [
+    47,
+    59,
+    63,
+    66
+   ]
+  },
+  {
+   "key": "Eb",
+   "numeral": "bVII",
+   "name": "Db",
+   "notes": [
+    49,
+    61,
+    65,
+    68
+   ]
+  },
+  {
+   "key": "Eb",
+   "numeral": "biii",
+   "name": "Gbm",
+   "notes": [
+    42,
+    66,
+    69,
+    73
+   ]
+  },
+  {
+   "key": "Eb",
+   "numeral": "bvi",
+   "name": "Bm",
+   "notes": [
+    47,
+    59,
+    62,
+    66
+   ]
+  },
+  {
+   "key": "Eb",
+   "numeral": "bvii",
+   "name": "Dbm",
+   "notes": [
+    49,
+    61,
+    64,
+    68
+   ]
+  },
+  {
+   "key": "Eb",
+   "numeral": "I7",
+   "name": "Eb7",
+   "notes": [
+    51,
+    63,
+    67,
+    70,
+    73
+   ]
+  },
+  {
+   "key": "Eb",
+   "numeral": "II7",
+   "name": "F7",
+   "notes": [
+    41,
+    65,
+    69,
+    72,
+    75
+   ]
+  },
+  {
+   "key": "Eb",
+   "numeral": "III7",
+   "name": "G7",
+   "notes": [
+    43,
+    55,
+    59,
+    62,
+    65
+   ]
+  },
+  {
+   "key": "Eb",
+   "numeral": "IV7",
+   "name": "Ab7",
+   "notes": [
+    44,
+    56,
+    60,
+    63,
+    66
+   ]
+  },
+  {
+   "key": "Eb",
+   "numeral": "V7",
+   "name": "Bb7",
+   "notes": [
+    46,
+    58,
+    62,
+    65,
+    68
+   ]
+  },
+  {
+   "key": "Eb",
+   "numeral": "VI7",
+   "name": "C7",
+   "notes": [
+    48,
+    60,
+    64,
+    67,
+    70
+   ]
+  },
+  {
+   "key": "Eb",
+   "numeral": "VII7",
+   "name": "D7",
+   "notes": [
+    50,
+    62,
+    66,
+    69,
+    72
+   ]
+  },
+  {
+   "key": "Eb",
+   "numeral": "i7",
+   "name": "Ebm7",
+   "notes": [
+    51,
+    63,
+    66,
+    70,
+    73
+   ]
+  },
+  {
+   "key": "Eb",
+   "numeral": "ii7",
+   "name": "Fm7",
+   "notes": [
+    41,
+    65,
+    68,
+    72,
+    75
+   ]
+  },
+  {
+   "key": "Eb",
+   "numeral": "iii7",
+   "name": "Gm7",
+   "notes": [
+    43,
+    55,
+    58,
+    62,
+    65
+   ]
+  },
+  {
+   "key": "Eb",
+   "numeral": "iv7",
+   "name": "Abm7",
+   "notes": [
+    44,
+    56,
+    59,
+    63,
+    66
+   ]
+  },
+  {
+   "key": "Eb",
+   "numeral": "v7",
+   "name": "Bbm7",
+   "notes": [
+    46,
+    58,
+    61,
+    65,
+    68
+   ]
+  },
+  {
+   "key": "Eb",
+   "numeral": "vi7",
+   "name": "Cm7",
+   "notes": [
+    48,
+    60,
+    63,
+    67,
+    70
+   ]
+  },
+  {
+   "key": "Eb",
+   "numeral": "vii7",
+   "name": "Dm7",
+   "notes": [
+    50,
+    62,
+    65,
+    69,
+    72
+   ]
+  },
+  {
+   "key": "Eb",
+   "numeral": "iidim",
+   "name": "Fdim",
+   "notes": [
+    41,
+    65,
+    68,
+    71
+   ]
+  },
+  {
+   "key": "Eb",
+   "numeral": "viidim",
+   "name": "Ddim",
+   "notes": [
+    50,
+    62,
+    65,
+    68
+   ]
+  },
+  {
+   "key": "Eb",
+   "numeral": "Isus4",
+   "name": "Ebsus4",
+   "notes": [
+    51,
+    63,
+    68,
+    70
+   ]
+  },
+  {
+   "key": "Eb",
+   "numeral": "IVsus4",
+   "name": "Absus4",
+   "notes": [
+    44,
+    56,
+    61,
+    63
+   ]
+  },
+  {
+   "key": "Eb",
+   "numeral": "Vsus4",
+   "name": "Bbsus4",
+   "notes": [
+    46,
+    58,
+    63,
+    65
+   ]
+  },
+  {
+   "key": "Bb",
+   "numeral": "I",
+   "name": "Bb",
+   "notes": [
+    46,
+    58,
+    62,
+    65
+   ]
+  },
+  {
+   "key": "Bb",
+   "numeral": "II",
+   "name": "C",
+   "notes": [
+    48,
+    60,
+    64,
+    67
+   ]
+  },
+  {
+   "key": "Bb",
+   "numeral": "III",
+   "name": "D",
+   "notes": [
+    50,
+    62,
+    66,
+    69
+   ]
+  },
+  {
+   "key": "Bb",
+   "numeral": "IV",
+   "name": "Eb",
+   "notes": [
+    51,
+    63,
+    67,
+    70
+   ]
+  },
+  {
+   "key": "Bb",
+   "numeral": "V",
+   "name": "F",
+   "notes": [
+    41,
+    65,
+    69,
+    72
+   ]
+  },
+  {
+   "key": "Bb",
+   "numeral": "VI",
+   "name": "G",
+   "notes": [
+    43,
+    55,
+    59,
+    62
+   ]
+  },
+  {
+   "key": "Bb",
+   "numeral": "VII",
+   "name": "A",
+   "notes": [
+    45,
+    57,
+    61,
+    64
+   ]
+  },
+  {
+   "key": "Bb",
+   "numeral": "i",
+   "name": "Bbm",
+   "notes": [
+    46,
+    58,
+    61,
+    65
+   ]
+  },
+  {
+   "key": "Bb",
+   "numeral": "ii",
+   "name": "Cm",
+   "notes": [
+    48,
+    60,
+    63,
+    67
+   ]
+  },
+  {
+   "key": "Bb",
+   "numeral": "iii",
+   "name": "Dm",
+   "notes": [
+    50,
+    62,
+    65,
+    69
+   ]
+  },
+  {
+   "key": "Bb",
+   "numeral": "iv",
+   "name": "Ebm",
+   "notes": [
+    51,
+    63,
+    66,
+    70
+   ]
+  },
+  {
+   "key": "Bb",
+   "numeral": "v",
+   "name": "Fm",
+   "notes": [
+    41,
+    65,
+    68,
+    72
+   ]
+  },
+  {
+   "key": "Bb",
+   "numeral": "vi",
+   "name": "Gm",
+   "notes": [
+    43,
+    55,
+    58,
+    62
+   ]
+  },
+  {
+   "key": "Bb",
+   "numeral": "vii",
+   "name": "Am",
+   "notes": [
+    45,
+    57,
+    60,
+    64
+   ]
+  },
+  {
+   "key": "Bb",
+   "numeral": "bII",
+   "name": "B",
+   "notes": [
+    47,
+    59,
+    63,
+    66
+   ]
+  },
+  {
+   "key": "Bb",
+   "numeral": "bIII",
+   "name": "Db",
+   "notes": [
+    49,
+    61,
+    65,
+    68
+   ]
+  },
+  {
+   "key": "Bb",
+   "numeral": "bV",
+   "name": "E",
+   "notes": [
+    40,
+    64,
+    68,
+    71
+   ]
+  },
+  {
+   "key": "Bb",
+   "numeral": "bVI",
+   "name": "Gb",
+   "notes": [
+    42,
+    66,
+    70,
+    73
+   ]
+  },
+  {
+   "key": "Bb",
+   "numeral": "bVII",
+   "name": "Ab",
+   "notes": [
+    44,
+    56,
+    60,
+    63
+   ]
+  },
+  {
+   "key": "Bb",
+   "numeral": "biii",
+   "name": "Dbm",
+   "notes": [
+    49,
+    61,
+    64,
+    68
+   ]
+  },
+  {
+   "key": "Bb",
+   "numeral": "bvi",
+   "name": "Gbm",
+   "notes": [
+    42,
+    66,
+    69,
+    73
+   ]
+  },
+  {
+   "key": "Bb",
+   "numeral": "bvii",
+   "name": "Abm",
+   "notes": [
+    44,
+    56,
+    59,
+    63
+   ]
+  },
+  {
+   "key": "Bb",
+   "numeral": "I7",
+   "name": "Bb7",
+   "notes": [
+    46,
+    58,
+    62,
+    65,
+    68
+   ]
+  },
+  {
+   "key": "Bb",
+   "numeral": "II7",
+   "name": "C7",
+   "notes": [
+    48,
+    60,
+    64,
+    67,
+    70
+   ]
+  },
+  {
+   "key": "Bb",
+   "numeral": "III7",
+   "name": "D7",
+   "notes": [
+    50,
+    62,
+    66,
+    69,
+    72
+   ]
+  },
+  {
+   "key": "Bb",
+   "numeral": "IV7",
+   "name": "Eb7",
+   "notes": [
+    51,
+    63,
+    67,
+    70,
+    73
+   ]
+  },
+  {
+   "key": "Bb",
+   "numeral": "V7",
+   "name": "F7",
+   "notes": [
+    41,
+    65,
+    69,
+    72,
+    75
+   ]
+  },
+  {
+   "key": "Bb",
+   "numeral": "VI7",
+   "name": "G7",
+   "notes": [
+    43,
+    55,
+    59,
+    62,
+    65
+   ]
+  },
+  {
+   "key": "Bb",
+   "numeral": "VII7",
+   "name": "A7",
+   "notes": [
+    45,
+    57,
+    61,
+    64,
+    67
+   ]
+  },
+  {
+   "key": "Bb",
+   "numeral": "i7",
+   "name": "Bbm7",
+   "notes": [
+    46,
+    58,
+    61,
+    65,
+    68
+   ]
+  },
+  {
+   "key": "Bb",
+   "numeral": "ii7",
+   "name": "Cm7",
+   "notes": [
+    48,
+    60,
+    63,
+    67,
+    70
+   ]
+  },
+  {
+   "key": "Bb",
+   "numeral": "iii7",
+   "name": "Dm7",
+   "notes": [
+    50,
+    62,
+    65,
+    69,
+    72
+   ]
+  },
+  {
+   "key": "Bb",
+   "numeral": "iv7",
+   "name": "Ebm7",
+   "notes": [
+    51,
+    63,
+    66,
+    70,
+    73
+   ]
+  },
+  {
+   "key": "Bb",
+   "numeral": "v7",
+   "name": "Fm7",
+   "notes": [
+    41,
+    65,
+    68,
+    72,
+    75
+   ]
+  },
+  {
+   "key": "Bb",
+   "numeral": "vi7",
+   "name": "Gm7",
+   "notes": [
+    43,
+    55,
+    58,
+    62,
+    65
+   ]
+  },
+  {
+   "key": "Bb",
+   "numeral": "vii7",
+   "name": "Am7",
+   "notes": [
+    45,
+    57,
+    60,
+    64,
+    67
+   ]
+  },
+  {
+   "key": "Bb",
+   "numeral": "iidim",
+   "name": "Cdim",
+   "notes": [
+    48,
+    60,
+    63,
+    66
+   ]
+  },
+  {
+   "key": "Bb",
+   "numeral": "viidim",
+   "name": "Adim",
+   "notes": [
+    45,
+    57,
+    60,
+    63
+   ]
+  },
+  {
+   "key": "Bb",
+   "numeral": "Isus4",
+   "name": "Bbsus4",
+   "notes": [
+    46,
+    58,
+    63,
+    65
+   ]
+  },
+  {
+   "key": "Bb",
+   "numeral": "IVsus4",
+   "name": "Ebsus4",
+   "notes": [
+    51,
+    63,
+    68,
+    70
+   ]
+  },
+  {
+   "key": "Bb",
+   "numeral": "Vsus4",
+   "name": "Fsus4",
+   "notes": [
+    41,
+    65,
+    70,
+    72
+   ]
+  },
+  {
+   "key": "F",
+   "numeral": "I",
+   "name": "F",
+   "notes": [
+    41,
+    65,
+    69,
+    72
+   ]
+  },
+  {
+   "key": "F",
+   "numeral": "II",
+   "name": "G",
+   "notes": [
+    43,
+    55,
+    59,
+    62
+   ]
+  },
+  {
+   "key": "F",
+   "numeral": "III",
+   "name": "A",
+   "notes": [
+    45,
+    57,
+    61,
+    64
+   ]
+  },
+  {
+   "key": "F",
+   "numeral": "IV",
+   "name": "Bb",
+   "notes": [
+    46,
+    58,
+    62,
+    65
+   ]
+  },
+  {
+   "key": "F",
+   "numeral": "V",
+   "name": "C",
+   "notes": [
+    48,
+    60,
+    64,
+    67
+   ]
+  },
+  {
+   "key": "F",
+   "numeral": "VI",
+   "name": "D",
+   "notes": [
+    50,
+    62,
+    66,
+    69
+   ]
+  },
+  {
+   "key": "F",
+   "numeral": "VII",
+   "name": "E",
+   "notes": [
+    40,
+    64,
+    68,
+    71
+   ]
+  },
+  {
+   "key": "F",
+   "numeral": "i",
+   "name": "Fm",
+   "notes": [
+    41,
+    65,
+    68,
+    72
+   ]
+  },
+  {
+   "key": "F",
+   "numeral": "ii",
+   "name": "Gm",
+   "notes": [
+    43,
+    55,
+    58,
+    62
+   ]
+  },
+  {
+   "key": "F",
+   "numeral": "iii",
+   "name": "Am",
+   "notes": [
+    45,
+    57,
+    60,
+    64
+   ]
+  },
+  {
+   "key": "F",
+   "numeral": "iv",
+   "name": "Bbm",
+   "notes": [
+    46,
+    58,
+    61,
+    65
+   ]
+  },
+  {
+   "key": "F",
+   "numeral": "v",
+   "name": "Cm",
+   "notes": [
+    48,
+    60,
+    63,
+    67
+   ]
+  },
+  {
+   "key": "F",
+   "numeral": "vi",
+   "name": "Dm",
+   "notes": [
+    50,
+    62,
+    65,
+    69
+   ]
+  },
+  {
+   "key": "F",
+   "numeral": "vii",
+   "name": "Em",
+   "notes": [
+    40,
+    64,
+    67,
+    71
+   ]
+  },
+  {
+   "key": "F",
+   "numeral": "bII",
+   "name": "Gb",
+   "notes": [
+    42,
+    66,
+    70,
+    73
+   ]
+  },
+  {
+   "key": "F",
+   "numeral": "bIII",
+   "name": "Ab",
+   "notes": [
+    44,
+    56,
+    60,
+    63
+   ]
+  },
+  {
+   "key": "F",
+   "numeral": "bV",
+   "name": "B",
+   "notes": [
+    47,
+    59,
+    63,
+    66
+   ]
+  },
+  {
+   "key": "F",
+   "numeral": "bVI",
+   "name": "Db",
+   "notes": [
+    49,
+    61,
+    65,
+    68
+   ]
+  },
+  {
+   "key": "F",
+   "numeral": "bVII",
+   "name": "Eb",
+   "notes": [
+    51,
+    63,
+    67,
+    70
+   ]
+  },
+  {
+   "key": "F",
+   "numeral": "biii",
+   "name": "Abm",
+   "notes": [
+    44,
+    56,
+    59,
+    63
+   ]
+  },
+  {
+   "key": "F",
+   "numeral": "bvi",
+   "name": "Dbm",
+   "notes": [
+    49,
+    61,
+    64,
+    68
+   ]
+  },
+  {
+   "key": "F",
+   "numeral": "bvii",
+   "name": "Ebm",
+   "notes": [
+    51,
+    63,
+    66,
+    70
+   ]
+  },
+  {
+   "key": "F",
+   "numeral": "I7",
+   "name": "F7",
+   "notes": [
+    41,
+    65,
+    69,
+    72,
+    75
+   ]
+  },
+  {
+   "key": "F",
+   "numeral": "II7",
+   "name": "G7",
+   "notes": [
+    43,
+    55,
+    59,
+    62,
+    65
+   ]
+  },
+  {
+   "key": "F",
+   "numeral": "III7",
+   "name": "A7",
+   "notes": [
+    45,
+    57,
+    61,
+    64,
+    67
+   ]
+  },
+  {
+   "key": "F",
+   "numeral": "IV7",
+   "name": "Bb7",
+   "notes": [
+    46,
+    58,
+    62,
+    65,
+    68
+   ]
+  },
+  {
+   "key": "F",
+   "numeral": "V7",
+   "name": "C7",
+   "notes": [
+    48,
+    60,
+    64,
+    67,
+    70
+   ]
+  },
+  {
+   "key": "F",
+   "numeral": "VI7",
+   "name": "D7",
+   "notes": [
+    50,
+    62,
+    66,
+    69,
+    72
+   ]
+  },
+  {
+   "key": "F",
+   "numeral": "VII7",
+   "name": "E7",
+   "notes": [
+    40,
+    64,
+    68,
+    71,
+    74
+   ]
+  },
+  {
+   "key": "F",
+   "numeral": "i7",
+   "name": "Fm7",
+   "notes": [
+    41,
+    65,
+    68,
+    72,
+    75
+   ]
+  },
+  {
+   "key": "F",
+   "numeral": "ii7",
+   "name": "Gm7",
+   "notes": [
+    43,
+    55,
+    58,
+    62,
+    65
+   ]
+  },
+  {
+   "key": "F",
+   "numeral": "iii7",
+   "name": "Am7",
+   "notes": [
+    45,
+    57,
+    60,
+    64,
+    67
+   ]
+  },
+  {
+   "key": "F",
+   "numeral": "iv7",
+   "name": "Bbm7",
+   "notes": [
+    46,
+    58,
+    61,
+    65,
+    68
+   ]
+  },
+  {
+   "key": "F",
+   "numeral": "v7",
+   "name": "Cm7",
+   "notes": [
+    48,
+    60,
+    63,
+    67,
+    70
+   ]
+  },
+  {
+   "key": "F",
+   "numeral": "vi7",
+   "name": "Dm7",
+   "notes": [
+    50,
+    62,
+    65,
+    69,
+    72
+   ]
+  },
+  {
+   "key": "F",
+   "numeral": "vii7",
+   "name": "Em7",
+   "notes": [
+    40,
+    64,
+    67,
+    71,
+    74
+   ]
+  },
+  {
+   "key": "F",
+   "numeral": "iidim",
+   "name": "Gdim",
+   "notes": [
+    43,
+    55,
+    58,
+    61
+   ]
+  },
+  {
+   "key": "F",
+   "numeral": "viidim",
+   "name": "Edim",
+   "notes": [
+    40,
+    64,
+    67,
+    70
+   ]
+  },
+  {
+   "key": "F",
+   "numeral": "Isus4",
+   "name": "Fsus4",
+   "notes": [
+    41,
+    65,
+    70,
+    72
+   ]
+  },
+  {
+   "key": "F",
+   "numeral": "IVsus4",
+   "name": "Bbsus4",
+   "notes": [
+    46,
+    58,
+    63,
+    65
+   ]
+  },
+  {
+   "key": "F",
+   "numeral": "Vsus4",
+   "name": "Csus4",
+   "notes": [
+    48,
+    60,
+    65,
+    67
+   ]
+  },
+  {
+   "key": "Am",
+   "numeral": "I",
+   "name": "A",
+   "notes": [
+    45,
+    57,
+    61,
+    64
+   ]
+  },
+  {
+   "key": "Am",
+   "numeral": "II",
+   "name": "B",
+   "notes": [
+    47,
+    59,
+    63,
+    66
+   ]
+  },
+  {
+   "key": "Am",
+   "numeral": "III",
+   "name": "C",
+   "notes": [
+    48,
+    60,
+    64,
+    67
+   ]
+  },
+  {
+   "key": "Am",
+   "numeral": "IV",
+   "name": "D",
+   "notes": [
+    50,
+    62,
+    66,
+    69
+   ]
+  },
+  {
+   "key": "Am",
+   "numeral": "V",
+   "name": "E",
+   "notes": [
+    40,
+    64,
+    68,
+    71
+   ]
+  },
+  {
+   "key": "Am",
+   "numeral": "VI",
+   "name": "F",
+   "notes": [
+    41,
+    65,
+    69,
+    72
+   ]
+  },
+  {
+   "key": "Am",
+   "numeral": "VII",
+   "name": "G",
+   "notes": [
+    43,
+    55,
+    59,
+    62
+   ]
+  },
+  {
+   "key": "Am",
+   "numeral": "i",
+   "name": "Am",
+   "notes": [
+    45,
+    57,
+    60,
+    64
+   ]
+  },
+  {
+   "key": "Am",
+   "numeral": "ii",
+   "name": "Bm",
+   "notes": [
+    47,
+    59,
+    62,
+    66
+   ]
+  },
+  {
+   "key": "Am",
+   "numeral": "iii",
+   "name": "Cm",
+   "notes": [
+    48,
+    60,
+    63,
+    67
+   ]
+  },
+  {
+   "key": "Am",
+   "numeral": "iv",
+   "name": "Dm",
+   "notes": [
+    50,
+    62,
+    65,
+    69
+   ]
+  },
+  {
+   "key": "Am",
+   "numeral": "v",
+   "name": "Em",
+   "notes": [
+    40,
+    64,
+    67,
+    71
+   ]
+  },
+  {
+   "key": "Am",
+   "numeral": "vi",
+   "name": "Fm",
+   "notes": [
+    41,
+    65,
+    68,
+    72
+   ]
+  },
+  {
+   "key": "Am",
+   "numeral": "vii",
+   "name": "Gm",
+   "notes": [
+    43,
+    55,
+    58,
+    62
+   ]
+  },
+  {
+   "key": "Am",
+   "numeral": "bII",
+   "name": "Bb",
+   "notes": [
+    46,
+    58,
+    62,
+    65
+   ]
+  },
+  {
+   "key": "Am",
+   "numeral": "bIII",
+   "name": "C",
+   "notes": [
+    48,
+    60,
+    64,
+    67
+   ]
+  },
+  {
+   "key": "Am",
+   "numeral": "bV",
+   "name": "Eb",
+   "notes": [
+    51,
+    63,
+    67,
+    70
+   ]
+  },
+  {
+   "key": "Am",
+   "numeral": "bVI",
+   "name": "F",
+   "notes": [
+    41,
+    65,
+    69,
+    72
+   ]
+  },
+  {
+   "key": "Am",
+   "numeral": "bVII",
+   "name": "G",
+   "notes": [
+    43,
+    55,
+    59,
+    62
+   ]
+  },
+  {
+   "key": "Am",
+   "numeral": "biii",
+   "name": "Cm",
+   "notes": [
+    48,
+    60,
+    63,
+    67
+   ]
+  },
+  {
+   "key": "Am",
+   "numeral": "bvi",
+   "name": "Fm",
+   "notes": [
+    41,
+    65,
+    68,
+    72
+   ]
+  },
+  {
+   "key": "Am",
+   "numeral": "bvii",
+   "name": "Gm",
+   "notes": [
+    43,
+    55,
+    58,
+    62
+   ]
+  },
+  {
+   "key": "Am",
+   "numeral": "I7",
+   "name": "A7",
+   "notes": [
+    45,
+    57,
+    61,
+    64,
+    67
+   ]
+  },
+  {
+   "key": "Am",
+   "numeral": "II7",
+   "name": "B7",
+   "notes": [
+    47,
+    59,
+    63,
+    66,
+    69
+   ]
+  },
+  {
+   "key": "Am",
+   "numeral": "III7",
+   "name": "C7",
+   "notes": [
+    48,
+    60,
+    64,
+    67,
+    70
+   ]
+  },
+  {
+   "key": "Am",
+   "numeral": "IV7",
+   "name": "D7",
+   "notes": [
+    50,
+    62,
+    66,
+    69,
+    72
+   ]
+  },
+  {
+   "key": "Am",
+   "numeral": "V7",
+   "name": "E7",
+   "notes": [
+    40,
+    64,
+    68,
+    71,
+    74
+   ]
+  },
+  {
+   "key": "Am",
+   "numeral": "VI7",
+   "name": "F7",
+   "notes": [
+    41,
+    65,
+    69,
+    72,
+    75
+   ]
+  },
+  {
+   "key": "Am",
+   "numeral": "VII7",
+   "name": "G7",
+   "notes": [
+    43,
+    55,
+    59,
+    62,
+    65
+   ]
+  },
+  {
+   "key": "Am",
+   "numeral": "i7",
+   "name": "Am7",
+   "notes": [
+    45,
+    57,
+    60,
+    64,
+    67
+   ]
+  },
+  {
+   "key": "Am",
+   "numeral": "ii7",
+   "name": "Bm7",
+   "notes": [
+    47,
+    59,
+    62,
+    66,
+    69
+   ]
+  },
+  {
+   "key": "Am",
+   "numeral": "iii7",
+   "name": "Cm7",
+   "notes": [
+    48,
+    60,
+    63,
+    67,
+    70
+   ]
+  },
+  {
+   "key": "Am",
+   "numeral": "iv7",
+   "name": "Dm7",
+   "notes": [
+    50,
+    62,
+    65,
+    69,
+    72
+   ]
+  },
+  {
+   "key": "Am",
+   "numeral": "v7",
+   "name": "Em7",
+   "notes": [
+    40,
+    64,
+    67,
+    71,
+    74
+   ]
+  },
+  {
+   "key": "Am",
+   "numeral": "vi7",
+   "name": "Fm7",
+   "notes": [
+    41,
+    65,
+    68,
+    72,
+    75
+   ]
+  },
+  {
+   "key": "Am",
+   "numeral": "vii7",
+   "name": "Gm7",
+   "notes": [
+    43,
+    55,
+    58,
+    62,
+    65
+   ]
+  },
+  {
+   "key": "Am",
+   "numeral": "iidim",
+   "name": "Bdim",
+   "notes": [
+    47,
+    59,
+    62,
+    65
+   ]
+  },
+  {
+   "key": "Am",
+   "numeral": "viidim",
+   "name": "Gdim",
+   "notes": [
+    43,
+    55,
+    58,
+    61
+   ]
+  },
+  {
+   "key": "Am",
+   "numeral": "Isus4",
+   "name": "Asus4",
+   "notes": [
+    45,
+    57,
+    62,
+    64
+   ]
+  },
+  {
+   "key": "Am",
+   "numeral": "IVsus4",
+   "name": "Dsus4",
+   "notes": [
+    50,
+    62,
+    67,
+    69
+   ]
+  },
+  {
+   "key": "Am",
+   "numeral": "Vsus4",
+   "name": "Esus4",
+   "notes": [
+    40,
+    64,
+    69,
+    71
+   ]
+  },
+  {
+   "key": "Em",
+   "numeral": "I",
+   "name": "E",
+   "notes": [
+    40,
+    64,
+    68,
+    71
+   ]
+  },
+  {
+   "key": "Em",
+   "numeral": "II",
+   "name": "F#",
+   "notes": [
+    42,
+    66,
+    70,
+    73
+   ]
+  },
+  {
+   "key": "Em",
+   "numeral": "III",
+   "name": "G",
+   "notes": [
+    43,
+    55,
+    59,
+    62
+   ]
+  },
+  {
+   "key": "Em",
+   "numeral": "IV",
+   "name": "A",
+   "notes": [
+    45,
+    57,
+    61,
+    64
+   ]
+  },
+  {
+   "key": "Em",
+   "numeral": "V",
+   "name": "B",
+   "notes": [
+    47,
+    59,
+    63,
+    66
+   ]
+  },
+  {
+   "key": "Em",
+   "numeral": "VI",
+   "name": "C",
+   "notes": [
+    48,
+    60,
+    64,
+    67
+   ]
+  },
+  {
+   "key": "Em",
+   "numeral": "VII",
+   "name": "D",
+   "notes": [
+    50,
+    62,
+    66,
+    69
+   ]
+  },
+  {
+   "key": "Em",
+   "numeral": "i",
+   "name": "Em",
+   "notes": [
+    40,
+    64,
+    67,
+    71
+   ]
+  },
+  {
+   "key": "Em",
+   "numeral": "ii",
+   "name": "F#m",
+   "notes": [
+    42,
+    66,
+    69,
+    73
+   ]
+  },
+  {
+   "key": "Em",
+   "numeral": "iii",
+   "name": "Gm",
+   "notes": [
+    43,
+    55,
+    58,
+    62
+   ]
+  },
+  {
+   "key": "Em",
+   "numeral": "iv",
+   "name": "Am",
+   "notes": [
+    45,
+    57,
+    60,
+    64
+   ]
+  },
+  {
+   "key": "Em",
+   "numeral": "v",
+   "name": "Bm",
+   "notes": [
+    47,
+    59,
+    62,
+    66
+   ]
+  },
+  {
+   "key": "Em",
+   "numeral": "vi",
+   "name": "Cm",
+   "notes": [
+    48,
+    60,
+    63,
+    67
+   ]
+  },
+  {
+   "key": "Em",
+   "numeral": "vii",
+   "name": "Dm",
+   "notes": [
+    50,
+    62,
+    65,
+    69
+   ]
+  },
+  {
+   "key": "Em",
+   "numeral": "bII",
+   "name": "F",
+   "notes": [
+    41,
+    65,
+    69,
+    72
+   ]
+  },
+  {
+   "key": "Em",
+   "numeral": "bIII",
+   "name": "G",
+   "notes": [
+    43,
+    55,
+    59,
+    62
+   ]
+  },
+  {
+   "key": "Em",
+   "numeral": "bV",
+   "name": "Bb",
+   "notes": [
+    46,
+    58,
+    62,
+    65
+   ]
+  },
+  {
+   "key": "Em",
+   "numeral": "bVI",
+   "name": "C",
+   "notes": [
+    48,
+    60,
+    64,
+    67
+   ]
+  },
+  {
+   "key": "Em",
+   "numeral": "bVII",
+   "name": "D",
+   "notes": [
+    50,
+    62,
+    66,
+    69
+   ]
+  },
+  {
+   "key": "Em",
+   "numeral": "biii",
+   "name": "Gm",
+   "notes": [
+    43,
+    55,
+    58,
+    62
+   ]
+  },
+  {
+   "key": "Em",
+   "numeral": "bvi",
+   "name": "Cm",
+   "notes": [
+    48,
+    60,
+    63,
+    67
+   ]
+  },
+  {
+   "key": "Em",
+   "numeral": "bvii",
+   "name": "Dm",
+   "notes": [
+    50,
+    62,
+    65,
+    69
+   ]
+  },
+  {
+   "key": "Em",
+   "numeral": "I7",
+   "name": "E7",
+   "notes": [
+    40,
+    64,
+    68,
+    71,
+    74
+   ]
+  },
+  {
+   "key": "Em",
+   "numeral": "II7",
+   "name": "F#7",
+   "notes": [
+    42,
+    66,
+    70,
+    73,
+    76
+   ]
+  },
+  {
+   "key": "Em",
+   "numeral": "III7",
+   "name": "G7",
+   "notes": [
+    43,
+    55,
+    59,
+    62,
+    65
+   ]
+  },
+  {
+   "key": "Em",
+   "numeral": "IV7",
+   "name": "A7",
+   "notes": [
+    45,
+    57,
+    61,
+    64,
+    67
+   ]
+  },
+  {
+   "key": "Em",
+   "numeral": "V7",
+   "name": "B7",
+   "notes": [
+    47,
+    59,
+    63,
+    66,
+    69
+   ]
+  },
+  {
+   "key": "Em",
+   "numeral": "VI7",
+   "name": "C7",
+   "notes": [
+    48,
+    60,
+    64,
+    67,
+    70
+   ]
+  },
+  {
+   "key": "Em",
+   "numeral": "VII7",
+   "name": "D7",
+   "notes": [
+    50,
+    62,
+    66,
+    69,
+    72
+   ]
+  },
+  {
+   "key": "Em",
+   "numeral": "i7",
+   "name": "Em7",
+   "notes": [
+    40,
+    64,
+    67,
+    71,
+    74
+   ]
+  },
+  {
+   "key": "Em",
+   "numeral": "ii7",
+   "name": "F#m7",
+   "notes": [
+    42,
+    66,
+    69,
+    73,
+    76
+   ]
+  },
+  {
+   "key": "Em",
+   "numeral": "iii7",
+   "name": "Gm7",
+   "notes": [
+    43,
+    55,
+    58,
+    62,
+    65
+   ]
+  },
+  {
+   "key": "Em",
+   "numeral": "iv7",
+   "name": "Am7",
+   "notes": [
+    45,
+    57,
+    60,
+    64,
+    67
+   ]
+  },
+  {
+   "key": "Em",
+   "numeral": "v7",
+   "name": "Bm7",
+   "notes": [
+    47,
+    59,
+    62,
+    66,
+    69
+   ]
+  },
+  {
+   "key": "Em",
+   "numeral": "vi7",
+   "name": "Cm7",
+   "notes": [
+    48,
+    60,
+    63,
+    67,
+    70
+   ]
+  },
+  {
+   "key": "Em",
+   "numeral": "vii7",
+   "name": "Dm7",
+   "notes": [
+    50,
+    62,
+    65,
+    69,
+    72
+   ]
+  },
+  {
+   "key": "Em",
+   "numeral": "iidim",
+   "name": "F#dim",
+   "notes": [
+    42,
+    66,
+    69,
+    72
+   ]
+  },
+  {
+   "key": "Em",
+   "numeral": "viidim",
+   "name": "Ddim",
+   "notes": [
+    50,
+    62,
+    65,
+    68
+   ]
+  },
+  {
+   "key": "Em",
+   "numeral": "Isus4",
+   "name": "Esus4",
+   "notes": [
+    40,
+    64,
+    69,
+    71
+   ]
+  },
+  {
+   "key": "Em",
+   "numeral": "IVsus4",
+   "name": "Asus4",
+   "notes": [
+    45,
+    57,
+    62,
+    64
+   ]
+  },
+  {
+   "key": "Em",
+   "numeral": "Vsus4",
+   "name": "Bsus4",
+   "notes": [
+    47,
+    59,
+    64,
+    66
+   ]
+  },
+  {
+   "key": "Bm",
+   "numeral": "I",
+   "name": "B",
+   "notes": [
+    47,
+    59,
+    63,
+    66
+   ]
+  },
+  {
+   "key": "Bm",
+   "numeral": "II",
+   "name": "C#",
+   "notes": [
+    49,
+    61,
+    65,
+    68
+   ]
+  },
+  {
+   "key": "Bm",
+   "numeral": "III",
+   "name": "D",
+   "notes": [
+    50,
+    62,
+    66,
+    69
+   ]
+  },
+  {
+   "key": "Bm",
+   "numeral": "IV",
+   "name": "E",
+   "notes": [
+    40,
+    64,
+    68,
+    71
+   ]
+  },
+  {
+   "key": "Bm",
+   "numeral": "V",
+   "name": "F#",
+   "notes": [
+    42,
+    66,
+    70,
+    73
+   ]
+  },
+  {
+   "key": "Bm",
+   "numeral": "VI",
+   "name": "G",
+   "notes": [
+    43,
+    55,
+    59,
+    62
+   ]
+  },
+  {
+   "key": "Bm",
+   "numeral": "VII",
+   "name": "A",
+   "notes": [
+    45,
+    57,
+    61,
+    64
+   ]
+  },
+  {
+   "key": "Bm",
+   "numeral": "i",
+   "name": "Bm",
+   "notes": [
+    47,
+    59,
+    62,
+    66
+   ]
+  },
+  {
+   "key": "Bm",
+   "numeral": "ii",
+   "name": "C#m",
+   "notes": [
+    49,
+    61,
+    64,
+    68
+   ]
+  },
+  {
+   "key": "Bm",
+   "numeral": "iii",
+   "name": "Dm",
+   "notes": [
+    50,
+    62,
+    65,
+    69
+   ]
+  },
+  {
+   "key": "Bm",
+   "numeral": "iv",
+   "name": "Em",
+   "notes": [
+    40,
+    64,
+    67,
+    71
+   ]
+  },
+  {
+   "key": "Bm",
+   "numeral": "v",
+   "name": "F#m",
+   "notes": [
+    42,
+    66,
+    69,
+    73
+   ]
+  },
+  {
+   "key": "Bm",
+   "numeral": "vi",
+   "name": "Gm",
+   "notes": [
+    43,
+    55,
+    58,
+    62
+   ]
+  },
+  {
+   "key": "Bm",
+   "numeral": "vii",
+   "name": "Am",
+   "notes": [
+    45,
+    57,
+    60,
+    64
+   ]
+  },
+  {
+   "key": "Bm",
+   "numeral": "bII",
+   "name": "C",
+   "notes": [
+    48,
+    60,
+    64,
+    67
+   ]
+  },
+  {
+   "key": "Bm",
+   "numeral": "bIII",
+   "name": "D",
+   "notes": [
+    50,
+    62,
+    66,
+    69
+   ]
+  },
+  {
+   "key": "Bm",
+   "numeral": "bV",
+   "name": "F",
+   "notes": [
+    41,
+    65,
+    69,
+    72
+   ]
+  },
+  {
+   "key": "Bm",
+   "numeral": "bVI",
+   "name": "G",
+   "notes": [
+    43,
+    55,
+    59,
+    62
+   ]
+  },
+  {
+   "key": "Bm",
+   "numeral": "bVII",
+   "name": "A",
+   "notes": [
+    45,
+    57,
+    61,
+    64
+   ]
+  },
+  {
+   "key": "Bm",
+   "numeral": "biii",
+   "name": "Dm",
+   "notes": [
+    50,
+    62,
+    65,
+    69
+   ]
+  },
+  {
+   "key": "Bm",
+   "numeral": "bvi",
+   "name": "Gm",
+   "notes": [
+    43,
+    55,
+    58,
+    62
+   ]
+  },
+  {
+   "key": "Bm",
+   "numeral": "bvii",
+   "name": "Am",
+   "notes": [
+    45,
+    57,
+    60,
+    64
+   ]
+  },
+  {
+   "key": "Bm",
+   "numeral": "I7",
+   "name": "B7",
+   "notes": [
+    47,
+    59,
+    63,
+    66,
+    69
+   ]
+  },
+  {
+   "key": "Bm",
+   "numeral": "II7",
+   "name": "C#7",
+   "notes": [
+    49,
+    61,
+    65,
+    68,
+    71
+   ]
+  },
+  {
+   "key": "Bm",
+   "numeral": "III7",
+   "name": "D7",
+   "notes": [
+    50,
+    62,
+    66,
+    69,
+    72
+   ]
+  },
+  {
+   "key": "Bm",
+   "numeral": "IV7",
+   "name": "E7",
+   "notes": [
+    40,
+    64,
+    68,
+    71,
+    74
+   ]
+  },
+  {
+   "key": "Bm",
+   "numeral": "V7",
+   "name": "F#7",
+   "notes": [
+    42,
+    66,
+    70,
+    73,
+    76
+   ]
+  },
+  {
+   "key": "Bm",
+   "numeral": "VI7",
+   "name": "G7",
+   "notes": [
+    43,
+    55,
+    59,
+    62,
+    65
+   ]
+  },
+  {
+   "key": "Bm",
+   "numeral": "VII7",
+   "name": "A7",
+   "notes": [
+    45,
+    57,
+    61,
+    64,
+    67
+   ]
+  },
+  {
+   "key": "Bm",
+   "numeral": "i7",
+   "name": "Bm7",
+   "notes": [
+    47,
+    59,
+    62,
+    66,
+    69
+   ]
+  },
+  {
+   "key": "Bm",
+   "numeral": "ii7",
+   "name": "C#m7",
+   "notes": [
+    49,
+    61,
+    64,
+    68,
+    71
+   ]
+  },
+  {
+   "key": "Bm",
+   "numeral": "iii7",
+   "name": "Dm7",
+   "notes": [
+    50,
+    62,
+    65,
+    69,
+    72
+   ]
+  },
+  {
+   "key": "Bm",
+   "numeral": "iv7",
+   "name": "Em7",
+   "notes": [
+    40,
+    64,
+    67,
+    71,
+    74
+   ]
+  },
+  {
+   "key": "Bm",
+   "numeral": "v7",
+   "name": "F#m7",
+   "notes": [
+    42,
+    66,
+    69,
+    73,
+    76
+   ]
+  },
+  {
+   "key": "Bm",
+   "numeral": "vi7",
+   "name": "Gm7",
+   "notes": [
+    43,
+    55,
+    58,
+    62,
+    65
+   ]
+  },
+  {
+   "key": "Bm",
+   "numeral": "vii7",
+   "name": "Am7",
+   "notes": [
+    45,
+    57,
+    60,
+    64,
+    67
+   ]
+  },
+  {
+   "key": "Bm",
+   "numeral": "iidim",
+   "name": "C#dim",
+   "notes": [
+    49,
+    61,
+    64,
+    67
+   ]
+  },
+  {
+   "key": "Bm",
+   "numeral": "viidim",
+   "name": "Adim",
+   "notes": [
+    45,
+    57,
+    60,
+    63
+   ]
+  },
+  {
+   "key": "Bm",
+   "numeral": "Isus4",
+   "name": "Bsus4",
+   "notes": [
+    47,
+    59,
+    64,
+    66
+   ]
+  },
+  {
+   "key": "Bm",
+   "numeral": "IVsus4",
+   "name": "Esus4",
+   "notes": [
+    40,
+    64,
+    69,
+    71
+   ]
+  },
+  {
+   "key": "Bm",
+   "numeral": "Vsus4",
+   "name": "F#sus4",
+   "notes": [
+    42,
+    66,
+    71,
+    73
+   ]
+  },
+  {
+   "key": "F#m",
+   "numeral": "I",
+   "name": "F#",
+   "notes": [
+    42,
+    66,
+    70,
+    73
+   ]
+  },
+  {
+   "key": "F#m",
+   "numeral": "II",
+   "name": "G#",
+   "notes": [
+    44,
+    56,
+    60,
+    63
+   ]
+  },
+  {
+   "key": "F#m",
+   "numeral": "III",
+   "name": "A",
+   "notes": [
+    45,
+    57,
+    61,
+    64
+   ]
+  },
+  {
+   "key": "F#m",
+   "numeral": "IV",
+   "name": "B",
+   "notes": [
+    47,
+    59,
+    63,
+    66
+   ]
+  },
+  {
+   "key": "F#m",
+   "numeral": "V",
+   "name": "C#",
+   "notes": [
+    49,
+    61,
+    65,
+    68
+   ]
+  },
+  {
+   "key": "F#m",
+   "numeral": "VI",
+   "name": "D",
+   "notes": [
+    50,
+    62,
+    66,
+    69
+   ]
+  },
+  {
+   "key": "F#m",
+   "numeral": "VII",
+   "name": "E",
+   "notes": [
+    40,
+    64,
+    68,
+    71
+   ]
+  },
+  {
+   "key": "F#m",
+   "numeral": "i",
+   "name": "F#m",
+   "notes": [
+    42,
+    66,
+    69,
+    73
+   ]
+  },
+  {
+   "key": "F#m",
+   "numeral": "ii",
+   "name": "G#m",
+   "notes": [
+    44,
+    56,
+    59,
+    63
+   ]
+  },
+  {
+   "key": "F#m",
+   "numeral": "iii",
+   "name": "Am",
+   "notes": [
+    45,
+    57,
+    60,
+    64
+   ]
+  },
+  {
+   "key": "F#m",
+   "numeral": "iv",
+   "name": "Bm",
+   "notes": [
+    47,
+    59,
+    62,
+    66
+   ]
+  },
+  {
+   "key": "F#m",
+   "numeral": "v",
+   "name": "C#m",
+   "notes": [
+    49,
+    61,
+    64,
+    68
+   ]
+  },
+  {
+   "key": "F#m",
+   "numeral": "vi",
+   "name": "Dm",
+   "notes": [
+    50,
+    62,
+    65,
+    69
+   ]
+  },
+  {
+   "key": "F#m",
+   "numeral": "vii",
+   "name": "Em",
+   "notes": [
+    40,
+    64,
+    67,
+    71
+   ]
+  },
+  {
+   "key": "F#m",
+   "numeral": "bII",
+   "name": "G",
+   "notes": [
+    43,
+    55,
+    59,
+    62
+   ]
+  },
+  {
+   "key": "F#m",
+   "numeral": "bIII",
+   "name": "A",
+   "notes": [
+    45,
+    57,
+    61,
+    64
+   ]
+  },
+  {
+   "key": "F#m",
+   "numeral": "bV",
+   "name": "C",
+   "notes": [
+    48,
+    60,
+    64,
+    67
+   ]
+  },
+  {
+   "key": "F#m",
+   "numeral": "bVI",
+   "name": "D",
+   "notes": [
+    50,
+    62,
+    66,
+    69
+   ]
+  },
+  {
+   "key": "F#m",
+   "numeral": "bVII",
+   "name": "E",
+   "notes": [
+    40,
+    64,
+    68,
+    71
+   ]
+  },
+  {
+   "key": "F#m",
+   "numeral": "biii",
+   "name": "Am",
+   "notes": [
+    45,
+    57,
+    60,
+    64
+   ]
+  },
+  {
+   "key": "F#m",
+   "numeral": "bvi",
+   "name": "Dm",
+   "notes": [
+    50,
+    62,
+    65,
+    69
+   ]
+  },
+  {
+   "key": "F#m",
+   "numeral": "bvii",
+   "name": "Em",
+   "notes": [
+    40,
+    64,
+    67,
+    71
+   ]
+  },
+  {
+   "key": "F#m",
+   "numeral": "I7",
+   "name": "F#7",
+   "notes": [
+    42,
+    66,
+    70,
+    73,
+    76
+   ]
+  },
+  {
+   "key": "F#m",
+   "numeral": "II7",
+   "name": "G#7",
+   "notes": [
+    44,
+    56,
+    60,
+    63,
+    66
+   ]
+  },
+  {
+   "key": "F#m",
+   "numeral": "III7",
+   "name": "A7",
+   "notes": [
+    45,
+    57,
+    61,
+    64,
+    67
+   ]
+  },
+  {
+   "key": "F#m",
+   "numeral": "IV7",
+   "name": "B7",
+   "notes": [
+    47,
+    59,
+    63,
+    66,
+    69
+   ]
+  },
+  {
+   "key": "F#m",
+   "numeral": "V7",
+   "name": "C#7",
+   "notes": [
+    49,
+    61,
+    65,
+    68,
+    71
+   ]
+  },
+  {
+   "key": "F#m",
+   "numeral": "VI7",
+   "name": "D7",
+   "notes": [
+    50,
+    62,
+    66,
+    69,
+    72
+   ]
+  },
+  {
+   "key": "F#m",
+   "numeral": "VII7",
+   "name": "E7",
+   "notes": [
+    40,
+    64,
+    68,
+    71,
+    74
+   ]
+  },
+  {
+   "key": "F#m",
+   "numeral": "i7",
+   "name": "F#m7",
+   "notes": [
+    42,
+    66,
+    69,
+    73,
+    76
+   ]
+  },
+  {
+   "key": "F#m",
+   "numeral": "ii7",
+   "name": "G#m7",
+   "notes": [
+    44,
+    56,
+    59,
+    63,
+    66
+   ]
+  },
+  {
+   "key": "F#m",
+   "numeral": "iii7",
+   "name": "Am7",
+   "notes": [
+    45,
+    57,
+    60,
+    64,
+    67
+   ]
+  },
+  {
+   "key": "F#m",
+   "numeral": "iv7",
+   "name": "Bm7",
+   "notes": [
+    47,
+    59,
+    62,
+    66,
+    69
+   ]
+  },
+  {
+   "key": "F#m",
+   "numeral": "v7",
+   "name": "C#m7",
+   "notes": [
+    49,
+    61,
+    64,
+    68,
+    71
+   ]
+  },
+  {
+   "key": "F#m",
+   "numeral": "vi7",
+   "name": "Dm7",
+   "notes": [
+    50,
+    62,
+    65,
+    69,
+    72
+   ]
+  },
+  {
+   "key": "F#m",
+   "numeral": "vii7",
+   "name": "Em7",
+   "notes": [
+    40,
+    64,
+    67,
+    71,
+    74
+   ]
+  },
+  {
+   "key": "F#m",
+   "numeral": "iidim",
+   "name": "G#dim",
+   "notes": [
+    44,
+    56,
+    59,
+    62
+   ]
+  },
+  {
+   "key": "F#m",
+   "numeral": "viidim",
+   "name": "Edim",
+   "notes": [
+    40,
+    64,
+    67,
+    70
+   ]
+  },
+  {
+   "key": "F#m",
+   "numeral": "Isus4",
+   "name": "F#sus4",
+   "notes": [
+    42,
+    66,
+    71,
+    73
+   ]
+  },
+  {
+   "key": "F#m",
+   "numeral": "IVsus4",
+   "name": "Bsus4",
+   "notes": [
+    47,
+    59,
+    64,
+    66
+   ]
+  },
+  {
+   "key": "F#m",
+   "numeral": "Vsus4",
+   "name": "C#sus4",
+   "notes": [
+    49,
+    61,
+    66,
+    68
+   ]
+  },
+  {
+   "key": "C#m",
+   "numeral": "I",
+   "name": "C#",
+   "notes": [
+    49,
+    61,
+    65,
+    68
+   ]
+  },
+  {
+   "key": "C#m",
+   "numeral": "II",
+   "name": "D#",
+   "notes": [
+    51,
+    63,
+    67,
+    70
+   ]
+  },
+  {
+   "key": "C#m",
+   "numeral": "III",
+   "name": "E",
+   "notes": [
+    40,
+    64,
+    68,
+    71
+   ]
+  },
+  {
+   "key": "C#m",
+   "numeral": "IV",
+   "name": "F#",
+   "notes": [
+    42,
+    66,
+    70,
+    73
+   ]
+  },
+  {
+   "key": "C#m",
+   "numeral": "V",
+   "name": "G#",
+   "notes": [
+    44,
+    56,
+    60,
+    63
+   ]
+  },
+  {
+   "key": "C#m",
+   "numeral": "VI",
+   "name": "A",
+   "notes": [
+    45,
+    57,
+    61,
+    64
+   ]
+  },
+  {
+   "key": "C#m",
+   "numeral": "VII",
+   "name": "B",
+   "notes": [
+    47,
+    59,
+    63,
+    66
+   ]
+  },
+  {
+   "key": "C#m",
+   "numeral": "i",
+   "name": "C#m",
+   "notes": [
+    49,
+    61,
+    64,
+    68
+   ]
+  },
+  {
+   "key": "C#m",
+   "numeral": "ii",
+   "name": "D#m",
+   "notes": [
+    51,
+    63,
+    66,
+    70
+   ]
+  },
+  {
+   "key": "C#m",
+   "numeral": "iii",
+   "name": "Em",
+   "notes": [
+    40,
+    64,
+    67,
+    71
+   ]
+  },
+  {
+   "key": "C#m",
+   "numeral": "iv",
+   "name": "F#m",
+   "notes": [
+    42,
+    66,
+    69,
+    73
+   ]
+  },
+  {
+   "key": "C#m",
+   "numeral": "v",
+   "name": "G#m",
+   "notes": [
+    44,
+    56,
+    59,
+    63
+   ]
+  },
+  {
+   "key": "C#m",
+   "numeral": "vi",
+   "name": "Am",
+   "notes": [
+    45,
+    57,
+    60,
+    64
+   ]
+  },
+  {
+   "key": "C#m",
+   "numeral": "vii",
+   "name": "Bm",
+   "notes": [
+    47,
+    59,
+    62,
+    66
+   ]
+  },
+  {
+   "key": "C#m",
+   "numeral": "bII",
+   "name": "D",
+   "notes": [
+    50,
+    62,
+    66,
+    69
+   ]
+  },
+  {
+   "key": "C#m",
+   "numeral": "bIII",
+   "name": "E",
+   "notes": [
+    40,
+    64,
+    68,
+    71
+   ]
+  },
+  {
+   "key": "C#m",
+   "numeral": "bV",
+   "name": "G",
+   "notes": [
+    43,
+    55,
+    59,
+    62
+   ]
+  },
+  {
+   "key": "C#m",
+   "numeral": "bVI",
+   "name": "A",
+   "notes": [
+    45,
+    57,
+    61,
+    64
+   ]
+  },
+  {
+   "key": "C#m",
+   "numeral": "bVII",
+   "name": "B",
+   "notes": [
+    47,
+    59,
+    63,
+    66
+   ]
+  },
+  {
+   "key": "C#m",
+   "numeral": "biii",
+   "name": "Em",
+   "notes": [
+    40,
+    64,
+    67,
+    71
+   ]
+  },
+  {
+   "key": "C#m",
+   "numeral": "bvi",
+   "name": "Am",
+   "notes": [
+    45,
+    57,
+    60,
+    64
+   ]
+  },
+  {
+   "key": "C#m",
+   "numeral": "bvii",
+   "name": "Bm",
+   "notes": [
+    47,
+    59,
+    62,
+    66
+   ]
+  },
+  {
+   "key": "C#m",
+   "numeral": "I7",
+   "name": "C#7",
+   "notes": [
+    49,
+    61,
+    65,
+    68,
+    71
+   ]
+  },
+  {
+   "key": "C#m",
+   "numeral": "II7",
+   "name": "D#7",
+   "notes": [
+    51,
+    63,
+    67,
+    70,
+    73
+   ]
+  },
+  {
+   "key": "C#m",
+   "numeral": "III7",
+   "name": "E7",
+   "notes": [
+    40,
+    64,
+    68,
+    71,
+    74
+   ]
+  },
+  {
+   "key": "C#m",
+   "numeral": "IV7",
+   "name": "F#7",
+   "notes": [
+    42,
+    66,
+    70,
+    73,
+    76
+   ]
+  },
+  {
+   "key": "C#m",
+   "numeral": "V7",
+   "name": "G#7",
+   "notes": [
+    44,
+    56,
+    60,
+    63,
+    66
+   ]
+  },
+  {
+   "key": "C#m",
+   "numeral": "VI7",
+   "name": "A7",
+   "notes": [
+    45,
+    57,
+    61,
+    64,
+    67
+   ]
+  },
+  {
+   "key": "C#m",
+   "numeral": "VII7",
+   "name": "B7",
+   "notes": [
+    47,
+    59,
+    63,
+    66,
+    69
+   ]
+  },
+  {
+   "key": "C#m",
+   "numeral": "i7",
+   "name": "C#m7",
+   "notes": [
+    49,
+    61,
+    64,
+    68,
+    71
+   ]
+  },
+  {
+   "key": "C#m",
+   "numeral": "ii7",
+   "name": "D#m7",
+   "notes": [
+    51,
+    63,
+    66,
+    70,
+    73
+   ]
+  },
+  {
+   "key": "C#m",
+   "numeral": "iii7",
+   "name": "Em7",
+   "notes": [
+    40,
+    64,
+    67,
+    71,
+    74
+   ]
+  },
+  {
+   "key": "C#m",
+   "numeral": "iv7",
+   "name": "F#m7",
+   "notes": [
+    42,
+    66,
+    69,
+    73,
+    76
+   ]
+  },
+  {
+   "key": "C#m",
+   "numeral": "v7",
+   "name": "G#m7",
+   "notes": [
+    44,
+    56,
+    59,
+    63,
+    66
+   ]
+  },
+  {
+   "key": "C#m",
+   "numeral": "vi7",
+   "name": "Am7",
+   "notes": [
+    45,
+    57,
+    60,
+    64,
+    67
+   ]
+  },
+  {
+   "key": "C#m",
+   "numeral": "vii7",
+   "name": "Bm7",
+   "notes": [
+    47,
+    59,
+    62,
+    66,
+    69
+   ]
+  },
+  {
+   "key": "C#m",
+   "numeral": "iidim",
+   "name": "D#dim",
+   "notes": [
+    51,
+    63,
+    66,
+    69
+   ]
+  },
+  {
+   "key": "C#m",
+   "numeral": "viidim",
+   "name": "Bdim",
+   "notes": [
+    47,
+    59,
+    62,
+    65
+   ]
+  },
+  {
+   "key": "C#m",
+   "numeral": "Isus4",
+   "name": "C#sus4",
+   "notes": [
+    49,
+    61,
+    66,
+    68
+   ]
+  },
+  {
+   "key": "C#m",
+   "numeral": "IVsus4",
+   "name": "F#sus4",
+   "notes": [
+    42,
+    66,
+    71,
+    73
+   ]
+  },
+  {
+   "key": "C#m",
+   "numeral": "Vsus4",
+   "name": "G#sus4",
+   "notes": [
+    44,
+    56,
+    61,
+    63
+   ]
+  },
+  {
+   "key": "G#m",
+   "numeral": "I",
+   "name": "G#",
+   "notes": [
+    44,
+    56,
+    60,
+    63
+   ]
+  },
+  {
+   "key": "G#m",
+   "numeral": "II",
+   "name": "A#",
+   "notes": [
+    46,
+    58,
+    62,
+    65
+   ]
+  },
+  {
+   "key": "G#m",
+   "numeral": "III",
+   "name": "B",
+   "notes": [
+    47,
+    59,
+    63,
+    66
+   ]
+  },
+  {
+   "key": "G#m",
+   "numeral": "IV",
+   "name": "C#",
+   "notes": [
+    49,
+    61,
+    65,
+    68
+   ]
+  },
+  {
+   "key": "G#m",
+   "numeral": "V",
+   "name": "D#",
+   "notes": [
+    51,
+    63,
+    67,
+    70
+   ]
+  },
+  {
+   "key": "G#m",
+   "numeral": "VI",
+   "name": "E",
+   "notes": [
+    40,
+    64,
+    68,
+    71
+   ]
+  },
+  {
+   "key": "G#m",
+   "numeral": "VII",
+   "name": "F#",
+   "notes": [
+    42,
+    66,
+    70,
+    73
+   ]
+  },
+  {
+   "key": "G#m",
+   "numeral": "i",
+   "name": "G#m",
+   "notes": [
+    44,
+    56,
+    59,
+    63
+   ]
+  },
+  {
+   "key": "G#m",
+   "numeral": "ii",
+   "name": "A#m",
+   "notes": [
+    46,
+    58,
+    61,
+    65
+   ]
+  },
+  {
+   "key": "G#m",
+   "numeral": "iii",
+   "name": "Bm",
+   "notes": [
+    47,
+    59,
+    62,
+    66
+   ]
+  },
+  {
+   "key": "G#m",
+   "numeral": "iv",
+   "name": "C#m",
+   "notes": [
+    49,
+    61,
+    64,
+    68
+   ]
+  },
+  {
+   "key": "G#m",
+   "numeral": "v",
+   "name": "D#m",
+   "notes": [
+    51,
+    63,
+    66,
+    70
+   ]
+  },
+  {
+   "key": "G#m",
+   "numeral": "vi",
+   "name": "Em",
+   "notes": [
+    40,
+    64,
+    67,
+    71
+   ]
+  },
+  {
+   "key": "G#m",
+   "numeral": "vii",
+   "name": "F#m",
+   "notes": [
+    42,
+    66,
+    69,
+    73
+   ]
+  },
+  {
+   "key": "G#m",
+   "numeral": "bII",
+   "name": "A",
+   "notes": [
+    45,
+    57,
+    61,
+    64
+   ]
+  },
+  {
+   "key": "G#m",
+   "numeral": "bIII",
+   "name": "B",
+   "notes": [
+    47,
+    59,
+    63,
+    66
+   ]
+  },
+  {
+   "key": "G#m",
+   "numeral": "bV",
+   "name": "D",
+   "notes": [
+    50,
+    62,
+    66,
+    69
+   ]
+  },
+  {
+   "key": "G#m",
+   "numeral": "bVI",
+   "name": "E",
+   "notes": [
+    40,
+    64,
+    68,
+    71
+   ]
+  },
+  {
+   "key": "G#m",
+   "numeral": "bVII",
+   "name": "Gb",
+   "notes": [
+    42,
+    66,
+    70,
+    73
+   ]
+  },
+  {
+   "key": "G#m",
+   "numeral": "biii",
+   "name": "Bm",
+   "notes": [
+    47,
+    59,
+    62,
+    66
+   ]
+  },
+  {
+   "key": "G#m",
+   "numeral": "bvi",
+   "name": "Em",
+   "notes": [
+    40,
+    64,
+    67,
+    71
+   ]
+  },
+  {
+   "key": "G#m",
+   "numeral": "bvii",
+   "name": "Gbm",
+   "notes": [
+    42,
+    66,
+    69,
+    73
+   ]
+  },
+  {
+   "key": "G#m",
+   "numeral": "I7",
+   "name": "G#7",
+   "notes": [
+    44,
+    56,
+    60,
+    63,
+    66
+   ]
+  },
+  {
+   "key": "G#m",
+   "numeral": "II7",
+   "name": "A#7",
+   "notes": [
+    46,
+    58,
+    62,
+    65,
+    68
+   ]
+  },
+  {
+   "key": "G#m",
+   "numeral": "III7",
+   "name": "B7",
+   "notes": [
+    47,
+    59,
+    63,
+    66,
+    69
+   ]
+  },
+  {
+   "key": "G#m",
+   "numeral": "IV7",
+   "name": "C#7",
+   "notes": [
+    49,
+    61,
+    65,
+    68,
+    71
+   ]
+  },
+  {
+   "key": "G#m",
+   "numeral": "V7",
+   "name": "D#7",
+   "notes": [
+    51,
+    63,
+    67,
+    70,
+    73
+   ]
+  },
+  {
+   "key": "G#m",
+   "numeral": "VI7",
+   "name": "E7",
+   "notes": [
+    40,
+    64,
+    68,
+    71,
+    74
+   ]
+  },
+  {
+   "key": "G#m",
+   "numeral": "VII7",
+   "name": "F#7",
+   "notes": [
+    42,
+    66,
+    70,
+    73,
+    76
+   ]
+  },
+  {
+   "key": "G#m",
+   "numeral": "i7",
+   "name": "G#m7",
+   "notes": [
+    44,
+    56,
+    59,
+    63,
+    66
+   ]
+  },
+  {
+   "key": "G#m",
+   "numeral": "ii7",
+   "name": "A#m7",
+   "notes": [
+    46,
+    58,
+    61,
+    65,
+    68
+   ]
+  },
+  {
+   "key": "G#m",
+   "numeral": "iii7",
+   "name": "Bm7",
+   "notes": [
+    47,
+    59,
+    62,
+    66,
+    69
+   ]
+  },
+  {
+   "key": "G#m",
+   "numeral": "iv7",
+   "name": "C#m7",
+   "notes": [
+    49,
+    61,
+    64,
+    68,
+    71
+   ]
+  },
+  {
+   "key": "G#m",
+   "numeral": "v7",
+   "name": "D#m7",
+   "notes": [
+    51,
+    63,
+    66,
+    70,
+    73
+   ]
+  },
+  {
+   "key": "G#m",
+   "numeral": "vi7",
+   "name": "Em7",
+   "notes": [
+    40,
+    64,
+    67,
+    71,
+    74
+   ]
+  },
+  {
+   "key": "G#m",
+   "numeral": "vii7",
+   "name": "F#m7",
+   "notes": [
+    42,
+    66,
+    69,
+    73,
+    76
+   ]
+  },
+  {
+   "key": "G#m",
+   "numeral": "iidim",
+   "name": "A#dim",
+   "notes": [
+    46,
+    58,
+    61,
+    64
+   ]
+  },
+  {
+   "key": "G#m",
+   "numeral": "viidim",
+   "name": "F#dim",
+   "notes": [
+    42,
+    66,
+    69,
+    72
+   ]
+  },
+  {
+   "key": "G#m",
+   "numeral": "Isus4",
+   "name": "G#sus4",
+   "notes": [
+    44,
+    56,
+    61,
+    63
+   ]
+  },
+  {
+   "key": "G#m",
+   "numeral": "IVsus4",
+   "name": "C#sus4",
+   "notes": [
+    49,
+    61,
+    66,
+    68
+   ]
+  },
+  {
+   "key": "G#m",
+   "numeral": "Vsus4",
+   "name": "D#sus4",
+   "notes": [
+    51,
+    63,
+    68,
+    70
+   ]
+  },
+  {
+   "key": "Ebm",
+   "numeral": "I",
+   "name": "Eb",
+   "notes": [
+    51,
+    63,
+    67,
+    70
+   ]
+  },
+  {
+   "key": "Ebm",
+   "numeral": "II",
+   "name": "F",
+   "notes": [
+    41,
+    65,
+    69,
+    72
+   ]
+  },
+  {
+   "key": "Ebm",
+   "numeral": "III",
+   "name": "Gb",
+   "notes": [
+    42,
+    66,
+    70,
+    73
+   ]
+  },
+  {
+   "key": "Ebm",
+   "numeral": "IV",
+   "name": "Ab",
+   "notes": [
+    44,
+    56,
+    60,
+    63
+   ]
+  },
+  {
+   "key": "Ebm",
+   "numeral": "V",
+   "name": "Bb",
+   "notes": [
+    46,
+    58,
+    62,
+    65
+   ]
+  },
+  {
+   "key": "Ebm",
+   "numeral": "VI",
+   "name": "B",
+   "notes": [
+    47,
+    59,
+    63,
+    66
+   ]
+  },
+  {
+   "key": "Ebm",
+   "numeral": "VII",
+   "name": "Db",
+   "notes": [
+    49,
+    61,
+    65,
+    68
+   ]
+  },
+  {
+   "key": "Ebm",
+   "numeral": "i",
+   "name": "Ebm",
+   "notes": [
+    51,
+    63,
+    66,
+    70
+   ]
+  },
+  {
+   "key": "Ebm",
+   "numeral": "ii",
+   "name": "Fm",
+   "notes": [
+    41,
+    65,
+    68,
+    72
+   ]
+  },
+  {
+   "key": "Ebm",
+   "numeral": "iii",
+   "name": "Gbm",
+   "notes": [
+    42,
+    66,
+    69,
+    73
+   ]
+  },
+  {
+   "key": "Ebm",
+   "numeral": "iv",
+   "name": "Abm",
+   "notes": [
+    44,
+    56,
+    59,
+    63
+   ]
+  },
+  {
+   "key": "Ebm",
+   "numeral": "v",
+   "name": "Bbm",
+   "notes": [
+    46,
+    58,
+    61,
+    65
+   ]
+  },
+  {
+   "key": "Ebm",
+   "numeral": "vi",
+   "name": "Bm",
+   "notes": [
+    47,
+    59,
+    62,
+    66
+   ]
+  },
+  {
+   "key": "Ebm",
+   "numeral": "vii",
+   "name": "Dbm",
+   "notes": [
+    49,
+    61,
+    64,
+    68
+   ]
+  },
+  {
+   "key": "Ebm",
+   "numeral": "bII",
+   "name": "E",
+   "notes": [
+    40,
+    64,
+    68,
+    71
+   ]
+  },
+  {
+   "key": "Ebm",
+   "numeral": "bIII",
+   "name": "Gb",
+   "notes": [
+    42,
+    66,
+    70,
+    73
+   ]
+  },
+  {
+   "key": "Ebm",
+   "numeral": "bV",
+   "name": "A",
+   "notes": [
+    45,
+    57,
+    61,
+    64
+   ]
+  },
+  {
+   "key": "Ebm",
+   "numeral": "bVI",
+   "name": "B",
+   "notes": [
+    47,
+    59,
+    63,
+    66
+   ]
+  },
+  {
+   "key": "Ebm",
+   "numeral": "bVII",
+   "name": "Db",
+   "notes": [
+    49,
+    61,
+    65,
+    68
+   ]
+  },
+  {
+   "key": "Ebm",
+   "numeral": "biii",
+   "name": "Gbm",
+   "notes": [
+    42,
+    66,
+    69,
+    73
+   ]
+  },
+  {
+   "key": "Ebm",
+   "numeral": "bvi",
+   "name": "Bm",
+   "notes": [
+    47,
+    59,
+    62,
+    66
+   ]
+  },
+  {
+   "key": "Ebm",
+   "numeral": "bvii",
+   "name": "Dbm",
+   "notes": [
+    49,
+    61,
+    64,
+    68
+   ]
+  },
+  {
+   "key": "Ebm",
+   "numeral": "I7",
+   "name": "Eb7",
+   "notes": [
+    51,
+    63,
+    67,
+    70,
+    73
+   ]
+  },
+  {
+   "key": "Ebm",
+   "numeral": "II7",
+   "name": "F7",
+   "notes": [
+    41,
+    65,
+    69,
+    72,
+    75
+   ]
+  },
+  {
+   "key": "Ebm",
+   "numeral": "III7",
+   "name": "Gb7",
+   "notes": [
+    42,
+    66,
+    70,
+    73,
+    76
+   ]
+  },
+  {
+   "key": "Ebm",
+   "numeral": "IV7",
+   "name": "Ab7",
+   "notes": [
+    44,
+    56,
+    60,
+    63,
+    66
+   ]
+  },
+  {
+   "key": "Ebm",
+   "numeral": "V7",
+   "name": "Bb7",
+   "notes": [
+    46,
+    58,
+    62,
+    65,
+    68
+   ]
+  },
+  {
+   "key": "Ebm",
+   "numeral": "VI7",
+   "name": "B7",
+   "notes": [
+    47,
+    59,
+    63,
+    66,
+    69
+   ]
+  },
+  {
+   "key": "Ebm",
+   "numeral": "VII7",
+   "name": "Db7",
+   "notes": [
+    49,
+    61,
+    65,
+    68,
+    71
+   ]
+  },
+  {
+   "key": "Ebm",
+   "numeral": "i7",
+   "name": "Ebm7",
+   "notes": [
+    51,
+    63,
+    66,
+    70,
+    73
+   ]
+  },
+  {
+   "key": "Ebm",
+   "numeral": "ii7",
+   "name": "Fm7",
+   "notes": [
+    41,
+    65,
+    68,
+    72,
+    75
+   ]
+  },
+  {
+   "key": "Ebm",
+   "numeral": "iii7",
+   "name": "Gbm7",
+   "notes": [
+    42,
+    66,
+    69,
+    73,
+    76
+   ]
+  },
+  {
+   "key": "Ebm",
+   "numeral": "iv7",
+   "name": "Abm7",
+   "notes": [
+    44,
+    56,
+    59,
+    63,
+    66
+   ]
+  },
+  {
+   "key": "Ebm",
+   "numeral": "v7",
+   "name": "Bbm7",
+   "notes": [
+    46,
+    58,
+    61,
+    65,
+    68
+   ]
+  },
+  {
+   "key": "Ebm",
+   "numeral": "vi7",
+   "name": "Bm7",
+   "notes": [
+    47,
+    59,
+    62,
+    66,
+    69
+   ]
+  },
+  {
+   "key": "Ebm",
+   "numeral": "vii7",
+   "name": "Dbm7",
+   "notes": [
+    49,
+    61,
+    64,
+    68,
+    71
+   ]
+  },
+  {
+   "key": "Ebm",
+   "numeral": "iidim",
+   "name": "Fdim",
+   "notes": [
+    41,
+    65,
+    68,
+    71
+   ]
+  },
+  {
+   "key": "Ebm",
+   "numeral": "viidim",
+   "name": "Dbdim",
+   "notes": [
+    49,
+    61,
+    64,
+    67
+   ]
+  },
+  {
+   "key": "Ebm",
+   "numeral": "Isus4",
+   "name": "Ebsus4",
+   "notes": [
+    51,
+    63,
+    68,
+    70
+   ]
+  },
+  {
+   "key": "Ebm",
+   "numeral": "IVsus4",
+   "name": "Absus4",
+   "notes": [
+    44,
+    56,
+    61,
+    63
+   ]
+  },
+  {
+   "key": "Ebm",
+   "numeral": "Vsus4",
+   "name": "Bbsus4",
+   "notes": [
+    46,
+    58,
+    63,
+    65
+   ]
+  },
+  {
+   "key": "Bbm",
+   "numeral": "I",
+   "name": "Bb",
+   "notes": [
+    46,
+    58,
+    62,
+    65
+   ]
+  },
+  {
+   "key": "Bbm",
+   "numeral": "II",
+   "name": "C",
+   "notes": [
+    48,
+    60,
+    64,
+    67
+   ]
+  },
+  {
+   "key": "Bbm",
+   "numeral": "III",
+   "name": "Db",
+   "notes": [
+    49,
+    61,
+    65,
+    68
+   ]
+  },
+  {
+   "key": "Bbm",
+   "numeral": "IV",
+   "name": "Eb",
+   "notes": [
+    51,
+    63,
+    67,
+    70
+   ]
+  },
+  {
+   "key": "Bbm",
+   "numeral": "V",
+   "name": "F",
+   "notes": [
+    41,
+    65,
+    69,
+    72
+   ]
+  },
+  {
+   "key": "Bbm",
+   "numeral": "VI",
+   "name": "Gb",
+   "notes": [
+    42,
+    66,
+    70,
+    73
+   ]
+  },
+  {
+   "key": "Bbm",
+   "numeral": "VII",
+   "name": "Ab",
+   "notes": [
+    44,
+    56,
+    60,
+    63
+   ]
+  },
+  {
+   "key": "Bbm",
+   "numeral": "i",
+   "name": "Bbm",
+   "notes": [
+    46,
+    58,
+    61,
+    65
+   ]
+  },
+  {
+   "key": "Bbm",
+   "numeral": "ii",
+   "name": "Cm",
+   "notes": [
+    48,
+    60,
+    63,
+    67
+   ]
+  },
+  {
+   "key": "Bbm",
+   "numeral": "iii",
+   "name": "Dbm",
+   "notes": [
+    49,
+    61,
+    64,
+    68
+   ]
+  },
+  {
+   "key": "Bbm",
+   "numeral": "iv",
+   "name": "Ebm",
+   "notes": [
+    51,
+    63,
+    66,
+    70
+   ]
+  },
+  {
+   "key": "Bbm",
+   "numeral": "v",
+   "name": "Fm",
+   "notes": [
+    41,
+    65,
+    68,
+    72
+   ]
+  },
+  {
+   "key": "Bbm",
+   "numeral": "vi",
+   "name": "Gbm",
+   "notes": [
+    42,
+    66,
+    69,
+    73
+   ]
+  },
+  {
+   "key": "Bbm",
+   "numeral": "vii",
+   "name": "Abm",
+   "notes": [
+    44,
+    56,
+    59,
+    63
+   ]
+  },
+  {
+   "key": "Bbm",
+   "numeral": "bII",
+   "name": "B",
+   "notes": [
+    47,
+    59,
+    63,
+    66
+   ]
+  },
+  {
+   "key": "Bbm",
+   "numeral": "bIII",
+   "name": "Db",
+   "notes": [
+    49,
+    61,
+    65,
+    68
+   ]
+  },
+  {
+   "key": "Bbm",
+   "numeral": "bV",
+   "name": "E",
+   "notes": [
+    40,
+    64,
+    68,
+    71
+   ]
+  },
+  {
+   "key": "Bbm",
+   "numeral": "bVI",
+   "name": "Gb",
+   "notes": [
+    42,
+    66,
+    70,
+    73
+   ]
+  },
+  {
+   "key": "Bbm",
+   "numeral": "bVII",
+   "name": "Ab",
+   "notes": [
+    44,
+    56,
+    60,
+    63
+   ]
+  },
+  {
+   "key": "Bbm",
+   "numeral": "biii",
+   "name": "Dbm",
+   "notes": [
+    49,
+    61,
+    64,
+    68
+   ]
+  },
+  {
+   "key": "Bbm",
+   "numeral": "bvi",
+   "name": "Gbm",
+   "notes": [
+    42,
+    66,
+    69,
+    73
+   ]
+  },
+  {
+   "key": "Bbm",
+   "numeral": "bvii",
+   "name": "Abm",
+   "notes": [
+    44,
+    56,
+    59,
+    63
+   ]
+  },
+  {
+   "key": "Bbm",
+   "numeral": "I7",
+   "name": "Bb7",
+   "notes": [
+    46,
+    58,
+    62,
+    65,
+    68
+   ]
+  },
+  {
+   "key": "Bbm",
+   "numeral": "II7",
+   "name": "C7",
+   "notes": [
+    48,
+    60,
+    64,
+    67,
+    70
+   ]
+  },
+  {
+   "key": "Bbm",
+   "numeral": "III7",
+   "name": "Db7",
+   "notes": [
+    49,
+    61,
+    65,
+    68,
+    71
+   ]
+  },
+  {
+   "key": "Bbm",
+   "numeral": "IV7",
+   "name": "Eb7",
+   "notes": [
+    51,
+    63,
+    67,
+    70,
+    73
+   ]
+  },
+  {
+   "key": "Bbm",
+   "numeral": "V7",
+   "name": "F7",
+   "notes": [
+    41,
+    65,
+    69,
+    72,
+    75
+   ]
+  },
+  {
+   "key": "Bbm",
+   "numeral": "VI7",
+   "name": "Gb7",
+   "notes": [
+    42,
+    66,
+    70,
+    73,
+    76
+   ]
+  },
+  {
+   "key": "Bbm",
+   "numeral": "VII7",
+   "name": "Ab7",
+   "notes": [
+    44,
+    56,
+    60,
+    63,
+    66
+   ]
+  },
+  {
+   "key": "Bbm",
+   "numeral": "i7",
+   "name": "Bbm7",
+   "notes": [
+    46,
+    58,
+    61,
+    65,
+    68
+   ]
+  },
+  {
+   "key": "Bbm",
+   "numeral": "ii7",
+   "name": "Cm7",
+   "notes": [
+    48,
+    60,
+    63,
+    67,
+    70
+   ]
+  },
+  {
+   "key": "Bbm",
+   "numeral": "iii7",
+   "name": "Dbm7",
+   "notes": [
+    49,
+    61,
+    64,
+    68,
+    71
+   ]
+  },
+  {
+   "key": "Bbm",
+   "numeral": "iv7",
+   "name": "Ebm7",
+   "notes": [
+    51,
+    63,
+    66,
+    70,
+    73
+   ]
+  },
+  {
+   "key": "Bbm",
+   "numeral": "v7",
+   "name": "Fm7",
+   "notes": [
+    41,
+    65,
+    68,
+    72,
+    75
+   ]
+  },
+  {
+   "key": "Bbm",
+   "numeral": "vi7",
+   "name": "Gbm7",
+   "notes": [
+    42,
+    66,
+    69,
+    73,
+    76
+   ]
+  },
+  {
+   "key": "Bbm",
+   "numeral": "vii7",
+   "name": "Abm7",
+   "notes": [
+    44,
+    56,
+    59,
+    63,
+    66
+   ]
+  },
+  {
+   "key": "Bbm",
+   "numeral": "iidim",
+   "name": "Cdim",
+   "notes": [
+    48,
+    60,
+    63,
+    66
+   ]
+  },
+  {
+   "key": "Bbm",
+   "numeral": "viidim",
+   "name": "Abdim",
+   "notes": [
+    44,
+    56,
+    59,
+    62
+   ]
+  },
+  {
+   "key": "Bbm",
+   "numeral": "Isus4",
+   "name": "Bbsus4",
+   "notes": [
+    46,
+    58,
+    63,
+    65
+   ]
+  },
+  {
+   "key": "Bbm",
+   "numeral": "IVsus4",
+   "name": "Ebsus4",
+   "notes": [
+    51,
+    63,
+    68,
+    70
+   ]
+  },
+  {
+   "key": "Bbm",
+   "numeral": "Vsus4",
+   "name": "Fsus4",
+   "notes": [
+    41,
+    65,
+    70,
+    72
+   ]
+  },
+  {
+   "key": "Fm",
+   "numeral": "I",
+   "name": "F",
+   "notes": [
+    41,
+    65,
+    69,
+    72
+   ]
+  },
+  {
+   "key": "Fm",
+   "numeral": "II",
+   "name": "G",
+   "notes": [
+    43,
+    55,
+    59,
+    62
+   ]
+  },
+  {
+   "key": "Fm",
+   "numeral": "III",
+   "name": "Ab",
+   "notes": [
+    44,
+    56,
+    60,
+    63
+   ]
+  },
+  {
+   "key": "Fm",
+   "numeral": "IV",
+   "name": "Bb",
+   "notes": [
+    46,
+    58,
+    62,
+    65
+   ]
+  },
+  {
+   "key": "Fm",
+   "numeral": "V",
+   "name": "C",
+   "notes": [
+    48,
+    60,
+    64,
+    67
+   ]
+  },
+  {
+   "key": "Fm",
+   "numeral": "VI",
+   "name": "Db",
+   "notes": [
+    49,
+    61,
+    65,
+    68
+   ]
+  },
+  {
+   "key": "Fm",
+   "numeral": "VII",
+   "name": "Eb",
+   "notes": [
+    51,
+    63,
+    67,
+    70
+   ]
+  },
+  {
+   "key": "Fm",
+   "numeral": "i",
+   "name": "Fm",
+   "notes": [
+    41,
+    65,
+    68,
+    72
+   ]
+  },
+  {
+   "key": "Fm",
+   "numeral": "ii",
+   "name": "Gm",
+   "notes": [
+    43,
+    55,
+    58,
+    62
+   ]
+  },
+  {
+   "key": "Fm",
+   "numeral": "iii",
+   "name": "Abm",
+   "notes": [
+    44,
+    56,
+    59,
+    63
+   ]
+  },
+  {
+   "key": "Fm",
+   "numeral": "iv",
+   "name": "Bbm",
+   "notes": [
+    46,
+    58,
+    61,
+    65
+   ]
+  },
+  {
+   "key": "Fm",
+   "numeral": "v",
+   "name": "Cm",
+   "notes": [
+    48,
+    60,
+    63,
+    67
+   ]
+  },
+  {
+   "key": "Fm",
+   "numeral": "vi",
+   "name": "Dbm",
+   "notes": [
+    49,
+    61,
+    64,
+    68
+   ]
+  },
+  {
+   "key": "Fm",
+   "numeral": "vii",
+   "name": "Ebm",
+   "notes": [
+    51,
+    63,
+    66,
+    70
+   ]
+  },
+  {
+   "key": "Fm",
+   "numeral": "bII",
+   "name": "Gb",
+   "notes": [
+    42,
+    66,
+    70,
+    73
+   ]
+  },
+  {
+   "key": "Fm",
+   "numeral": "bIII",
+   "name": "Ab",
+   "notes": [
+    44,
+    56,
+    60,
+    63
+   ]
+  },
+  {
+   "key": "Fm",
+   "numeral": "bV",
+   "name": "B",
+   "notes": [
+    47,
+    59,
+    63,
+    66
+   ]
+  },
+  {
+   "key": "Fm",
+   "numeral": "bVI",
+   "name": "Db",
+   "notes": [
+    49,
+    61,
+    65,
+    68
+   ]
+  },
+  {
+   "key": "Fm",
+   "numeral": "bVII",
+   "name": "Eb",
+   "notes": [
+    51,
+    63,
+    67,
+    70
+   ]
+  },
+  {
+   "key": "Fm",
+   "numeral": "biii",
+   "name": "Abm",
+   "notes": [
+    44,
+    56,
+    59,
+    63
+   ]
+  },
+  {
+   "key": "Fm",
+   "numeral": "bvi",
+   "name": "Dbm",
+   "notes": [
+    49,
+    61,
+    64,
+    68
+   ]
+  },
+  {
+   "key": "Fm",
+   "numeral": "bvii",
+   "name": "Ebm",
+   "notes": [
+    51,
+    63,
+    66,
+    70
+   ]
+  },
+  {
+   "key": "Fm",
+   "numeral": "I7",
+   "name": "F7",
+   "notes": [
+    41,
+    65,
+    69,
+    72,
+    75
+   ]
+  },
+  {
+   "key": "Fm",
+   "numeral": "II7",
+   "name": "G7",
+   "notes": [
+    43,
+    55,
+    59,
+    62,
+    65
+   ]
+  },
+  {
+   "key": "Fm",
+   "numeral": "III7",
+   "name": "Ab7",
+   "notes": [
+    44,
+    56,
+    60,
+    63,
+    66
+   ]
+  },
+  {
+   "key": "Fm",
+   "numeral": "IV7",
+   "name": "Bb7",
+   "notes": [
+    46,
+    58,
+    62,
+    65,
+    68
+   ]
+  },
+  {
+   "key": "Fm",
+   "numeral": "V7",
+   "name": "C7",
+   "notes": [
+    48,
+    60,
+    64,
+    67,
+    70
+   ]
+  },
+  {
+   "key": "Fm",
+   "numeral": "VI7",
+   "name": "Db7",
+   "notes": [
+    49,
+    61,
+    65,
+    68,
+    71
+   ]
+  },
+  {
+   "key": "Fm",
+   "numeral": "VII7",
+   "name": "Eb7",
+   "notes": [
+    51,
+    63,
+    67,
+    70,
+    73
+   ]
+  },
+  {
+   "key": "Fm",
+   "numeral": "i7",
+   "name": "Fm7",
+   "notes": [
+    41,
+    65,
+    68,
+    72,
+    75
+   ]
+  },
+  {
+   "key": "Fm",
+   "numeral": "ii7",
+   "name": "Gm7",
+   "notes": [
+    43,
+    55,
+    58,
+    62,
+    65
+   ]
+  },
+  {
+   "key": "Fm",
+   "numeral": "iii7",
+   "name": "Abm7",
+   "notes": [
+    44,
+    56,
+    59,
+    63,
+    66
+   ]
+  },
+  {
+   "key": "Fm",
+   "numeral": "iv7",
+   "name": "Bbm7",
+   "notes": [
+    46,
+    58,
+    61,
+    65,
+    68
+   ]
+  },
+  {
+   "key": "Fm",
+   "numeral": "v7",
+   "name": "Cm7",
+   "notes": [
+    48,
+    60,
+    63,
+    67,
+    70
+   ]
+  },
+  {
+   "key": "Fm",
+   "numeral": "vi7",
+   "name": "Dbm7",
+   "notes": [
+    49,
+    61,
+    64,
+    68,
+    71
+   ]
+  },
+  {
+   "key": "Fm",
+   "numeral": "vii7",
+   "name": "Ebm7",
+   "notes": [
+    51,
+    63,
+    66,
+    70,
+    73
+   ]
+  },
+  {
+   "key": "Fm",
+   "numeral": "iidim",
+   "name": "Gdim",
+   "notes": [
+    43,
+    55,
+    58,
+    61
+   ]
+  },
+  {
+   "key": "Fm",
+   "numeral": "viidim",
+   "name": "Ebdim",
+   "notes": [
+    51,
+    63,
+    66,
+    69
+   ]
+  },
+  {
+   "key": "Fm",
+   "numeral": "Isus4",
+   "name": "Fsus4",
+   "notes": [
+    41,
+    65,
+    70,
+    72
+   ]
+  },
+  {
+   "key": "Fm",
+   "numeral": "IVsus4",
+   "name": "Bbsus4",
+   "notes": [
+    46,
+    58,
+    63,
+    65
+   ]
+  },
+  {
+   "key": "Fm",
+   "numeral": "Vsus4",
+   "name": "Csus4",
+   "notes": [
+    48,
+    60,
+    65,
+    67
+   ]
+  },
+  {
+   "key": "Cm",
+   "numeral": "I",
+   "name": "C",
+   "notes": [
+    48,
+    60,
+    64,
+    67
+   ]
+  },
+  {
+   "key": "Cm",
+   "numeral": "II",
+   "name": "D",
+   "notes": [
+    50,
+    62,
+    66,
+    69
+   ]
+  },
+  {
+   "key": "Cm",
+   "numeral": "III",
+   "name": "Eb",
+   "notes": [
+    51,
+    63,
+    67,
+    70
+   ]
+  },
+  {
+   "key": "Cm",
+   "numeral": "IV",
+   "name": "F",
+   "notes": [
+    41,
+    65,
+    69,
+    72
+   ]
+  },
+  {
+   "key": "Cm",
+   "numeral": "V",
+   "name": "G",
+   "notes": [
+    43,
+    55,
+    59,
+    62
+   ]
+  },
+  {
+   "key": "Cm",
+   "numeral": "VI",
+   "name": "Ab",
+   "notes": [
+    44,
+    56,
+    60,
+    63
+   ]
+  },
+  {
+   "key": "Cm",
+   "numeral": "VII",
+   "name": "Bb",
+   "notes": [
+    46,
+    58,
+    62,
+    65
+   ]
+  },
+  {
+   "key": "Cm",
+   "numeral": "i",
+   "name": "Cm",
+   "notes": [
+    48,
+    60,
+    63,
+    67
+   ]
+  },
+  {
+   "key": "Cm",
+   "numeral": "ii",
+   "name": "Dm",
+   "notes": [
+    50,
+    62,
+    65,
+    69
+   ]
+  },
+  {
+   "key": "Cm",
+   "numeral": "iii",
+   "name": "Ebm",
+   "notes": [
+    51,
+    63,
+    66,
+    70
+   ]
+  },
+  {
+   "key": "Cm",
+   "numeral": "iv",
+   "name": "Fm",
+   "notes": [
+    41,
+    65,
+    68,
+    72
+   ]
+  },
+  {
+   "key": "Cm",
+   "numeral": "v",
+   "name": "Gm",
+   "notes": [
+    43,
+    55,
+    58,
+    62
+   ]
+  },
+  {
+   "key": "Cm",
+   "numeral": "vi",
+   "name": "Abm",
+   "notes": [
+    44,
+    56,
+    59,
+    63
+   ]
+  },
+  {
+   "key": "Cm",
+   "numeral": "vii",
+   "name": "Bbm",
+   "notes": [
+    46,
+    58,
+    61,
+    65
+   ]
+  },
+  {
+   "key": "Cm",
+   "numeral": "bII",
+   "name": "Db",
+   "notes": [
+    49,
+    61,
+    65,
+    68
+   ]
+  },
+  {
+   "key": "Cm",
+   "numeral": "bIII",
+   "name": "Eb",
+   "notes": [
+    51,
+    63,
+    67,
+    70
+   ]
+  },
+  {
+   "key": "Cm",
+   "numeral": "bV",
+   "name": "Gb",
+   "notes": [
+    42,
+    66,
+    70,
+    73
+   ]
+  },
+  {
+   "key": "Cm",
+   "numeral": "bVI",
+   "name": "Ab",
+   "notes": [
+    44,
+    56,
+    60,
+    63
+   ]
+  },
+  {
+   "key": "Cm",
+   "numeral": "bVII",
+   "name": "Bb",
+   "notes": [
+    46,
+    58,
+    62,
+    65
+   ]
+  },
+  {
+   "key": "Cm",
+   "numeral": "biii",
+   "name": "Ebm",
+   "notes": [
+    51,
+    63,
+    66,
+    70
+   ]
+  },
+  {
+   "key": "Cm",
+   "numeral": "bvi",
+   "name": "Abm",
+   "notes": [
+    44,
+    56,
+    59,
+    63
+   ]
+  },
+  {
+   "key": "Cm",
+   "numeral": "bvii",
+   "name": "Bbm",
+   "notes": [
+    46,
+    58,
+    61,
+    65
+   ]
+  },
+  {
+   "key": "Cm",
+   "numeral": "I7",
+   "name": "C7",
+   "notes": [
+    48,
+    60,
+    64,
+    67,
+    70
+   ]
+  },
+  {
+   "key": "Cm",
+   "numeral": "II7",
+   "name": "D7",
+   "notes": [
+    50,
+    62,
+    66,
+    69,
+    72
+   ]
+  },
+  {
+   "key": "Cm",
+   "numeral": "III7",
+   "name": "Eb7",
+   "notes": [
+    51,
+    63,
+    67,
+    70,
+    73
+   ]
+  },
+  {
+   "key": "Cm",
+   "numeral": "IV7",
+   "name": "F7",
+   "notes": [
+    41,
+    65,
+    69,
+    72,
+    75
+   ]
+  },
+  {
+   "key": "Cm",
+   "numeral": "V7",
+   "name": "G7",
+   "notes": [
+    43,
+    55,
+    59,
+    62,
+    65
+   ]
+  },
+  {
+   "key": "Cm",
+   "numeral": "VI7",
+   "name": "Ab7",
+   "notes": [
+    44,
+    56,
+    60,
+    63,
+    66
+   ]
+  },
+  {
+   "key": "Cm",
+   "numeral": "VII7",
+   "name": "Bb7",
+   "notes": [
+    46,
+    58,
+    62,
+    65,
+    68
+   ]
+  },
+  {
+   "key": "Cm",
+   "numeral": "i7",
+   "name": "Cm7",
+   "notes": [
+    48,
+    60,
+    63,
+    67,
+    70
+   ]
+  },
+  {
+   "key": "Cm",
+   "numeral": "ii7",
+   "name": "Dm7",
+   "notes": [
+    50,
+    62,
+    65,
+    69,
+    72
+   ]
+  },
+  {
+   "key": "Cm",
+   "numeral": "iii7",
+   "name": "Ebm7",
+   "notes": [
+    51,
+    63,
+    66,
+    70,
+    73
+   ]
+  },
+  {
+   "key": "Cm",
+   "numeral": "iv7",
+   "name": "Fm7",
+   "notes": [
+    41,
+    65,
+    68,
+    72,
+    75
+   ]
+  },
+  {
+   "key": "Cm",
+   "numeral": "v7",
+   "name": "Gm7",
+   "notes": [
+    43,
+    55,
+    58,
+    62,
+    65
+   ]
+  },
+  {
+   "key": "Cm",
+   "numeral": "vi7",
+   "name": "Abm7",
+   "notes": [
+    44,
+    56,
+    59,
+    63,
+    66
+   ]
+  },
+  {
+   "key": "Cm",
+   "numeral": "vii7",
+   "name": "Bbm7",
+   "notes": [
+    46,
+    58,
+    61,
+    65,
+    68
+   ]
+  },
+  {
+   "key": "Cm",
+   "numeral": "iidim",
+   "name": "Ddim",
+   "notes": [
+    50,
+    62,
+    65,
+    68
+   ]
+  },
+  {
+   "key": "Cm",
+   "numeral": "viidim",
+   "name": "Bbdim",
+   "notes": [
+    46,
+    58,
+    61,
+    64
+   ]
+  },
+  {
+   "key": "Cm",
+   "numeral": "Isus4",
+   "name": "Csus4",
+   "notes": [
+    48,
+    60,
+    65,
+    67
+   ]
+  },
+  {
+   "key": "Cm",
+   "numeral": "IVsus4",
+   "name": "Fsus4",
+   "notes": [
+    41,
+    65,
+    70,
+    72
+   ]
+  },
+  {
+   "key": "Cm",
+   "numeral": "Vsus4",
+   "name": "Gsus4",
+   "notes": [
+    43,
+    55,
+    60,
+    62
+   ]
+  },
+  {
+   "key": "Gm",
+   "numeral": "I",
+   "name": "G",
+   "notes": [
+    43,
+    55,
+    59,
+    62
+   ]
+  },
+  {
+   "key": "Gm",
+   "numeral": "II",
+   "name": "A",
+   "notes": [
+    45,
+    57,
+    61,
+    64
+   ]
+  },
+  {
+   "key": "Gm",
+   "numeral": "III",
+   "name": "Bb",
+   "notes": [
+    46,
+    58,
+    62,
+    65
+   ]
+  },
+  {
+   "key": "Gm",
+   "numeral": "IV",
+   "name": "C",
+   "notes": [
+    48,
+    60,
+    64,
+    67
+   ]
+  },
+  {
+   "key": "Gm",
+   "numeral": "V",
+   "name": "D",
+   "notes": [
+    50,
+    62,
+    66,
+    69
+   ]
+  },
+  {
+   "key": "Gm",
+   "numeral": "VI",
+   "name": "Eb",
+   "notes": [
+    51,
+    63,
+    67,
+    70
+   ]
+  },
+  {
+   "key": "Gm",
+   "numeral": "VII",
+   "name": "F",
+   "notes": [
+    41,
+    65,
+    69,
+    72
+   ]
+  },
+  {
+   "key": "Gm",
+   "numeral": "i",
+   "name": "Gm",
+   "notes": [
+    43,
+    55,
+    58,
+    62
+   ]
+  },
+  {
+   "key": "Gm",
+   "numeral": "ii",
+   "name": "Am",
+   "notes": [
+    45,
+    57,
+    60,
+    64
+   ]
+  },
+  {
+   "key": "Gm",
+   "numeral": "iii",
+   "name": "Bbm",
+   "notes": [
+    46,
+    58,
+    61,
+    65
+   ]
+  },
+  {
+   "key": "Gm",
+   "numeral": "iv",
+   "name": "Cm",
+   "notes": [
+    48,
+    60,
+    63,
+    67
+   ]
+  },
+  {
+   "key": "Gm",
+   "numeral": "v",
+   "name": "Dm",
+   "notes": [
+    50,
+    62,
+    65,
+    69
+   ]
+  },
+  {
+   "key": "Gm",
+   "numeral": "vi",
+   "name": "Ebm",
+   "notes": [
+    51,
+    63,
+    66,
+    70
+   ]
+  },
+  {
+   "key": "Gm",
+   "numeral": "vii",
+   "name": "Fm",
+   "notes": [
+    41,
+    65,
+    68,
+    72
+   ]
+  },
+  {
+   "key": "Gm",
+   "numeral": "bII",
+   "name": "Ab",
+   "notes": [
+    44,
+    56,
+    60,
+    63
+   ]
+  },
+  {
+   "key": "Gm",
+   "numeral": "bIII",
+   "name": "Bb",
+   "notes": [
+    46,
+    58,
+    62,
+    65
+   ]
+  },
+  {
+   "key": "Gm",
+   "numeral": "bV",
+   "name": "Db",
+   "notes": [
+    49,
+    61,
+    65,
+    68
+   ]
+  },
+  {
+   "key": "Gm",
+   "numeral": "bVI",
+   "name": "Eb",
+   "notes": [
+    51,
+    63,
+    67,
+    70
+   ]
+  },
+  {
+   "key": "Gm",
+   "numeral": "bVII",
+   "name": "F",
+   "notes": [
+    41,
+    65,
+    69,
+    72
+   ]
+  },
+  {
+   "key": "Gm",
+   "numeral": "biii",
+   "name": "Bbm",
+   "notes": [
+    46,
+    58,
+    61,
+    65
+   ]
+  },
+  {
+   "key": "Gm",
+   "numeral": "bvi",
+   "name": "Ebm",
+   "notes": [
+    51,
+    63,
+    66,
+    70
+   ]
+  },
+  {
+   "key": "Gm",
+   "numeral": "bvii",
+   "name": "Fm",
+   "notes": [
+    41,
+    65,
+    68,
+    72
+   ]
+  },
+  {
+   "key": "Gm",
+   "numeral": "I7",
+   "name": "G7",
+   "notes": [
+    43,
+    55,
+    59,
+    62,
+    65
+   ]
+  },
+  {
+   "key": "Gm",
+   "numeral": "II7",
+   "name": "A7",
+   "notes": [
+    45,
+    57,
+    61,
+    64,
+    67
+   ]
+  },
+  {
+   "key": "Gm",
+   "numeral": "III7",
+   "name": "Bb7",
+   "notes": [
+    46,
+    58,
+    62,
+    65,
+    68
+   ]
+  },
+  {
+   "key": "Gm",
+   "numeral": "IV7",
+   "name": "C7",
+   "notes": [
+    48,
+    60,
+    64,
+    67,
+    70
+   ]
+  },
+  {
+   "key": "Gm",
+   "numeral": "V7",
+   "name": "D7",
+   "notes": [
+    50,
+    62,
+    66,
+    69,
+    72
+   ]
+  },
+  {
+   "key": "Gm",
+   "numeral": "VI7",
+   "name": "Eb7",
+   "notes": [
+    51,
+    63,
+    67,
+    70,
+    73
+   ]
+  },
+  {
+   "key": "Gm",
+   "numeral": "VII7",
+   "name": "F7",
+   "notes": [
+    41,
+    65,
+    69,
+    72,
+    75
+   ]
+  },
+  {
+   "key": "Gm",
+   "numeral": "i7",
+   "name": "Gm7",
+   "notes": [
+    43,
+    55,
+    58,
+    62,
+    65
+   ]
+  },
+  {
+   "key": "Gm",
+   "numeral": "ii7",
+   "name": "Am7",
+   "notes": [
+    45,
+    57,
+    60,
+    64,
+    67
+   ]
+  },
+  {
+   "key": "Gm",
+   "numeral": "iii7",
+   "name": "Bbm7",
+   "notes": [
+    46,
+    58,
+    61,
+    65,
+    68
+   ]
+  },
+  {
+   "key": "Gm",
+   "numeral": "iv7",
+   "name": "Cm7",
+   "notes": [
+    48,
+    60,
+    63,
+    67,
+    70
+   ]
+  },
+  {
+   "key": "Gm",
+   "numeral": "v7",
+   "name": "Dm7",
+   "notes": [
+    50,
+    62,
+    65,
+    69,
+    72
+   ]
+  },
+  {
+   "key": "Gm",
+   "numeral": "vi7",
+   "name": "Ebm7",
+   "notes": [
+    51,
+    63,
+    66,
+    70,
+    73
+   ]
+  },
+  {
+   "key": "Gm",
+   "numeral": "vii7",
+   "name": "Fm7",
+   "notes": [
+    41,
+    65,
+    68,
+    72,
+    75
+   ]
+  },
+  {
+   "key": "Gm",
+   "numeral": "iidim",
+   "name": "Adim",
+   "notes": [
+    45,
+    57,
+    60,
+    63
+   ]
+  },
+  {
+   "key": "Gm",
+   "numeral": "viidim",
+   "name": "Fdim",
+   "notes": [
+    41,
+    65,
+    68,
+    71
+   ]
+  },
+  {
+   "key": "Gm",
+   "numeral": "Isus4",
+   "name": "Gsus4",
+   "notes": [
+    43,
+    55,
+    60,
+    62
+   ]
+  },
+  {
+   "key": "Gm",
+   "numeral": "IVsus4",
+   "name": "Csus4",
+   "notes": [
+    48,
+    60,
+    65,
+    67
+   ]
+  },
+  {
+   "key": "Gm",
+   "numeral": "Vsus4",
+   "name": "Dsus4",
+   "notes": [
+    50,
+    62,
+    67,
+    69
+   ]
+  },
+  {
+   "key": "Dm",
+   "numeral": "I",
+   "name": "D",
+   "notes": [
+    50,
+    62,
+    66,
+    69
+   ]
+  },
+  {
+   "key": "Dm",
+   "numeral": "II",
+   "name": "E",
+   "notes": [
+    40,
+    64,
+    68,
+    71
+   ]
+  },
+  {
+   "key": "Dm",
+   "numeral": "III",
+   "name": "F",
+   "notes": [
+    41,
+    65,
+    69,
+    72
+   ]
+  },
+  {
+   "key": "Dm",
+   "numeral": "IV",
+   "name": "G",
+   "notes": [
+    43,
+    55,
+    59,
+    62
+   ]
+  },
+  {
+   "key": "Dm",
+   "numeral": "V",
+   "name": "A",
+   "notes": [
+    45,
+    57,
+    61,
+    64
+   ]
+  },
+  {
+   "key": "Dm",
+   "numeral": "VI",
+   "name": "Bb",
+   "notes": [
+    46,
+    58,
+    62,
+    65
+   ]
+  },
+  {
+   "key": "Dm",
+   "numeral": "VII",
+   "name": "C",
+   "notes": [
+    48,
+    60,
+    64,
+    67
+   ]
+  },
+  {
+   "key": "Dm",
+   "numeral": "i",
+   "name": "Dm",
+   "notes": [
+    50,
+    62,
+    65,
+    69
+   ]
+  },
+  {
+   "key": "Dm",
+   "numeral": "ii",
+   "name": "Em",
+   "notes": [
+    40,
+    64,
+    67,
+    71
+   ]
+  },
+  {
+   "key": "Dm",
+   "numeral": "iii",
+   "name": "Fm",
+   "notes": [
+    41,
+    65,
+    68,
+    72
+   ]
+  },
+  {
+   "key": "Dm",
+   "numeral": "iv",
+   "name": "Gm",
+   "notes": [
+    43,
+    55,
+    58,
+    62
+   ]
+  },
+  {
+   "key": "Dm",
+   "numeral": "v",
+   "name": "Am",
+   "notes": [
+    45,
+    57,
+    60,
+    64
+   ]
+  },
+  {
+   "key": "Dm",
+   "numeral": "vi",
+   "name": "Bbm",
+   "notes": [
+    46,
+    58,
+    61,
+    65
+   ]
+  },
+  {
+   "key": "Dm",
+   "numeral": "vii",
+   "name": "Cm",
+   "notes": [
+    48,
+    60,
+    63,
+    67
+   ]
+  },
+  {
+   "key": "Dm",
+   "numeral": "bII",
+   "name": "Eb",
+   "notes": [
+    51,
+    63,
+    67,
+    70
+   ]
+  },
+  {
+   "key": "Dm",
+   "numeral": "bIII",
+   "name": "F",
+   "notes": [
+    41,
+    65,
+    69,
+    72
+   ]
+  },
+  {
+   "key": "Dm",
+   "numeral": "bV",
+   "name": "Ab",
+   "notes": [
+    44,
+    56,
+    60,
+    63
+   ]
+  },
+  {
+   "key": "Dm",
+   "numeral": "bVI",
+   "name": "Bb",
+   "notes": [
+    46,
+    58,
+    62,
+    65
+   ]
+  },
+  {
+   "key": "Dm",
+   "numeral": "bVII",
+   "name": "C",
+   "notes": [
+    48,
+    60,
+    64,
+    67
+   ]
+  },
+  {
+   "key": "Dm",
+   "numeral": "biii",
+   "name": "Fm",
+   "notes": [
+    41,
+    65,
+    68,
+    72
+   ]
+  },
+  {
+   "key": "Dm",
+   "numeral": "bvi",
+   "name": "Bbm",
+   "notes": [
+    46,
+    58,
+    61,
+    65
+   ]
+  },
+  {
+   "key": "Dm",
+   "numeral": "bvii",
+   "name": "Cm",
+   "notes": [
+    48,
+    60,
+    63,
+    67
+   ]
+  },
+  {
+   "key": "Dm",
+   "numeral": "I7",
+   "name": "D7",
+   "notes": [
+    50,
+    62,
+    66,
+    69,
+    72
+   ]
+  },
+  {
+   "key": "Dm",
+   "numeral": "II7",
+   "name": "E7",
+   "notes": [
+    40,
+    64,
+    68,
+    71,
+    74
+   ]
+  },
+  {
+   "key": "Dm",
+   "numeral": "III7",
+   "name": "F7",
+   "notes": [
+    41,
+    65,
+    69,
+    72,
+    75
+   ]
+  },
+  {
+   "key": "Dm",
+   "numeral": "IV7",
+   "name": "G7",
+   "notes": [
+    43,
+    55,
+    59,
+    62,
+    65
+   ]
+  },
+  {
+   "key": "Dm",
+   "numeral": "V7",
+   "name": "A7",
+   "notes": [
+    45,
+    57,
+    61,
+    64,
+    67
+   ]
+  },
+  {
+   "key": "Dm",
+   "numeral": "VI7",
+   "name": "Bb7",
+   "notes": [
+    46,
+    58,
+    62,
+    65,
+    68
+   ]
+  },
+  {
+   "key": "Dm",
+   "numeral": "VII7",
+   "name": "C7",
+   "notes": [
+    48,
+    60,
+    64,
+    67,
+    70
+   ]
+  },
+  {
+   "key": "Dm",
+   "numeral": "i7",
+   "name": "Dm7",
+   "notes": [
+    50,
+    62,
+    65,
+    69,
+    72
+   ]
+  },
+  {
+   "key": "Dm",
+   "numeral": "ii7",
+   "name": "Em7",
+   "notes": [
+    40,
+    64,
+    67,
+    71,
+    74
+   ]
+  },
+  {
+   "key": "Dm",
+   "numeral": "iii7",
+   "name": "Fm7",
+   "notes": [
+    41,
+    65,
+    68,
+    72,
+    75
+   ]
+  },
+  {
+   "key": "Dm",
+   "numeral": "iv7",
+   "name": "Gm7",
+   "notes": [
+    43,
+    55,
+    58,
+    62,
+    65
+   ]
+  },
+  {
+   "key": "Dm",
+   "numeral": "v7",
+   "name": "Am7",
+   "notes": [
+    45,
+    57,
+    60,
+    64,
+    67
+   ]
+  },
+  {
+   "key": "Dm",
+   "numeral": "vi7",
+   "name": "Bbm7",
+   "notes": [
+    46,
+    58,
+    61,
+    65,
+    68
+   ]
+  },
+  {
+   "key": "Dm",
+   "numeral": "vii7",
+   "name": "Cm7",
+   "notes": [
+    48,
+    60,
+    63,
+    67,
+    70
+   ]
+  },
+  {
+   "key": "Dm",
+   "numeral": "iidim",
+   "name": "Edim",
+   "notes": [
+    40,
+    64,
+    67,
+    70
+   ]
+  },
+  {
+   "key": "Dm",
+   "numeral": "viidim",
+   "name": "Cdim",
+   "notes": [
+    48,
+    60,
+    63,
+    66
+   ]
+  },
+  {
+   "key": "Dm",
+   "numeral": "Isus4",
+   "name": "Dsus4",
+   "notes": [
+    50,
+    62,
+    67,
+    69
+   ]
+  },
+  {
+   "key": "Dm",
+   "numeral": "IVsus4",
+   "name": "Gsus4",
+   "notes": [
+    43,
+    55,
+    60,
+    62
+   ]
+  },
+  {
+   "key": "Dm",
+   "numeral": "Vsus4",
+   "name": "Asus4",
+   "notes": [
+    45,
+    57,
+    62,
+    64
+   ]
+  }
+ ],
+ "chords": [
+  {
+   "name": "C",
+   "notes": [
+    48,
+    60,
+    64,
+    67
+   ]
+  },
+  {
+   "name": "G",
+   "notes": [
+    43,
+    55,
+    59,
+    62
+   ]
+  },
+  {
+   "name": "Am",
+   "notes": [
+    45,
+    57,
+    60,
+    64
+   ]
+  },
+  {
+   "name": "F",
+   "notes": [
+    41,
+    65,
+    69,
+    72
+   ]
+  },
+  {
+   "name": "Bb",
+   "notes": [
+    46,
+    58,
+    62,
+    65
+   ]
+  },
+  {
+   "name": "F#m",
+   "notes": [
+    42,
+    66,
+    69,
+    73
+   ]
+  },
+  {
+   "name": "G7",
+   "notes": [
+    43,
+    55,
+    59,
+    62,
+    65
+   ]
+  },
+  {
+   "name": "Cmaj7",
+   "notes": [
+    48,
+    60,
+    64,
+    67,
+    71
+   ]
+  },
+  {
+   "name": "Dm7",
+   "notes": [
+    50,
+    62,
+    65,
+    69,
+    72
+   ]
+  },
+  {
+   "name": "Bdim",
+   "notes": [
+    47,
+    59,
+    62,
+    65
+   ]
+  },
+  {
+   "name": "Esus4",
+   "notes": [
+    40,
+    64,
+    69,
+    71
+   ]
+  },
+  {
+   "name": "Asus2",
+   "notes": [
+    45,
+    57,
+    59,
+    64
+   ]
+  },
+  {
+   "name": "C6",
+   "notes": [
+    48,
+    60,
+    64,
+    67,
+    69
+   ]
+  },
+  {
+   "name": "Am6",
+   "notes": [
+    45,
+    57,
+    60,
+    64,
+    66
+   ]
+  },
+  {
+   "name": "Cadd9",
+   "notes": [
+    48,
+    60,
+    64,
+    67,
+    74
+   ]
+  },
+  {
+   "name": "G9",
+   "notes": [
+    43,
+    55,
+    59,
+    62,
+    65,
+    69
+   ]
+  },
+  {
+   "name": "Em9",
+   "notes": [
+    40,
+    64,
+    67,
+    71,
+    74,
+    78
+   ]
+  },
+  {
+   "name": "E5",
+   "notes": [
+    40,
+    64,
+    71
+   ]
+  },
+  {
+   "name": "Caug",
+   "notes": [
+    48,
+    60,
+    64,
+    68
+   ]
+  },
+  {
+   "name": "C+",
+   "notes": [
+    48,
+    60,
+    64,
+    68
+   ]
+  },
+  {
+   "name": "Bm7b5",
+   "notes": [
+    47,
+    59,
+    62,
+    65,
+    69
+   ]
+  },
+  {
+   "name": "Bdim7",
+   "notes": [
+    47,
+    59,
+    62,
+    65,
+    68
+   ]
+  },
+  {
+   "name": "C/E",
+   "notes": [
+    40,
+    60,
+    64,
+    67
+   ]
+  },
+  {
+   "name": "D/F#",
+   "notes": [
+    42,
+    62,
+    66,
+    69
+   ]
+  },
+  {
+   "name": "Ebmaj7",
+   "notes": [
+    51,
+    63,
+    67,
+    70,
+    74
+   ]
+  },
+  {
+   "name": "H",
+   "notes": null
+  },
+  {
+   "name": "Cx",
+   "notes": null
+  },
+  {
+   "name": "c",
+   "notes": null
+  }
+ ]
+}

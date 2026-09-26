@@ -7,6 +7,6 @@ let package = Package(
     products: [.library(name: "YuiSound", targets: ["YuiSound"])],
     targets: [
         .target(name: "YuiSound"),
-        .testTarget(name: "YuiSoundTests", dependencies: ["YuiSound"]),
+        .testTarget(name: "YuiSoundTests", dependencies: ["YuiSound"], resources: [.copy("Resources/theory-golden.json")]),
     ]
 )

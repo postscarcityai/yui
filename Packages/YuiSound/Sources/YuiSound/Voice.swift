@@ -126,6 +126,8 @@ struct Voice {
     var f0 = SVF(), f1 = SVF()
     var rng: UInt32 = 0x9E37_79B9
     var aux = 0
+    /// The note's name for noteOff (0: none).
+    var tag: UInt32 = 0
 
     @inline(__always) mutating func noise() -> Float {
         rng ^= rng << 13
@@ -243,6 +245,7 @@ struct Voice {
             // Held voices let go after `hold`, and never ring past 8 s.
             holdSeconds = hold < 0 ? 8 : min(hold, 8)
         }
+        if r.isPitched { gateMul = expf(-1 / (r.releaseSeconds / 3 * s)) }
         if r.isPitched, holdSeconds >= 0 {
             let rel = r.releaseSeconds
             release = Int(holdSeconds * s)
@@ -250,6 +253,14 @@ struct Voice {
             let end = release + Int((rel * 2 + 0.05) * s)
             len = r.isHeld ? end : min(len, end)
         }
+    }
+
+    /// The finger lifted: a pitched voice fades over its release from now on,
+    /// a drum rings out as it would anyway.
+    mutating func letGo() {
+        guard recipe.isPitched, n < release else { return }
+        release = n
+        len = min(len, n + Int((recipe.releaseSeconds * 2 + 0.05) * sr))
     }
 
     /// One sample.

@@ -228,6 +228,40 @@ public final class YuiSound: @unchecked Sendable {
         kernel.noteOn(recipe, midi: midi, velocity: max(0, min(velocity, 1)), hold: recipe.isHeld ? 0.5 : -1)
     }
 
+    private let tags = Atomic<UInt32>(0)
+
+    /// Starts a note that sounds until noteOff (touch down on a key). Held
+    /// voices (pad, bass, lead) sustain; the others decay on their own and
+    /// fade faster once let go. Returns the tag noteOff takes.
+    @discardableResult
+    public func noteOn(_ midi: Int, sound: String = "keys", velocity: Float = 1) -> UInt32 {
+        var tag = tags.add(1, ordering: .relaxed).newValue
+        if tag == 0 { tag = tags.add(1, ordering: .relaxed).newValue }
+        kernel.noteOn(Words.sound(sound, pitched: true), midi: midi, velocity: max(0, min(velocity, 1)), tag: tag)
+        return tag
+    }
+
+    /// The finger lifted (or slid to another key).
+    public func noteOff(_ tag: UInt32) {
+        guard tag != 0 else { return }
+        kernel.noteOff(tag: tag)
+    }
+
+    /// How a chord's notes go out: low to high, high to low, or all at once.
+    public enum Strum: String, CaseIterable, Sendable { case down, up, off }
+
+    /// Strums MIDI notes, low first (down), high first (up) or together (off),
+    /// `spacing` seconds apart on the engine's clock. Held voices ring for `hold` s.
+    public func strum(_ notes: [Int], sound: String = "pluck", direction: Strum = .down, spacing: Double = 0.025,
+                      hold: Double = 1.4, velocity: Float = 0.75) {
+        let recipe = Words.sound(sound, pitched: true)
+        let order = direction == .up ? Array(notes.reversed()) : notes
+        for (k, m) in order.enumerated() {
+            let delay = direction == .off ? 0 : Float(Double(k) * spacing)
+            kernel.noteOn(recipe, midi: m, velocity: max(0, min(velocity, 1)), hold: recipe.isHeld ? Float(hold) : -1, delay: delay)
+        }
+    }
+
     /// The looper. rows: words (kit words or note names); pattern: one [Bool]
     /// per row (missing rows empty). Applies on the next step while playing.
     public func setLoop(rows: [String], sound: String, steps: Int, bpm: Double, swing: Double, pattern: [[Bool]]) {
