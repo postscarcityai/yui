@@ -52,13 +52,23 @@ export const CORE = ["say", "custom", "save", "show", "forget", "clear", "end", 
 // so does `end`. Comments, blank lines and error lines do not. A narrate
 // can hold another group (a deck), a deck or plan a sketch (a page's picture).
 export const GROUPS = {
-  deck: ["page", "ask", "choose", "pick", "sketch"],
+  deck: ["page", "ask", "choose", "pick", "sketch", "shapes", "math", "chart", "stat", "calc"],
   plan: ["page", "ask", "choose", "pick", "slide", "form", "mic", "camera", "sketch"],
   narrate: ["page", "compare", "image", "video", "card", "stat", "chart", "math", "storyboard", "gallery", "deck"],
   timeline: ["done", "now", "next"],
   sketch: ["row", "after"],
   shapes: ["shape"],
 };
+
+// A timeline's rows. A patch's `kind=` moves one to another of these.
+export const ROWS = GROUPS.timeline;
+
+// Where the now marker sits in a timeline's rows (in line order): before the
+// first row that is not done, or after the last row when all are done.
+export function markAt(rows) {
+  const at = rows.findIndex((r) => r.preset !== "done");
+  return at < 0 ? rows.length : at;
+}
 
 const IDENT = /^[a-z_][\w-]*$/i;
 
@@ -1105,6 +1115,12 @@ export class Parser {
       if (!preset) return { op: "error", screen, message: `patch: nothing called "${target}"`, line };
       if (preset === "custom") return { op: "error", screen, message: "patch: custom blocks are replaced, not patched", line };
       const props = RAW.has(preset) ? rawArgs(preset, body.slice(head.length)) : parseArgs(preset, tokens);
+      // A timeline row moves with `kind=` (YUI-111): done, now or next. The
+      // row keeps its id and place; from here on the id is that preset.
+      if (ROWS.includes(preset) && props.kind !== undefined) {
+        if (!ROWS.includes(props.kind)) return { op: "error", screen, message: "patch: kind= is done, now or next", line };
+        if (!ROWS.includes(target)) this.ids.set(target, props.kind);
+      }
       return { op: "patch", screen, target, props, line };
     }
 
@@ -1408,6 +1424,31 @@ export function readTyped(body) {
   return { screen: m[1], words: body.slice(m[0].length) };
 }
 
+// Talk about this (spec/TALK-ABOUT.md): a message about one Controls item.
+// A `[yui] attach section= id= rev=` line names the item, then the words. The
+// line is a reference; the host puts the item's text in the agent's turn.
+// An item that is not one (a missing key, a space in an id) sends the words as they are.
+const ATTACH_SECTION = /^[a-z]{1,20}$/;
+const ATTACH_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/;
+const ATTACH_REV = /^[A-Za-z0-9]{1,64}$/;
+
+export function attachBody(item, words) {
+  const { section, id, rev } = item || {};
+  if (!ATTACH_SECTION.test(section || "") || !ATTACH_ID.test(id || "") || id.includes("..") || !ATTACH_REV.test(rev || "")) {
+    return words;
+  }
+  return `[yui] attach section=${section} id=${id} rev=${rev}\n${words}`;
+}
+
+// The other way: `{ section, id, rev, words }` for a message about an item, else null.
+export function readAttach(body) {
+  const m = /^\[yui\] attach section=(\S+) id=(\S+) rev=(\S+)\r?\n/.exec(body);
+  if (!m) return null;
+  const [, section, id, rev] = m;
+  if (attachBody({ section, id, rev }, "") === "") return null;
+  return { section, id, rev, words: body.slice(m[0].length) };
+}
+
 // ---------- defaults ----------
 
 export function resolve(preset, props) {
@@ -1544,7 +1585,11 @@ export function apply(state, op, style = {}) {
       }
       if (hit) {
         const next = [...s.screens[hit.k]];
-        next[hit.i] = { ...hit.c, props: { ...hit.c.props, ...op.props } };
+        // `kind=` on a row re-kinds it in place: same key and place, so the
+        // now marker moves and nothing else does (YUI-111).
+        const { kind, ...rest } = op.props;
+        if (ROWS.includes(hit.c.preset) && ROWS.includes(kind)) next[hit.i] = { ...hit.c, preset: kind, props: { ...hit.c.props, ...rest } };
+        else next[hit.i] = { ...hit.c, props: { ...hit.c.props, ...op.props } };
         s.screens[hit.k] = next;
       } else s.errors = [...s.errors, `patch: no live "${op.target}" on screen`];
       break;

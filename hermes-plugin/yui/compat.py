@@ -18,6 +18,9 @@ import re
 from typing import Dict, List, Optional
 
 SHAPES_BUILD = 131  # the YUI-104 app commit (git rev-list --count)
+# YUI-113: a deck page's picture can be shapes, math, chart, stat or calc. Older
+# parsers end the deck at the first of those, so `lift` moves them out of it.
+DECK_PICTURES_BUILD = 158
 
 # First app build whose parser knows each preset (git rev-list --count of the
 # commit that added it to Packages/YuiLines/Sources/YuiLines/Presets.swift).
@@ -250,10 +253,75 @@ def _fence(block: str, gated: set) -> List[tuple]:
     return parts
 
 
+PICTURES = {"shapes", "math", "chart", "stat", "calc"}  # a deck page's picture since YUI-113
+OLD_DECK = {"page", "ask", "choose", "pick", "sketch", "row", "after"}  # what an older deck holds
+
+
+def _lift(block: str) -> str:
+    """One fence body for a phone older than DECK_PICTURES_BUILD: every picture a
+    deck holds comes out of it, in order, the way guide v25 laid a lesson out on
+    the stage (feedback APSw0dsa): the diagram, math, chart and stat before the
+    deck, the deck as a card among them (`+inline`), the calc after it."""
+    lines = block.split("\n")
+    out: List[str] = []
+    deck = None  # index in `out` of the open deck's head
+    before: List[str] = []  # pictures that go in front of the deck
+    after: List[str] = []   # calcs that go after it
+    lifted = False
+
+    def close(ended=False):
+        nonlocal deck, before, after
+        if deck is not None and (before or after):
+            head = out[deck]
+            if not re.search(r"(^|\s)\+inline(\s|$)", head):
+                head = head.rstrip() + " +inline"
+            out[deck:deck + 1] = before + [head]
+            # `end` first, or a newer parser takes the calc back into the deck.
+            out.extend(after if ended or not after else ["end"] + after)
+        deck, before, after = None, [], []
+
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        t = line.strip()
+        prefix, head, preset, _, _, _ = _split(line)
+        if deck is not None and not head.startswith("~") and not prefix:
+            if preset in PICTURES:
+                group = [line]
+                i += 1
+                while preset == "shapes" and i < len(lines) and _split(lines[i])[2] == "shape" and not _split(lines[i])[0]:
+                    group.append(lines[i])
+                    i += 1
+                (after if preset == "calc" else before).extend(group)
+                lifted = True
+                continue
+            if not t or t.startswith("#") or preset in OLD_DECK:
+                out.append(line)
+                i += 1
+                continue
+            if preset == "end":
+                out.append(line)
+                i += 1
+                close(ended=True)
+                continue
+        if deck is not None:
+            close()
+        if preset == "deck" and not head.startswith("~"):
+            deck = len(out)
+        out.append(line)
+        i += 1
+    close()
+    return "\n".join(out) if lifted else block
+
+
 def downgrade(body: str, build: Optional[int]) -> str:
     """`body` with every preset `build` cannot draw turned into what it can."""
+    if "```yui" not in body:
+        return body
+    if build is None or build < DECK_PICTURES_BUILD:
+        body = FENCE.sub(lambda m: "```yui\n" + _lift(m.group(1).rstrip("\n")) + "\n```", body)
     gated = too_new(build)
-    if not gated or "```yui" not in body:
+    if not gated:
         return body
 
     def one(m: re.Match) -> str:

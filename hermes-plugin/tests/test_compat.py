@@ -148,6 +148,41 @@ class Downgrade(unittest.TestCase):
         self.assertEqual(compat.downgrade(body, 122), "**Parts**\nA, B")
         self.assertEqual(compat.downgrade(fence('shape circle "Just one"'), 122), "Just one")
 
+    # YUI-113: a lesson as one deck, each piece the picture of its page, calc last.
+    LESSON = fence('say "Compound interest in a minute."', ">full", 'deck "Compound interest"',
+                   'page "Money on money" body="Interest joins the pile."',
+                   "shapes", "shape circle $100", "shape arrow", "shape blob $110",
+                   'page "The formula"', "math A = P(1 + r)^t",
+                   'page "It bends upward"', "chart line x=Y0|Y10 y=100|259",
+                   'stat $673 "After 20 years"',
+                   'choose "Fastest lever?" "More time"|"A bigger deposit" answer="More time"',
+                   'page "Try it"', 'calc f="A = P*(1+r)^t" P=100-1000@100')
+
+    def test_an_older_build_gets_the_lesson_laid_out_on_the_stage(self):
+        out = compat.downgrade(self.LESSON, compat.DECK_PICTURES_BUILD - 1)
+        lines = compat.FENCE.findall(out)[0].strip("\n").split("\n")
+        deck = lines.index('deck "Compound interest" +inline')
+        self.assertEqual(lines[2:deck], ["shapes", "shape circle $100", "shape arrow", "shape blob $110",
+                                         "math A = P(1 + r)^t", "chart line x=Y0|Y10 y=100|259",
+                                         'stat $673 "After 20 years"'])
+        self.assertEqual(lines[-2:], ["end", 'calc f="A = P*(1+r)^t" P=100-1000@100'])
+        self.assertEqual([l.split()[0] for l in lines[deck + 1:-2]], ["page", "page", "page", "choose", "page"])
+        # What the old parser makes of it: the deck keeps every page and the quiz.
+        got = ops(out)
+        head = next(o for o in got if o.get("preset") == "deck")["id"]
+        self.assertEqual([o["preset"] for o in got if o.get("in") == head], ["page", "page", "page", "choose", "page"])
+        self.assertDrawable(out, compat.DECK_PICTURES_BUILD - 1)
+
+    def test_the_deck_pictures_build_gets_the_lesson_untouched(self):
+        self.assertEqual(compat.downgrade(self.LESSON, compat.DECK_PICTURES_BUILD), self.LESSON)
+
+    def test_lift_stops_at_end_and_leaves_other_screens_alone(self):
+        body = fence("deck D", "page One", "stat Total 3", "end", "stat Out 4", ">2 chart bar x=a y=1")
+        self.assertEqual(compat.downgrade(body, 150),
+                         fence("stat Total 3", "deck D +inline", "page One", "end", "stat Out 4", ">2 chart bar x=a y=1"))
+        plain = fence("deck D", "page One", "page Two")
+        self.assertEqual(compat.downgrade(plain, 150), plain)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

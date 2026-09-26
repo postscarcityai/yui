@@ -21,7 +21,7 @@ let presets: Set<String> = [
 /// the same screen. A narrate can hold another group (a deck), a deck or plan
 /// a sketch (the picture of the page before it).
 let groups: [String: Set<String>] = [
-    "deck": ["page", "ask", "choose", "pick", "sketch"],
+    "deck": ["page", "ask", "choose", "pick", "sketch", "shapes", "math", "chart", "stat", "calc"],
     "plan": ["page", "ask", "choose", "pick", "slide", "form", "mic", "camera", "sketch"],
     "narrate": ["page", "compare", "image", "video", "card", "stat", "chart", "math", "storyboard", "gallery", "deck"],
     "timeline": ["done", "now", "next"],

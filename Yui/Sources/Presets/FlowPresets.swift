@@ -123,13 +123,16 @@ struct PagePreset: View {
     var body: some View {
         let s = theme.swatch(scheme)
         // A drawn sketch is the page's picture, in place of an image (spec: sketch, On a page).
+        // Any other picture (shapes, math, chart, stat, calc) takes the same place (YUI-113).
         let art = all.art(of: c)
-        let img = art == nil ? YLMediaURL.url(c.string("img")) : nil
+        let picture = art == nil ? all.picture(of: c) : nil
+        let img = art == nil && picture == nil ? YLMediaURL.url(c.string("img")) : nil
         let points = c.strings("points") ?? []
         let hasText = c.string("body") != nil || !points.isEmpty
-        let layout = art != nil ? "text" : c.string("layout") ?? (img == nil ? "text" : hasText ? "split" : "cover")
+        let layout = art != nil || picture != nil ? "text" : c.string("layout") ?? (img == nil ? "text" : hasText ? "split" : "cover")
         let content = VStack(alignment: .leading, spacing: theme.spacing.m) {
             if let art { SketchDrawing(sketch: art.sketch, parts: art.parts) }
+            if let picture { PresetView(component: picture).environment(\.ylBare, true) }
             if layout == "cover", let img {
                 MediaTile(src: img)
                     .frame(maxWidth: .infinity, minHeight: 260, maxHeight: .infinity)

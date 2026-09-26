@@ -70,11 +70,20 @@ struct StoryPage: View {
         let statement = title == nil && points.isEmpty
         // A drawn picture comes on part by part first; the words take their beats after it.
         let drawn = all.art(of: c)
-        let after = drawn.map { $0.parts.count + 1 } ?? 0
+        // Any other picture (shapes, math, chart, stat, calc; YUI-113) comes on as one beat.
+        let picture = drawn == nil ? all.picture(of: c) : nil
+        let after = drawn.map { $0.parts.count + 1 } ?? (picture == nil ? 0 : 1)
+        let words = title != nil || body != nil || !points.isEmpty
         return VStack(alignment: .leading, spacing: 0) {
             if let drawn {
                 SketchDrawing(sketch: drawn.sketch, parts: drawn.parts, phase: shown)
-                    .padding(.bottom, title == nil && body == nil && points.isEmpty ? 0 : theme.spacing.xl)
+                    .padding(.bottom, words ? theme.spacing.xl : 0)
+            } else if let picture {
+                PresetView(component: picture)
+                    .environment(\.ylBare, true)
+                    .frame(maxWidth: .infinity)
+                    .padding(.bottom, words ? theme.spacing.xl : 0)
+                    .beat(shown, 0, reduceMotion, theme.spring)
             } else if let img = YLMediaURL.url(c.string("img")) {
                 art(img)
                     .padding(.bottom, theme.spacing.xl)
