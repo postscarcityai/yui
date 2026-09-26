@@ -77,6 +77,8 @@ final class SketchTests: XCTestCase {
 
         // Full screen: the page is the screen and the drawing is its picture.
         reveal(struck)
+        // A page is as tall as its words now (feedback AK2rJFQ9): at AX3 the card's header can sit above the fold.
+        for _ in 0..<3 where fullButton(above: struck) == nil { scroll(up: false); sleep(1) }
         let full = try XCTUnwrap(fullButton(above: struck), "no Full screen button on the drawn deck")
         full.tap()
         let title = app.staticTexts.matching(NSPredicate(format: "identifier == 'story-title' AND label == %@",

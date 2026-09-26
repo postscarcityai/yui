@@ -235,11 +235,20 @@ private struct DeckBody: View {
     let openFull: (() -> Void)?
     let emit: YLEmit
     var close: (() -> Void)? = nil
+    /// Each inline page's own height, measured off screen, so the card fits the page showing.
+    @State private var heights: [Int: CGFloat] = [:]
     @Environment(\.yuiTheme) private var theme
     @Environment(\.colorScheme) private var scheme
 
     var body: some View {
         if full { story } else { card }
+    }
+
+    /// The inline pager's height: the page showing, capped so a very long page scrolls
+    /// inside the card instead of taking the whole chat (feedback AK2rJFQ9: a fixed
+    /// 380 to 440 pt frame left half a card empty under a short page).
+    private var pagerHeight: CGFloat {
+        min(heights[at] ?? heights.values.max() ?? 160, 520)
     }
 
     /// Full screen (the stage, or the deck's own cover): the page is the screen.
@@ -344,15 +353,36 @@ private struct DeckBody: View {
                     }
                 }
             } else {
+                // Pages drawn the way full screen draws them, at their own height:
+                // the card grows and shrinks with the page, arrows right under it.
                 TabView(selection: $at) {
                     ForEach(Array(pages.enumerated()), id: \.element.serial) { i, p in
-                        ScrollView { page(p).padding(.bottom, theme.spacing.s) }
+                        ScrollView { inlinePage(p, active: i == at) }
                             .scrollBounceBehavior(.basedOnSize)
+                            .scrollIndicators(.hidden)
                             .tag(i)
                     }
                 }
                 .tabViewStyle(.page(indexDisplayMode: .never))
-                .frame(minHeight: 380, maxHeight: 440)
+                .frame(height: pagerHeight)
+                .background(alignment: .top) {
+                    // Every page laid out once, unseen, to know its height before it shows.
+                    ZStack(alignment: .top) {
+                        ForEach(Array(pages.enumerated()), id: \.element.serial) { i, p in
+                            inlinePage(p, active: true)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { h in
+                                    var t = Transaction()
+                                    t.disablesAnimations = heights[i] == nil
+                                    withTransaction(t) { heights[i] = h }
+                                }
+                        }
+                    }
+                    .hidden()
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+                    .environment(\.ylEmit, YLEmit())
+                }
                 HStack {
                     arrow("chevron.left", "Previous page", disabled: at == 0) { at -= 1 }
                     Spacer()
@@ -375,6 +405,16 @@ private struct DeckBody: View {
         .overlay(RoundedRectangle(cornerRadius: theme.radius.card).stroke(s.outline, lineWidth: 1.5))
         .environment(\.ylEmit, emit)
         .animation(theme.spring, value: at)
+    }
+
+    /// A page in the inline pager: a story page as full screen sets it, or a quiz question.
+    @ViewBuilder
+    private func inlinePage(_ p: YLComponent, active: Bool) -> some View {
+        if p.preset == "page" {
+            StoryPage(c: p, active: active, showNotes: notes, inline: true)
+        } else {
+            PresetView(component: p).padding(.vertical, theme.spacing.xs)
+        }
     }
 
     @ViewBuilder

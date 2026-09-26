@@ -97,7 +97,8 @@ final class StoryPagesTests: XCTestCase {
         // The build-ready deck: full screen from its own button, the same stage look.
         let full = app.buttons.matching(NSPredicate(format: "label == %@", "Full screen")).allElementsBoundByIndex.last
         XCTAssertNotNil(full)
-        app.swipeUp()
+        // Inline pages are as tall as their words (feedback AK2rJFQ9), so at AX3 it can take more than one swipe.
+        for _ in 0..<4 where !(full?.isHittable ?? true) { app.swipeUp(); sleep(1) }
         full?.tap()
         sleep(3)
         let deck = shot("build-page1")

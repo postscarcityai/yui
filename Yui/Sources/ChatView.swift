@@ -1142,6 +1142,16 @@ struct ChatView: View {
         end
         """
 
+    /// A deck with a short page, a long one and points (feedback AK2rJFQ9).
+    static let whereItLanded = """
+        deck "Where it landed" +inline
+        page "Feel first" body="The next build is about how Yui feels in the hand."
+        page "What goes first" body="Scrolling, then typing, memory and taps. Every card on the board that makes the app feel slow moves ahead of the rest, and integrations wait in the backlog until the feel is right. The design stays as it is, so nothing you like about the look changes while this happens."
+        page "On the board" points="YUI-101 taps and scroll"|"YUI-99 typing"|"YUI-102 speed numbers"
+        page "Taps and scroll" body="YUI-101. Taps react on the same frame and the network catches up after. Scrolling at 120 fps and threads that open fast. Your design doesn't change."
+        end
+        """
+
     /// The "No card or feedback ids" idea drawn, not told (YUI-84): a story page whose
     /// picture is a chat bubble with the id struck and the plain words highlighted, a
     /// page that is only a drawing, and one sketch on its own in the chat.
@@ -1269,6 +1279,12 @@ struct ChatView: View {
                     ChatMessage(text: "And the build ping?", fromUser: true),
                     ChatMessage(text: "Yui build 96 is ready in TestFlight.", fromUser: false),
                     ChatMessage(text: "", fromUser: false, yl: YLScreen(buildReady))]
+        }
+        // -yuiDemoDeckFit: the inline deck from TestFlight feedback AK2rJFQ9 (build 96), four
+        // pages of mixed length, so the card's height can be seen following each page.
+        if ProcessInfo.processInfo.arguments.contains("-yuiDemoDeckFit") {
+            return [ChatMessage(text: "Where did my asks land?", fromUser: true),
+                    ChatMessage(text: "", fromUser: false, yl: YLScreen(whereItLanded))]
         }
         // -yuiDemoRestyle: an agent offers Yui a new look twice (YUI-96): the first card
         // retired, the second the live preview.

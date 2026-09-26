@@ -6,14 +6,18 @@ import YuiLines
 // screen, never a card: the headline is set big, sized to its words, the body is a
 // second, quieter voice, points are numbered beats, and a picture has its own slot.
 // Each part springs on when the page arrives and drifts off when it leaves; with
-// Reduce Motion they only fade. In the chat a page is still drawn by PagePreset.
+// Reduce Motion they only fade. An inline deck in the chat draws the same page,
+// `inline`, at its own height (feedback AK2rJFQ9); a lone page is drawn by PagePreset.
 
 struct StoryPage: View {
     let c: YLComponent
     /// The page showing now. Its parts come on when this turns true, go off when false.
     var active = true
     var showNotes = false
+    /// In a chat card: as tall as its words, no screen to fill (feedback AK2rJFQ9).
+    var inline = false
     @State private var phase = Phase.before
+    @State private var inlineWidth: CGFloat = 0
     @State private var viewing = false
     @Environment(\.ylComponents) private var all
     @Environment(\.yuiTheme) private var theme
@@ -34,13 +38,21 @@ struct StoryPage: View {
 
     var body: some View {
         let s = theme.swatch(scheme)
-        GeometryReader { geo in
-            ScrollView {
-                content(s, width: geo.size.width)
-                    .frame(maxWidth: .infinity, minHeight: geo.size.height, alignment: .leading)
+        Group {
+            if inline {
+                content(s, width: inlineWidth)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { inlineWidth = $0 }
+            } else {
+                GeometryReader { geo in
+                    ScrollView {
+                        content(s, width: geo.size.width)
+                            .frame(maxWidth: .infinity, minHeight: geo.size.height, alignment: .leading)
+                    }
+                    .scrollBounceBehavior(.basedOnSize)
+                    .scrollIndicators(.hidden)
+                }
             }
-            .scrollBounceBehavior(.basedOnSize)
-            .scrollIndicators(.hidden)
         }
         .onChange(of: active) { if !active { phase = .after } }
         .fullScreenCover(isPresented: $viewing) {
@@ -71,7 +83,7 @@ struct StoryPage: View {
             if let title {
                 headline(title, width: width, statement: false)
                     .foregroundStyle(s.ink)
-                    .accessibilityIdentifier("story-title")
+                    .accessibilityIdentifier(inline ? "page-title" : "story-title")
                     .accessibilityAddTraits(.isHeader)
                     .beat(shown, after + 1, reduceMotion, theme.spring)
             }
@@ -88,7 +100,7 @@ struct StoryPage: View {
                     }
                 }
                 .fixedSize(horizontal: false, vertical: true)
-                .accessibilityIdentifier("story-body")
+                .accessibilityIdentifier(inline ? "page-body" : "story-body")
                 .beat(shown, after + (statement ? 1 : 2), reduceMotion, theme.spring)
             }
             if !points.isEmpty {
@@ -103,7 +115,7 @@ struct StoryPage: View {
                                 .font(theme.font(voice, .semibold))
                                 .foregroundStyle(s.ink)
                                 .fixedSize(horizontal: false, vertical: true)
-                                .accessibilityIdentifier("story-point")
+                                .accessibilityIdentifier(inline ? "page-point" : "story-point")
                         }
                         .beat(shown, after + 2 + i, reduceMotion, theme.spring)
                     }
@@ -118,7 +130,7 @@ struct StoryPage: View {
                     .padding(.top, theme.spacing.xl)
             }
         }
-        .padding(.vertical, theme.spacing.xl)
+        .padding(.vertical, inline ? theme.spacing.xs : theme.spacing.xl)
     }
 
     /// The headline, sized to how much it says, never so big that a word breaks.
