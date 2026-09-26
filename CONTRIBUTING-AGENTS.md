@@ -8,6 +8,9 @@ The full rules for picking and claiming a card live in the hub repo: [CONTRIBUTI
 2. **Claim** it: fork, then open a draft pull request titled `[KEY] <card title>` right away. A claim with no push for 7 days lapses. The first pull request merged wins.
 3. **Build** only what the card says. Run every command in its `test` list until each passes.
 4. **Hand in**: mark it ready, tick each `done` line, paste the test output, add Mac or simulator screenshots in light and dark if anything on screen changed, and say an agent made it.
+5. **Checks and review**: every pull request runs `checks` (the Swift parser against the conformance vectors, and for forks a check that nothing in "Never touch" changed). No secrets reach it. A person reviews every pull request, and nothing merges on its own. When yours merges, the card closes by itself and yuigui.com/progress names the pull request; tick "Credit me" in the pull request to add your GitHub handle too.
+
+Want your agent to do this every week on its own? The routine prompts for Claude, Codex, Gemini, Jules, Cursor, Copilot and any other agent are in the hub's [CONTRIBUTING-AGENTS.md](https://github.com/postscarcityai/yuigui/blob/main/CONTRIBUTING-AGENTS.md#run-it-every-week) and on [yuigui.com/contribute](https://www.yuigui.com/contribute#weekly).
 
 Everything in [CONTRIBUTING.md](CONTRIBUTING.md) applies too.
 

@@ -1,0 +1,12 @@
+# Review before merge (OSS-6). A person reviews every pull request; these paths also need the owner.
+# CI, release and signing scripts, the backend, signing settings and the conformance copies.
+/.github/                    @CJohnDesign
+/scripts/testflight*         @CJohnDesign
+/scripts/devbuild*           @CJohnDesign
+/scripts/asc.py              @CJohnDesign
+/scripts/build_stamp.sh      @CJohnDesign
+/supabase/                   @CJohnDesign
+/project.yml                 @CJohnDesign
+/Packages/YuiLines/Tests/YuiLinesTests/Resources/conformance/  @CJohnDesign
+/LICENSE                     @CJohnDesign
+/NOTICE                      @CJohnDesign

@@ -1,0 +1,47 @@
+# Every pull request (OSS-6, Yui@home): the Swift Yui Lines parser against the conformance vectors.
+# No secrets anywhere in this file: it runs fork code, so it gets a read-only token and nothing else.
+# No signing, no TestFlight, no App Store Connect here; those stay on the owner's Mac.
+# Nothing merges on its own; a person reviews every pull request (CODEOWNERS asks for the review).
+name: checks
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+concurrency:
+  group: checks-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: true
+jobs:
+  conformance:
+    runs-on: macos-15
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with: { persist-credentials: false }
+      - name: YuiLines parser and conformance vectors
+        run: cd Packages/YuiLines && swift test
+  hands-off:
+    # A pull request from a fork may not touch CI, signing, release scripts, the backend or the conformance copies
+    # (CONTRIBUTING-AGENTS.md, "Never touch").
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0, persist-credentials: false }
+      - name: Changed files stay out of the hands-off paths
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          bad=$(git diff --name-only "$BASE"...HEAD | grep -E '^(\.github/|scripts/(testflight|devbuild|asc\.py|build_stamp)|supabase/|Packages/YuiLines/Tests/YuiLinesTests/Resources/conformance/|.*\.(p8|p12|mobileprovision|cer)$|.*\.env$|yui\.env)' || true)
+          # project.yml is fair game (new targets), but not its team or signing keys.
+          sign=$(git diff "$BASE"...HEAD -- project.yml | grep -E '^[+-][^+-].*(DEVELOPMENT_TEAM|CODE_SIGN|PROVISIONING_PROFILE|YUI_TEAM_ID)' || true)
+          if [ -n "$bad$sign" ]; then
+            echo "This pull request changes files or settings an outside pull request may not touch:"
+            [ -n "$bad" ] && echo "$bad"
+            [ -n "$sign" ] && echo "project.yml signing lines:" && echo "$sign"
+            echo "See CONTRIBUTING-AGENTS.md, 'Never touch'. Take them out and push again (a card that asks for one of these says so, and the reviewer waives this check)."
+            exit 1
+          fi
+          echo "ok: no hands-off paths"
