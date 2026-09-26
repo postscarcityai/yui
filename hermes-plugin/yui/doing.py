@@ -224,7 +224,11 @@ _poller = {"thread": None}
 
 
 def on_shim() -> bool:
-    """True when this profile's model runs through the claude shim."""
+    """True when this profile's model runs through a claude shim that takes the
+    tag out. The shim makes SHIM_DIR when it starts; an older shim would hash
+    the tag into its session key and cold-start every Yui turn."""
+    if not os.path.isdir(SHIM_DIR):
+        return False
     if SHIM["on"] is None:
         try:
             from hermes_cli.config import load_config_readonly

@@ -181,6 +181,11 @@ class Shim(unittest.TestCase):
         self.assertIsNone(doing.remember_session(session_id="s-yui", platform="yui", sender_id=OWNER))
         self.assertEqual(doing.TURNS, {})
 
+    def test_an_older_shim_gets_no_tag(self):
+        doing.SHIM_DIR = os.path.join(self.dir, "missing")
+        self.assertIsNone(doing.remember_session(session_id="s-yui", platform="yui", sender_id=OWNER))
+        self.assertEqual(doing.TURNS, {})
+
     def test_a_run_that_never_ends_is_let_go(self):
         tag = doing.shim_tag(OWNER)[len("[[yui-turn:"):-2]
         self.assertEqual(doing.shim_tick(), 1)
