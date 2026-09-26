@@ -13,5 +13,5 @@ rm -f "$dst"/[0-9][0-9]-*.json
 cp "$src"/[0-9][0-9]-*.json "$dst"/
 # Areas the Swift parser has not taken on yet: keep in step with notYetInApp
 # in Tests/YuiLinesTests/ConformanceTests.swift.
-for f in 30-tables.json 35-doing.json; do rm -f "$dst/$f"; done
+for f in 26-flow.json 30-tables.json 35-doing.json; do rm -f "$dst/$f"; done
 echo "sync-vectors: $(ls "$dst"/[0-9][0-9]-*.json | wc -l | tr -d ' ') files from $src"
