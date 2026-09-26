@@ -10,6 +10,7 @@ Every DB here is a fresh temp file, never the real board.
 """
 
 import asyncio
+import os
 import sys
 import tempfile
 import time
@@ -168,6 +169,14 @@ class AdapterPath(RealBoard):
             a.written.append(row)
             return "sent"
         a._mark, a._write_row = mark, write
+        # The war room redraw runs a stand-in that notes each run (never the real generator).
+        self.ran = Path(tempfile.mkdtemp()) / "ran"
+        fake = self.ran.with_name("war.py")
+        fake.write_text(f"import sys\nopen({str(self.ran)!r}, 'a').write(' '.join(sys.argv[1:]) + '\\n')\n")
+        os.environ["YUI_WAR_ROOM"] = str(fake)
+        self.addCleanup(os.environ.pop, "YUI_WAR_ROOM", None)
+        ad.WAR_SETTLE_SECONDS = 0
+        self.ad = ad
         db, orig = self.db, needs.apply
         ad.needs.apply = lambda board, ans: orig(board, ans, db)
         return a
@@ -187,6 +196,33 @@ class AdapterPath(RealBoard):
         self.assertEqual(a.written[0]["body"], "Only the owner can answer these cards.")
         self.assertEqual(self.rows("SELECT status FROM tasks WHERE id = 't_aa01'")[0][0], "blocked")
         self.assertEqual(self.rows("SELECT count(*) FROM task_comments")[0][0], 0)
+
+    def answer_and_wait(self, a, *rows):
+        async def go():
+            for r in rows:
+                await a._need_answer("a1", r)
+            if getattr(a, "_war_task", None):
+                await a._war_task
+        asyncio.run(go())
+        return self.ran.read_text().splitlines() if self.ran.exists() else []
+
+    def test_an_answer_redraws_the_war_room(self):
+        # Feedback ANP2Pn6z: "I respond to cards and they don't go away".
+        self.assertEqual(self.answer_and_wait(self.make(), event("t_aa01", "Park it")), ["--refresh"])
+
+    def test_quick_taps_share_a_redraw(self):
+        a = self.make()
+        self.ad.WAR_SETTLE_SECONDS = 1  # both taps land inside the settle; a tap mid-redraw gets another
+        two = event("t_aa02", "Park it")
+        two["id"] = "row-2"
+        self.assertEqual(self.answer_and_wait(a, event("t_aa01", "Park it"), two), ["--refresh"])
+
+    def test_no_redraw_for_someone_else_or_without_a_war_room(self):
+        self.assertEqual(self.answer_and_wait(self.make(user_id="someone-else"), event("t_aa01")), [])
+        a = self.make()
+        os.environ["YUI_WAR_ROOM"] = "/nonexistent/yui_war_room.py"
+        self.assertIsNone(needs.refresh_cmd("yui"))
+        self.assertEqual(self.answer_and_wait(a, event("t_aa01", "Park it")), [])
 
     def test_ordinary_choose_goes_to_the_agent(self):
         a = self.make()

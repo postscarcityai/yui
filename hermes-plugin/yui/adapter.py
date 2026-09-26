@@ -62,7 +62,9 @@ Transport: the gateway dials OUT to Supabase (PROOF). No inbound ports.
  10. One-tap answers (YUI-73, needs.py): a `choose@need-<task id>` answer
      from the war room's Needs you panel is commented on that kanban card
      and unblocks it, with no agent turn, only for the paired owner. Same
-     confirmation and note as a board order.
+     confirmation and note as a board order. After either, the war room
+     redraws (needs.refresh_cmd, --refresh) so an answered ask leaves the
+     page at once; taps close together share one redraw.
 
  11. Mentions (YUI-44, mentions.py): Yui routes @mentions in the database. A
      reply to the person's turn that @s another of their agents carries
@@ -178,6 +180,8 @@ NEW_AGENT_LOOKBACK_SECONDS = 24 * 3600  # a just-paired agent still answers what
 
 
 # Taps only the owner may make; from anyone else they are refused without a turn.
+WAR_SETTLE_SECONDS = 2  # war room redraw after a Needs you tap or a saved order
+WAR_REDRAW_TIMEOUT = 180
 OWNER_ONLY = re.compile(r"^\[yui\] (need-|invite-|war\b)")
 PAUSED_TEXT = "This agent is paused by its owner."
 
@@ -644,6 +648,7 @@ class YuiAdapter(BasePlatformAdapter):
                 text = board.reply(result)
                 if result["order"]:
                     self._notes.setdefault(aid, []).append(board.note(result))
+                    self._war_refresh()
                 logger.info("[yui] board order %s: %d moved, %d left in place", row["id"][:8],
                             len(result["moves"]), len(result["skipped"]))
             except Exception as e:
@@ -666,6 +671,7 @@ class YuiAdapter(BasePlatformAdapter):
                 text = needs.reply(result)
                 if result.get("ok"):
                     self._notes.setdefault(aid, []).append(needs.note(result))
+                    self._war_refresh()
                 logger.info("[yui] needs-you answer %s on %s: %s", row["id"][:8], ans["task"],
                             "ok" if result.get("ok") else result.get("why"))
             except Exception as e:
@@ -673,6 +679,32 @@ class YuiAdapter(BasePlatformAdapter):
                 text = "Couldn't reach the board to send that answer. Try again in a minute."
         await self._confirm(aid, row, text)
         return True
+
+    def _war_refresh(self) -> None:
+        """Redraw the war room after a tap changed the board (feedback ANP2Pn6z). One redraw at a
+        time; a tap during one runs another after it, so the page ends on the newest board."""
+        cmd = needs.refresh_cmd(self._remote_ref or "")
+        if not cmd:
+            return
+        self._war_again = True
+        task = getattr(self, "_war_task", None)
+        if task is None or task.done():
+            self._war_task = asyncio.create_task(self._war_redraw(cmd))
+
+    async def _war_redraw(self, cmd: List[str]) -> None:
+        await asyncio.sleep(WAR_SETTLE_SECONDS)  # a few quick taps share one redraw
+        env = {**os.environ, "PATH": f"{Path.home() / '.local/bin'}:/opt/homebrew/bin:/usr/local/bin:"
+                                     f"{os.environ.get('PATH', '/usr/bin:/bin')}"}
+        while getattr(self, "_war_again", False):
+            self._war_again = False
+            try:
+                proc = await asyncio.create_subprocess_exec(*cmd, env=env, stdout=asyncio.subprocess.DEVNULL,
+                                                            stderr=asyncio.subprocess.PIPE)
+                _, err = await asyncio.wait_for(proc.communicate(), WAR_REDRAW_TIMEOUT)
+                if proc.returncode:
+                    logger.warning("[yui] war room redraw exited %s: %s", proc.returncode, err.decode()[-200:])
+            except Exception as e:
+                logger.warning("[yui] war room redraw: %s", e)
 
     async def _control(self, aid: str, row: dict) -> bool:
         """A request from the drawer's Controls tab (YUI-70): served here, never a turn.

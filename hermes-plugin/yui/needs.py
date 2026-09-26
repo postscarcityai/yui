@@ -27,10 +27,18 @@ the worker (pick the option you recommend and go) and unblocks like any
 answer. "Not yet" says the person has not done what the ask assumes (a browser
 step, "how did it go"): it lands on the card as a comment and the card stays
 blocked, so no worker respawns into nothing; a later real answer unblocks it.
+
+After an answer the war room redraws (feedback ANP2Pn6z: "I respond to cards and
+they don't go away"): the adapter runs the war room generator with --refresh,
+so the answered card leaves the page at once instead of at the next board sync.
+refresh_cmd() finds it; no script, no redraw.
 """
 
+import os
 import re
-from typing import Optional
+import sys
+from pathlib import Path
+from typing import List, Optional
 
 ID = re.compile(r"^need-(t_[0-9a-f]{4,})$")
 AUTHOR = "chris (yui-app)"
@@ -57,6 +65,13 @@ def answer_of(row: dict) -> Optional[dict]:
         return None
     return {"task": m.group(1), "choice": " ".join(choice.split())[:500],
             "typed": form or bool(v.get("other")), "changed": bool(v.get("changed"))}
+
+
+def refresh_cmd(board: str) -> Optional[List[str]]:
+    """The war room redraw for this board: $YUI_WAR_ROOM, else the profile's own
+    scripts/yui_war_room.py. None when there is none (a host without a war room)."""
+    path = os.environ.get("YUI_WAR_ROOM") or str(Path.home() / ".hermes/profiles" / board / "scripts/yui_war_room.py")
+    return [sys.executable, path, "--refresh"] if board and Path(path).is_file() else None
 
 
 def card_name(title: str) -> str:
