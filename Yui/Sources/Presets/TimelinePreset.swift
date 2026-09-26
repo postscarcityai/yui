@@ -62,19 +62,21 @@ struct TimelinePreset: View {
             }
             VStack(alignment: .leading, spacing: 0) {
                 if hidden > 0 {
-                    HStack(spacing: 0) {
-                        Color.clear.frame(width: TimelineRow.gutter)
-                        TimelineRail(color: s.outline).frame(width: TimelineRow.railWidth)
-                        Button { withAnimation(.snappy) { unfolded = true } } label: {
-                            Text("\(hidden) earlier")
-                                .font(theme.font(theme.type.caption, .bold)).foregroundStyle(s.inkSoft)
-                                .padding(.horizontal, theme.spacing.m).frame(minHeight: 36)
-                                .overlay(Capsule().stroke(s.outline, lineWidth: 1.5))
-                                .contentShape(Capsule())
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityIdentifier("timeline-earlier")
-                        .padding(.vertical, 4)
+                    Button { withAnimation(.snappy) { unfolded = true } } label: {
+                        Text("\(hidden) earlier")
+                            .font(theme.font(theme.type.caption, .bold)).foregroundStyle(s.inkSoft)
+                            .padding(.horizontal, theme.spacing.m).frame(minHeight: 36)
+                            .overlay(Capsule().stroke(s.outline, lineWidth: 1.5))
+                            .contentShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("timeline-earlier")
+                    .padding(.vertical, 4)
+                    .padding(.leading, TimelineRow.gutter + TimelineRow.railWidth)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    // The rail as a background, like a row's, so it never stretches the stack.
+                    .background(alignment: .leading) {
+                        TimelineRail(color: s.outline).offset(x: TimelineRow.gutter + TimelineRow.railWidth / 2 - 1)
                     }
                 }
                 ForEach(rows[hidden..<split]) { TimelineRow(r: $0) }
@@ -252,9 +254,9 @@ struct TimelineRow: View {
                 .multilineTextAlignment(.trailing)
                 .frame(width: Self.gutter - 8, alignment: .trailing)
                 .padding(.trailing, 8).padding(.top, 2)
+            // No maxHeight here: a flexible dot let rows soak up a tall stage (YUI-112).
             dot(s, state)
                 .frame(width: Self.railWidth)
-                .frame(maxHeight: .infinity, alignment: .top)
             VStack(alignment: .leading, spacing: 2) {
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
                     if let tag = r.string("tag") {

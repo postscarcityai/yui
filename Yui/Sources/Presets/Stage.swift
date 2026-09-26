@@ -87,7 +87,7 @@ struct StageView: View {
                         }
                         .padding(.horizontal, theme.spacing.l)
                         .padding(.bottom, theme.spacing.xl)
-                        .frame(minHeight: geo.size.height - 90, alignment: .center)
+                        .frame(minHeight: geo.size.height - 90, alignment: reads ? .top : .center)
                     }
                     .scrollBounceBehavior(.basedOnSize)
                 }
@@ -111,6 +111,12 @@ struct StageView: View {
     /// One deck, plan or narrate and nothing else: it gets the whole height.
     private var immersive: Bool {
         components.count == 1 && ["deck", "plan", "narrate"].contains(components[0].preset)
+    }
+
+    /// A timeline reads top down like a page, so it starts at the top (YUI-112).
+    /// A card, timer or stat alone is a moment and stays centered.
+    private var reads: Bool {
+        components.contains { $0.preset == "timeline" }
     }
 
     private func header(_ c: Swatch) -> some View {
