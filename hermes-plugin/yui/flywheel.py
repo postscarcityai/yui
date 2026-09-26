@@ -40,7 +40,7 @@ PRESETS = {
     "shapes", "shape",
     "query",
 }
-CORE = {"say", "custom", "save", "show", "forget", "clear", "end", "theme", "close", "talk", "menu", "put"}
+CORE = {"say", "custom", "save", "show", "forget", "clear", "end", "theme", "close", "talk", "menu", "put", "doing"}
 
 FENCE = re.compile(r"```yui[^\n]*\n(.*?)```", re.S)
 # A name that looks like a field or a type, not like data. Keys that do not
