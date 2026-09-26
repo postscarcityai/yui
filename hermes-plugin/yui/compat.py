@@ -21,6 +21,7 @@ SHAPES_BUILD = 131  # the YUI-104 app commit (git rev-list --count)
 # YUI-113: a deck page's picture can be shapes, math, chart, stat or calc. Older
 # parsers end the deck at the first of those, so `lift` moves them out of it.
 DECK_PICTURES_BUILD = 158
+MUSIC_BUILD = 175  # YUI-116 step 2: loop and drums drawn and played (56b38a3)
 
 # First app build whose parser knows each preset (git rev-list --count of the
 # commit that added it to Packages/YuiLines/Sources/YuiLines/Presets.swift).
@@ -30,6 +31,7 @@ MIN_BUILD: Dict[str, int] = {
     "sketch": 104, "row": 104, "after": 104,             # d7214ee (YUI-84)
     "menu": 115,                                         # YUI-86: the drawer's lists; dropped before
     "shapes": SHAPES_BUILD, "shape": SHAPES_BUILD,       # YUI-104: shapes that move
+    "loop": MUSIC_BUILD, "drums": MUSIC_BUILD,           # YUI-116 step 2: a beat and pads
 }
 GROUPS = {"sketch": {"row", "after"}, "timeline": {"done", "now", "next"}, "shapes": {"shape"}}
 MEMBER_OF = {m: head for head, ms in GROUPS.items() for m in ms}
@@ -150,6 +152,11 @@ def _group_text(lines: List[str]) -> str:
             out.append(f"- {preset.capitalize()}: {title}" + (f" ({at})" if at else ""))
         elif preset == "game":
             out.append("There's a game here. Update Yui to play it.")
+        elif preset == "loop":
+            name = " ".join(w for w in words if not re.fullmatch(r"\d+(bpm)?", w, re.I)).strip()
+            out.append(f"There's a beat here{': ' + name if name else ''}. Update Yui to play it.")
+        elif preset == "drums":
+            out.append("There are drum pads here. Update Yui to play them.")
         elif preset == "shapes":
             if title:
                 out.append(f"**{title}**")

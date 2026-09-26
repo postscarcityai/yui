@@ -118,10 +118,11 @@ class Downgrade(unittest.TestCase):
         self.assertDrawable(out, 96)
 
     def test_note_names_what_to_skip(self):
-        self.assertIn("cannot draw shapes, sketch yet", compat.note(96))
+        self.assertIn("cannot draw drums, loop, shapes, sketch yet", compat.note(96))
         self.assertNotIn("timeline", compat.note(96))
-        self.assertEqual(compat.note(compat.SHAPES_BUILD), "")
-        self.assertIn("cannot draw shapes", compat.note(122))
+        self.assertEqual(compat.note(compat.SHAPES_BUILD), f"[yui] This person's Yui app (build {compat.SHAPES_BUILD}) cannot draw drums, loop yet: don't send those. Say it in words or use another preset.")
+        self.assertEqual(compat.note(compat.MUSIC_BUILD), "")
+        self.assertIn("cannot draw drums, loop, shapes", compat.note(122))
         self.assertIn("an older build", compat.note(None))
 
     def test_menu_lines_go_quietly_before_the_drawer(self):
@@ -142,6 +143,17 @@ class Downgrade(unittest.TestCase):
         self.assertIn(fence("say Want the long version?"), out)
         self.assertDrawable(out, 122)
         self.assertEqual(compat.downgrade(body, compat.SHAPES_BUILD), body)
+
+    def test_loop_and_drums_before_build_175(self):
+        body = ("Here's a beat.\n\n"
+                + fence('loop 96 "Boom bap" p=x...x.x.|....x...|xxxxxxxx +play', "drums 2x2 +record", "save beat"))
+        out = compat.downgrade(body, 174)
+        self.assertIn("There's a beat here: Boom bap. Update Yui to play it.", out)
+        self.assertIn("There are drum pads here. Update Yui to play them.", out)
+        self.assertNotIn("p=x", out)
+        self.assertDrawable(out, 174)
+        self.assertEqual(compat.downgrade(fence("~loop p=x.x.x.x. bpm=94"), 174).strip(), "")
+        self.assertEqual(compat.downgrade(body, compat.MUSIC_BUILD), body)
 
     def test_placed_shapes_and_a_lone_shape(self):
         body = fence("shapes Parts", "shape box A at=2,2", "shape box B at=8,2", "shape arrow from=a to=b")

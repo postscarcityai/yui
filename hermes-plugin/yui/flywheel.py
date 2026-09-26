@@ -39,6 +39,7 @@ PRESETS = {
     "sketch", "row", "after",
     "shapes", "shape",
     "query",
+    "loop", "drums", "keys", "chords", "tuner", "metronome",
 }
 CORE = {"say", "custom", "save", "show", "forget", "clear", "end", "theme", "close", "talk", "menu", "put", "doing"}
 
