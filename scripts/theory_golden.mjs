@@ -6,7 +6,7 @@ import { resolve } from "node:path";
 
 const src = process.argv[2];
 if (!src) { console.error("usage: node scripts/theory_golden.mjs <path to theory.mjs>"); process.exit(2); }
-const { romanToChord, chordNotes, parseKey } = await import(pathToFileURL(resolve(src)).href);
+const { romanToChord, chordNotes, parseKey, ALIAS, SOUNDS, soundFor, loopVoices } = await import(pathToFileURL(resolve(src)).href);
 
 // Twelve major keys and twelve minor keys, spelled the usual way.
 const keys = ["C", "G", "D", "A", "E", "B", "F#", "Db", "Ab", "Eb", "Bb", "F",
@@ -31,4 +31,15 @@ for (const key of keys) {
 const names = ["C", "G", "Am", "F", "Bb", "F#m", "G7", "Cmaj7", "Dm7", "Bdim", "Esus4", "Asus2", "C6", "Am6", "Cadd9", "G9", "Em9", "E5", "Caug", "C+", "Bm7b5", "Bdim7", "C/E", "D/F#", "Ebmaj7", "H", "Cx", "c"];
 const chords = names.map((name) => ({ name, notes: chordNotes(name) }));
 const scaleKeys = keys.map((k) => ({ key: k, ...parseKey(k) }));
-console.log(JSON.stringify({ from: "yuigui site/lib/music/theory.mjs", keys: scaleKeys, rows, chords }, null, 1));
+// Sound words (MUSIC.md section 4): every kit word and alias, some written the
+// way people do (accents, case, spaces), and loops whose rows the kit does not
+// all know.
+const words = [...SOUNDS, ...Object.keys(ALIAS), "Ganzá", "Agogô", "Cuíca", "Cajón", "Güiro", "Hi-Hat", "open_hat", "Floor Tom", "theremin", "constructor"];
+const sounds = words.map((word) => ({ word, drum: soundFor(word), pitched: soundFor(word, true) }));
+const loops = [
+  ["Surdo", "Caixa", "Tamborim", "Ganzá", "Agogô"],
+  ["kick", "zap", "zing", "C4"],
+  ["surdo", "repinique", "caixa", "agogo", "cuica", "whistle", "apito"],
+  ["kick", "snare", "clap", "hat", "open", "rim", "tom", "shaker", "crash", "cow", "snap", "conga", "one", "two"],
+].map((rows) => ({ rows, sound: "bell", voices: loopVoices(rows, "bell") }));
+console.log(JSON.stringify({ from: "yuigui site/lib/music/theory.mjs", keys: scaleKeys, rows, chords, sounds, loops }, null, 1));
