@@ -13,6 +13,7 @@ import json
 import os
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -112,6 +113,79 @@ class Tools(unittest.TestCase):
         finally:
             doing.ADAPTERS.discard(a)
         self.assertEqual(seen, [(OWNER, {"text": "Searching the web"})])
+
+
+class Shim(unittest.TestCase):
+    """Agents on the claude shim (YUI-63 step 3): Claude Code runs the tools, so
+    the shim hands the newest tool name back through a file the plugin polls."""
+
+    def setUp(self):
+        self.dir = tempfile.mkdtemp(prefix="yui-shim-doing-")
+        self.saved = (doing.SHIM_DIR, doing.SHIM["on"], doing.POLL)
+        doing.SHIM_DIR, doing.SHIM["on"] = self.dir, True
+        doing.POLL = 3600  # the test ticks by hand; the poller thread stays asleep
+        self.seen = []
+        seen = self.seen
+
+        class A:
+            def doing_from_tool(self, user, props):
+                seen.append((user, props))
+        self.a = A()
+        doing.ADAPTERS.add(self.a)
+
+    def tearDown(self):
+        doing.ADAPTERS.discard(self.a)
+        doing.SHIM_DIR, doing.SHIM["on"], doing.POLL = self.saved
+        doing.TURNS.clear()
+
+    def write(self, tag, ev, bump=0):
+        path = os.path.join(self.dir, tag + ".json")
+        with open(path, "w") as f:
+            json.dump(ev, f)
+        st = os.stat(path)
+        os.utime(path, ns=(st.st_atime_ns, st.st_mtime_ns + bump))
+        return path
+
+    def test_claude_code_tools_in_plain_words(self):
+        self.assertEqual(doing.tool_words("Read"), "Reading a file")
+        self.assertEqual(doing.tool_words("WebSearch"), "Searching the web")
+        self.assertEqual(doing.tool_words("WebFetch"), "Reading a web page")
+        self.assertEqual(doing.tool_words("Grep"), "Looking through files")
+        self.assertEqual(doing.tool_words("Bash"), "Running a command")
+        self.assertEqual(doing.tool_words("Edit"), "Making an edit")
+        self.assertEqual(doing.tool_words("Task"), "Handing part of this to a helper")
+        self.assertEqual(doing.tool_words("mcp__claude_ai_Gmail__search_threads"), "Using a connected app")
+        self.assertIsNone(doing.tool_words("ExitPlanMode"))
+
+    def test_a_yui_turn_is_tagged_and_its_tools_come_back(self):
+        self.assertIsNone(doing.remember_session(session_id="s-tg", platform="telegram", sender_id="u9"))
+        ctx = doing.remember_session(session_id="s-yui", platform="yui", sender_id=OWNER)["context"]
+        self.assertRegex(ctx, r"^\[\[yui-turn:[0-9a-f]{16}\]\]$")
+        tag = ctx[len("[[yui-turn:"):-2]
+        doing.shim_tick()
+        self.assertEqual(self.seen, [])  # nothing written yet
+        self.write(tag, {"tool": "Read", "at": 1})
+        doing.shim_tick()
+        doing.shim_tick()  # the same file again says nothing new
+        self.write(tag, {"tool": "ExitPlanMode", "at": 2}, bump=1)
+        doing.shim_tick()  # no words for it: the row keeps what it had
+        self.write(tag, {"tool": "WebSearch", "at": 3}, bump=2)
+        doing.shim_tick()
+        self.assertEqual(self.seen, [(OWNER, {"text": "Reading a file"}), (OWNER, {"text": "Searching the web"})])
+        path = self.write(tag, {"done": True}, bump=3)
+        self.assertEqual(doing.shim_tick(), 0)
+        self.assertFalse(os.path.exists(path))
+
+    def test_off_the_shim_no_tag(self):
+        doing.SHIM["on"] = False
+        self.assertIsNone(doing.remember_session(session_id="s-yui", platform="yui", sender_id=OWNER))
+        self.assertEqual(doing.TURNS, {})
+
+    def test_a_run_that_never_ends_is_let_go(self):
+        tag = doing.shim_tag(OWNER)[len("[[yui-turn:"):-2]
+        self.assertEqual(doing.shim_tick(), 1)
+        self.assertEqual(doing.shim_tick(now=time.time() + doing.TAG_TTL + 1), 0)
+        self.assertNotIn(tag, doing.TURNS)
 
 
 class Throttle(unittest.TestCase):

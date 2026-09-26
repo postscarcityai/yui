@@ -16,13 +16,19 @@ Where the words come from:
     all; doing lines anywhere else are taken out of the body, so an app never
     shows one as an Update chip;
   * the agent's tool calls (pre_tool_call), mapped to plain words
-    ("Searching the web"), never tool names, ids or file names.
+    ("Searching the web"), never tool names, ids or file names;
+  * on the claude shim (127.0.0.1:8765), where Claude Code runs the tools and
+    Hermes sees none of them: the turn's prompt carries a tag, the shim writes
+    the newest tool name to <shim>/doing/<tag>.json, and a poller here maps it
+    to the same plain words (YUI-63 step 3).
 
 Only to a phone at or above yui_limits doing_min_build (unknown counts as too
 old); an older app keeps Pondering. About one write a second per thread: the
 newest wins and the last one always goes.
 """
 import asyncio
+import json
+import os
 import re
 import threading
 import time
@@ -134,6 +140,23 @@ TOOL_WORDS = {
     "cronjob": "Setting up a schedule",
     "send_message": "Sending a message",
     "yui_propose": "Drafting a change",
+    # Claude Code's own tools, for agents on the claude shim
+    "Read": "Reading a file",
+    "Grep": "Looking through files",
+    "Glob": "Looking through files",
+    "LS": "Looking through files",
+    "Bash": "Running a command",
+    "BashOutput": "Checking on a job",
+    "WebSearch": "Searching the web",
+    "WebFetch": "Reading a web page",
+    "Edit": "Making an edit",
+    "MultiEdit": "Making an edit",
+    "NotebookEdit": "Making an edit",
+    "Write": "Writing it down",
+    "Task": "Handing part of this to a helper",
+    "Agent": "Handing part of this to a helper",
+    "TodoWrite": "Planning the steps",
+    "Skill": "Checking how to do this",
 }
 TOOL_PREFIXES = (("browser_", "Using the browser"), ("kanban_", "Checking the board"),
                  ("mcp_", "Using a connected app"), ("ha_", "Checking your home"))
@@ -154,13 +177,16 @@ SESSIONS: dict = {}  # Hermes session id -> the Yui user whose turn it is
 ADAPTERS: "weakref.WeakSet" = weakref.WeakSet()
 
 
-def remember_session(session_id: str = "", platform: str = "", sender_id: str = "", **_) -> None:
-    """pre_llm_call: note which Hermes sessions are Yui turns, and for whom."""
+def remember_session(session_id: str = "", platform: str = "", sender_id: str = "", **_) -> Optional[dict]:
+    """pre_llm_call: note which Hermes sessions are Yui turns, and for whom. On
+    the claude shim, tag the turn so its tool calls come back as a file."""
     if platform == "yui" and session_id and sender_id:
         with _lock:
             SESSIONS[session_id] = sender_id
             while len(SESSIONS) > 200:
                 SESSIONS.pop(next(iter(SESSIONS)))
+        if on_shim():
+            return {"context": shim_tag(sender_id)}
     return None
 
 
@@ -177,6 +203,107 @@ def on_tool(tool_name: str = "", session_id: str = "", **_) -> None:
     except Exception:
         pass
     return None
+
+
+# -- claude shim turns (YUI-63 step 3) ----------------------------------------
+#
+# The tag rides on the turn's user message (pre_llm_call context is API-time
+# only, never stored). The shim takes it out before Claude sees the prompt, and
+# on every tool_use writes {"tool": name, "at": t} to SHIM_DIR/<tag>.json, then
+# {"done": true} when the run ends. Only the tool name crosses; the words come
+# from tool_words, so no id, path or command ever reaches the row.
+
+SHIM_DIR = os.path.expanduser("~/.local/share/hermes-claude-shim/doing")
+SHIM_PORT = ":8765"
+TAG = "[[yui-turn:{}]]"
+POLL = 0.4  # seconds between looks at the tag files
+TAG_TTL = 3 * 3600  # a tag whose run never said done
+SHIM = {"on": None}  # None: not read yet
+TURNS: dict = {}  # tag -> [user, started, last mtime]
+_poller = {"thread": None}
+
+
+def on_shim() -> bool:
+    """True when this profile's model runs through the claude shim."""
+    if SHIM["on"] is None:
+        try:
+            from hermes_cli.config import load_config_readonly
+            base = str(((load_config_readonly() or {}).get("model") or {}).get("base_url") or "")
+            SHIM["on"] = SHIM_PORT in base
+        except Exception:
+            SHIM["on"] = False
+    return SHIM["on"]
+
+
+def shim_tag(user: str) -> str:
+    """A new tag for this user's turn, and a poller watching for its file."""
+    tag = os.urandom(8).hex()
+    with _lock:
+        TURNS[tag] = [user, time.time(), None]
+        if not (_poller["thread"] and _poller["thread"].is_alive()):
+            _poller["thread"] = threading.Thread(target=_poll, name="yui-doing-shim", daemon=True)
+            _poller["thread"].start()
+    return TAG.format(tag)
+
+
+def shim_tick(now: Optional[float] = None) -> int:
+    """One look at every live tag: a new tool name becomes a doing. Returns the tags left."""
+    now = time.time() if now is None else now
+    with _lock:
+        turns = list(TURNS.items())
+    for tag, (user, started, seen) in turns:
+        path = os.path.join(SHIM_DIR, tag + ".json")
+        try:
+            mtime = os.stat(path).st_mtime_ns
+        except OSError:
+            mtime = None
+        if mtime is None or mtime == seen:
+            if now - started > TAG_TTL:
+                _drop(tag, None)
+            continue
+        try:
+            with open(path) as f:
+                ev = json.load(f)
+        except (OSError, ValueError):
+            continue  # caught mid-replace; the next look reads it
+        with _lock:
+            if tag in TURNS:
+                TURNS[tag][2] = mtime
+        if ev.get("done"):
+            _drop(tag, path)
+            continue
+        words = tool_words(str(ev.get("tool") or ""))
+        if words:
+            for a in list(ADAPTERS):
+                try:
+                    a.doing_from_tool(user, {"text": words})
+                except Exception:
+                    pass
+    with _lock:
+        return len(TURNS)
+
+
+def _drop(tag: str, path: Optional[str]) -> None:
+    with _lock:
+        TURNS.pop(tag, None)
+    if path:
+        try:
+            os.remove(path)
+        except OSError:
+            pass
+
+
+def _poll() -> None:
+    while True:
+        time.sleep(POLL)
+        try:
+            if not shim_tick():
+                with _lock:
+                    if not TURNS:
+                        _poller["thread"] = None
+                        return
+        except Exception:
+            pass
 
 
 # -- the writer --------------------------------------------------------------
