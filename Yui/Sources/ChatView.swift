@@ -13,10 +13,9 @@ struct ChatView: View {
     @Environment(\.agentStyle) private var agentStyle
     /// Yui's own look (RESTYLE.md): sheets and Settings wear it, not the open agent's.
     @Environment(\.appTheme) private var appTheme
-    @State private var draft = ""
-    /// Bumped on every send: a fresh text field. Clearing `draft` alone can leave
-    /// the sent words drawn in the field (TestFlight feedback APthnqcdHvqEP).
-    @State private var composerID = 0
+    /// The words being typed (YUI-99). Only the composer's views read them, so a
+    /// key never re-evaluates this body; `send()` and friends read them when they run.
+    @State private var composer = ComposerModel()
     @State private var store = ChatStore(messages: ChatView.seed)
     @State private var outbox = Outbox.shared
     @State private var showSettings = ProcessInfo.processInfo.arguments.contains("-yuiSettings")
@@ -90,6 +89,7 @@ struct ChatView: View {
 
     var body: some View {
         let c = theme.swatch(scheme)
+        let _ = BodyLog.hit("ChatView")
         ZStack {
         NavigationStack {
             Group {
@@ -435,7 +435,7 @@ struct ChatView: View {
                         .accessibilityAddTraits(.isButton)
                         .accessibilityAction { settleDrawer(open: false) }
                     AgentDrawer(store: store, close: { settleDrawer(open: false) },
-                                compose: { draft = $0; focused = true },
+                                compose: { composer.draft = $0; focused = true },
                                 manage: { settleDrawer(open: false); showAgents = true },
                                 add: { settleDrawer(open: false); addFirst = true },
                                 edit: { editingAgent = $0 },
@@ -464,6 +464,7 @@ struct ChatView: View {
     /// Page 1: the thread itself, or the empty chat before the first message.
     @ViewBuilder private var thread: some View {
         let c = theme.swatch(scheme)
+        let _ = BodyLog.hit("thread")
         if store.messages.isEmpty && !store.waiting {
             EmptyChat(agent: store.agent, loading: store.agent != nil && !store.loaded) { store.send($0) }
         } else {
@@ -602,38 +603,26 @@ struct ChatView: View {
             && agents.agents.isEmpty
     }
 
-    /// Typing / at the start: the agent's own commands (YUI-61). Hosts with no
-    /// command list (MCP, the demo) show nothing.
-    private var slashSuggestions: [Suggestion] {
-        talk.listening ? [] : SlashCommands.suggestions(draft, in: store.agent?.commands)
+    /// @ suggestions (YUI-44) and the bar saying who an @ goes to: not on a screen,
+    /// and the demo only with more than one agent.
+    private var mentionsOn: Bool {
+        talkPage == nil && (account.session?.userID != "demo" || agents.agents.count > 1)
     }
 
-    /// Typing @ anywhere: your other agents, filtered as you type (YUI-44).
-    private var mentionSuggestions: [Suggestion] {
-        guard !talk.listening, talkPage == nil, account.session?.userID != "demo" || agents.agents.count > 1 else { return [] }
-        return Mentions.suggestions(draft, agents: agents.agents, current: store.agent?.id)
-    }
-
-    /// The other agent this draft goes to, if it @s one.
+    /// The other agent this draft goes to, if it @s one. Read at send, never in the body.
     private var mentioning: YuiAgent? {
+        let draft = composer.draft
         guard !draft.hasPrefix("/"), talkPage == nil else { return nil }
         return Mentions.target(draft, agents: agents.agents, current: store.agent?.id)
     }
 
+    /// Nothing here reads the draft (YUI-99): the hints, the field and the send
+    /// button do, in their own views, so a key never re-evaluates the chat.
     private func inputBar(_ c: Swatch) -> some View {
-        let mentions = mentionSuggestions
-        let suggestions = mentions.isEmpty ? slashSuggestions : mentions
-        let to = mentions.isEmpty ? mentioning : nil
-        return VStack(alignment: .leading, spacing: theme.spacing.s) {
-            if !suggestions.isEmpty {
-                SuggestionPopover(items: suggestions, pick: { draft = $0.fill; focused = true },
-                                  identifier: mentions.isEmpty ? "slash" : "mention")
-                    .transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
-            }
-            if let to {
-                MentionBar(agent: to)
-                    .transition(.opacity)
-            }
+        VStack(alignment: .leading, spacing: theme.spacing.s) {
+            ComposerHints(composer: composer, commands: store.agent?.commands, mentions: mentionsOn,
+                          agents: agents.agents, current: store.agent?.id, listening: talk.listening,
+                          reduceMotion: reduceMotion, focused: $focused)
             if let q = store.replying, talkPage == nil {
                 ReplyBar(quote: q, agent: store.agent?.name) { store.cancelReply() }
                     .transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
@@ -657,8 +646,6 @@ struct ChatView: View {
         .background(c.background)
         .animation(theme.spring, value: talk.listening)
         .animation(theme.spring, value: photos)
-        .animation(reduceMotion ? .easeInOut(duration: 0.15) : theme.spring, value: suggestions.isEmpty)
-        .animation(.easeInOut(duration: 0.15), value: to?.id)
         .animation(reduceMotion ? .easeInOut(duration: 0.2) : theme.spring, value: store.replying)
         .fullScreenCover(isPresented: $shooting) {
             CameraCapture(front: false) { data in
@@ -693,20 +680,9 @@ struct ChatView: View {
     }
 
     private func field(_ c: Swatch) -> some View {
-        TextField(!photos.isEmpty ? "Add a caption" : talkPage.map { "About screen \($0)" } ?? "Say something nice",
-                  text: Binding(get: { draft }, set: { draft = $0; Perf.shared.span(.keystrokeRender) }), axis: .vertical)
-            .font(theme.font(theme.type.body))
-            .foregroundStyle(c.ink)
-            .lineLimit(1...5)
-            .focused($focused)
-            .accessibilityIdentifier("composer")
-            .onSubmit(send)
-            .id(composerID)
-            .padding(.horizontal, theme.spacing.l)
-            .padding(.vertical, theme.spacing.m)
-            .frame(minHeight: 46)
-            .background(c.surface, in: .rect(cornerRadius: theme.radius.pill))
-            .overlay(RoundedRectangle(cornerRadius: theme.radius.pill).stroke(c.outline, lineWidth: 1.5))
+        ComposerField(composer: composer,
+                      prompt: !photos.isEmpty ? "Add a caption" : talkPage.map { "About screen \($0)" } ?? "Say something nice",
+                      focused: $focused, submit: send)
     }
 
     /// Held down: what it hears, live, where the words would be, with the trash on the
@@ -802,43 +778,40 @@ struct ChatView: View {
 
     /// Send when there is something to send; otherwise the mic: hold to talk.
     private func sendButton(_ c: Swatch) -> some View {
-        let ready = !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !photos.isEmpty
-        return Group {
-            if ready || sending {
-                Button(action: send) {
-                    Image(systemName: "arrow.up")
-                        .font(theme.font(theme.type.title, .black))
-                        .foregroundStyle(c.onAccent)
-                        .frame(width: 46, height: 46)
-                        .background(c.accent, in: Circle())
-                }
-                .buttonStyle(BounceButtonStyle())
-                .disabled(sending)
-                .accessibilityLabel("Send")
-            } else {
-                Image(systemName: cancelArmed ? "trash.fill" : talk.listening ? "waveform" : "mic.fill")
+        SendOrMic(composer: composer, send: !photos.isEmpty || sending) {
+            Button(action: send) {
+                Image(systemName: "arrow.up")
                     .font(theme.font(theme.type.title, .black))
-                    .foregroundStyle(talk.listening ? c.onAccent : c.ink)
-                    .symbolEffect(.variableColor.iterative, isActive: talk.listening && !cancelArmed && !reduceMotion)
+                    .foregroundStyle(c.onAccent)
                     .frame(width: 46, height: 46)
-                    .background(talk.listening ? (cancelArmed ? c.inkSoft : c.accent) : c.surface, in: Circle())
-                    .overlay(Circle().stroke(talk.listening ? .clear : c.outline, lineWidth: 1.5))
-                    .scaleEffect(talk.listening ? 1.25 : 1)
-                    .contentShape(Circle())
-                    // Follows the finger left, like a thumb pulling it to the trash.
-                    .offset(x: talk.listening ? max(micDragX, -Self.cancelDistance - 40) : 0)
-                    // Global space: the button moves under the finger, so its own space would jitter.
-                    .gesture(DragGesture(minimumDistance: 0, coordinateSpace: .global)
-                        .updating($micPress) { v, state, _ in state = v.translation.width })
-                    .onChange(of: micPress) { old, new in
-                        if old == nil, new != nil { micDown() }
-                        if let x = new { micDragX = min(0, x) }
-                        if old != nil, new == nil { micUp() }
-                    }
-                    .sensoryFeedback(.impact(weight: .light), trigger: talk.listening) { _, now in now }
-                    .accessibilityLabel(talk.listening ? "Listening" : "Hold to talk")
-                    .accessibilityIdentifier("talk")
+                    .background(c.accent, in: Circle())
             }
+            .buttonStyle(BounceButtonStyle())
+            .disabled(sending)
+            .accessibilityLabel("Send")
+        } mic: {
+            Image(systemName: cancelArmed ? "trash.fill" : talk.listening ? "waveform" : "mic.fill")
+                .font(theme.font(theme.type.title, .black))
+                .foregroundStyle(talk.listening ? c.onAccent : c.ink)
+                .symbolEffect(.variableColor.iterative, isActive: talk.listening && !cancelArmed && !reduceMotion)
+                .frame(width: 46, height: 46)
+                .background(talk.listening ? (cancelArmed ? c.inkSoft : c.accent) : c.surface, in: Circle())
+                .overlay(Circle().stroke(talk.listening ? .clear : c.outline, lineWidth: 1.5))
+                .scaleEffect(talk.listening ? 1.25 : 1)
+                .contentShape(Circle())
+                // Follows the finger left, like a thumb pulling it to the trash.
+                .offset(x: talk.listening ? max(micDragX, -Self.cancelDistance - 40) : 0)
+                // Global space: the button moves under the finger, so its own space would jitter.
+                .gesture(DragGesture(minimumDistance: 0, coordinateSpace: .global)
+                    .updating($micPress) { v, state, _ in state = v.translation.width })
+                .onChange(of: micPress) { old, new in
+                    if old == nil, new != nil { micDown() }
+                    if let x = new { micDragX = min(0, x) }
+                    if old != nil, new == nil { micUp() }
+                }
+                .sensoryFeedback(.impact(weight: .light), trigger: talk.listening) { _, now in now }
+                .accessibilityLabel(talk.listening ? "Listening" : "Hold to talk")
+                .accessibilityIdentifier("talk")
         }
     }
 
@@ -872,7 +845,7 @@ struct ChatView: View {
             if cancel {
                 talk.cancel()
             } else {
-                Task { let words = await talk.stop(); if !words.isEmpty { draft = words; send() } }
+                Task { let words = await talk.stop(); if !words.isEmpty { composer.draft = words; send() } }
             }
         } else if !micStarting {
             holdStart?.cancel()
@@ -907,7 +880,7 @@ struct ChatView: View {
         // send_bubble (YUI-102): the tap to the frame with the bubble. Photo sends wait on
         // the upload before their bubble, so they are not timed.
         let tapped = CACurrentMediaTime()
-        let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        let text = composer.draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty || !photos.isEmpty, !sending else { return }
         if account.session?.userID != "demo" {
             guard store.agent != nil else { return }
@@ -1057,8 +1030,8 @@ struct ChatView: View {
     /// A hold-to-talk send leaves it down.
     private func clearComposer() {
         let keep = focused
-        draft = ""
-        composerID += 1
+        composer.draft = ""
+        composer.fieldID += 1
         // The new field mounts on the next pass; focus it then so the keyboard stays.
         if keep { Task { @MainActor in focused = true } }
     }
@@ -1249,8 +1222,12 @@ struct ChatView: View {
         // -yuiLongThread <n>: n back-and-forth messages, enough to scroll (YUI-50).
         let long = UserDefaults.standard.integer(forKey: "yuiLongThread")
         if long > 0 {
+            // -yuiLongThreadCards: every tenth answer is a card, the way a real thread mixes them (YUI-99).
+            let cards = ProcessInfo.processInfo.arguments.contains("-yuiLongThreadCards")
             return (1...long).map { i in
-                i.isMultiple(of: 2)
+                cards && i.isMultiple(of: 10)
+                    ? ChatMessage(text: "", fromUser: false, yl: YLScreen(YLSamples.text("tabata")!))
+                    : i.isMultiple(of: 2)
                     ? ChatMessage(text: "Message \(i). Here's a longer answer so the thread fills the screen the way a real one does.",
                                   fromUser: false)
                     : ChatMessage(text: "Message \(i)", fromUser: true)

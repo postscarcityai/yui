@@ -194,6 +194,19 @@ final class PerfLive {
     }
 }
 
+/// `-yuiBodyLog` (Xcode builds): a view logs each time its body runs (YUI-99), so a
+/// test can count how often typing makes the chat re-evaluate. Off everywhere else.
+enum BodyLog {
+    #if DEBUG
+    static let on = ProcessInfo.processInfo.arguments.contains("-yuiBodyLog")
+    #else
+    static let on = false
+    #endif
+    static func hit(_ name: String) {
+        if on { Perf.log.debug("body \(name, privacy: .public)") }
+    }
+}
+
 /// The Speed switch lives in Settings > About this build, on Dev builds only
 /// (the Yui Dev bundle, or an Xcode run). TestFlight and App Store builds never
 /// read it, so a stale default can't turn anything on there.
