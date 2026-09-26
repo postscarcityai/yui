@@ -64,12 +64,15 @@ struct YuiAgent: Codable, Identifiable, Equatable, Sendable {
     var clientSafe: Bool? = nil
     /// An owned agent's broken rules ("terminal: local shell"); [] when it is safe (YUI-97).
     var shareWhy: [String]? = nil
+    /// What its host lets the drawer's Controls tab do (YUI-70). Nil: the host shares no settings.
+    var controls: AgentControls? = nil
 
     enum CodingKeys: String, CodingKey {
         case id, name, handle, color, avatar, kind, status, sort, theme
         case connectorID = "connector_id", connectorName = "connector_name", remoteRef = "remote_ref"
         case lastSeenAt = "last_seen_at", isDefault = "is_default", pushMuted = "push_muted", presence, commands, shared
         case sharedBy = "shared_by", firstMessage = "first_message", clientSafe = "client_safe", shareWhy = "share_why"
+        case controls
     }
 }
 
@@ -193,6 +196,16 @@ final class AgentStore {
             let args = ProcessInfo.processInfo.arguments
             agents = args.contains("-yuiNoAgents") ? [] : args.contains("-yuiDemoAgents") ? Self.demoCrew
                 : args.contains("-yuiDemoShared") ? Self.demoShared : Self.demo
+            // -yuiDemoControls: the demo's own Hermes agents report every section (YUI-70);
+            // Counsel stays offline, Nova's host shares nothing.
+            if args.contains("-yuiDemoControls") {
+                agents = agents.map { a in
+                    var a = a
+                    if !a.isShared, a.id != "demo-nova" { a.controls = Self.demoReport }
+                    if a.id != "demo-counsel", a.presence == nil { a.presence = "online" }
+                    return a
+                }
+            }
             if args.contains("-yuiDemoShared") {
                 firstName = "Maya"
                 // -yuiDemoRevoke <s>: Basil is revoked after s seconds, as a push would tell it (YUI-97).
@@ -513,5 +526,7 @@ final class AgentStore {
                  status: .connected, lastSeenAt: .now, isDefault: false, sort: 2,
                  theme: AgentLook(preset: "ocean"), presence: "paused", shared: true, sharedBy: "Sam", clientSafe: false),
     ]
+    static let demoReport = AgentControls(v: 1, sections: ["soul": "rw", "memory": "rwd", "skills": "rwd",
+                                                             "schedules": "rwd", "model": "r", "channels": "r"])
     static let demoCode = PairingCode(code: "123456", expiresAt: .now.addingTimeInterval(600))
 }

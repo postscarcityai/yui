@@ -102,6 +102,14 @@ Transport: the gateway dials OUT to Supabase (PROOF). No inbound ports.
      sentence teaching it is added to the turn only in the same case. The
      preview card's taps read `[yui] restyle theme app choice=apply name=...`.
 
+ 16. Controls (YUI-70, controls.py): the drawer's Controls tab sends
+     kind='control' rows (list, get, put, act, delete over soul, memory,
+     skills, schedules; list and get for model and channels). They are served
+     here with no agent turn, only for the paired owner, and answered with one
+     kind='control' row (same req, no push). The agent's next turn starts with
+     one line on what changed. The capability report goes to yui-connect
+     (action=controls) with the commands.
+
 The channel guide (CHANNEL.md, synced verbatim from yuigui/spec/CHANNEL.md by
 ../sync_channel.py) is this platform's system-prompt hint, so it is in the
 system prompt on every turn on the Yui channel, and only there. Its restyle
@@ -138,7 +146,7 @@ from gateway.config import Platform, PlatformConfig
 from gateway.platforms.base import (BasePlatformAdapter, MessageEvent, MessageType, ProcessingOutcome,
                                     SendResult)
 
-from . import board, compat, connector, flywheel, groups, media, mentions, needs, outbox, restyle, sandbox, textbomb
+from . import board, compat, connector, controls, flywheel, groups, media, mentions, needs, outbox, restyle, sandbox, textbomb
 from . import commands as slash
 
 logger = logging.getLogger(__name__)
@@ -296,6 +304,9 @@ class YuiAdapter(BasePlatformAdapter):
         self._notes: Dict[str, List[str]] = {}       # agent id -> notes for its next turn (board order)
         self._paused_said: Optional[str] = None      # the rule list the owner was last told about (YUI-95)
         self._commands_sent: Optional[str] = None    # fingerprint of the /command list Yui has (YUI-61)
+        self._controls_sent: Optional[str] = None    # the agents Yui has this host's controls report for (YUI-70)
+        self._controls: Optional[controls.Host] = None
+        self._control_changes: Dict[str, List[str]] = {}  # agent id -> settings changed since its last turn
 
     # Inbound is authorized upstream: RLS on yui_messages only ever shows this
     # connector the threads of its own paired user.
@@ -351,6 +362,7 @@ class YuiAdapter(BasePlatformAdapter):
             self._cursor.setdefault(aid, floor)
         self._save_cursor()
         await self._report_commands()
+        await self._report_controls()
         self._mark_connected()
         self._tasks = [
             asyncio.create_task(self._heartbeat_loop()),
@@ -447,6 +459,7 @@ class YuiAdapter(BasePlatformAdapter):
                                                      "sandbox": await self._sandbox()})
                     self._set_agents(data.get("agents") or [])
                 await self._report_commands()
+                await self._report_controls()
             except asyncio.CancelledError:
                 raise
             except Exception as e:
@@ -470,6 +483,22 @@ class YuiAdapter(BasePlatformAdapter):
             logger.info("[yui] reported %d commands for %s", len(cmds), self._remote_ref)
         except Exception as e:
             logger.warning("[yui] commands not reported: %s", e)
+
+    async def _report_controls(self) -> None:
+        """Tell Yui which settings the drawer's Controls tab may read and change
+        (YUI-70): on start and whenever this gateway serves a new agent. Never fatal."""
+        if not self._agents:
+            return
+        fp = ",".join(sorted(self._agents))
+        if fp == getattr(self, "_controls_sent", None):
+            return
+        try:
+            await self._connect_call({"action": "controls", "remote_ref": self._remote_ref,
+                                      "controls": controls.report()})
+            self._controls_sent = fp
+            logger.info("[yui] reported controls for %s", self._remote_ref)
+        except Exception as e:
+            logger.warning("[yui] controls not reported: %s", e)
 
     @property
     def _serving(self) -> List[str]:
@@ -541,7 +570,8 @@ class YuiAdapter(BasePlatformAdapter):
                         logger.info("[yui] %s was answered before a restart, not replaying", row["id"][:8])
                         self._acks.add(row["id"])
                         continue
-                    if (await self._owner_only(aid, row) or await self._board_order(aid, row)
+                    if (await self._control(aid, row) or await self._owner_only(aid, row)
+                            or await self._board_order(aid, row)
                             or await self._need_answer(aid, row)):
                         continue
                     self._queue.setdefault(self._key(row), []).append(row)
@@ -631,6 +661,31 @@ class YuiAdapter(BasePlatformAdapter):
                 logger.warning("[yui] needs-you answer %s: %s", row["id"][:8], e)
                 text = "Couldn't reach the board to send that answer. Try again in a minute."
         await self._confirm(aid, row, text)
+        return True
+
+    async def _control(self, aid: str, row: dict) -> bool:
+        """A request from the drawer's Controls tab (YUI-70): served here, never a turn.
+        One answer row back (kind control, same req, no push)."""
+        req = controls.request_of(row)
+        if req is None:
+            return False
+        await self._mark([row["id"]], "delivered_at")
+        if self._controls is None:
+            self._controls = controls.Host(self._state_dir().parent)
+        owner = row.get("user_id") == self._user_id and self._key(row) == aid
+        ans, change = await asyncio.to_thread(self._controls.handle, req, owner=owner,
+                                              who=row.get("user_id") or "", agent=aid)
+        if change:
+            self._control_changes.setdefault(aid, []).append(change)
+        reply = {"id": str(uuid.uuid4()), "user_id": row.get("user_id") or self._user_id, "agent_id": aid,
+                 "sender": "agent", "body": controls.body_of(req, ans), "kind": "control",
+                 "meta": {**ans, "for": row["id"]}}  # not meta.turn: no mention or group trigger wakes
+        result = await self._write_row(reply)
+        if result == "retry":  # the app waits 5 s and offers Try again; a late answer is still read
+            result = await self._write_row(reply)
+        logger.info("[yui] control %s %s %s: %s (%s)", row["id"][:8], req.get("op"), req.get("section"),
+                    "ok" if ans.get("ok") else ans.get("error"), result)
+        self._acks.add(row["id"])
         return True
 
     async def _confirm(self, aid: str, row: dict, text: str) -> None:
@@ -733,6 +788,9 @@ class YuiAdapter(BasePlatformAdapter):
         # were asked and answered in this thread (YUI-44): the agent reads them first.
         # Only the owner's turns: these name the owner's other agents and board.
         notes = self._notes.pop(row["agent_id"], []) if owner else []
+        changed = getattr(self, "_control_changes", {}).pop(row["agent_id"], []) if owner else []
+        if changed:  # settings changed in the drawer's Controls tab (YUI-70)
+            notes.append(controls.note(changed))
         if owner and not texts[0].lstrip().startswith("/"):
             notes += await self._mention_notes(row["agent_id"], row.get("created_at"))
             for tid in groups.threads_in(rows):  # what the other members said (YUI-93)

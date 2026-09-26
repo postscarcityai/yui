@@ -126,6 +126,8 @@ struct ThreadClient {
         var items = [
             URLQueryItem(name: "select", value: Self.columns),
             URLQueryItem(name: "agent_id", value: "eq.\(agentID)"),
+            // Controls (YUI-70) ride the same table and never show in the thread.
+            URLQueryItem(name: "kind", value: "neq.control"),
         ]
         if let since {
             items += [URLQueryItem(name: "created_at", value: "gt.\(since)"),
@@ -151,10 +153,25 @@ struct ThreadClient {
         c.queryItems = [URLQueryItem(name: "select", value: Self.columns),
                         URLQueryItem(name: "agent_id", value: "eq.\(agentID)"),
                         URLQueryItem(name: "sender", value: "eq.user"),
+                        URLQueryItem(name: "kind", value: "neq.control"),
                         URLQueryItem(name: "order", value: "created_at.desc"),
                         URLQueryItem(name: "limit", value: "1")]
         let data = try await request(URLRequest(url: c.url!))
         return try JSONDecoder().decode([ThreadRow].self, from: data).first
+    }
+
+    /// The host's answer to a control request (YUI-70), by its `req`. Nil until it lands.
+    func controlAnswer(req: String) async throws -> ControlAnswer? {
+        var c = URLComponents(url: YuiBackend.url.appending(path: "rest/v1/yui_messages"), resolvingAgainstBaseURL: false)!
+        c.queryItems = [URLQueryItem(name: "select", value: "meta"),
+                        URLQueryItem(name: "agent_id", value: "eq.\(agentID)"),
+                        URLQueryItem(name: "kind", value: "eq.control"),
+                        URLQueryItem(name: "sender", value: "eq.agent"),
+                        URLQueryItem(name: "meta->>req", value: "eq.\(req)"),
+                        URLQueryItem(name: "limit", value: "1")]
+        struct Row: Decodable { let meta: ControlAnswer }
+        let data = try await request(URLRequest(url: c.url!))
+        return try JSONDecoder().decode([Row].self, from: data).first?.meta
     }
 
     func post(id: String, body: String, kind: String = "text", meta: YLValue? = nil) async throws {

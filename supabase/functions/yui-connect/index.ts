@@ -36,6 +36,10 @@
 //       The /commands that profile accepts (YUI-61): [{name, description,
 //       args?}], cleaned here, stored on its agents for the composer's
 //       suggestions. commands: null clears them.
+//   {action: "controls", remote_ref, controls}           Bearer yui_ct_...
+//       What the drawer's Controls tab may do on that profile's host (YUI-70,
+//       yuigui/spec/CONTROLS.md): {v: 1, sections: {soul: "rw", memory: "rwd",
+//       ...}}, cleaned here, stored on its agents. controls: null clears it.
 //   {action: "guide"}                                    no auth
 //       The current channel guide {version, body}: the text any agent gets
 //       on the Yui channel (yuigui/spec/CHANNEL.md).
@@ -95,6 +99,8 @@ Deno.serve(async (req) => {
         return await bye(req, body);
       case "commands":
         return await commands(req, body);
+      case "controls":
+        return await controls(req, body);
       case "guide":
         return json({ guide: await guide(admin()) });
       default:
@@ -347,6 +353,38 @@ async function commands(req: Request, b: Body): Promise<Response> {
     .eq("connector_id", connector.id).eq("remote_ref", b.remote_ref).select("id");
   if (error) throw error;
   return json({ agents: (data ?? []).length, commands: list?.length ?? 0, at: now });
+}
+
+const CONTROL_SECTIONS: Record<string, string[]> = {
+  soul: ["r", "rw"], memory: ["r", "rw", "rwd"], skills: ["r", "rw", "rwd"],
+  schedules: ["r", "rw", "rwd"], model: ["r"], channels: ["r"],
+};
+
+/** The capability report, only the sections and modes the app knows (YUI-70). null: not a report. */
+// deno-lint-ignore no-explicit-any
+export function cleanControls(c: any): { v: number; sections: Record<string, string> } | null {
+  if (!c || typeof c !== "object" || Array.isArray(c) || c.v !== 1) return null;
+  const s = c.sections;
+  if (!s || typeof s !== "object" || Array.isArray(s)) return null;
+  const sections: Record<string, string> = {};
+  for (const [k, modes] of Object.entries(CONTROL_SECTIONS)) {
+    if (typeof s[k] === "string" && modes.includes(s[k])) sections[k] = s[k];
+  }
+  return { v: 1, sections };
+}
+
+async function controls(req: Request, b: Body): Promise<Response> {
+  const db = admin();
+  const connector = await connectorFor(db, req);
+  if (!connector) return json({ error: "unauthorized" }, 401);
+  if (!validRemoteRef(b.remote_ref)) return json({ error: "invalid_remote_ref" }, 400);
+  const report = b.controls === null ? null : cleanControls(b.controls);
+  if (b.controls !== null && report === null) return json({ error: "invalid_controls" }, 400);
+  const now = new Date().toISOString();
+  const { data, error } = await db.from("yui_agents").update({ controls: report, controls_at: now })
+    .eq("connector_id", connector.id).eq("remote_ref", b.remote_ref).select("id");
+  if (error) throw error;
+  return json({ agents: (data ?? []).length, sections: Object.keys(report?.sections ?? {}), at: now });
 }
 
 // deno-lint-ignore no-explicit-any

@@ -130,7 +130,7 @@ struct AgentDrawer: View {
         let waiting = store.awaitingYou
         VStack(alignment: .leading, spacing: 0) {
             header(c)
-            TabStrip(tab: $tab, review: waiting.count + store.menu.review.count, ns: tabs)
+            TabStrip(tab: $tab, tabs: DrawerTab.shown(for: store.agent), review: waiting.count + store.menu.review.count, ns: tabs)
                 .padding(.horizontal, theme.spacing.l)
                 .padding(.bottom, theme.spacing.m)
             ScrollView {
@@ -168,6 +168,9 @@ struct AgentDrawer: View {
         }
         .animation(reduceMotion ? .easeInOut(duration: 0.2) : theme.spring, value: switching)
         .sensoryFeedback(.selection, trigger: switching)
+        .onChange(of: store.agent?.id, initial: true) {
+            if !DrawerTab.shown(for: store.agent).contains(tab) { tab = .home }
+        }
     }
 
     private func header(_ c: Swatch) -> some View {
@@ -197,11 +200,17 @@ struct AgentDrawer: View {
 enum DrawerTab: String, CaseIterable, Identifiable {
     case home = "Home", review = "Review", controls = "Controls", about = "About"
     var id: String { rawValue }
+
+    /// Only the owner sees Controls (YUI-70): a shared agent's drawer has none.
+    static func shown(for agent: YuiAgent?) -> [DrawerTab] {
+        agent?.isShared == true ? allCases.filter { $0 != .controls } : allCases
+    }
 }
 
 /// Four tabs in a capsule; the one on show sits on a coral pill that slides between them.
 private struct TabStrip: View {
     @Binding var tab: DrawerTab
+    let tabs: [DrawerTab]
     let review: Int
     let ns: Namespace.ID
     @Environment(\.yuiTheme) private var theme
@@ -210,7 +219,7 @@ private struct TabStrip: View {
     var body: some View {
         let c = theme.swatch(scheme)
         HStack(spacing: 2) {
-            ForEach(DrawerTab.allCases) { t in
+            ForEach(tabs) { t in
                 Button { tab = t } label: {
                     HStack(spacing: 5) {
                         Text(t.rawValue)
@@ -676,12 +685,22 @@ enum MenuAction {
 
 // MARK: Controls
 
-/// The agent's own settings. Soul, memory, skills and schedules get real editors
-/// with the host's controls; until then each one asks the agent to show it.
+/// The agent's own settings, straight on its computer (YUI-70, spec yuigui
+/// spec/CONTROLS.md): one row per area its host reports; each opens its screen.
+/// A host that reports nothing gets the About card and one line. An offline host
+/// greys the rows out instead of queueing changes.
 private struct DrawerControls: View {
     let store: ChatStore
     let close: () -> Void
     let edit: (YuiAgent) -> Void
+    /// The area on show, with its model: one value, so the sheet never opens without it.
+    @State private var open: Opened?
+
+    struct Opened: Identifiable {
+        let section: ControlSection
+        let model: ControlsModel
+        var id: String { section.rawValue }
+    }
     @Environment(\.yuiTheme) private var theme
     @Environment(\.colorScheme) private var scheme
 
@@ -689,36 +708,88 @@ private struct DrawerControls: View {
         let c = theme.swatch(scheme)
         let name = store.agent?.name ?? "your agent"
         VStack(alignment: .leading, spacing: theme.spacing.s) {
-            if let agent = store.agent {
+            if let agent = store.agent, let report = agent.controls, !report.shown.isEmpty {
                 DrawerHeading(text: "In Yui")
                 DrawerRow(icon: "paintpalette.fill", title: "Name, look and notifications",
                           sub: agent.muted ? "Notifications off" : "Notifications on", tint: c.accent.opacity(0.6)) {
                     edit(agent)
                 }
                 .accessibilityIdentifier("drawer-edit-agent")
-            }
-            DrawerHeading(text: "On its computer")
-            ForEach(Self.asks, id: \.title) { a in
-                DrawerRow(icon: a.icon, title: a.title, sub: "Ask \(name) to show it", tint: a.tint(c),
-                          trailing: "arrow.up.right") {
-                    close()
-                    _ = store.send(a.say)
+                DrawerHeading(text: "On its computer")
+                let live = agent.liveness == .online
+                if !live {
+                    Label("\(name)'s computer is \(agent.liveness.spoken). Controls come back when it's online.",
+                          systemImage: "moon.zzz.fill")
+                        .font(theme.font(theme.type.caption, .semibold))
+                        .foregroundStyle(c.inkSoft)
+                        .padding(.bottom, theme.spacing.xs)
+                        .accessibilityIdentifier("controls-offline")
                 }
+                ForEach(report.shown) { s in
+                    DrawerRow(icon: s.icon, title: s.title, sub: s.sub(name), tint: tint(s, c)) {
+                        if let m = store.controlsModel() { open = Opened(section: s, model: m) }
+                    }
+                    .disabled(!live)
+                    .opacity(live ? 1 : 0.45)
+                    .accessibilityIdentifier("controls-\(s.rawValue)")
+                }
+            } else {
+                ControlsAboutCard(agent: store.agent) { if let a = store.agent { edit(a) } }
+                Text("This agent's host doesn't share its settings yet.")
+                    .font(theme.font(15)).foregroundStyle(c.inkSoft)
+                    .padding(.top, theme.spacing.s)
+                    .accessibilityIdentifier("controls-not-shared")
             }
+        }
+        .sheet(item: $open) { o in
+            ControlsSheet(model: o.model, section: o.section, agentID: store.agent?.id ?? "")
+                .environment(\.yuiTheme, theme)
         }
     }
 
-    struct Ask {
-        let icon, title, say: String
-        let tint: (Swatch) -> Color
+    private func tint(_ s: ControlSection, _ c: Swatch) -> Color {
+        switch s {
+        case .soul, .schedules: c.lavender
+        case .memory, .channels: c.mint
+        case .skills, .model: c.butter
+        }
     }
+}
 
-    static let asks: [Ask] = [
-        Ask(icon: "sparkles", title: "Soul", say: "Show me your soul: who you are and how you talk.", tint: { $0.lavender }),
-        Ask(icon: "brain.head.profile", title: "Memory", say: "What do you remember about me? Show it so I can change or forget things.", tint: { $0.mint }),
-        Ask(icon: "wand.and.stars", title: "Skills", say: "What skills do you have? Show them as a list.", tint: { $0.butter }),
-        Ask(icon: "calendar.badge.clock", title: "Schedules", say: "What do you run on a schedule for me? Show them with their times.", tint: { $0.lavender }),
-    ]
+/// The About card, for a host that shares no settings: who it is, where it runs.
+private struct ControlsAboutCard: View {
+    let agent: YuiAgent?
+    let edit: () -> Void
+    @Environment(\.yuiTheme) private var theme
+    @Environment(\.colorScheme) private var scheme
+
+    var body: some View {
+        let c = theme.swatch(scheme)
+        if let agent {
+            VStack(alignment: .leading, spacing: theme.spacing.m) {
+                HStack(spacing: theme.spacing.m) {
+                    AgentBadge(agent: agent, size: 48)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(agent.name).font(theme.font(theme.type.title, theme.strong)).foregroundStyle(c.ink)
+                        StatusLine(agent: agent)
+                    }
+                    Spacer(minLength: 0)
+                }
+                if !agent.isShared {
+                    Button("Name, look and notifications", systemImage: "paintpalette.fill", action: edit)
+                        .font(theme.font(15, .bold))
+                        .foregroundStyle(c.accent)
+                        .accessibilityIdentifier("drawer-edit-agent")
+                }
+            }
+            .padding(theme.spacing.l)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(c.surface, in: .rect(cornerRadius: 20))
+            .overlay(RoundedRectangle(cornerRadius: 20).stroke(c.outline, lineWidth: 1))
+            .padding(.top, theme.spacing.m)
+            .accessibilityIdentifier("controls-about-card")
+        }
+    }
 }
 
 // MARK: About

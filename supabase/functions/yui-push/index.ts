@@ -196,7 +196,7 @@ async function notify(req: Request, b: Body): Promise<Response> {
   if (!connector) return json({ error: "unauthorized" }, 401);
   if (typeof b.message_id !== "string") return json({ error: "invalid_message_id" }, 400);
 
-  const { data: msg } = await db.from("yui_messages").select("id, user_id, agent_id, sender, body, created_at")
+  const { data: msg } = await db.from("yui_messages").select("id, user_id, agent_id, sender, body, kind, created_at")
     .eq("id", b.message_id).maybeSingle();
   const { data: agent } = msg
     ? await db.from("yui_agents").select("id, name, connector_id, push_muted, client_safe").eq("id", msg.agent_id).maybeSingle()
@@ -216,6 +216,8 @@ async function notify(req: Request, b: Body): Promise<Response> {
     return json({ error: "not_found" }, 404);
   }
   if (msg.sender !== "agent") return json({ error: "not_an_agent_message" }, 400);
+  // A settings answer from the drawer's Controls tab (YUI-70): never a notification.
+  if (msg.kind === "control") return json({ error: "control_row" }, 400);
   if (Date.now() - new Date(msg.created_at).getTime() > NOTIFY_WINDOW_MS) return json({ error: "too_old" }, 409);
   if (muted) return json({ ok: true, muted: true, devices: 0, delivered: 0, skipped: 0, results: [] });
 

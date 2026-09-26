@@ -473,6 +473,22 @@ final class ChatStore {
         agent = fresh
     }
 
+    /// The drawer's Controls for this agent (YUI-70): over the relay, or on the demo
+    /// account a stand-in host. Nil when its host shares no settings.
+    func controlsModel() -> ControlsModel? {
+        guard let agent, let report = agent.controls else { return nil }
+        if let client { return ControlsModel(transport: RelayControls(client: client), agentName: agent.name, report: report) }
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("-yuiDemoAccount") {
+            return ControlsModel(transport: Self.demoControls, agentName: agent.name, report: report)
+        }
+        #endif
+        return nil
+    }
+    #if DEBUG
+    static let demoControls = DemoControls()
+    #endif
+
     /// The demo account: show `agent`'s face on the local demo chat, no thread.
     func demo(_ agent: YuiAgent?) {
         poll?.cancel()
@@ -732,6 +748,7 @@ final class ChatStore {
     @discardableResult
     private func add(_ row: ThreadRow) -> Bool {
         let id = row.id.lowercased()
+        if row.kind == "control" { return false }  // settings traffic (YUI-70), never in the thread
         // Polls overlap: only a row not seen before can end the wait.
         guard seen.insert(id).inserted else { return false }
         // Another agent's answer copied in (YUI-44) doesn't end this agent's turn.
