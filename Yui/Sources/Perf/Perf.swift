@@ -31,6 +31,8 @@ enum PerfInterval: String, CaseIterable, Sendable {
     case tap
     /// Not a time: hitch ms per second while the thread scrolls (YUI-101). Under 5 is smooth.
     case scrollHitch = "scroll_hitch"
+    /// Voice (YUI-14): the end of the audio (let go, or hands-free heard the quiet) to the final words.
+    case voiceFinal = "voice_final"
 
     /// The signpost name Instruments shows.
     var signpost: StaticString {
@@ -46,6 +48,7 @@ enum PerfInterval: String, CaseIterable, Sendable {
         case .resume: "resume"
         case .tap: "tap"
         case .scrollHitch: "scroll_hitch"
+        case .voiceFinal: "voice_final"
         }
     }
 }

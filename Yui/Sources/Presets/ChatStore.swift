@@ -236,6 +236,9 @@ final class ChatStore {
     /// A reopened thread only resumes a turn this recent (the host gives up on
     /// a turn after 30 minutes, TURN_TIMEOUT_SECONDS in the plugin).
     static let turnWindow: TimeInterval = 30 * 60
+    /// How often the thread is fetched: while a reply is owed, and otherwise.
+    static let replyPoll: Duration = .milliseconds(350)
+    static let idlePoll: Duration = .seconds(1.5)
 
     init(messages: [ChatMessage] = []) { self.messages = messages }
 
@@ -535,7 +538,8 @@ final class ChatStore {
         poll = Task { [weak self] in
             while !Task.isCancelled {
                 await self?.refresh()
-                try? await Task.sleep(for: .seconds(1.5))
+                // A reply is owed: look often, so its first words show soon after they land (YUI-14).
+                try? await Task.sleep(for: self?.waiting == true ? Self.replyPoll : Self.idlePoll)
             }
         }
     }

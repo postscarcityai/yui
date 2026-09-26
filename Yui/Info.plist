@@ -36,9 +36,9 @@
 	<key>NSCameraUsageDescription</key>
 	<string>Send a photo to an agent, or take one when it asks, like your plate or a receipt. Yui sends it only to the agent in that thread.</string>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>Hold the mic to talk to your agent. Yui turns your words into text on your phone and sends the text.</string>
+	<string>So you can talk to your agents. Your voice turns into text on your phone, and only the text is sent.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
-	<string>Hold the mic to talk to your agent. Your words become text on your phone before they are sent.</string>
+	<string>Your words turn into text right on your phone. The audio never leaves it.</string>
 	<key>NSSupportsLiveActivities</key>
 	<true/>
 	<key>UIBackgroundModes</key>

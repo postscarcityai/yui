@@ -697,6 +697,8 @@ struct EditAgentSheet: View {
     @State private var name = ""
     @State private var look: String?
     @State private var notify = true
+    /// Talk or type when the thread opens (YUI-14), kept on this phone.
+    @State private var mode = TalkMode.type
     @State private var confirmRemove = false
     @State private var code: PairingCode?
 
@@ -737,6 +739,7 @@ struct EditAgentSheet: View {
                             if !agent.isShared, n != agent.name, !n.isEmpty { await store.update(agent, name: n) }
                             if !agent.isShared, look != agent.theme?.preset { await store.setLook(agent, preset: look) }
                             if notify == agent.muted { await store.update(agent, pushMuted: !notify) }
+                            TalkMode.set(mode, for: agent.id)
                             dismiss()
                         }
                     }
@@ -753,7 +756,7 @@ struct EditAgentSheet: View {
         }
         .environment(\.yuiTheme, theme)
         .animation(theme.spring, value: theme)
-        .onAppear { name = agent.name; look = agent.theme?.preset; notify = !agent.muted }
+        .onAppear { name = agent.name; look = agent.theme?.preset; notify = !agent.muted; mode = TalkMode.of(agent.id) }
     }
 
     /// "full screen, stacked buttons": the agent's style profile in words.
@@ -784,6 +787,7 @@ struct EditAgentSheet: View {
             if agent.isShared {
                 sharedCard(c)
                 notifications(c)
+                talkOrType(c)
             } else {
                 owned(c)
             }
@@ -823,6 +827,27 @@ struct EditAgentSheet: View {
                 .fixedSize(horizontal: false, vertical: true)
                 .accessibilityIdentifier("share-safety")
         }
+    }
+
+    /// Start talking (hands-free opens with the thread) or typing.
+    private func talkOrType(_ c: Swatch) -> some View {
+        VStack(alignment: .leading, spacing: theme.spacing.s) {
+            Text("Start with").font(theme.font(theme.type.body, .bold)).foregroundStyle(c.ink)
+            Picker("Start with", selection: $mode) {
+                Text("Typing").tag(TalkMode.type)
+                Text("Talking").tag(TalkMode.talk)
+            }
+            .pickerStyle(.segmented)
+            Text(mode == .talk
+                 ? "The mic opens when you open \(agent.name). Talk, pause, and it sends. Answers come back as text."
+                 : "The keyboard's there when you open \(agent.name). Tap the mic any time to talk hands-free.")
+                .font(theme.font(theme.type.caption)).foregroundStyle(c.inkSoft)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(theme.spacing.l)
+        .background(c.surface, in: .rect(cornerRadius: theme.radius.card))
+        .overlay(RoundedRectangle(cornerRadius: theme.radius.card).stroke(c.outline, lineWidth: 1.5))
+        .accessibilityIdentifier("agent-talk-mode")
     }
 
     private func notifications(_ c: Swatch) -> some View {
@@ -867,6 +892,7 @@ struct EditAgentSheet: View {
                     .font(theme.font(theme.type.caption)).foregroundStyle(c.inkSoft)
             }
             notifications(c)
+            talkOrType(c)
             VStack(spacing: 0) {
                 if !agent.isDefault {
                     row("Make default", "star.fill", c.ink) {

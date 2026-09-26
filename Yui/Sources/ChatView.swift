@@ -44,6 +44,12 @@ struct ChatView: View {
     @State private var shooting = false
     @State private var sending = false
     @State private var talk = PushToTalk()
+    /// Hands-free (YUI-14): tap the mic once and it stays open between turns.
+    @State private var handsFree = HandsFree()
+    @State private var handsFreeWatch: Task<Void, Never>?
+    /// The words hands-free is sending, shown while they go.
+    @State private var handsFreeWords = ""
+    @Environment(\.scenePhase) private var scenePhase
     /// Hold to talk: the finger's sideways travel while it is on the mic, nil when it is up.
     @GestureState private var micPress: CGFloat?
     @State private var micHeld = false
@@ -640,7 +646,7 @@ struct ChatView: View {
     private func inputBar(_ c: Swatch) -> some View {
         VStack(alignment: .leading, spacing: theme.spacing.s) {
             ComposerHints(composer: composer, commands: store.agent?.commands, mentions: mentionsOn,
-                          agents: agents.agents, current: store.agent?.id, listening: talk.listening,
+                          agents: agents.agents, current: store.agent?.id, listening: talk.listening || handsFree.on,
                           reduceMotion: reduceMotion, focused: $focused)
             if let a = store.about, talkPage == nil {
                 AboutChip(item: a, open: { aboutOpen = a }, remove: { store.talkAbout(nil) })
@@ -658,15 +664,41 @@ struct ChatView: View {
                     .accessibilityIdentifier("composer-note")
             }
             HStack(alignment: .bottom, spacing: theme.spacing.s) {
-                if !talk.listening { attachMenu(c) }
-                if talk.listening { listeningField(c) } else { field(c) }
-                sendButton(c)
+                if handsFree.on {
+                    handsFreeField(c)
+                    stopTalkingButton(c)
+                } else {
+                    if !talk.listening { attachMenu(c) }
+                    if talk.listening { listeningField(c) } else { field(c) }
+                    sendButton(c)
+                }
             }
         }
         .padding(.horizontal, theme.spacing.l)
         .padding(.vertical, theme.spacing.s)
         .background(c.background)
         .animation(theme.spring, value: talk.listening)
+        .animation(reduceMotion ? .easeInOut(duration: 0.2) : theme.spring, value: handsFree.on)
+        .sensoryFeedback(.impact(weight: .light), trigger: handsFree.state) { _, now in now == .listening }
+        // The reply landing is what reopens the mic: a new agent bubble, or the turn ending.
+        .onChange(of: store.messages.last?.id) {
+            if let m = store.messages.last, !m.fromUser { handsFreeDo(.replyLanded) }
+        }
+        .onChange(of: store.waiting) { was, now in
+            if was, !now, store.messages.last?.fromUser == false { handsFreeDo(.replyLanded) }
+        }
+        .onChange(of: talk.interrupted) { _, now in handsFreeDo(now ? .interrupted : .interruptionEnded) }
+        .onChange(of: scenePhase) { _, now in if now != .active { handsFreeDo(.stop) } }
+        // A new thread starts how its agent is set: Talk opens hands-free (YUI-14).
+        .task(id: store.agent?.id) {
+            handsFreeDo(.stop)
+            guard let id = store.agent?.id, TalkMode.of(id) == .talk, !firstRun else { return }
+            #if DEBUG
+            if talk.fakeWords != nil { handsFreeDo(.tap); return }
+            #endif
+            if PushToTalk.allowed { handsFreeDo(.tap) }
+        }
+        .onDisappear { handsFreeDo(.stop) }
         .animation(theme.spring, value: photos)
         .animation(reduceMotion ? .easeInOut(duration: 0.2) : theme.spring, value: store.replying)
         .fullScreenCover(isPresented: $shooting) {
@@ -697,6 +729,13 @@ struct ChatView: View {
             // -yuiPTTDemoCancel: the demo, slid to the trash.
             if ProcessInfo.processInfo.arguments.contains("-yuiPTTDemoCancel") { micDragX = -Self.cancelDistance - 30 }
             talk.fakeWords = UserDefaults.standard.string(forKey: "yuiPTTFake")
+            // -yuiHandsFreeDemo listening|sending|waiting|reading|paused: that state, for screenshots.
+            if let at = UserDefaults.standard.string(forKey: "yuiHandsFreeDemo"), let hf = HandsFree.demo(at) {
+                let words = UserDefaults.standard.string(forKey: "yuiPTTDemo") ?? "What's on my calendar tomorrow morning?"
+                if hf.state == .listening { talk.demo(words) }
+                handsFreeWords = words
+                handsFree = hf
+            }
         }
         #endif
     }
@@ -870,9 +909,128 @@ struct ChatView: View {
                 Task { let words = await talk.stop(); if !words.isEmpty { composer.draft = words; send() } }
             }
         } else if !micStarting {
+            // A quick tap: hands-free (YUI-14). Holding still talks once and sends on let go.
             holdStart?.cancel()
-            if talk.phase == .idle { flash("Hold the mic to talk, let go to send.") }
+            if talk.phase == .idle { handsFreeDo(.tap) }
         }
+    }
+
+    // MARK: Hands-free (YUI-14)
+
+    /// Tells hands-free what happened and does what it answers.
+    private func handsFreeDo(_ e: HandsFree.Event) {
+        guard let effect = handsFree.handle(e) else {
+            if handsFree.state != .listening { handsFreeWatch?.cancel() }
+            return
+        }
+        switch effect {
+        case .openMic:
+            Task {
+                await talk.start()
+                if talk.listening {
+                    handsFreeDo(.micOpen)
+                    if handsFree.state == .listening { watchForEndOfTurn() } else { talk.cancel() }
+                } else {
+                    handsFreeDo(.micFailed(denied: talk.phase == .denied))
+                    talk.reset()
+                }
+            }
+        case .finishMic:
+            handsFreeWatch?.cancel()
+            Task { handsFreeDo(.heard(await talk.stop())) }
+        case .closeMic:
+            handsFreeWatch?.cancel()
+            talk.cancel()
+        case .send(let words):
+            handsFreeWords = words
+            composer.draft = words
+            send()
+            // send() clears the composer once the words are out; still there means they didn't go.
+            handsFreeDo(composer.hasWords ? .sendFailed : .sent)
+        case .readBeat:
+            Task {
+                try? await Task.sleep(for: HandsFree.readBeat)
+                handsFreeDo(.readDone)
+            }
+        }
+    }
+
+    /// While the mic is open: a quiet spell after words ends the turn; a long silence pauses.
+    private func watchForEndOfTurn() {
+        handsFreeWatch?.cancel()
+        handsFreeWatch = Task {
+            while !Task.isCancelled, handsFree.state == .listening {
+                if EndOfSpeech.ended(words: talk.transcript, lastSound: talk.lastSound) { handsFreeDo(.endOfSpeech); return }
+                if EndOfSpeech.tooQuiet(words: talk.transcript, startedAt: talk.startedAt) { handsFreeDo(.quietTooLong); return }
+                try? await Task.sleep(for: .milliseconds(50))
+            }
+        }
+    }
+
+    /// Where the words go, hands-free: what it hears, what it sent, and what's next, in plain words.
+    private func handsFreeField(_ c: Swatch) -> some View {
+        let name = store.agent?.name ?? "Your agent"
+        let (status, icon, words): (String, String, String) = switch handsFree.state {
+        case .off, .starting: ("Opening the mic", "mic.fill", "One sec.")
+        case .listening: ("Listening", "waveform", talk.transcript.isEmpty ? "Just talk. A short pause sends it." : talk.transcript)
+        case .finishing, .sending: ("Sending", "arrow.up.circle.fill", handsFreeWords.isEmpty ? talk.transcript : handsFreeWords)
+        case .waiting: ("\(name) is on it", "ellipsis.bubble.fill", "The mic opens again when the answer lands.")
+        case .reading: ("Your turn", "text.bubble.fill", "Mic's back in a sec.")
+        case .paused(.interrupted): ("Paused", "pause.circle.fill", "Picks up when the call or alarm is done.")
+        case .paused(.quiet): ("Paused", "pause.circle.fill", "Tap here to keep talking.")
+        case .paused(.failed): ("Can't listen right now", "mic.slash.fill", "Tap here to try again, or stop and type.")
+        case .paused(.denied): ("Mic is off for Yui", "mic.slash.fill", "Turn on the mic and speech recognition for Yui in Settings.")
+        }
+        let paused = if case .paused = handsFree.state { true } else { false }
+        let live = handsFree.state == .listening
+        return Button { if paused { handsFreeDo(.tap) } } label: {
+            VStack(alignment: .leading, spacing: theme.spacing.xs) {
+                Label(status, systemImage: icon)
+                    .font(theme.font(theme.type.caption, .bold))
+                    .foregroundStyle(paused ? c.inkSoft : c.accent)
+                    .symbolEffect(.variableColor.iterative, isActive: live && !reduceMotion)
+                    .contentTransition(.opacity)
+                    .accessibilityIdentifier("hands-free-status")
+                Text(words)
+                    .font(theme.font(theme.type.body, live && !talk.transcript.isEmpty ? .regular : .semibold))
+                    .foregroundStyle(live && !talk.transcript.isEmpty || handsFree.state == .sending ? c.ink : c.inkSoft)
+                    .lineLimit(1...4)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentTransition(.opacity)
+                if live {
+                    TalkWaveform(levels: talk.levels, level: talk.level, color: c.accent, track: c.outline,
+                                 reduceMotion: reduceMotion)
+                }
+            }
+            .padding(.horizontal, theme.spacing.l)
+            .padding(.vertical, theme.spacing.s)
+            .frame(minHeight: 46)
+            .background(c.surface, in: .rect(cornerRadius: theme.radius.bubble))
+            .overlay(RoundedRectangle(cornerRadius: theme.radius.bubble)
+                .stroke(paused ? c.outline : c.accent, lineWidth: live ? 2 : 1.5))
+        }
+        .buttonStyle(.plain)
+        .disabled(!paused)
+        .animation(reduceMotion ? nil : theme.spring, value: handsFree.state)
+        .accessibilityElement(children: .combine)
+        .accessibilityHint(paused ? "Double tap to keep talking." : "")
+        .accessibilityIdentifier("hands-free")
+        .accessibilityValue(handsFree.accessibilityState)
+    }
+
+    /// Ends hands-free and goes back to typing.
+    private func stopTalkingButton(_ c: Swatch) -> some View {
+        Button { handsFreeDo(.stop) } label: {
+            Image(systemName: "xmark")
+                .font(theme.font(theme.type.title, .black))
+                .foregroundStyle(c.ink)
+                .frame(width: 46, height: 46)
+                .background(c.surface, in: Circle())
+                .overlay(Circle().stroke(c.outline, lineWidth: 1.5))
+        }
+        .buttonStyle(BounceButtonStyle())
+        .accessibilityLabel("Stop talking")
+        .accessibilityIdentifier("hands-free-stop")
     }
 
     private func note(for phase: PushToTalk.Phase) {

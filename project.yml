@@ -55,8 +55,8 @@ targets:
         # Keeps a running timer's rounds and beeps going with the phone locked.
         UIBackgroundModes: [audio, remote-notification]
         NSCameraUsageDescription: Send a photo to an agent, or take one when it asks, like your plate or a receipt. Yui sends it only to the agent in that thread.
-        NSMicrophoneUsageDescription: Hold the mic to talk to your agent. Yui turns your words into text on your phone and sends the text.
-        NSSpeechRecognitionUsageDescription: Hold the mic to talk to your agent. Your words become text on your phone before they are sent.
+        NSMicrophoneUsageDescription: So you can talk to your agents. Your voice turns into text on your phone, and only the text is sent.
+        NSSpeechRecognitionUsageDescription: Your words turn into text right on your phone. The audio never leaves it.
         # yui://agent/<id>/thread opens that agent's thread (push taps, links from other channels).
         CFBundleURLTypes:
           - CFBundleURLName: com.yuigui.app
