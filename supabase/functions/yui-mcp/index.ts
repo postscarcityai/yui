@@ -26,6 +26,10 @@
 //                is marked delivered and handled.
 //   yui_say      A plain message.
 //   yui_threads  The agents this token serves, with unread counts.
+//   yui_library  Ready-made screens and flows by intent (FLOW-2 step 2): asks
+//                yuigui.com/api/library, the same search as the library page,
+//                so the ranking lives in one place. A flow hit carries its
+//                Mermaid. Read-only, writes nothing.
 //   yui_tap      App-only (MCP Apps visibility ["app"]): a tap in the screen
 //                drawn inside the host, written as the same event row the
 //                phone writes.
@@ -56,6 +60,7 @@ const SERVER = { name: "yui", title: "Yui", version: "0.3.0" };
 const MAX_BODY = 32000;
 const MAX_WAIT = 25;
 const MAX_EVENT = 4000;
+const LIBRARY = Deno.env.get("YUI_LIBRARY_URL") ?? "https://www.yuigui.com/api/library";
 const SCREEN_URI = "ui://yui/screen";
 const APP_MIME = "text/html;profile=mcp-app";
 const SIGN_SECONDS = 3600;
@@ -245,6 +250,8 @@ async function callTool(db: DB, c: Connector, name: string, a: Json): Promise<Js
         return await threads(db, c);
       case "yui_tap":
         return await tap(db, c, a);
+      case "yui_library":
+        return await library(a);
       default:
         throw new RpcError(-32602, `Unknown tool: ${name}`);
     }
@@ -260,6 +267,40 @@ async function callTool(db: DB, c: Connector, name: string, a: Json): Promise<Js
     if (/^PT403$/.test(code)) return bad("This Yui account is switched off.");
     throw e;
   }
+}
+
+// yui_library: the library search on yuigui.com. Each hit keeps what an agent
+// needs to use it: the lines to send, the docs, and for a flow its Mermaid.
+async function library(a: Json): Promise<Json> {
+  const q = String(a.q ?? a.query ?? "").trim().slice(0, 200);
+  if (!q) throw new ToolError("Say what you want to show in a few words, like q=\"client intake\" or q=\"ask yes or no\".");
+  const u = new URL(LIBRARY);
+  u.searchParams.set("q", q);
+  if (a.kind === "preset" || a.kind === "flow") u.searchParams.set("kind", a.kind);
+  u.searchParams.set("limit", String(Math.min(10, Math.max(1, Number(a.limit) || 5))));
+  let r: Response;
+  try {
+    r = await fetch(u, { headers: { accept: "application/json" }, signal: AbortSignal.timeout(8000) });
+  } catch {
+    throw new ToolError("The library did not answer. Try again, or read https://www.yuigui.com/library.json.");
+  }
+  if (!r.ok) throw new ToolError(`The library answered ${r.status}. Read https://www.yuigui.com/library.json instead.`);
+  const body = await r.json();
+  const items = (body.items ?? []).map((i: Json) => ({
+    name: i.name,
+    kind: i.kind,
+    ...(i.title ? { title: i.title } : {}),
+    purpose: i.purpose,
+    yl: i.yl,
+    docs: i.docs,
+    ...(i.kind === "flow" && i.source ? { mermaid: i.source } : {}),
+  }));
+  if (!items.length) return ok(`Nothing in the library matches "${q}". Try fewer or plainer words, or browse ${body.library ?? "https://www.yuigui.com/developers/library"}.`, { q, items });
+  const top = items[0];
+  const how = top.kind === "flow"
+    ? `Top hit is the flow ${top.name}: send \`${top.yl}\` with yui_show to run it; its Mermaid is included.`
+    : `Top hit is ${top.name}: adapt its yl and send it with yui_show.`;
+  return ok(`${items.length} from the library for "${q}". ${how}`, { q, items });
 }
 
 async function agents(db: DB, c: Connector): Promise<Agent[]> {
@@ -504,7 +545,7 @@ async function guide(db: DB): Promise<{ version: string; text: string }> {
   return { version: data.version, text: MCP_PREAMBLE + data.body };
 }
 
-const INSTRUCTIONS = `Yui is an app on the person's phone that draws what you send as native screens: buttons, pickers, sliders, forms, timers, cards, charts, decks. The conversation stays here; Yui is their second screen. Use yui_show when a screen beats text (a choice, a timer, a check-in, a plan), then yui_answers with wait=25 to get their taps. Read the yui_guide prompt (or resource yui://guide) for the full grammar. In apps that draw MCP Apps the screen also shows right here in the chat; a tap there reaches you as a user message holding the same [yui] line, so answer it like a tap from yui_answers. Never ask for passwords, keys or card numbers on a screen.`;
+const INSTRUCTIONS = `Yui is an app on the person's phone that draws what you send as native screens: buttons, pickers, sliders, forms, timers, cards, charts, decks. The conversation stays here; Yui is their second screen. Use yui_show when a screen beats text (a choice, a timer, a check-in, a plan), then yui_answers with wait=25 to get their taps. Read the yui_guide prompt (or resource yui://guide) for the full grammar, and call yui_library to find a ready-made screen or flow by intent. In apps that draw MCP Apps the screen also shows right here in the chat; a tap there reaches you as a user message holding the same [yui] line, so answer it like a tap from yui_answers. Never ask for passwords, keys or card numbers on a screen.`;
 
 const SHOW_DESC = `Put a screen on the person's phone in Yui. \`lines\` is Yui Lines: one component per line, no fence. Returns the screen id and the ids its taps will carry; then call yui_answers(screen_id, wait=25).
 
@@ -525,7 +566,7 @@ Components:
 
 Options are ONE token joined by | with no spaces: choose "Where?" "Camera roll"|Drafts. Quote anything with spaces. At most 6 components. Only Yui Lines draw UI (no HTML, JSON or markdown). No acknowledge-only buttons ("OK", "Got it"). Never ask for passwords, keys or card numbers.
 
-Tap ids: the @id you gave (timer@hiit -> hiit), else n1, n2... in line order. A tap arrives as [yui] n1 choose choice=Legs: treat it as their reply and act on it. Full guide: prompt yui_guide.`;
+Tap ids: the @id you gave (timer@hiit -> hiit), else n1, n2... in line order. A tap arrives as [yui] n1 choose choice=Legs: treat it as their reply and act on it. Ready-made screens and whole flows (an intake, a check-in): yui_library. Full guide: prompt yui_guide.`;
 
 const agentArg = {
   type: "string",
@@ -603,6 +644,27 @@ const TOOLS = [
     securitySchemes: SECURITY,
     _meta: { securitySchemes: SECURITY },
     annotations: { title: "List Yui threads", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  },
+  {
+    name: "yui_library",
+    title: "Find a ready-made screen or flow",
+    description: "Search the Yui library by intent before writing lines from scratch: q is a few plain words (\"client intake\", \"ask yes or no\", \"before and after\", \"workout timer\"). Returns the best matches first, each with its yl lines to send with yui_show and a docs link. A flow comes back with its Mermaid; send `flow <name>` to run it. The same list is at https://www.yuigui.com/library.json.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        q: { type: "string", description: "What you want to show or ask, in a few words." },
+        kind: { type: "string", enum: ["preset", "flow"], description: "Only screens (preset) or only whole flows (flow). Default: both." },
+        limit: { type: "number", minimum: 1, maximum: 10, description: "How many hits (1-10). Default 5." },
+      },
+      required: ["q"],
+    },
+    securitySchemes: SECURITY,
+    _meta: {
+      "openai/toolInvocation/invoking": "Looking in the library",
+      "openai/toolInvocation/invoked": "Found in the library",
+      securitySchemes: SECURITY,
+    },
+    annotations: { title: "Find a ready-made screen or flow", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   },
   {
     name: "yui_tap",

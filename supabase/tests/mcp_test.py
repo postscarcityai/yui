@@ -36,6 +36,9 @@ On a fresh throwaway account (never a real one):
      (the same domains), widgetDescription; calls carrying ChatGPT's client
      _meta work; DCR takes ChatGPT's two redirect URLs and /authorize takes
      its resource parameter.
+  K. yui_library (FLOW-2 step 2): read-only, finds the client intake flow by
+     intent with its lines and Mermaid, narrows by kind, refuses an empty q,
+     and says so when nothing matches. Writes nothing to the thread.
   G. the rate limit: a burst past `mcp_burst` answers 429.
 
     python3 supabase/tests/mcp_test.py
@@ -129,7 +132,7 @@ try:
     check("ping", s == 200 and r["result"] == {}, r)
     s, r = rpc(ct, "tools/list")
     names = [t["name"] for t in r["result"]["tools"]]
-    check("tools/list: the four tools plus the app-only yui_tap", names == ["yui_show", "yui_answers", "yui_say", "yui_threads", "yui_tap"], names)
+    check("tools/list: the five tools plus the app-only yui_tap", names == ["yui_show", "yui_answers", "yui_say", "yui_threads", "yui_library", "yui_tap"], names)
     tl = {t["name"]: t for t in r["result"]["tools"]}
     check("yui_show names the MCP App, yui_tap is app-only",
           tl["yui_show"].get("_meta", {}).get("ui", {}).get("resourceUri") == "ui://yui/screen"
@@ -220,6 +223,27 @@ try:
     check("an agent on another connector is out of reach", res.get("isError") and 'No agent "hermes-box"' in text, text)
     res, text, _ = tool(ct, "yui_show", {"lines": "say hi", "agent": "claude"})
     check("picking its own agent by ref works", not res.get("isError"), text)
+
+    print("== K. yui_library (FLOW-2)")
+    lib = tl["yui_library"]
+    check("yui_library is read-only and takes q", lib["annotations"]["readOnlyHint"] and lib["inputSchema"]["required"] == ["q"], lib.get("annotations"))
+    before = len(thread())
+    res, text, d = tool(ct, "yui_library", {"q": "intake"})
+    top = (d or {}).get("items", [{}])[0]
+    check("q=intake: the client intake flow first, with its lines, docs and Mermaid",
+          not res.get("isError") and top.get("name") == "website-intake" and top.get("kind") == "flow"
+          and top.get("yl") == "flow website-intake" and top.get("mermaid", "").startswith("flowchart")
+          and top.get("docs", "").startswith("https://www.yuigui.com/"), text[:300])
+    check("the text says how to run it", "yui_show" in text and "flow website-intake" in text, text[:200])
+    res, text, d = tool(ct, "yui_library", {"q": "ask yes or no", "kind": "preset", "limit": 2})
+    check("kind=preset, limit=2: ask first, no flows, no Mermaid",
+          d and d["items"][0]["name"] == "ask" and len(d["items"]) <= 2
+          and all(i["kind"] == "preset" and "mermaid" not in i for i in d["items"]), d)
+    res, text, _ = tool(ct, "yui_library", {"q": " "})
+    check("an empty q is refused with a hint", res.get("isError") and "few words" in text, text)
+    res, text, d = tool(ct, "yui_library", {"q": "zzqx nothing here"})
+    check("no match: says so, empty list", not res.get("isError") and d["items"] == [] and "Nothing" in text, text)
+    check("yui_library writes nothing to the thread", len(thread()) == before)
 
     print("== I. MCP App (INT-7)")
     s, r = rpc(ct, "resources/list")
