@@ -29,7 +29,20 @@ def event(task="t_0a0b0c", choice="a: board kit", **extra):
             "meta": {"id": f"need-{task}", "preset": "choose", "value": {"choice": choice, **extra}}}
 
 
+def tap(item, bucket="review"):
+    return {"id": "row-9", "kind": "event", "user_id": "owner", "agent_id": "a1",
+            "body": f"[yui] {item} menu bucket={bucket} tapped",
+            "meta": {"id": item, "preset": "menu", "value": {"bucket": bucket, "tapped": True}}}
+
+
 class Parse(unittest.TestCase):
+    def test_opened(self):
+        self.assertEqual(needs.opened(tap("need-t_0a0b0c")), "need-t_0a0b0c")
+        self.assertEqual(needs.opened(tap("invite-42")), "invite-42")
+        self.assertIsNone(needs.opened(tap("need-t_0a0b0c", bucket="backlog")))
+        self.assertIsNone(needs.opened(tap("lane-APP")))
+        self.assertIsNone(needs.opened(event()))
+
     def test_answer_of(self):
         self.assertEqual(needs.answer_of(event()),
                          {"task": "t_0a0b0c", "choice": "a: board kit", "typed": False, "changed": False})
@@ -172,7 +185,9 @@ class AdapterPath(RealBoard):
         # The war room redraw runs a stand-in that notes each run (never the real generator).
         self.ran = Path(tempfile.mkdtemp()) / "ran"
         fake = self.ran.with_name("war.py")
-        fake.write_text(f"import sys\nopen({str(self.ran)!r}, 'a').write(' '.join(sys.argv[1:]) + '\\n')\n")
+        fake.write_text(f"import sys\nopen({str(self.ran)!r}, 'a').write(' '.join(sys.argv[1:]) + '\\n')\n"
+                        "if sys.argv[1:3] == ['--ask', 'need-t_aa01']:\n"
+                        "    print('```yui\\nchoose@need-t_aa01 \"Which look?\" A|B title=\"The look\"\\n```')\n")
         os.environ["YUI_WAR_ROOM"] = str(fake)
         self.addCleanup(os.environ.pop, "YUI_WAR_ROOM", None)
         ad.WAR_SETTLE_SECONDS = 0
@@ -223,6 +238,33 @@ class AdapterPath(RealBoard):
         os.environ["YUI_WAR_ROOM"] = "/nonexistent/yui_war_room.py"
         self.assertIsNone(needs.refresh_cmd("yui"))
         self.assertEqual(self.answer_and_wait(a, event("t_aa01", "Park it")), [])
+
+    def test_a_review_row_tap_opens_the_ask_without_a_turn(self):
+        # YUI-126: the war room is the drawer; a tap on its Review row gets the ask's screen.
+        a = self.make()
+        self.assertTrue(asyncio.run(a._need_open("a1", tap("need-t_aa01"))))
+        self.assertEqual(a.written[0]["body"], '```yui\nchoose@need-t_aa01 "Which look?" A|B title="The look"\n```')
+        self.assertEqual(a.written[0]["meta"]["turn"], ["row-9"])
+        self.assertIn("row-9", a._acks)
+        self.assertEqual(self.ran.read_text().splitlines(), ["--ask need-t_aa01"])
+
+    def test_a_tap_on_an_answered_row_says_so_and_redraws(self):
+        a = self.make()
+
+        async def go():
+            took = await a._need_open("a1", tap("need-t_aa02"))
+            await a._war_task
+            return took
+        self.assertTrue(asyncio.run(go()))
+        self.assertEqual(a.written[0]["body"], needs.GONE)
+        self.assertEqual(self.ran.read_text().splitlines(), ["--ask need-t_aa02", "--refresh"])
+
+    def test_other_drawer_taps_go_to_the_agent(self):
+        a = self.make()
+        self.assertFalse(asyncio.run(a._need_open("a1", tap("dana"))))
+        self.assertFalse(asyncio.run(a._need_open("a1", tap("need-t_aa01", bucket="backlog"))))
+        self.assertFalse(asyncio.run(a._need_open("a1", event("t_aa01"))))
+        self.assertEqual(a.written, [])
 
     def test_ordinary_choose_goes_to_the_agent(self):
         a = self.make()

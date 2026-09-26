@@ -26,6 +26,14 @@ class Quiet(unittest.TestCase):
         self.assertTrue(connector.quiet(fence('>2 ~mvp 64% sub="14 of 22"')))
         self.assertTrue(connector.quiet("\n" + fence("# refresh", "~need-t_a +lock") + "\n"))
 
+    def test_drawer_lines_are_quiet(self):
+        # The war room lives in the drawer (YUI-126): menu lines draw nothing in the chat.
+        self.assertTrue(connector.quiet(fence('menu review@need-t_a "Pick a look" sub="Which one?"',
+                                              'menu backlog@status "Build 176 on TestFlight" url=https://www.yuigui.com/board',
+                                              "menu done need-t_b")))
+        self.assertFalse(connector.quiet(fence('menu backlog@status "Build 176"', "say The war room moved.")))
+        self.assertFalse(connector.quiet("Moved.\n" + fence("menu done need-t_b")))
+
     def test_anything_that_draws_or_speaks_pushes(self):
         self.assertFalse(connector.quiet("Build 106 is up.\n" + fence("~need-t_a +lock")))
         self.assertFalse(connector.quiet(fence(">2", "clear", "card Hi")))

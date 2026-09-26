@@ -147,13 +147,15 @@ PUSH = f"{SUPABASE_URL}/functions/v1/yui-push"
 
 
 _FENCE = re.compile(r"```yui[^\n]*\n(.*?)```", re.S)
-_QUIET_LINE = re.compile(r"^(>[\w-]+|(>[\w-]+\s+)?~\S.*)$")
+# Patches, bare `>S` focus lines and `menu` lines (the drawer, YUI-126): nothing new on a screen.
+_QUIET_LINE = re.compile(r"^(>[\w-]+|(>[\w-]+\s+)?~\S.*|menu\s.*)$")
 
 
 def quiet(body: str) -> bool:
-    """A reply that only patches what is already on screen (YUI-75: the war room
-    keeping page 2 current): no words, and every line in its ```yui fences is a
-    patch or a bare `>S`. It draws nothing new and moves no page, so it gets no push."""
+    """A reply that only patches what is already on screen (YUI-75) or fills the
+    drawer (the war room's `menu` lines, YUI-126): no words, and every line in its
+    ```yui fences is a patch, a bare `>S` or a `menu` line. It draws nothing new and
+    moves no page, so it gets no push."""
     body = body or ""
     if not _FENCE.search(body) or _FENCE.sub("", body).strip():
         return False
