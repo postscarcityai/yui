@@ -75,6 +75,9 @@ extension ChatStore {
     /// one), and either it sits on a screen beside the chat or nothing was said
     /// after it (typing past a question answers it, or lets it go).
     var awaitingYou: [ReviewItem] {
+        // Reading both keeps the views that ask observing them.
+        let messages = messages, answers = answers
+        if let waitingCache { return waitingCache }
         let lastSaid = messages.lastIndex(where: \.fromUser) ?? -1
         var seen = Set<String>()
         var out: [ReviewItem] = []
@@ -95,6 +98,7 @@ extension ChatStore {
                 out.append(ReviewItem(message: m, parts: parts, ask: c))
             }
         }
+        waitingCache = out
         return out
     }
 

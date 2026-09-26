@@ -124,8 +124,18 @@ final class Outbox {
         }
     }
 
+    /// One queue, in order: the newest save always lands last.
+    private static let disk = DispatchQueue(label: "yui.outbox.disk", qos: .userInitiated)
+
+    /// The list is taken here; the file write goes off the main thread, so a send
+    /// tap never waits on the disk (YUI-106). It lands a few ms later, long before
+    /// the network answers; a resend of a row that did land is a 409, counted as sent.
     private func save() {
-        try? FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
-        try? JSONEncoder().encode(items).write(to: file, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+        guard let data = try? JSONEncoder().encode(items) else { return }
+        let file = file
+        Self.disk.async {
+            try? FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try? data.write(to: file, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+        }
     }
 }

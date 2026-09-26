@@ -1033,14 +1033,20 @@ struct ChatView: View {
         }
     }
 
-    /// Empties the field and swaps in a new one, keeping the keyboard up if it was.
-    /// A hold-to-talk send leaves it down.
+    /// Empties the field, keeping the keyboard up if it was. A hold-to-talk send leaves it down.
     private func clearComposer() {
         let keep = focused
         composer.draft = ""
-        composer.fieldID += 1
-        // The new field mounts on the next pass; focus it then so the keyboard stays.
-        if keep { Task { @MainActor in focused = true } }
+        guard keep else { composer.fieldID += 1; return }
+        // A fresh field is how the sent words are sure to go (TestFlight feedback
+        // APthnqcdHvqEP, device only: the text view kept drawing them). It makes UIKit
+        // reload the keyboard, about half the send tap (YUI-106), so it waits one turn
+        // of the run loop: the frame with the bubble goes up first.
+        DispatchQueue.main.async {
+            composer.fieldID += 1
+            // The new field mounts on this turn's pass; focus it on the next so the keyboard stays.
+            DispatchQueue.main.async { focused = true }
+        }
     }
 
     #if DEBUG
@@ -2002,8 +2008,32 @@ private struct DrawerLayer<Content: View>: View {
         return min(1, max(0, open ? 1 + d / width : d / width))
     }
 
+    /// Drawn once, unseen, soon after the thread shows (YUI-106): the first open paid
+    /// for building every drawer view type (about 60% of that tap); now it doesn't.
+    @State private var warming = false
+    @State private var warmed = false
+
     var body: some View {
         let p = shown
+        if shows, !warmed, !(p > 0 || open) {
+            Color.clear
+                .frame(width: 0, height: 0)
+                .accessibilityHidden(true)
+                .task {
+                    try? await Task.sleep(for: .seconds(2))
+                    warming = true
+                    try? await Task.sleep(for: .milliseconds(500))
+                    warmed = true
+                }
+            if warming {
+                content()
+                    .frame(width: width)
+                    .opacity(0.001)
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+                    .offset(x: -width * 2)
+            }
+        }
         if shows, p > 0 || open {
             GeometryReader { geo in
                 let w = geo.size.width * Drawer.fraction

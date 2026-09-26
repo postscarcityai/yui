@@ -28,7 +28,7 @@ struct ChatMessage: Identifiable, Equatable {
 /// yuigui/spec/RELAY.md); detached, it is the local demo chat.
 @Observable @MainActor
 final class ChatStore {
-    var messages: [ChatMessage] { didSet { derived = nil } }
+    var messages: [ChatMessage] { didSet { derived = nil; waitingCache = nil } }
     private(set) var events: [YLEvent] = []
     var spring: Animation = .default
     /// An agent reply carried a `theme` line: (agent id, props, message time).
@@ -318,7 +318,11 @@ final class ChatStore {
     /// The newest answer for each component, by reply (message id) then YL id.
     /// Filled from the thread's own event rows, so a reopened thread shows what
     /// was chosen, picked or slid instead of blank components.
-    private(set) var answers: [String: [String: [String: YLValue]]] = [:]
+    private(set) var answers: [String: [String: [String: YLValue]]] = [:] { didSet { waitingCache = nil } }
+
+    /// `awaitingYou`, worked out once per change to the messages or the answers
+    /// (YUI-106): the menu button's count read it on every pass of the chat.
+    @ObservationIgnored var waitingCache: [ReviewItem]?
 
     /// Made once, like `emit`: presets read their answer back through it.
     @ObservationIgnored private(set) lazy var ylAnswers = YLAnswers { [weak self] scope, id in self?.answers[scope]?[id] }
