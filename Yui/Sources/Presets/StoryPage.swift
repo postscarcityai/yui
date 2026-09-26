@@ -25,6 +25,13 @@ struct StoryPage: View {
     /// so going back brings them down from where they went.
     enum Phase { case before, on, after }
 
+    /// The page showing is always on. Only a page off screen waits above or below.
+    /// Driving this from onAppear/onChange alone left a page blank when a paging
+    /// TabView missed the event (TestFlight feedback AKsr0Ha8, build 96: "Sometimes
+    /// I come to these pages and they don't come back").
+    private var shown: Phase { Self.shown(active: active, phase: phase) }
+    static func shown(active: Bool, phase: Phase) -> Phase { active ? .on : phase }
+
     var body: some View {
         let s = theme.swatch(scheme)
         GeometryReader { geo in
@@ -35,8 +42,7 @@ struct StoryPage: View {
             .scrollBounceBehavior(.basedOnSize)
             .scrollIndicators(.hidden)
         }
-        .onAppear { if active { arrive() } }
-        .onChange(of: active) { active ? arrive() : leave() }
+        .onChange(of: active) { if !active { phase = .after } }
         .fullScreenCover(isPresented: $viewing) {
             if let img = YLMediaURL.url(c.string("img")) {
                 MediaViewer(items: [img], captions: [c.string("title") ?? ""], index: 0, close: { viewing = false })
@@ -55,19 +61,19 @@ struct StoryPage: View {
         let after = drawn.map { $0.parts.count + 1 } ?? 0
         return VStack(alignment: .leading, spacing: 0) {
             if let drawn {
-                SketchDrawing(sketch: drawn.sketch, parts: drawn.parts, phase: phase)
+                SketchDrawing(sketch: drawn.sketch, parts: drawn.parts, phase: shown)
                     .padding(.bottom, title == nil && body == nil && points.isEmpty ? 0 : theme.spacing.xl)
             } else if let img = YLMediaURL.url(c.string("img")) {
                 art(img)
                     .padding(.bottom, theme.spacing.xl)
-                    .beat(phase, 0, reduceMotion, theme.spring)
+                    .beat(shown, 0, reduceMotion, theme.spring)
             }
             if let title {
                 headline(title, width: width, statement: false)
                     .foregroundStyle(s.ink)
                     .accessibilityIdentifier("story-title")
                     .accessibilityAddTraits(.isHeader)
-                    .beat(phase, after + 1, reduceMotion, theme.spring)
+                    .beat(shown, after + 1, reduceMotion, theme.spring)
             }
             if let body {
                 Group {
@@ -83,7 +89,7 @@ struct StoryPage: View {
                 }
                 .fixedSize(horizontal: false, vertical: true)
                 .accessibilityIdentifier("story-body")
-                .beat(phase, after + (statement ? 1 : 2), reduceMotion, theme.spring)
+                .beat(shown, after + (statement ? 1 : 2), reduceMotion, theme.spring)
             }
             if !points.isEmpty {
                 VStack(alignment: .leading, spacing: theme.spacing.l) {
@@ -99,7 +105,7 @@ struct StoryPage: View {
                                 .fixedSize(horizontal: false, vertical: true)
                                 .accessibilityIdentifier("story-point")
                         }
-                        .beat(phase, after + 2 + i, reduceMotion, theme.spring)
+                        .beat(shown, after + 2 + i, reduceMotion, theme.spring)
                     }
                 }
                 .padding(.top, title == nil && body == nil ? 0 : theme.spacing.xl)
@@ -152,10 +158,6 @@ struct StoryPage: View {
             .onTapGesture { viewing = true }
     }
 
-    /// Each part animates itself on its own beat (see `beat`).
-    private func arrive() { phase = .on }
-
-    private func leave() { phase = .after }
 }
 
 extension View {
