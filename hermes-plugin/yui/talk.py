@@ -100,8 +100,8 @@ def _cut(s: str, n: int = 90) -> str:
 
 
 def _show(line: str) -> str:
-    """A file line as a sketch row reads it: no heading marks."""
-    return _cut(re.sub(r"^#{1,6}\s+", "", line.strip()))
+    """A file line as a sketch row reads it: no heading or list marks."""
+    return _cut(re.sub(r"^(#{1,6}|[-*+]|\d+\.)\s+", "", line.strip()))
 
 
 class Talk:
@@ -279,17 +279,17 @@ class Talk:
         section, op = req["section"], req["op"]
         name = self.title(section, req["id"], item)
         rows_before, rows_after = self._rows(req, item, name)
-        lines = [f"sketch {_q(name)} frame=window before=Now"] + rows_before + ["after Proposed"] + rows_after
+        lines = [f"sketch {_q(name)} frame=window before=Now +inline"] + rows_before + ["after Proposed"] + rows_after
         if op == "delete":
             word = "Forget" if section == "memory" else "Delete"
             ask = "Forget this? It won't be remembered next time." if section == "memory" else f"Delete {name}?"
-            lines.append(f"choose@prop-{pid} {_q(ask)} {word}|\"Keep it\"")
+            lines.append(f"choose@prop-{pid} {_q(ask)} {word}|\"Keep it\" +inline")
         elif op == "act":
             word = {"pause": "Pause", "resume": "Resume", "run": "Run now", "enable": "Switch on",
                     "disable": "Switch off"}[req["verb"]]
-            lines.append(f"choose@prop-{pid} {_q(word + '?')} {_q(word)}|\"Keep it as is\"")
+            lines.append(f"choose@prop-{pid} {_q(word + '?')} {_q(word)}|\"Keep it as is\" +inline")
         else:
-            lines.append(f"choose@prop-{pid} \"Apply this change?\" Apply|\"Keep it as is\"")
+            lines.append(f"choose@prop-{pid} \"Apply this change?\" Apply|\"Keep it as is\" +inline")
         head = (why + "\n\n") if why else ""
         return head + "```yui\n" + "\n".join(lines) + "\n```"
 
@@ -407,14 +407,14 @@ class Talk:
             verb = {"put": "updated", "act": "updated", "delete": "forgotten" if p["section"] == "memory" else "deleted"}[p["req"]["op"]]
             what = p["why"] or p["title"]
             card = (f"card {_q(f'{label} {verb}')} {_q(_cut(what, 120))} tag=Applied "
-                    f"sub=\"just now · from this chat\"")
+                    f"sub=\"just now · from this chat\" +inline")
             return {"reply": f"```yui\n{card}\n```", "applied": {"section": p["section"], "id": p["id"]},
                     "note": f"[yui] Applied in Controls: {p['title']} {verb} (your proposal {pid})."}
         if ans.get("error") == "conflict":
             self._set(pid, "conflict")
             card = (f"card@again-{pid} {_q(p['title'] + ' changed on your Mac since this was proposed')} "
                     f"\"Nothing was written. Ask again to get a proposal against the current version.\" "
-                    f"cta=\"Ask again\"")
+                    f"cta=\"Ask again\" +inline")
             return {"reply": f"```yui\n{card}\n```", "note": None}
         return {"reply": ans.get("message") or "The host couldn't do that.", "note": None}
 

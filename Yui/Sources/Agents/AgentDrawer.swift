@@ -744,6 +744,11 @@ private struct DrawerControls: View {
         .sheet(item: $open) { o in
             ControlsSheet(model: o.model, section: o.section, agentID: store.agent?.id ?? "")
                 .environment(\.yuiTheme, theme)
+                .environment(\.talkAbout) { item in  // Talk about this (YUI-69): pin it, back to the chat
+                    open = nil
+                    store.talkAbout(item)
+                    close()
+                }
         }
     }
 

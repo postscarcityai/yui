@@ -28,6 +28,8 @@ struct ChatView: View {
     @State private var drawerMotion = DrawerMotion()
     /// Controls, "Name, look and notifications": that agent's edit sheet.
     @State private var editingAgent: YuiAgent?
+    /// The chip's item, open read only (YUI-69).
+    @State private var aboutOpen: TalkItem?
     /// The first-run button opens Add agent straight from the chat.
     @State private var addFirst = false
     /// The message open in Select text.
@@ -236,6 +238,11 @@ struct ChatView: View {
                     .presentationDetents([.medium, .large])
                     .presentationCornerRadius(theme.radius.card)
             }
+            .sheet(item: $aboutOpen) { item in
+                AboutPreview(item: item)
+                    .presentationDetents([.medium, .large])
+                    .presentationCornerRadius(theme.radius.card)
+            }
         }
         .overlay {
             DrawerLayer(motion: drawerMotion, open: drawerOpen, shows: !firstRun, width: drawerWidth * Drawer.fraction,
@@ -300,6 +307,8 @@ struct ChatView: View {
             turnPage(to: store.page)
         }
         .onChange(of: store.agent?.id, initial: true) { turnPage(to: store.page) }
+        // Talk about this (YUI-69): the item lands on the composer with the keyboard up.
+        .onChange(of: store.about?.id) { _, new in if new != nil { focused = true } }
         // Screens come and go: a page emptied by `>N clear` is gone, so back to the
         // chat; a page remembered for this agent shows once its history loads.
         // (A reply that adds a page turns to it through `pageTurns` above, after layout.)
@@ -623,7 +632,10 @@ struct ChatView: View {
             ComposerHints(composer: composer, commands: store.agent?.commands, mentions: mentionsOn,
                           agents: agents.agents, current: store.agent?.id, listening: talk.listening,
                           reduceMotion: reduceMotion, focused: $focused)
-            if let q = store.replying, talkPage == nil {
+            if let a = store.about, talkPage == nil {
+                AboutChip(item: a, open: { aboutOpen = a }, remove: { store.talkAbout(nil) })
+                    .transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
+            } else if let q = store.replying, talkPage == nil {
                 ReplyBar(quote: q, agent: store.agent?.name) { store.cancelReply() }
                     .transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
             }
@@ -921,7 +933,8 @@ struct ChatView: View {
         if screen == nil { store.replying = nil }
         withAnimation(ChatStore.sendSpring) {
             store.messages.append(ChatMessage(text: Attachments.caption(body: body, photos: photos.count), fromUser: true,
-                                              photos: photos.map { .local($0.preview) }, replyTo: q, fromScreen: screen))
+                                              photos: photos.map { .local($0.preview) }, replyTo: q, fromScreen: screen,
+                                              about: screen == nil && !text.hasPrefix("/") ? store.about?.title : nil))
         }
         photos = []
         clearComposer()
@@ -1487,6 +1500,9 @@ private struct Bubble: View, @MainActor Equatable {
                 }
                 if let n = message.fromScreen {
                     ScreenChip(screen: n)
+                }
+                if let a = message.about {
+                    AboutTag(title: a)
                 }
                 if let q = message.replyTo {
                     ReplyChip(quote: q, agent: agent?.name) { goToQuote(q) }

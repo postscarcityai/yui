@@ -21,6 +21,8 @@ struct ChatMessage: Identifiable, Equatable {
     var from: MentionFrom? = nil
     /// The person typed it on this screen (YUI-62): "From screen 2".
     var fromScreen: Int? = nil
+    /// Sent about a Controls item (YUI-69): "About SOUL.md".
+    var about: String? = nil
 }
 
 /// The chat's messages plus the event log going back to the agent.
@@ -283,6 +285,14 @@ final class ChatStore {
 
     /// The message the next send answers: its quote sits above the composer.
     var replying: ReplyQuote?
+    /// The Controls item pinned above the composer (YUI-69). Every message sent
+    /// while it's on is about it; x, an applied proposal or another agent takes it off.
+    var about: TalkItem?
+
+    func talkAbout(_ item: TalkItem?) {
+        withAnimation(spring) { about = item }
+        if item != nil { goToPage(1) }
+    }
     /// The bubble just scrolled to from a reply's chip: it glows for a moment.
     private(set) var flashing: String?
 
@@ -511,6 +521,7 @@ final class ChatStore {
         reactions = [:]
         reacting = nil
         replying = nil
+        about = nil
         stageID = nil
         stageOpen = false
         reading = nil
@@ -541,9 +552,10 @@ final class ChatStore {
         #if DEBUG
         // -yuiDemoReply "<lines>": on the demo account the agent answers what you send with these lines (SOC-3 videos).
         if client == nil, agent != nil, let reply = UserDefaults.standard.string(forKey: "yuiDemoReply") {
-            let q = screen == nil ? takeReply(for: text) : nil
+            let about = screen == nil && !text.hasPrefix("/") ? self.about : nil
+            let q = screen == nil && about == nil ? takeReply(for: text) : nil
             withAnimation(Self.sendSpring) {
-                messages.append(ChatMessage(text: text, fromUser: true, replyTo: q, fromScreen: screen))
+                messages.append(ChatMessage(text: text, fromUser: true, replyTo: q, fromScreen: screen, about: about?.title))
             }
             waiting = true
             waitingSince = .now
@@ -579,6 +591,13 @@ final class ChatStore {
             withAnimation(Self.sendSpring) { messages.append(m) }
             post(id: m.id, body: Mentions.body(text, to: mention), kind: "text", meta: Mentions.meta(nil, to: mention),
                  answers: false)
+            return true
+        }
+        if let about, !text.hasPrefix("/") {
+            // About a Controls item (YUI-69): the attach line first; a reply quote waits.
+            let m = ChatMessage(id: UUID().uuidString.lowercased(), text: text, fromUser: true, about: about.title)
+            withAnimation(Self.sendSpring) { messages.append(m) }
+            post(id: m.id, body: TalkAbout.body(text, about: about), kind: "text", meta: TalkAbout.meta(nil, about: about))
             return true
         }
         let q = takeReply(for: text)
@@ -629,11 +648,12 @@ final class ChatStore {
         let paths = Attachments.paths(meta)
         let arrived = Mentions.arrived(meta: meta)
         let words = arrived != nil ? Mentions.arrivedWords(body: body)
-            : Mentions.words(body: ReplyQuote.words(body: ScreenTalk.words(body: body, meta: meta), meta: meta), meta: meta)
+            : Mentions.words(body: ReplyQuote.words(body: ScreenTalk.words(body: TalkAbout.words(body: body, meta: meta),
+                                                                           meta: meta), meta: meta), meta: meta)
         return ChatMessage(id: id, text: Attachments.caption(body: words, photos: paths.count), fromUser: true,
                            photos: paths.map { .stored($0) }, replyTo: ReplyQuote.from(meta: meta),
                            mentionTo: Mentions.to(meta: meta).map { "To \($0)" } ?? arrived,
-                           fromScreen: ScreenTalk.screen(meta: meta))
+                           fromScreen: ScreenTalk.screen(meta: meta), about: TalkAbout.title(meta: meta))
     }
 
     /// Into the outbox first (on disk), then out: a dropped network or a killed
@@ -718,6 +738,7 @@ final class ChatStore {
         reactions = [:]
         reacting = nil
         replying = nil
+        about = nil
         stageID = nil
         stageOpen = false
         loaded = false
@@ -753,6 +774,9 @@ final class ChatStore {
         guard seen.insert(id).inserted else { return false }
         // Another agent's answer copied in (YUI-44) doesn't end this agent's turn.
         if row.sender == "agent", Mentions.from(meta: row.meta) == nil { waiting = false; pickedUpAt = nil }
+        if row.sender == "agent", let done = TalkAbout.applied(meta: row.meta), done == about?.id {
+            withAnimation(spring) { about = nil }  // its proposal was applied (YUI-69)
+        }
         var new: [ChatMessage] = []
         /// A live reply's lines: they can bring a page forward.
         var live: [YLNode] = []

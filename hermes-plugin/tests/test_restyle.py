@@ -9,9 +9,13 @@ restyle_min_build itself is a yui_limits row (migration
 """
 
 import asyncio
+import os
 import sys
+import tempfile
 import unittest
 from pathlib import Path
+
+os.environ["HERMES_HOME"] = tempfile.mkdtemp(prefix="yui-restyle-")  # turns write talk state (YUI-69): never the real home
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from test_board import _adapter_module, _load, PLUGIN  # noqa: E402

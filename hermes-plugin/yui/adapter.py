@@ -826,7 +826,8 @@ class YuiAdapter(BasePlatformAdapter):
             user_name="Yui user" if owner else "Yui user (shared)",
         )
         texts, photos, types = [], [], []
-        t = self._talky() if getattr(self, "_remote_ref", None) else None
+        # A connected gateway (or one handed its Talk): never a bare adapter in a test.
+        t = getattr(self, "_talk", None) or (self._talky() if getattr(self, "_client", None) and self._remote_ref else None)
         if t:  # whose turn this is, for a proposal made during it (YUI-69)
             try:
                 await asyncio.to_thread(t.turn, agent=row["agent_id"], user=row["user_id"], key=key, owner=owner,

@@ -129,11 +129,11 @@ class Propose(Base):
         self.assertEqual(out["id"], "p-1")
         agent, user, body = self.sent[0]
         self.assertEqual((agent, user), ("a1", OWNER))
-        self.assertTrue(body.startswith("Quieter while you work.\n\n```yui\nsketch \"SOUL.md\" frame=window before=Now\n"))
+        self.assertTrue(body.startswith("Quieter while you work.\n\n```yui\nsketch \"SOUL.md\" frame=window before=Now +inline\n"))
         self.assertIn('row "Warm and quick." +x note="removed"', body)
         self.assertIn('after Proposed', body)
         self.assertIn('row "Calm and brief while you work." +hi note="new"', body)
-        self.assertIn('choose@prop-p-1 "Apply this change?" Apply|"Keep it as is"', body)
+        self.assertIn('choose@prop-p-1 "Apply this change?" Apply|"Keep it as is" +inline', body)
         self.assertEqual((HOME / "SOUL.md").read_text(), tc.SOUL)  # nothing written yet
         # The picture parses as YL: one sketch with an after, then the choose.
         self.assertEqual(body.count("```"), 2)
@@ -171,7 +171,7 @@ class Propose(Base):
         body = self.sent[0][2]
         self.assertIn('row "Morning brief: runs weekdays 8:00"', body)
         self.assertIn('row "Morning brief: paused" +hi', body)
-        self.assertIn(f'choose@prop-{out["id"]} "Pause?" "Pause"|"Keep it as is"', body)
+        self.assertIn(f'choose@prop-{out["id"]} "Pause?" "Pause"|"Keep it as is" +inline', body)
         self.assertNotEqual(cron.get_job(job["id"]).get("state"), "paused")
         self.tap(out["id"], "Pause")
         self.assertEqual(cron.get_job(job["id"]).get("state"), "paused")
@@ -195,7 +195,7 @@ class Propose(Base):
         out = self.propose("memory", mem["id"], delete=True, why="Out of date.")
         self.assertTrue(out["ok"], out)
         body = self.sent[0][2]
-        self.assertIn('choose@prop-p-1 "Forget this? It won\'t be remembered next time." Forget|"Keep it"', body)
+        self.assertIn('choose@prop-p-1 "Forget this? It won\'t be remembered next time." Forget|"Keep it" +inline', body)
         self.assertIn('+x note="forgotten"', body)
         res = self.tap("p-1", "Forget")
         self.assertIn('card "Memory forgotten"', res["reply"])

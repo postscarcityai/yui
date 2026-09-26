@@ -415,6 +415,8 @@ private struct TextItem<Extra: View>: View {
                     extra(item, rev, reload)
                     Card { Rendered(text: item.text ?? "") }
                         .accessibilityIdentifier("controls-rendered")
+                    TalkAboutButton(item: TalkItem(section: section, itemID: item.id, rev: rev,
+                                                   title: TalkItem.title(section, item), text: item.text))
                 }
                 .padding(theme.spacing.l)
             }
@@ -937,7 +939,8 @@ private struct ModelScreen: View {
 
     var body: some View {
         let c = theme.swatch(scheme)
-        Loader(load: { try await model.get(.model, "model").item }) { m, _ in
+        Loader(load: { try await model.get(.model, "model") }) { got, _ in
+            let (rev, m) = got
             ScrollView {
                 VStack(alignment: .leading, spacing: theme.spacing.m) {
                     Card {
@@ -958,6 +961,10 @@ private struct ModelScreen: View {
                     }
                     Text("Switching the model comes later, once your Mac can test one first. Keys never show here.")
                         .font(theme.font(theme.type.caption)).foregroundStyle(c.inkSoft)
+                    TalkAboutButton(item: TalkItem(section: .model, itemID: "model", rev: rev,
+                                                   title: TalkItem.title(.model, m),
+                                                   text: "**Model:** \(m.model ?? "?")\n\n**Runs on:** \(m.provider ?? "?")\n\n"
+                                                       + "**Tools:** " + (m.toolsets ?? []).map(\.name).joined(separator: ", ")))
                 }
                 .padding(theme.spacing.l)
             }
