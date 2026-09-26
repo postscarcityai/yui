@@ -539,15 +539,18 @@ struct ChatView: View {
                     } else if store.waiting, let agent = store.agent, agent.liveness == .notListening {
                         // Paired, but its gateway never started (YUI-64): it waits, no timer counting forever.
                         ListeningNote(agent: agent)
+                            .transition(.identity)
                     } else if store.waiting, let agent = store.agent, agent.liveness != .online {
                         // Delivered, but the agent's computer is away: say so instead of fake dots.
                         QuietNote(text: agent.liveness == .asleep
                                   ? "\(agent.name) is asleep. It gets this when its computer wakes."
                                   : "\(agent.name) is offline. It gets this when its gateway starts again.",
                                   icon: agent.liveness == .asleep ? "moon.zzz" : "powersleep")
+                            .transition(.identity)
                     } else if store.waiting {
                         WorkingNote(agent: store.agent, since: store.waitingSince, pickedUp: store.pickedUpAt, doing: store.doing,
                                     usual: WorkingNote.usual(store.turnTimes)).id("typing")
+                            .transition(.identity)  // on the send's spring now (YUI-108), but it still just appears
                     }
                     if let error = store.error {
                         Text(error)
@@ -561,6 +564,7 @@ struct ChatView: View {
             }
             .defaultScrollAnchor(.bottom)
             .scrollPosition($position)
+            .background { if !store.waiting { WorkingNoteWarmer(agent: store.agent) } }
             // A reply's chip: back up to what it quoted, then it glows.
             .onChange(of: scrollTarget) {
                 guard let id = scrollTarget else { return }
@@ -1076,8 +1080,9 @@ struct ChatView: View {
             let to = mentioning
             let screen = talkPage
             if photos.isEmpty {
-                // Not sent (no agent, no session): the words stay in the field.
-                guard store.send(text, mention: to, screen: screen) else { return }
+                // Not sent (no agent, no session): the words go back in the field.
+                let words = emptyField()
+                guard store.send(text, mention: to, screen: screen) else { composer.draft = words; return }
                 Perf.shared.span(.sendBubble, from: tapped)
                 clearComposer()
                 return
@@ -1098,7 +1103,9 @@ struct ChatView: View {
         }
         #if DEBUG
         // -yuiDemoReply: the demo account's agent answers through the store, working row and all (YUI-63).
-        if photos.isEmpty, UserDefaults.standard.string(forKey: "yuiDemoReply") != nil, store.send(text, screen: talkPage) {
+        if photos.isEmpty, UserDefaults.standard.string(forKey: "yuiDemoReply") != nil {
+            let words = emptyField()
+            guard store.send(text, screen: talkPage) else { composer.draft = words; return }
             Perf.shared.span(.sendBubble, from: tapped)
             clearComposer()
             return
@@ -1226,16 +1233,27 @@ struct ChatView: View {
         }
     }
 
+    /// Empties the field before the bubble goes in and hands back what it held
+    /// (YUI-108). Emptied after, the field's change made SwiftUI lay out the new row
+    /// right there in the button's action, then again for the frame: about a third
+    /// of the send tap.
+    private func emptyField() -> String {
+        let words = composer.draft
+        composer.draft = ""
+        return words
+    }
+
     /// Empties the field, keeping the keyboard up if it was. A hold-to-talk send leaves it down.
     private func clearComposer() {
         let keep = focused
-        composer.draft = ""
+        if !composer.draft.isEmpty { composer.draft = "" }
         guard keep else { composer.fieldID += 1; return }
         // A fresh field is how the sent words are sure to go (TestFlight feedback
         // APthnqcdHvqEP, device only: the text view kept drawing them). It makes UIKit
-        // reload the keyboard, about half the send tap (YUI-106), so it waits one turn
-        // of the run loop: the frame with the bubble goes up first.
-        DispatchQueue.main.async {
+        // reload the keyboard, about half the send tap (YUI-106), so it waits until the
+        // frame with the bubble is on screen (YUI-108: one turn of the run loop wasn't
+        // enough, the reload still ran before that frame's display tick).
+        AfterFrames.run(2) {
             composer.fieldID += 1
             // The new field mounts on this turn's pass; focus it on the next so the keyboard stays.
             DispatchQueue.main.async { focused = true }
@@ -2000,6 +2018,59 @@ private struct FirstRun: View {
                 .background(c.accent, in: Circle())
             Text(text).font(theme.font(theme.type.body, .semibold)).foregroundStyle(c.ink)
                 .multilineTextAlignment(.leading)
+        }
+    }
+}
+
+/// Runs `work` on the main thread once `frames` display ticks have gone by, so
+/// what the current pass changed is on screen first (YUI-108). The link holds it until then.
+@MainActor private final class AfterFrames: NSObject {
+    private var left: Int
+    private let work: () -> Void
+
+    private init(_ frames: Int, _ work: @escaping () -> Void) {
+        left = frames
+        self.work = work
+    }
+
+    static func run(_ frames: Int, _ work: @escaping () -> Void) {
+        CADisplayLink(target: AfterFrames(frames, work), selector: #selector(tick(_:))).add(to: .main, forMode: .common)
+    }
+
+    @objc private func tick(_ l: CADisplayLink) {
+        left -= 1
+        guard left <= 0 else { return }
+        l.invalidate()
+        work()
+    }
+}
+
+/// The working row, drawn once, unseen, soon after the thread shows (YUI-108): the first send of a
+/// launch paid for building the working row's view types in the frame with the
+/// bubble (about a fifth of that tap); now it doesn't.
+private struct WorkingNoteWarmer: View {
+    var agent: YuiAgent?
+    @State private var warming = false
+    @State private var warmed = false
+
+    var body: some View {
+        if !warmed {
+            Color.clear
+                .frame(width: 0, height: 0)
+                .accessibilityHidden(true)
+                .task {
+                    try? await Task.sleep(for: .seconds(2))
+                    warming = true
+                    try? await Task.sleep(for: .milliseconds(500))
+                    warmed = true
+                }
+            if warming {
+                WorkingNote(agent: agent, since: .now, pickedUp: nil)
+                    .opacity(0.001)
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+                    .offset(x: -2000)
+            }
         }
     }
 }

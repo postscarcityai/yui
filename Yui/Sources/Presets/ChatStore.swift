@@ -580,11 +580,8 @@ final class ChatStore {
             let q = screen == nil && about == nil ? takeReply(for: text) : nil
             withAnimation(Self.sendSpring) {
                 messages.append(ChatMessage(text: text, fromUser: true, replyTo: q, fromScreen: screen, about: about?.title))
+                owe()
             }
-            waiting = true
-            waitingSince = .now
-            pickedUpAt = nil
-            doing = nil
             // -yuiDemoPickupAfter / -yuiDemoReplyAfter <seconds>: stretch the turn so the working row can be watched (YUI-63).
             let d = UserDefaults.standard
             let pickup = d.object(forKey: "yuiDemoPickupAfter") == nil ? 0.5 : d.double(forKey: "yuiDemoPickupAfter")
@@ -615,8 +612,10 @@ final class ChatStore {
         if let screen {
             // About the screen, to this agent: no mention, and a reply quote waits for the chat.
             let m = ChatMessage(id: UUID().uuidString.lowercased(), text: text, fromUser: true, fromScreen: screen)
-            withAnimation(Self.sendSpring) { messages.append(m) }
-            post(id: m.id, body: ScreenTalk.body(text, screen: screen), kind: "text", meta: ScreenTalk.meta(nil, screen: screen))
+            withAnimation(Self.sendSpring) {
+                messages.append(m)
+                post(id: m.id, body: ScreenTalk.body(text, screen: screen), kind: "text", meta: ScreenTalk.meta(nil, screen: screen))
+            }
             return true
         }
         if let mention {
@@ -632,14 +631,20 @@ final class ChatStore {
         if let about, !text.hasPrefix("/") {
             // About a Controls item (YUI-69): the attach line first; a reply quote waits.
             let m = ChatMessage(id: UUID().uuidString.lowercased(), text: text, fromUser: true, about: about.title)
-            withAnimation(Self.sendSpring) { messages.append(m) }
-            post(id: m.id, body: TalkAbout.body(text, about: about), kind: "text", meta: TalkAbout.meta(nil, about: about))
+            withAnimation(Self.sendSpring) {
+                messages.append(m)
+                post(id: m.id, body: TalkAbout.body(text, about: about), kind: "text", meta: TalkAbout.meta(nil, about: about))
+            }
             return true
         }
         let q = takeReply(for: text)
         let m = ChatMessage(id: UUID().uuidString.lowercased(), text: text, fromUser: true, replyTo: q)
-        withAnimation(Self.sendSpring) { messages.append(m) }
-        post(id: m.id, body: ReplyQuote.body(text, replyingTo: q), kind: "text", meta: ReplyQuote.meta(nil, replyingTo: q))
+        // One transaction for the bubble and the working row (YUI-108): the row's
+        // change outside it cost the send frame a second pass over the thread.
+        withAnimation(Self.sendSpring) {
+            messages.append(m)
+            post(id: m.id, body: ReplyQuote.body(text, replyingTo: q), kind: "text", meta: ReplyQuote.meta(nil, replyingTo: q))
+        }
         return true
     }
 
@@ -699,14 +704,17 @@ final class ChatStore {
                       answers: Bool = true) {
         guard client != nil, let agentID = agent?.id, let user = account?.session?.userID else { return }
         seen.insert(id.lowercased())
-        if answers {
-            waiting = true
-            waitingSince = .now
-            pickedUpAt = nil
-            doing = nil
-        }
+        if answers { owe() }
         Outbox.shared.add(.init(id: id.lowercased(), userID: user, agentID: agentID, body: body, kind: kind,
                                 meta: meta, queuedAt: .now))
+    }
+
+    /// A reply is owed: the working row shows and its seconds start.
+    private func owe() {
+        waiting = true
+        waitingSince = .now
+        pickedUpAt = nil
+        doing = nil
     }
 
     /// Messages still in the outbox for this thread, after the history: they
