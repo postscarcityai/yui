@@ -176,6 +176,40 @@ class Adapter(unittest.TestCase):
         self.assertFalse(asyncio.run(a._owner_only(AID, self.row(OWNER, "[yui] invite-9 choose", kind="event"))))
         self.assertFalse(asyncio.run(a._owner_only(AID, self.row(CLIENT, "[yui] plan@x submit", kind="event"))))
 
+    def send(self, ad, a, key, body):
+        """_insert with the network stubbed: returns (row written, folder each picture went to)."""
+        hosted = []
+        ad.media.host = lambda token, uid, aid, src: hosted.append(uid) or f"https://x.supabase.co/{uid}/{aid}/agent/p.png"
+        ad.media.rewrite = lambda b, hoster, log=None: b.replace("/tmp/p.png", hoster("/tmp/p.png"))
+        a._client, a._token = object(), "t"
+        a._outbox = type("O", (), {"add": lambda *_: None, "__len__": lambda *_: 0})()
+        a._spawn = lambda coro: coro.close()
+        ad.SendResult = lambda **kw: kw  # the test harness stubs Hermes' base classes
+        asyncio.run(a._insert(key, body))
+        return a.written[-1], hosted
+
+    def test_a_clients_picture_goes_to_the_clients_folder(self):
+        ad, a = self.make()
+        row, hosted = self.send(ad, a, f"{AID}~{CLIENT}", "```yui\nimage /tmp/p.png Your plate\n```")
+        self.assertEqual(hosted, [CLIENT])  # YUI-97: the client reads only their own folder
+        self.assertEqual(row["user_id"], CLIENT)
+        row, hosted = self.send(ad, a, AID, "```yui\nimage /tmp/p.png Mine\n```")
+        self.assertEqual(hosted, [OWNER])
+
+    def test_a_clients_own_phone_decides_what_draws(self):
+        ad, a = self.make()
+        ad.compat.PHONE.update(known=True, build=999, users={CLIENT: 70})
+        self.assertEqual(ad.compat.build_for(CLIENT, OWNER), 70)
+        self.assertEqual(ad.compat.build_for(OWNER, OWNER), 999)
+        self.assertIsNone(ad.compat.build_for("someone-else", OWNER))  # unknown: older than every gated preset
+        sketch = "```yui\nsketch Week\nrow Mon\n```"
+        row, _ = self.send(ad, a, f"{AID}~{CLIENT}", sketch)
+        self.assertNotIn("sketch", row["body"])  # build 70 can't draw a sketch: words instead
+        row, _ = self.send(ad, a, AID, sketch)
+        self.assertIn("sketch", row["body"])  # the owner's phone can
+        ad.compat.seen({"app_build": 120, "app_builds": {CLIENT: 110}})
+        self.assertEqual((ad.compat.PHONE["build"], ad.compat.build_for(CLIENT, OWNER)), (120, 110))
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

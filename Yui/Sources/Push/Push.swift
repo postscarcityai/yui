@@ -21,6 +21,13 @@ final class PushCenter: NSObject {
 
     /// A thread to open, from a notification tap or a link. ChatView consumes it.
     var pendingAgentID: String?
+    /// Bumped by a silent push that says the agent list changed (a revoke, YUI-97).
+    private(set) var listChanged = 0
+
+    /// A silent push: `kind` says what changed. Nothing is shown.
+    func silent(_ info: [AnyHashable: Any]) {
+        if info["kind"] as? String == "revoked" { listChanged += 1 }
+    }
     /// The thread on screen right now: its own pushes don't show a banner.
     var visibleAgentID: String? {
         didSet { if visibleAgentID != oldValue, foreground { Task { await reportPresence() } } }
@@ -186,6 +193,13 @@ final class YuiAppDelegate: NSObject, UIApplicationDelegate {
 
     func application(_ application: UIApplication, didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data) {
         PushCenter.shared.didRegister(deviceToken)
+    }
+
+    /// Silent pushes (`content-available`, no alert): a revoked grant (YUI-97).
+    func application(_ application: UIApplication, didReceiveRemoteNotification userInfo: [AnyHashable: Any],
+                     fetchCompletionHandler done: @escaping (UIBackgroundFetchResult) -> Void) {
+        PushCenter.shared.silent(userInfo)
+        done(.newData)
     }
 
     func application(_ application: UIApplication, didFailToRegisterForRemoteNotificationsWithError error: Error) {

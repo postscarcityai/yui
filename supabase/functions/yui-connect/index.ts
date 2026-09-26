@@ -13,7 +13,8 @@
 //   {action: "session", serving?}                        Bearer yui_ct_...
 //       Trades the connector token for a 60-minute database token (role
 //       yui_connector) for Realtime and REST on the threads it serves, plus
-//       the current channel guide. Heartbeats too. app_build: the oldest
+//       the current channel guide. Heartbeats too. app_builds: the same per client
+//       holding a live grant (YUI-97). app_build: the oldest
 //       app build among the user's phones seen in the last 14 days (null when
 //       none has said), so the host sends only presets that build can draw.
 //   sandbox (YUI-95): {<remote_ref>: {terminal, files, reach, memory, runner,
@@ -365,6 +366,18 @@ async function appBuild(db: DB, userId: string): Promise<number | null> {
   return data?.app_build ?? null;
 }
 
+/** The same for each person holding a live grant of this host's agents (YUI-97):
+ * a client's phone, not the owner's, decides what a reply in their thread may draw. */
+async function grantBuilds(db: DB, agentIds: string[]): Promise<Record<string, number | null>> {
+  if (!agentIds.length) return {};
+  const { data } = await db.from("yui_agent_grants").select("user_id")
+    .in("agent_id", agentIds).is("revoked_at", null);
+  const users = [...new Set((data ?? []).map((g: DB) => g.user_id as string))].slice(0, 200);
+  const out: Record<string, number | null> = {};
+  for (const u of users) out[u] = await appBuild(db, u);
+  return out;
+}
+
 async function session(req: Request, b: Body): Promise<Response> {
   const db = admin();
   const connector = await connectorFor(db, req);
@@ -384,5 +397,6 @@ async function session(req: Request, b: Body): Promise<Response> {
     agents: agents ?? [],
     guide: await guide(db),
     app_build: await appBuild(db, connector.user_id),
+    app_builds: await grantBuilds(db, (agents ?? []).map((a: DB) => a.id)),
   });
 }

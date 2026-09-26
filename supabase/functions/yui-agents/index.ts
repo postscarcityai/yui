@@ -176,7 +176,11 @@ const ACTIONS: Record<string, Action> = {
         .select("id, name, kind, created_at, last_seen_at")
         .eq("user_id", userId).is("revoked_at", null).order("created_at");
       if (e2) throw e2;
-      return { agents, connectors };
+      // An invited person's first name, for "Hi Maya. Sam set these up for you." (YUI-97).
+      const { data: invite } = await db.from("yui_invites").select("first_name")
+        .eq("claimed_user_id", userId).not("first_name", "is", null)
+        .order("claimed_at", { ascending: false }).limit(1).maybeSingle();
+      return { agents, connectors, first_name: invite?.first_name ?? null };
     },
   },
 

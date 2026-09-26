@@ -53,7 +53,7 @@ targets:
         # A running timer on the lock screen and in the Dynamic Island (YUI-30).
         NSSupportsLiveActivities: true
         # Keeps a running timer's rounds and beeps going with the phone locked.
-        UIBackgroundModes: [audio]
+        UIBackgroundModes: [audio, remote-notification]
         NSCameraUsageDescription: Send a photo to an agent, or take one when it asks, like your plate or a receipt. Yui sends it only to the agent in that thread.
         NSMicrophoneUsageDescription: Hold the mic to talk to your agent. Yui turns your words into text on your phone and sends the text.
         NSSpeechRecognitionUsageDescription: Hold the mic to talk to your agent. Your words become text on your phone before they are sent.

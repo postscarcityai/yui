@@ -863,14 +863,24 @@ private struct Switcher: View {
                             .accessibilityIdentifier("switch-\(a.name)")
                             .rise(shown, list.count - i, reduceMotion)
                     }
+                    // A shared agent gone since the app opened (YUI-97): one quiet line each.
+                    ForEach(agents.unshared, id: \.self) { name in
+                        Text(AgentStore.unsharedLine(name))
+                            .font(theme.font(theme.type.caption, .semibold)).foregroundStyle(c.inkSoft)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .accessibilityIdentifier("switch-unshared")
+                    }
                     HStack(spacing: theme.spacing.s) {
-                        Button(action: add) {
-                            Label("Add an agent", systemImage: "plus")
-                                .font(theme.font(15, .bold)).foregroundStyle(c.onAccent)
-                                .frame(maxWidth: .infinity).padding(.vertical, 13)
-                                .background(c.accent, in: Capsule())
+                        // An invited account starts with what it was given: no Add (YUI-97).
+                        if !agents.onlyShared {
+                            Button(action: add) {
+                                Label("Add an agent", systemImage: "plus")
+                                    .font(theme.font(15, .bold)).foregroundStyle(c.onAccent)
+                                    .frame(maxWidth: .infinity).padding(.vertical, 13)
+                                    .background(c.accent, in: Capsule())
+                            }
+                            .accessibilityIdentifier("switch-add")
                         }
-                        .accessibilityIdentifier("switch-add")
                         Button(action: manage) {
                             Label("Edit list", systemImage: "list.bullet")
                                 .font(theme.font(15, .bold)).foregroundStyle(c.ink)

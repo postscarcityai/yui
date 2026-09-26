@@ -13,6 +13,10 @@ the client may mute and move a shared agent, never rename or delete it;
 revoke hides the thread and stops the host at once. Throwaway accounts and
 @example.com addresses only; everything is removed at the end.
 
+YUI-97 adds: the list's share_why (owner only) and first_name, grant.py plan
+and send (the owner's invite plan), photos both ways in a shared thread, the
+revoke push, and the 30-day cleanup of a revoked thread.
+
     python3 supabase/tests/shared_agents_test.py
 """
 import json, os, subprocess, sys, uuid
@@ -42,6 +46,20 @@ def mail(tag): return f"yui-share-test-{RUN}-{tag}@example.com"
 
 def beat(ct, report, ref=PROFILE):
     return fn("yui-connect", {"action": "heartbeat", "serving": [ref], "sandbox": {ref: report} if report else {}}, ct)
+
+def up(tok, path, data=b"\x89PNG\r\n\x1a\nyui-share-test"):
+    req = urllib.request.Request(f"{BASE}/storage/v1/object/yui-media/{path}", data=data, method="POST",
+                                 headers={"apikey": PUBLISHABLE, "authorization": f"Bearer {tok}", "content-type": "image/png"})
+    try:
+        with urllib.request.urlopen(req) as r: return r.status
+    except urllib.error.HTTPError as e: return e.code
+
+def fetch(tok, path):
+    req = urllib.request.Request(f"{BASE}/storage/v1/object/authenticated/yui-media/{path}",
+                                 headers={"apikey": PUBLISHABLE, "authorization": f"Bearer {tok}"})
+    try:
+        with urllib.request.urlopen(req) as r: return r.status
+    except urllib.error.HTTPError as e: return e.code
 
 def rows(path, token):
     s, r = rest("GET", path, token)
@@ -85,6 +103,13 @@ try:
     a = sql(f"select client_safe, sandbox from yui_agents where id = '{agent}'")[0]
     check("a host with a local shell leaves the agent not client-safe", s == 200 and a["client_safe"] is False, a["sandbox"])
     check("the report says which rule broke", "terminal: local shell" in json.dumps(a["sandbox"]))
+    s, r = fn("yui-agents", {"action": "list"}, tokO)
+    own = [x for x in (r or {}).get("agents", []) if x["id"] == agent]
+    check("the owner's list says why it is not safe to share (YUI-97)",
+          own and "terminal: local shell" in (own[0].get("share_why") or []), own)
+    rc, out = run(GRANT, "--owner", O, "plan")
+    check("grant.py plan with nothing safe: exit 3, a card naming the rule", rc == 3 and "Nothing is safe to share yet" in out
+          and "it has a shell on your computer" in out and "plan@invite" not in out, out[-200:])
 
     print("\n== Refused: not client-safe")
     rc, out = run(GRANT, "--owner", O, "safe", PROFILE)
@@ -148,6 +173,39 @@ try:
     s, r = fn("yui-agents", {"action": "list"}, tokO)
     own = [x for x in (r or {}).get("agents", []) if x["id"] == agent]
     check("the owner's list still has it once, as their own", len(own) == 1 and own[0]["shared"] is False, own)
+    check("and says it is safe to share", own and own[0].get("share_why") == [], own)
+    check("the client's row carries no host details (share_why null)", mine and mine[0].get("share_why") is None, mine)
+    s, r = fn("yui-agents", {"action": "list"}, tok1)
+    check("the invited client's list says their first name", s == 200 and r.get("first_name") == "Maya", r.get("first_name"))
+    s, r = fn("yui-agents", {"action": "list"}, tokO)
+    check("the owner's does not", s == 200 and r.get("first_name") is None, r.get("first_name"))
+
+    print("\n== The owner's invite plan (YUI-97)")
+    rc, out = run(GRANT, "--owner", O, "plan")
+    check("grant.py plan offers the safe agent in one plan", rc == 0 and "plan@invite" in out and "apple_id_email:email!" in out
+          and "coach_says:long" in out
+          and 'pick@agents "Which agents do they get?" "Coach"' in out and "choose@save" in out, out[-300:])
+    ans = {"plan": {"who": {"first": "Ren", "last": "Test", "Apple ID email": emails[C3]},
+                    "agents": {"picked": ["Coach"]}, "look": {"choice": "Ocean"},
+                    "hello": {"Coach says": "Hi Ren, I'm Coach.", "Your name, as they see it": "Sam"},
+                    "save": {"choice": "Just this once"}}}
+    rc, out = run(GRANT, "--owner", O, "send", "--answers", json.dumps(ans), "--dry-run")
+    d = json.loads(out.splitlines()[-1]) if rc == 0 else {}
+    check("send --dry-run reads the plan's answers", d.get("agents") == ["Coach"] and d.get("look") == "ocean"
+          and d.get("by") == "Sam" and d.get("template", "").startswith("once-"), out[-200:])
+    # The real tap, as the agent reads it (Thread.swift YLEvent.line): flattened, lists joined with |.
+    tap = (f'[yui] invite plan plan.agents=Coach plan.hello.coach_says="Hi Ren, I\'m Coach." plan.hello.your_name=Sam '
+           f'plan.look=Ocean plan.save="Just this once" plan.who.apple_id_email={emails[C3]} plan.who.first=Ren plan.who.last=Test')
+    rc, out = run(GRANT, "--owner", O, "send", "--answers", tap, "--no-testflight")
+    d = json.loads(out.splitlines()[-1]) if rc == 0 else {}
+    check("send saves a template, adds and approves the invite, prints the link",
+          rc == 0 and d.get("status") == "approved" and "/i/" in d.get("link", ""), out[-200:])
+    got = sql(f"select * from public.yui_claim_invite('{C3}'::uuid, null, '{emails[C3]}')")
+    g3 = sql(f"select shared_by, theme, first_message from yui_agent_grants where user_id = '{C3}' and revoked_at is null")
+    check("claiming it gives the client Coach, by Sam, in Ocean, with the hello",
+          got and len(g3) == 1 and g3[0]["shared_by"] == "Sam" and g3[0]["theme"].get("preset") == "ocean"
+          and g3[0]["first_message"] == "Hi Ren, I'm Coach.", g3)
+    sql(f"update yui_agent_grants set revoked_at = now() where user_id = '{C3}'")
 
     print("\n== Grant by script, isolation")
     rc, out = run(GRANT, "--owner", O, "grant", PROFILE, emails[C2], "--hello", "Hello C2", "--look", "ocean")
@@ -174,7 +232,7 @@ try:
     check("client 1 cannot write as client 2", refused(s), s)
     rg = rows("yui_agent_grants?select=agent_id,user_id", tok1)
     check("client 1 sees only their own grant", isinstance(rg, list) and len(rg) == 1 and rg[0]["user_id"] == C1, rg)
-    rg = rows(f"yui_agent_grants?select=user_id&agent_id=eq.{agent}", tokO)
+    rg = rows(f"yui_agent_grants?select=user_id&agent_id=eq.{agent}&revoked_at=is.null", tokO)
     check("the owner sees who holds a grant", isinstance(rg, list) and {x["user_id"] for x in rg} == {C1, C2}, rg)
     s, _ = rest("PATCH", f"yui_agent_grants?user_id=eq.{C1}", tok1, {"revoked_at": None, "theme": {}}, "return=minimal")
     check("a client cannot restyle or un-revoke their grant", refused(s), s)
@@ -218,6 +276,18 @@ try:
                 {"action": "notify", "message_id": reply["id"]})
     check("the host may push the client its answer", s == 200 and "devices" in r, f"{s} {r}")
 
+    print("\n== Photos in a shared thread (YUI-97)")
+    photo = f"{C1}/{agent}/user/{uuid.uuid4()}.png"
+    unread = f"{C1}/{agent}/user/{uuid.uuid4()}.png"
+    check("the client uploads a photo into their own folder for the shared agent", up(tok1, photo) == 200 and up(tok1, unread) == 200)
+    check("someone with no grant cannot", up(tok3, f"{C3}/{agent}/user/{uuid.uuid4()}.png") in (400, 403))
+    check("the host reads the client's photo", fetch(ctok, photo) == 200)
+    art = f"{C1}/{agent}/agent/{uuid.uuid4()}.png"
+    check("the host writes its picture into the client's folder", up(ctok, art) == 200)
+    check("the client reads it", fetch(tok1, art) == 200)
+    check("client 2 reads neither", fetch(tok2, photo) in (400, 403, 404) and fetch(tok2, art) in (400, 403, 404))
+    check("the host cannot write into a folder with no grant", up(ctok, f"{C3}/{agent}/agent/{uuid.uuid4()}.png") in (400, 403))
+
     print("\n== Paused when the host stops passing")
     beat(ct, SHELL)
     s, r = fn("yui-agents", {"action": "list"}, tok1)
@@ -246,12 +316,39 @@ try:
     s, r = http("POST", f"{BASE}/functions/v1/yui-push", {"apikey": PUBLISHABLE, "authorization": f"Bearer {ct}"},
                 {"action": "notify", "message_id": reply["id"]})
     check("nor pushes it", s == 404, f"{s} {r}")
+    check("nor reads the client's photos", fetch(ctok, unread) in (400, 403, 404))
+    svc = next(k["api_key"] for k in mgmt("api-keys?reveal=true") if k.get("name") == "service_role")
+    push = lambda tok, u: http("POST", f"{BASE}/functions/v1/yui-push", {"apikey": PUBLISHABLE, "authorization": f"Bearer {tok}"},
+                               {"action": "revoked", "agent_id": agent, "user_id": u})
+    s, r = push(ct, C1)
+    check("the revoke push needs the service key", s == 401, f"{s} {r}")
+    s, r = push(svc, C2)
+    check("and pushes nothing for a live grant", s == 409, f"{s} {r}")
+    s, r = push(svc, C1)
+    check("a revoked grant: a silent push to the client's phones", s == 200 and r.get("ok") and "devices" in r, f"{s} {r}")
+    check("grant.py revoke says what the phones were told", "their phones: told" in out, out[-120:])
     rc, out = run(GRANT, "--owner", O, "list", "--all")
     check("grant.py list --all shows the revoked grant", rc == 0 and "revoked" in out and emails[C2] in out, out[-160:])
     rc, out = run(GRANT, "--owner", O, "grant", PROFILE, emails[C1], "--hello", "Welcome back")
     check("granting again later starts a new grant", rc == 0 and "granted" in out, out[-80:])
     r1 = rows(f"yui_messages?select=body&agent_id=eq.{agent}&order=created_at", tok1)
     check("a new, empty thread: only the new first message shows", isinstance(r1, list) and [x["body"] for x in r1] == ["Welcome back"], r1)
+
+    print("\n== 30 days after a revoke (YUI-97)")
+    old = sql(f"select count(*)::int n from yui_messages m join yui_agent_grants g on g.agent_id = m.agent_id and g.user_id = m.user_id "
+              f"where g.user_id = '{C1}' and g.revoked_at is not null and m.created_at < g.revoked_at")[0]["n"]
+    sql(f"update yui_messages m set created_at = m.created_at - interval '31 days' from yui_agent_grants g "
+        f"where g.agent_id = m.agent_id and g.user_id = m.user_id and g.user_id = '{C1}' and g.revoked_at is not null "
+        f"and m.created_at < g.revoked_at; "
+        f"update yui_agent_grants set granted_at = granted_at - interval '31 days', revoked_at = revoked_at - interval '31 days' "
+        f"where user_id = '{C1}' and revoked_at is not null")
+    due = {r["what"]: r["n_rows"] for r in sql("select * from yui_retention(true)")}
+    check("the dry run counts the old thread and grant", old > 0 and due.get("revoked_threads", 0) >= old and due.get("revoked_grants", 0) >= 1, due)
+    sql("select * from yui_retention(false)")
+    left = sql(f"select body from yui_messages where user_id = '{C1}' and agent_id = '{agent}' order by created_at")
+    check("the sweep deletes the old thread, the new one stays", [x["body"] for x in left] == ["Welcome back"], left)
+    gl = sql(f"select revoked_at from yui_agent_grants where user_id = '{C1}' and agent_id = '{agent}'")
+    check("and the revoked grant; the live one stays", len(gl) == 1 and gl[0]["revoked_at"] is None, gl)
 
     print("\n== Deleting")
     rc, out = run(GRANT, "--owner", O, "template", "delete", TPL)
@@ -263,6 +360,14 @@ try:
     check("the owner deleting the agent removes every grant and thread",
           sql(f"select (select count(*) from yui_agent_grants where agent_id = '{agent}') + (select count(*) from yui_messages where agent_id = '{agent}') n")[0]["n"] == 0)
 finally:
+    try:
+        svc = next(k["api_key"] for k in mgmt("api-keys?reveal=true") if k.get("name") == "service_role")
+        names = [r["name"] for r in sql(f"select name from storage.objects where bucket_id = 'yui-media' "
+                                        f"and split_part(name, '/', 1) in ('{O}','{C1}','{C2}','{C3}')")]
+        if names:
+            http("DELETE", f"{BASE}/storage/v1/object/yui-media", {"apikey": svc, "authorization": f"Bearer {svc}"}, {"prefixes": names})
+    except Exception as e:
+        print(f"storage cleanup: {e}")
     sql(f"delete from yui_invites where email like 'yui-share-test-{RUN}-%'; "
         f"delete from yui_users where id in ('{O}','{C1}','{C2}','{C3}'); "
         f"delete from yui_pair_attempts where created_at > now() - interval '1 hour'")

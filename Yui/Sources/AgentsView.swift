@@ -71,25 +71,81 @@ struct AgentsView: View {
                 }
                 .onMove { store.move(from: $0, to: $1) }
             } header: {
-                Text("Who do you want to talk to?")
+                Text(greeting)
                     .font(theme.font(theme.type.body, .semibold))
                     .foregroundStyle(c.inkSoft)
                     .textCase(nil)
-            }
-            Section {
-                Button { adding = true } label: {
-                    Label("Add agent", systemImage: "plus.circle.fill")
-                        .font(theme.font(theme.type.body, .bold))
-                        .foregroundStyle(c.accent)
-                }
-                .listRowBackground(c.surface)
+                    .accessibilityIdentifier("agents-greeting")
             } footer: {
-                if let error = store.error {
-                    Text(error).font(theme.font(theme.type.caption)).foregroundStyle(.red)
+                // Shared agents (YUI-97): where they run, and who never sees the conversations.
+                if let by = store.sharers {
+                    let one = store.agents.filter(\.isShared).count == 1
+                    Text("\(one ? "This agent runs" : "These agents run") on \(by)'s computer, which keeps your conversations. Other people \(by) invites never see them.")
+                        .font(theme.font(theme.type.caption)).foregroundStyle(c.inkSoft)
+                        .accessibilityIdentifier("shared-footer")
+                }
+            }
+            if !store.unshared.isEmpty {
+                Section {
+                    ForEach(store.unshared, id: \.self) { name in
+                        Text(AgentStore.unsharedLine(name))
+                            .font(theme.font(theme.type.caption, .semibold)).foregroundStyle(c.inkSoft)
+                            .listRowBackground(Color.clear)
+                    }
+                }
+                .accessibilityIdentifier("unshared")
+            }
+            // An invited account starts with what it was given: no Add agent.
+            if !store.onlyShared {
+                Section {
+                    Button { adding = true } label: {
+                        Label("Add agent", systemImage: "plus.circle.fill")
+                            .font(theme.font(theme.type.body, .bold))
+                            .foregroundStyle(c.accent)
+                    }
+                    .listRowBackground(c.surface)
+                } footer: {
+                    if let error = store.error {
+                        Text(error).font(theme.font(theme.type.caption)).foregroundStyle(.red)
+                    }
                 }
             }
         }
         .scrollContentBackground(.hidden)
+    }
+
+    /// "Hi Maya. Sam set these up for you." on an account with shared agents.
+    private var greeting: String {
+        guard let by = store.sharers else { return "Who do you want to talk to?" }
+        let hi = store.firstName.map { "Hi \($0). " } ?? ""
+        return "\(hi)\(by) set \(store.agents.filter(\.isShared).count == 1 ? "this" : "these") up for you."
+    }
+}
+
+/// One quiet line over everything for a moment: a thread that was just taken away.
+struct AgentNotice: View {
+    @Environment(AgentStore.self) private var store
+    @Environment(\.yuiTheme) private var theme
+    @Environment(\.colorScheme) private var scheme
+
+    var body: some View {
+        let c = theme.swatch(scheme)
+        if let note = store.notice {
+            Text(note)
+                .font(theme.font(theme.type.caption, .semibold)).foregroundStyle(c.ink)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, theme.spacing.l).padding(.vertical, theme.spacing.m)
+                .background(c.surface, in: .rect(cornerRadius: theme.radius.bubble))
+                .shadow(color: .black.opacity(0.12), radius: 10, y: 4)
+                .padding(.horizontal, theme.spacing.l)
+                .transition(.move(edge: .top).combined(with: .opacity))
+                .onTapGesture { store.notice = nil }
+                .task(id: note) {
+                    try? await Task.sleep(for: .seconds(5))
+                    if store.notice == note { store.notice = nil }
+                }
+                .accessibilityIdentifier("agentNotice")
+        }
     }
 }
 
@@ -127,6 +183,12 @@ private struct AgentRow: View {
                     Text(agent.name).font(theme.font(theme.type.body, theme.strong)).foregroundStyle(c.ink)
                     if agent.isDefault {
                         Text("Default")
+                            .font(theme.font(11, .bold)).foregroundStyle(c.inkSoft)
+                            .padding(.horizontal, 6).padding(.vertical, 2)
+                            .background(c.background, in: Capsule())
+                    }
+                    if agent.isShared, let by = agent.sharedBy {
+                        Text("From \(by)")
                             .font(theme.font(11, .bold)).foregroundStyle(c.inkSoft)
                             .padding(.horizontal, 6).padding(.vertical, 2)
                             .background(c.background, in: Capsule())
@@ -184,6 +246,7 @@ struct StatusLine: View {
         case .asleep: c.lavender
         case .offline: c.inkSoft.opacity(0.5)
         case .pending, .notListening: c.butter
+        case .paused: c.inkSoft.opacity(0.5)
         }
     }
 
@@ -196,6 +259,7 @@ struct StatusLine: View {
         case .asleep: return "Asleep" + seen
         case .offline: return "Offline" + seen
         case .notListening: return "Not listening yet"
+        case .paused: return "Paused by its owner"
         }
     }
 }
@@ -669,8 +733,9 @@ struct EditAgentSheet: View {
                     Button("Save") {
                         let n = name.trimmingCharacters(in: .whitespacesAndNewlines)
                         Task {
-                            if n != agent.name, !n.isEmpty { await store.update(agent, name: n) }
-                            if look != agent.theme?.preset { await store.setLook(agent, preset: look) }
+                            // A shared agent: only mute (and order, in the list) are this person's (YUI-97).
+                            if !agent.isShared, n != agent.name, !n.isEmpty { await store.update(agent, name: n) }
+                            if !agent.isShared, look != agent.theme?.preset { await store.setLook(agent, preset: look) }
                             if notify == agent.muted { await store.update(agent, pushMuted: !notify) }
                             dismiss()
                         }
@@ -716,6 +781,69 @@ struct EditAgentSheet: View {
                 }
                 Spacer()
             }
+            if agent.isShared {
+                sharedCard(c)
+                notifications(c)
+            } else {
+                owned(c)
+            }
+        }
+        .padding(theme.spacing.xl)
+    }
+
+    /// "Shared by Sam": whose it is and what this person can change (YUI-97).
+    private func sharedCard(_ c: Swatch) -> some View {
+        let by = agent.sharedBy ?? "its owner"
+        return VStack(alignment: .leading, spacing: theme.spacing.s) {
+            Label("Shared by \(by)", systemImage: "person.2.fill")
+                .font(theme.font(theme.type.body, .bold)).foregroundStyle(c.ink)
+            Text(live.liveness == .paused
+                 ? "Paused by its owner. Anything you send waits, and \(agent.name) answers once it's back."
+                 : "\(agent.name) runs on \(by)'s computer and talks only to you here. You can turn its notifications off and move it in your list.")
+                .font(theme.font(theme.type.caption)).foregroundStyle(c.inkSoft)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(theme.spacing.l)
+        .background(c.surface, in: .rect(cornerRadius: theme.radius.card))
+        .overlay(RoundedRectangle(cornerRadius: theme.radius.card).stroke(c.outline, lineWidth: 1.5))
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("shared-by")
+    }
+
+    /// "Safe to share" or "Not safe to share: it has a shell on your computer" (YUI-97).
+    @ViewBuilder
+    private func shareLine(_ c: Swatch) -> some View {
+        if !agent.isYui, live.shareWhy != nil {
+            let safe = live.safeToShare
+            Label(safe ? "Safe to share" : "Not safe to share: \(live.shareRule ?? "its computer hasn't said")",
+                  systemImage: safe ? "checkmark.shield.fill" : "lock.fill")
+                .font(theme.font(theme.type.caption, .semibold))
+                .foregroundStyle(safe ? c.ink : c.inkSoft)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityIdentifier("share-safety")
+        }
+    }
+
+    private func notifications(_ c: Swatch) -> some View {
+        Toggle(isOn: $notify) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Notifications").font(theme.font(theme.type.body, .bold)).foregroundStyle(c.ink)
+                Text(notify ? "Your phone buzzes when \(agent.name) answers and Yui is closed."
+                            : "\(agent.name) stays quiet. Its answers wait in the thread.")
+                    .font(theme.font(theme.type.caption)).foregroundStyle(c.inkSoft)
+            }
+        }
+        .tint(c.accent)
+        .padding(theme.spacing.l)
+        .background(c.surface, in: .rect(cornerRadius: theme.radius.card))
+        .overlay(RoundedRectangle(cornerRadius: theme.radius.card).stroke(c.outline, lineWidth: 1.5))
+        .accessibilityIdentifier("agent-notifications")
+    }
+
+    @ViewBuilder
+    private func owned(_ c: Swatch) -> some View {
+            shareLine(c)
             if live.liveness == .notListening {
                 RestartStep(agent: live)
             }
@@ -738,19 +866,7 @@ struct EditAgentSheet: View {
                 Text("Runs on \(host) as the \(ref) profile.")
                     .font(theme.font(theme.type.caption)).foregroundStyle(c.inkSoft)
             }
-            Toggle(isOn: $notify) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Notifications").font(theme.font(theme.type.body, .bold)).foregroundStyle(c.ink)
-                    Text(notify ? "Your phone buzzes when \(agent.name) answers and Yui is closed."
-                                : "\(agent.name) stays quiet. Its answers wait in the thread.")
-                        .font(theme.font(theme.type.caption)).foregroundStyle(c.inkSoft)
-                }
-            }
-            .tint(c.accent)
-            .padding(theme.spacing.l)
-            .background(c.surface, in: .rect(cornerRadius: theme.radius.card))
-            .overlay(RoundedRectangle(cornerRadius: theme.radius.card).stroke(c.outline, lineWidth: 1.5))
-            .accessibilityIdentifier("agent-notifications")
+            notifications(c)
             VStack(spacing: 0) {
                 if !agent.isDefault {
                     row("Make default", "star.fill", c.ink) {
@@ -768,8 +884,6 @@ struct EditAgentSheet: View {
             }
             .background(c.surface, in: .rect(cornerRadius: theme.radius.card))
             .overlay(RoundedRectangle(cornerRadius: theme.radius.card).stroke(c.outline, lineWidth: 1.5))
-        }
-        .padding(theme.spacing.xl)
     }
 
     private func row(_ title: String, _ icon: String, _ tint: Color, action: @escaping () -> Void) -> some View {

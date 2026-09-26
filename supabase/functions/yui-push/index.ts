@@ -29,6 +29,13 @@
 //       phones that are open on that agent's thread right now, where the
 //       answer already shows. Phones open on another thread still get it.
 //
+// Server side, Bearer the service role key (grant.py, YUI-97):
+//   {action: "revoked", agent_id, user_id}
+//       A grant was just revoked. A silent push (kind "revoked", no content)
+//       to every phone of that person, so the app refreshes its agent list at
+//       once and closes the thread if it is open. Only for a grant that is
+//       revoked now: a live one pushes nothing.
+//
 // APNs: token auth (ES256, the APNs key), HTTP/2 straight to Apple. Secrets:
 // YUI_APNS_P8, YUI_APNS_KEY_ID, YUI_APPLE_TEAM_ID, YUI_APNS_TOPIC. Yui Dev
 // phones push to YUI_APNS_TOPIC + ".dev" with the same key (yui_devices.topic).
@@ -89,6 +96,8 @@ Deno.serve(async (req) => {
       }
       case "notify":
         return await notify(req, body);
+      case "revoked":
+        return await revoked(req, body);
       default:
         return json({ error: "unknown_action" }, 400);
     }
@@ -240,6 +249,35 @@ async function notify(req: Request, b: Body): Promise<Response> {
   });
 }
 
+/** The caller holds a service-role key (legacy JWT or sb_secret_...): it can read
+ * yui_invites, which no other role can. Comparing strings misses the other format. */
+async function isService(req: Request): Promise<boolean> {
+  const key = bearer(req);
+  if (!key || key === Deno.env.get("SUPABASE_ANON_KEY")) return false;
+  const r = await fetch(`${env("SUPABASE_URL")}/rest/v1/yui_invites?select=id&limit=1`, {
+    headers: { apikey: key, authorization: `Bearer ${key}` },
+  });
+  await r.body?.cancel();
+  return r.status === 200;
+}
+
+async function revoked(req: Request, b: Body): Promise<Response> {
+  if (!(await isService(req))) return json({ error: "unauthorized" }, 401);
+  if (typeof b.agent_id !== "string" || !UUID.test(b.agent_id)) return json({ error: "invalid_agent_id" }, 400);
+  if (typeof b.user_id !== "string" || !UUID.test(b.user_id)) return json({ error: "invalid_user_id" }, 400);
+  const db = admin();
+  const { data: grants } = await db.from("yui_agent_grants").select("revoked_at")
+    .eq("agent_id", b.agent_id).eq("user_id", b.user_id);
+  const live = (grants ?? []).some((g: DB) => g.revoked_at === null);
+  if (live || !(grants ?? []).length) return json({ error: "not_revoked" }, 409);
+  const { data: all } = await db.from("yui_devices").select("id, apns_token, environment, topic")
+    .eq("user_id", b.user_id).not("apns_token", "is", null);
+  // No alert, no sound: the app wakes, refreshes its list and says one quiet line.
+  const payload = { aps: { "content-available": 1 }, kind: "revoked", agent_id: b.agent_id };
+  const results = await Promise.all((all ?? []).map((d: DB) => push(db, d, payload, "background")));
+  return json({ ok: true, devices: results.length, delivered: results.filter((r) => r.ok).length, results });
+}
+
 let jwtCache: { jwt: string; at: number } | null = null;
 
 // Apple wants a fresh provider token at most every 20 min and at least hourly.
@@ -255,15 +293,16 @@ async function providerToken(): Promise<string> {
   return jwt;
 }
 
-async function send(d: DB, topic: string, payload: unknown) {
+async function send(d: DB, topic: string, payload: unknown, type = "alert") {
   const host = HOSTS[d.environment as keyof typeof HOSTS] ?? HOSTS.production;
   const r = await fetch(`${host}/3/device/${d.apns_token}`, {
     method: "POST",
     headers: {
       authorization: `bearer ${await providerToken()}`,
       "apns-topic": topic,
-      "apns-push-type": "alert",
-      "apns-priority": "10",
+      "apns-push-type": type,
+      // Apple refuses priority 10 on a background push.
+      "apns-priority": type === "background" ? "5" : "10",
       "content-type": "application/json",
     },
     body: JSON.stringify(payload),
@@ -272,14 +311,14 @@ async function send(d: DB, topic: string, payload: unknown) {
   return { r, reason };
 }
 
-async function push(db: DB, d: DB, payload: unknown) {
+async function push(db: DB, d: DB, payload: unknown, type = "alert") {
   const main = env("YUI_APNS_TOPIC");
   let topic: string = d.topic ?? main;
-  let { r, reason } = await send(d, topic, payload);
+  let { r, reason } = await send(d, topic, payload, type);
   if (reason === "DeviceTokenNotForTopic") {
     // The token is the other app's (Yui vs Yui Dev, YUI-91): try that once and remember it.
     const other = topic === main ? `${main}.dev` : main;
-    const again = await send(d, other, payload);
+    const again = await send(d, other, payload, type);
     if (again.reason !== "DeviceTokenNotForTopic") {
       ({ r, reason } = again);
       topic = other;

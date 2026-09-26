@@ -19,11 +19,14 @@ struct YuiAgent: Codable, Identifiable, Equatable, Sendable {
     enum Liveness: String, Sendable {
         case online, asleep, offline, pending
         case notListening = "not_listening"
+        /// A shared agent whose owner's sandbox stopped passing (YUI-95): no turns run.
+        case paused
         /// What VoiceOver says: "Talking to Bravo, not listening yet".
         var spoken: String {
             switch self {
             case .pending: "offline"
             case .notListening: "not listening yet"
+            case .paused: "paused by its owner"
             default: rawValue
             }
         }
@@ -53,11 +56,20 @@ struct YuiAgent: Codable, Identifiable, Equatable, Sendable {
     var commands: [AgentCommand]? = nil
     /// Someone else's agent, shared with this person (YUI-57). Nil from older servers.
     var shared: Bool? = nil
+    /// Who shared it, as the person sees it: "Sam".
+    var sharedBy: String? = nil
+    /// Its first message, from the invite (YUI-95).
+    var firstMessage: String? = nil
+    /// Its host reports a sandbox that passes all five rules: it can be shared.
+    var clientSafe: Bool? = nil
+    /// An owned agent's broken rules ("terminal: local shell"); [] when it is safe (YUI-97).
+    var shareWhy: [String]? = nil
 
     enum CodingKeys: String, CodingKey {
         case id, name, handle, color, avatar, kind, status, sort, theme
         case connectorID = "connector_id", connectorName = "connector_name", remoteRef = "remote_ref"
         case lastSeenAt = "last_seen_at", isDefault = "is_default", pushMuted = "push_muted", presence, commands, shared
+        case sharedBy = "shared_by", firstMessage = "first_message", clientSafe = "client_safe", shareWhy = "share_why"
     }
 }
 
@@ -75,6 +87,29 @@ extension YuiAgent {
     var isYui: Bool { avatar == "yui" }
     var muted: Bool { pushMuted ?? false }
     var isShared: Bool { shared ?? false }
+    /// "Not safe to share: it has a shell on your computer", in the owner's words.
+    /// Nil for a shared agent and on servers that don't say.
+    var shareRule: String? {
+        guard !isShared, let why = shareWhy else { return nil }
+        return why.first.map(Self.plain)
+    }
+    var safeToShare: Bool { !isShared && (clientSafe ?? false) }
+
+    /// One broken rule in plain words (grant.py PLAIN says the same).
+    static func plain(_ rule: String) -> String {
+        let words: [(String, String)] = [
+            ("no sandbox report", "its computer hasn't reported a sandbox yet"),
+            ("its host has not", "its computer hasn't reported a sandbox yet"),
+            ("profile:", "it shares a Hermes profile with your other agents"),
+            ("keys:", "its profile holds keys beyond its model key"),
+            ("terminal:", "it has a shell on your computer"),
+            ("files:", "it can read your files"),
+            ("reach:", "it can reach your other tools"),
+            ("memory:", "its memory is shared between people"),
+            ("runner:", "its model runs as an agent with a shell"),
+        ]
+        return words.first { rule.hasPrefix($0.0) }?.1 ?? rule
+    }
     var liveness: Liveness {
         if let p = presence.flatMap(Liveness.init(rawValue:)) { return p }
         switch status {
@@ -118,6 +153,22 @@ final class AgentStore {
     private(set) var tokens: [AgentAccessToken] = []
     private(set) var loaded = false
     var error: String?
+    /// An invited person's first name, for "Hi Maya. Sam set these up for you." (YUI-97).
+    private(set) var firstName: String?
+    /// "Basil is no longer shared with you.": shared agents gone since the app opened.
+    /// Kept until the app is next launched, never stored.
+    private(set) var unshared: [String] = []
+    /// One quiet line over everything, when the thread on screen was taken away.
+    var notice: String?
+
+    /// Shared agents, who set them up: "Sam", or "Sam and Alex".
+    var sharers: String? {
+        var seen: [String] = []
+        for a in agents where a.isShared { if let by = a.sharedBy, !seen.contains(by) { seen.append(by) } }
+        return seen.isEmpty ? nil : ListFormatter.localizedString(byJoining: seen)
+    }
+    /// Every agent here was given to this person: an invited client's account.
+    var onlyShared: Bool { !agents.isEmpty && agents.allSatisfy(\.isShared) }
 
     /// The agent the chat talks to. Falls back to the default agent.
     var selectedID: String? {
@@ -140,7 +191,20 @@ final class AgentStore {
         #if DEBUG
         if ProcessInfo.processInfo.arguments.contains("-yuiDemoAccount") {
             let args = ProcessInfo.processInfo.arguments
-            agents = args.contains("-yuiNoAgents") ? [] : args.contains("-yuiDemoAgents") ? Self.demoCrew : Self.demo
+            agents = args.contains("-yuiNoAgents") ? [] : args.contains("-yuiDemoAgents") ? Self.demoCrew
+                : args.contains("-yuiDemoShared") ? Self.demoShared : Self.demo
+            if args.contains("-yuiDemoShared") {
+                firstName = "Maya"
+                // -yuiDemoRevoke <s>: Basil is revoked after s seconds, as a push would tell it (YUI-97).
+                let after = UserDefaults.standard.double(forKey: "yuiDemoRevoke")
+                if after > 0 {
+                    Task { [weak self] in
+                        try? await Task.sleep(for: .seconds(after))
+                        guard let self else { return }
+                        self.apply(self.agents.filter { $0.handle != "basil" })
+                    }
+                }
+            }
             // -yuiAgent <handle> opens that agent's thread.
             if let h = UserDefaults.standard.string(forKey: "yuiAgent") { selectedID = agents.first { $0.handle == h }?.id }
             loaded = true
@@ -156,19 +220,39 @@ final class AgentStore {
         tokens = []
         loaded = false
         error = nil
+        firstName = nil
+        unshared = []
+        notice = nil
     }
 
     func refresh() async {
         if isDemo { return }
         do {
             let r: ListReply = try await call(["action": "list"])
-            agents = r.agents
+            apply(r.agents)
+            firstName = r.firstName
             loaded = true
             error = nil
         } catch {
             self.error = error.localizedDescription
         }
     }
+
+    /// A new list. A shared agent that is gone was revoked (YUI-97): the list says
+    /// so in one quiet line, and if its thread was open it closes with the same line.
+    func apply(_ new: [YuiAgent]) {
+        let gone = agents.filter { old in old.isShared && !new.contains { $0.id == old.id } }
+        let wasOpen = gone.contains { $0.id == selected?.id }
+        agents = new
+        guard !gone.isEmpty else { return }
+        for a in gone where !unshared.contains(a.name) { unshared.append(a.name) }
+        if wasOpen, let a = gone.first(where: { $0.id == selectedID }) ?? gone.first {
+            selectedID = nil
+            notice = Self.unsharedLine(a.name)
+        }
+    }
+
+    static func unsharedLine(_ name: String) -> String { "\(name) is no longer shared with you." }
 
     /// Makes a pending agent and a pairing code for it.
     func add(name: String, color: String) async throws -> (YuiAgent, PairingCode) {
@@ -347,7 +431,11 @@ final class AgentStore {
         let agent: Agent
     }
 
-    private struct ListReply: Decodable { let agents: [YuiAgent] }
+    private struct ListReply: Decodable {
+        let agents: [YuiAgent]
+        var firstName: String? = nil
+        enum CodingKeys: String, CodingKey { case agents, firstName = "first_name" }
+    }
     private struct CreateReply: Decodable { let agent: YuiAgent; let pairing: PairingCode? }
     private struct AgentReply: Decodable { let agent: YuiAgent }
     private struct DeleteReply: Decodable { let deleted: Bool }
@@ -399,16 +487,31 @@ final class AgentStore {
     static let demoCrew = demo + [
         YuiAgent(id: "demo-coach", name: "Coach", handle: "coach", color: "butter", kind: "hermes",
                  connectorName: "Mac mini", remoteRef: "coach", status: .connected, lastSeenAt: .now,
-                 isDefault: false, sort: 1, theme: AgentLook(style: ["screen": "full", "buttons": "stack"])),
+                 isDefault: false, sort: 1, theme: AgentLook(style: ["screen": "full", "buttons": "stack"]),
+                 clientSafe: true, shareWhy: []),
         YuiAgent(id: "demo-wizard", name: "Wizard", handle: "wizard", color: "lavender", kind: "hermes",
                  connectorName: "Mac mini", remoteRef: "wizard", status: .connected, lastSeenAt: .now,
-                 isDefault: false, sort: 2),
+                 isDefault: false, sort: 2, clientSafe: false, shareWhy: ["terminal: local shell", "files: the host's files"]),
         YuiAgent(id: "demo-counsel", name: "Counsel", handle: "counsel", color: "mint", kind: "hermes",
                  connectorName: "Mac mini", remoteRef: "counsel", status: .offline, lastSeenAt: .now,
                  isDefault: false, sort: 3),
         YuiAgent(id: "demo-nova", name: "Nova", handle: "nova", color: "mint", kind: "hermes",
                  connectorName: "Mac mini", remoteRef: "nova", status: .connected, lastSeenAt: .now,
                  isDefault: false, sort: 4),
+    ]
+    /// `-yuiDemoShared`: an invited client's account. Sam shared Penny and Basil; Scout is paused.
+    static let demoShared = [
+        YuiAgent(id: "demo-penny", name: "Penny", handle: "penny", color: "peach", kind: "hermes",
+                 status: .connected, lastSeenAt: .now, isDefault: false, sort: 0,
+                 theme: AgentLook(preset: "candy"), presence: "online", shared: true, sharedBy: "Sam",
+                 firstMessage: "Hi Maya! I'm Penny. I keep Sam's schedule. Want to book a time?", clientSafe: true),
+        YuiAgent(id: "demo-basil", name: "Basil", handle: "basil", color: "mint", kind: "hermes",
+                 status: .connected, lastSeenAt: .now, isDefault: false, sort: 1,
+                 theme: AgentLook(preset: "forest"), presence: "online", shared: true, sharedBy: "Sam",
+                 firstMessage: "Hey, I'm Basil. Send me a photo of any meal and I'll tell you what's in it.", clientSafe: true),
+        YuiAgent(id: "demo-scout", name: "Scout", handle: "scout", color: "sky", kind: "hermes",
+                 status: .connected, lastSeenAt: .now, isDefault: false, sort: 2,
+                 theme: AgentLook(preset: "ocean"), presence: "paused", shared: true, sharedBy: "Sam", clientSafe: false),
     ]
     static let demoCode = PairingCode(code: "123456", expiresAt: .now.addingTimeInterval(600))
 }

@@ -24,6 +24,8 @@ struct YuiApp: App {
             .animation(.default, value: account.isSignedIn)
             // An invite that didn't work says so for a moment (YUI-56).
             .overlay(alignment: .top) { InviteNotice() }
+            // A shared agent taken away while its thread was open (YUI-97).
+            .overlay(alignment: .top) { AgentNotice() }
             // An MCP client asking to connect (INT-19). Signed out, it waits for sign-in.
             .sheet(item: Binding(
                 get: { account.isSignedIn ? agents.pendingConnect : nil },
@@ -71,6 +73,11 @@ struct YuiApp: App {
             .onChange(of: scenePhase, initial: true) {
                 PushCenter.shared.setForeground(scenePhase == .active)
                 if scenePhase == .active { Outbox.shared.kick() }
+            }
+            // A grant was revoked (silent push, YUI-97): the list drops the agent now.
+            .onChange(of: PushCenter.shared.listChanged) {
+                guard account.isSignedIn else { return }
+                Task { await agents.refresh() }
             }
         }
     }

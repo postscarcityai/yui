@@ -40,11 +40,20 @@ SCREEN = re.compile(r"^(>\S+\s+)")
 
 # The oldest build among the person's phones, from the adapter's last session.
 # `known` stays False until a session arrives: no note before then.
-PHONE = {"known": False, "build": None}
+# `users`: the same for each client holding a live grant (YUI-97), by user id.
+PHONE = {"known": False, "build": None, "users": {}}
 
 
 def seen(session: dict) -> None:
-    PHONE.update(known=True, build=session.get("app_build"))
+    PHONE.update(known=True, build=session.get("app_build"), users=dict(session.get("app_builds") or {}))
+
+
+def build_for(user_id: Optional[str], owner: Optional[str]) -> Optional[int]:
+    """The oldest build on this person's phones: the owner's, or a client's own
+    (unknown = older than every gated preset)."""
+    if not user_id or user_id == owner:
+        return PHONE["build"]
+    return PHONE["users"].get(user_id)
 
 
 def turn_note(user_message=None, platform="", **_):

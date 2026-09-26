@@ -267,7 +267,7 @@ export async function insertAgent(db: any, row: Record<string, unknown>) {
 }
 
 export const AGENT_COLUMNS =
-  "id, name, handle, color, avatar, theme, kind, connector_id, connector_name, remote_ref, status, last_seen_at, is_default, sort, created_at, updated_at, push_muted, presence, commands, shared, shared_by, first_message, client_safe";
+  "id, name, handle, color, avatar, theme, kind, connector_id, connector_name, remote_ref, status, last_seen_at, is_default, sort, created_at, updated_at, push_muted, presence, commands, shared, shared_by, first_message, client_safe, share_why";
 
 // deno-lint-ignore no-explicit-any
 export async function agentView(db: any, userId: string, id: string) {

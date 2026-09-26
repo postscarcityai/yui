@@ -895,19 +895,20 @@ class YuiAdapter(BasePlatformAdapter):
         if len(body) > MAX_MESSAGE_LENGTH:
             body = body[:MAX_MESSAGE_LENGTH]
         # `theme app` (YUI-96): only from the owner's turn to a phone that draws the preview.
-        body, dropped = restyle.gate(body, user_id == self._user_id, compat.PHONE["build"])
+        build = compat.build_for(user_id, self._user_id)  # a client's own phone (YUI-97)
+        body, dropped = restyle.gate(body, user_id == self._user_id, build)
         if dropped:
             logger.info("[yui] theme app line dropped (%s)", dropped)
             if dropped == "old":
-                n = restyle.note(compat.PHONE["build"])
+                n = restyle.note(build)
                 if n not in self._notes.get(agent_id, []):
                     self._notes.setdefault(agent_id, []).append(n)
             if not body:
                 return SendResult(success=True, message_id=None)
         flywheel.record(body, connector.current_profile())  # custom shapes only, off unless yui.flywheel
         textbomb.record(body, connector.current_profile(), "handoff" if sender else "reply", logger)
-        body = compat.downgrade(body, compat.PHONE["build"])  # what the phone can't draw: words
-        body = await asyncio.to_thread(media.rewrite, body, lambda src: self._host(agent_id, src), logger)
+        body = compat.downgrade(body, build)  # what the phone can't draw: words
+        body = await asyncio.to_thread(media.rewrite, body, lambda src: self._host(agent_id, user_id, src), logger)
         row = {"id": str(uuid.uuid4()), "user_id": user_id, "agent_id": agent_id, "sender": "agent",
                "body": body, "kind": "text"}
         turn = (self._busy.get(key) or (None,))[0]
@@ -997,8 +998,9 @@ class YuiAdapter(BasePlatformAdapter):
                 logger.warning("[yui] outbox: %s", e)
                 await asyncio.sleep(5)
 
-    def _host(self, agent_id: str, src: str) -> str:
-        return media.host(self._token, self._user_id, agent_id, src)
+    def _host(self, agent_id: str, user_id: str, src: str) -> str:
+        """Into the thread's person's folder: a client reads only their own (YUI-97)."""
+        return media.host(self._token, user_id or self._user_id, agent_id, src)
 
     async def _notify(self, message_id: str, sender: Optional[str], handoff: bool) -> None:
         """Push the message to the user's phones. Best effort: the thread has it either way."""

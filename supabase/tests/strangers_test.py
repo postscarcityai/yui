@@ -145,7 +145,9 @@ try:
                        where n.nspname = 'public' and p.prosecdef and has_function_privilege('{role}', p.oid, 'EXECUTE')""")
         # YUI-95: the grant checks the message policies call.
         shared = {"yui_granted", "yui_grant_since", "yui_grant_serves"}
-        allowed = {"yui_user": shared, "yui_connector": {"yui_connector_serves", "yui_group_notes"} | shared}[role]  # group notes: YUI-93
+        # YUI-97: the owner's share_why in the agent list; the host's media check for a granted folder.
+        allowed = {"yui_user": shared | {"yui_share_why"},
+                   "yui_connector": {"yui_connector_serves", "yui_group_notes", "yui_media_grant_serves"} | shared}[role]  # group notes: YUI-93
         allowed = allowed | ({"yui_connector_live"} if role == "yui_connector" else set())  # YUI-102: the yui_perf read policy
         check(f"{role} can run only the expected yui SECURITY DEFINER functions",
               {r["proname"] for r in rows} <= allowed, str(rows))
