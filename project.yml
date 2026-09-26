@@ -6,6 +6,9 @@ options:
 packages:
   YuiLines:
     path: Packages/YuiLines
+  # The music presets' sound engine (spec/MUSIC.md): one AVAudioEngine, synthesized voices.
+  YuiSound:
+    path: Packages/YuiSound
   # Native LaTeX (CoreText) for math, step and calc. MIT.
   SwiftMath:
     url: https://github.com/mgriebling/SwiftMath
@@ -28,6 +31,7 @@ targets:
     sources: [Yui/Sources, Yui/Resources, Shared]
     dependencies:
       - package: YuiLines
+      - package: YuiSound
       - package: SwiftMath
       - target: YuiWidgets
     entitlements:

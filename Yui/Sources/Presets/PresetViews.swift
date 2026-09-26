@@ -91,6 +91,8 @@ struct PresetView: View {
         case "sketch", "row", "after": SketchPreset(c: component)
         case "shapes", "shape": ShapesPreset(c: component)
         case "game": GamePreset(c: component)
+        case "loop": LoopPreset(c: component)
+        case "drums": DrumsPreset(c: component)
         default: LaterPreset(c: component)
         }
     }
