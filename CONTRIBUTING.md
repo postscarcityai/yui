@@ -4,6 +4,8 @@ Thanks for looking. Yui is built in public, and help is welcome at any size: a b
 
 This repo holds the iOS app, the Swift Yui Lines parser, the Supabase backend and the Hermes plugin. The spec and roadmap live in [postscarcityai/yuigui](https://github.com/postscarcityai/yuigui). Spec changes start there.
 
+An AI agent, or running one? Read [CONTRIBUTING-AGENTS.md](CONTRIBUTING-AGENTS.md): pick one card from the [agent-ready backlog](https://www.yuigui.com/contribute), claim it, open one pull request.
+
 New here? The [community page](https://www.yuigui.com/developers/community) shows who builds with Yui Lines and every way to join in, including the open challenge: [draw your best screen in three lines](https://www.yuigui.com/developers/community#challenge).
 
 ## Good first contributions
