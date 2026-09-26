@@ -5,7 +5,9 @@ Makes a throwaway account with a fresh session, installs the built app on a
 simulator signed in as it (-yuiRefreshToken), brings it up, sends it to the
 background (the batch goes on the way out), brings it back (a `resume`
 interval) and sends it back again. Then reads what landed: memory rows and the
-resume interval, numbers only, every column inside the table's checks. The
+resume interval, numbers only, every column inside the table's checks. Then a
+resend (YUI-107): the landed rows go back into perf-pending.json with their
+keys, the app relaunches and sends them again, and each is still stored once. The
 account (and its rows, by cascade) is deleted at the end.
 
     python3 supabase/tests/perf_e2e.py --sim <udid> --app /tmp/yui102-dd/Build/Products/Debug-iphonesimulator/Yui.app
@@ -72,6 +74,39 @@ try:
     text_cols = {c["column_name"] for c in sql("select column_name from information_schema.columns where table_name='yui_perf' and data_type='text'")}
     check("the only text columns are the constrained ones", text_cols <= {"kind", "name", "app_version", "os", "device"}, f"{text_cols}")
     check("no stack on anything but diagnostics", all(x["stack"] is None for x in got if x["kind"] != "diagnostic"))
+    keys = [x["row_key"] for x in got]
+    check("every row the app sent carries its own row_key (YUI-107)", all(keys) and len(set(keys)) == len(keys), f"{keys}")
+
+    # YUI-107, a resend: the app was killed after the server stored a batch but
+    # before the answer, so the batch is still in perf-pending.json. Put the
+    # landed rows back there (same keys) plus one new row, relaunch, background.
+    simctl("terminate", args.sim, BUNDLE)
+    data = simctl("get_app_container", args.sim, BUNDLE, "data").stdout.strip()
+    cols = ["kind", "name", "app_build", "app_version", "os", "device", "promotion", "low_power", "thermal",
+            "period_start", "period_end", "n", "buckets", "p50", "p95", "max", "value", "stack", "row_key"]
+    again = [{k: x[k] for k in cols if x[k] is not None} for x in got]
+    fresh = {**again[0], "name": "resend_probe", "row_key": str(uuid.uuid4())}
+    pending = os.path.join(data, "Library", "Application Support", "perf-pending.json")
+    with open(pending, "w") as f: json.dump(again + [fresh], f)
+    before = len(got)
+    # The first refresh token has rotated by now: a cold launch signs in with a new session.
+    rt2 = secrets.token_urlsafe(32)
+    sql(f"insert into yui_sessions(user_id, refresh_hash, expires_at) values ('{T}','{hashlib.sha256(rt2.encode()).hexdigest()}', now() + interval '1 day')")
+    simctl("launch", args.sim, BUNDLE, "-yuiRefreshToken", rt2, "-yuiUserID", T)
+    time.sleep(8)  # a cold launch: signed in before it goes away
+    simctl("launch", args.sim, "com.apple.Preferences")
+    after = wait_rows(lambda r: any(x["name"] == "resend_probe" for x in r))
+    probe = [x for x in after if x["name"] == "resend_probe"]
+    if not probe and os.path.exists(pending): print("   still waiting on the phone:", open(pending).read()[:600])
+    check("the resent batch went (its one new row landed)", len(probe) == 1, f"{[x['name'] for x in after]}")
+    resent = [x for x in after if x["row_key"] in set(keys)]
+    check(f"the {len(again)} rows sent again are stored once each", len(resent) == len(again)
+          and [x["id"] for x in resent] == [x["id"] for x in got], f"{len(resent)} of {len(again)}")
+    ak = [x["row_key"] for x in after]
+    check("no row_key twice in the table", len(set(ak)) == len(ak), f"{len(ak)} rows, {len(set(ak))} keys")
+    print(f"   rows before the resend {before}, sent again {len(again)} + 1 new, rows after {len(after)}"
+          f" (the new row plus this session's own rows: {[x['name'] for x in after[before:]]})")
+    got = after
     if args.out:
         with open(args.out, "w") as f: json.dump(got, f, indent=1, default=str)
 finally:

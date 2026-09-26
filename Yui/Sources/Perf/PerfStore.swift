@@ -7,6 +7,12 @@ import UIKit
 // when a MetricKit payload lands. A failed send keeps its rows (7 days, 500
 // rows at most) for the next batch. Rows carry numbers and snake_case names
 // only; there is no field a word from a message could go in.
+//
+// Sends are at least once (YUI-107, PERF.md section 10): a batch leaves
+// perf-pending.json only after the server answers, so one that lands while
+// iOS suspends the app goes again next launch. Each row gets a random
+// row_key when it is queued, kept on disk with it; the server ignores a key
+// it already has, so a resent row is stored once.
 
 /// PERF.md section 4: bucket edges in ms, plus one bucket above the last.
 enum PerfBuckets {
@@ -59,6 +65,9 @@ struct PerfRow: Codable, Equatable, Sendable {
     var max: Double?
     var value: Double?
     var stack: [PerfFrame]?
+    /// A random uuid, set once when the row is queued (YUI-107). Nil only
+    /// before that, or in a file written by a build before the key.
+    var row_key: String? = nil
 }
 
 /// A stack frame as MetricKit gives it: binary, its UUID, the offset. No symbols, no strings.
@@ -132,7 +141,7 @@ actor PerfStore {
         self.file = file
         if let file, let data = try? Data(contentsOf: file),
            let saved = try? JSONDecoder().decode([PerfRow].self, from: data) {
-            pending = saved
+            pending = saved.map(Self.keyed)
         }
     }
 
@@ -167,7 +176,7 @@ actor PerfStore {
 
     /// MetricKit rows (metrics and diagnostics), queued for the next send.
     func queue(_ rows: [PerfRow]) {
-        pending.append(contentsOf: rows)
+        pending.append(contentsOf: rows.map(Self.keyed))
         trim()
         save()
     }
@@ -193,7 +202,7 @@ actor PerfStore {
             r.p50 = PerfBuckets.percentile(h, 0.5).map { Self.round1(Swift.min($0, top)) }
             r.p95 = PerfBuckets.percentile(h, 0.95).map { Self.round1(Swift.min($0, top)) }
             r.max = maxMs[name].map(Self.round1)
-            pending.append(r)
+            pending.append(Self.keyed(r))
         }
         if !memory.isEmpty {
             let sorted = memory.sorted()
@@ -202,13 +211,13 @@ actor PerfStore {
             r.p50 = Self.round1(sorted[sorted.count / 2])
             r.max = Self.round1(sorted.last!)
             r.value = r.p50
-            pending.append(r)
+            pending.append(Self.keyed(r))
         }
         if warnings > 0 {
             var r = row("memory", "mem_warning")
             r.n = warnings
             r.value = Double(warnings)
-            pending.append(r)
+            pending.append(Self.keyed(r))
         }
         hist = [:]
         maxMs = [:]
@@ -243,6 +252,14 @@ actor PerfStore {
 
     // MARK: Keeping
 
+    /// The row with its key: the one it has, or a new one.
+    static func keyed(_ r: PerfRow) -> PerfRow {
+        guard r.row_key == nil else { return r }
+        var k = r
+        k.row_key = UUID().uuidString.lowercased()
+        return k
+    }
+
     /// At most 7 days and 500 rows; the oldest go first.
     private func trim(now: Date = Date()) {
         let cutoff = Self.iso(now.addingTimeInterval(-Self.keepFor))
@@ -263,7 +280,7 @@ actor PerfStore {
             "user_id": userID, "kind": r.kind, "name": r.name, "app_build": r.app_build,
             "app_version": r.app_version, "os": r.os, "device": r.device, "promotion": r.promotion,
             "low_power": r.low_power, "thermal": r.thermal, "period_start": r.period_start,
-            "period_end": r.period_end, "n": r.n,
+            "period_end": r.period_end, "n": r.n, "row_key": keyed(r).row_key!,
         ]
         // Every row in a batch carries every key (PostgREST refuses mixed keys): null when absent.
         let none = NSNull()
@@ -277,12 +294,14 @@ actor PerfStore {
     }
 
     @Sendable static func send(_ body: Data, _ bearer: String) async -> Bool {
-        var req = URLRequest(url: YuiBackend.url.appending(path: "rest/v1/yui_perf"))
+        // on_conflict + ignore-duplicates: a row whose key is already stored is skipped, still a 201.
+        var req = URLRequest(url: YuiBackend.url.appending(path: "rest/v1/yui_perf")
+            .appending(queryItems: [URLQueryItem(name: "on_conflict", value: "user_id,row_key")]))
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.setValue(YuiBackend.publishableKey, forHTTPHeaderField: "apikey")
         req.setValue("Bearer \(bearer)", forHTTPHeaderField: "Authorization")
-        req.setValue("return=minimal", forHTTPHeaderField: "Prefer")
+        req.setValue("return=minimal,resolution=ignore-duplicates", forHTTPHeaderField: "Prefer")
         req.httpBody = body
         guard let (_, response) = try? await URLSession.shared.data(for: req),
               let http = response as? HTTPURLResponse else { return false }

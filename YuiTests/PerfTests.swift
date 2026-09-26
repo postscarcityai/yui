@@ -95,7 +95,7 @@ final class PerfTests: XCTestCase {
         XCTAssertEqual(rows.count, 1)
         let allowed: Set = ["user_id", "kind", "name", "app_build", "app_version", "os", "device", "promotion",
                             "low_power", "thermal", "period_start", "period_end", "n", "buckets", "p50", "p95",
-                            "max", "value", "stack"]
+                            "max", "value", "stack", "row_key"]
         XCTAssertTrue(Set(rows[0].keys).isSubset(of: allowed), "\(rows[0].keys)")
         XCTAssertEqual(rows[0]["user_id"] as? String, "00000000-0000-0000-0000-000000000001")
         XCTAssertEqual(rows[0]["name"] as? String, "thread_open")
@@ -128,6 +128,62 @@ final class PerfTests: XCTestCase {
         let kept = await store.waiting
         XCTAssertEqual(kept.count, 500)
         XCTAssertEqual(kept.last?.n, 519)
+    }
+
+    /// YUI-107: sends are at least once, so every row carries a key made once
+    /// when it is queued. It survives a save and a relaunch, and a resend
+    /// posts the same keys (the server skips keys it has).
+    func testTheRowKeySurvivesSaveLoadAndAResendReusesIt() async throws {
+        let file = tempFile()
+        defer { try? FileManager.default.removeItem(at: file) }
+        let store = PerfStore(file: file)
+        await store.setContext(ctx)
+        await store.signedIn(userID: "u", token: { "tok" })
+        let sent = Sent()
+        // The first send is "lost": the app went away before the answer.
+        await store.setPoster { body, token in await sent.put(body, token); return false }
+        await store.add("swipe", ms: 12)
+        await store.queue([PerfRow(kind: "metrics", name: "fg_time", app_build: 1, app_version: "0.2.0", os: "26.1",
+                                   device: "iPhone18,1", promotion: false, low_power: false, thermal: 0,
+                                   period_start: PerfStore.iso(.now), period_end: PerfStore.iso(.now), n: 1)])
+        _ = await store.flush()
+        let keys = await store.waiting.map(\.row_key)
+        XCTAssertEqual(keys.count, 2)
+        XCTAssertEqual(Set(keys.compactMap { $0 }).count, 2, "each row has its own key")
+        for k in keys { XCTAssertNotNil(UUID(uuidString: k ?? ""), "\(String(describing: k)) is a uuid") }
+        let firstSend = await sent.last
+        let firstBody = try XCTUnwrap(firstSend).0
+        // Relaunch: the keys come back from disk, and the resend carries them.
+        let reopened = PerfStore(file: file)
+        let reloaded = await reopened.waiting.map(\.row_key)
+        XCTAssertEqual(reloaded, keys)
+        await reopened.setContext(ctx)
+        await reopened.signedIn(userID: "u", token: { "tok" })
+        await reopened.setPoster { body, token in await sent.put(body, token); return true }
+        let ok = await reopened.flush()
+        XCTAssertTrue(ok)
+        func sentKeys(_ body: Data) throws -> [String] {
+            let rows = try XCTUnwrap(try JSONSerialization.jsonObject(with: body) as? [[String: Any]])
+            return rows.compactMap { $0["row_key"] as? String }
+        }
+        let secondSend = await sent.last
+        let resent = try XCTUnwrap(secondSend).0
+        XCTAssertEqual(try sentKeys(firstBody), keys.compactMap { $0 })
+        XCTAssertEqual(try sentKeys(resent), keys.compactMap { $0 }, "the resend posts the same keys")
+    }
+
+    func testAFileFromBeforeTheKeyGetsKeysOnLoad() async throws {
+        let file = tempFile()
+        defer { try? FileManager.default.removeItem(at: file) }
+        let old = """
+        [{"kind":"metrics","name":"fg_time","app_build":1,"app_version":"0.2.0","os":"26.1","device":"iPhone18,1",
+          "promotion":false,"low_power":false,"thermal":0,"period_start":"\(PerfStore.iso(.now))",
+          "period_end":"\(PerfStore.iso(.now))","n":1}]
+        """
+        try Data(old.utf8).write(to: file)
+        let rows = await PerfStore(file: file).waiting
+        XCTAssertEqual(rows.count, 1)
+        XCTAssertNotNil(UUID(uuidString: rows[0].row_key ?? ""))
     }
 
     func testRowsOlderThanSevenDaysAreDropped() async {

@@ -6,7 +6,8 @@ the phone (yui_user) writes and reads its own rows; the owner's live host
 (yui_connector) reads them and nobody else's; no role updates or deletes;
 anon and authenticated get nothing. Only numbers fit: no free-text column,
 names and versions by regex, buckets are 18 counts, a stack is frames of
-{image, uuid, offset}. Past perf_rows_per_day a row is dropped silently.
+{image, uuid, offset}. A row_key (uuid, YUI-107) makes a resent batch store
+once. Past perf_rows_per_day a row is dropped silently.
 yui_perf_retention() counts (dry) then deletes rows past perf_retention_days.
 Every test account is deleted at the end. Needs a Supabase access token, like
 accounts_test.py.
@@ -117,6 +118,40 @@ try:
     check("a batch whose objects have different keys is refused whole (PGRST102)", s == 400 and code(r) == "PGRST102", f"{s} {code(r)}")
     s, r = rest("POST", "yui_perf", tokB, row(B, "interval"), prefer="return=minimal")
     check("B writes its own row (return=minimal)", s == 201, f"{s} {r}")
+
+    print("== A resent batch stores once (YUI-107)")
+    # The phone's send: row_key per row, on_conflict + ignore-duplicates, so a
+    # batch that already landed (the app was killed before the answer) is a 201 that stores nothing.
+    def keyed(uid, name): return {**full(row(uid, "interval", name)), "row_key": str(uuid.uuid4())}
+    again = [keyed(A, "resend_a"), keyed(A, "resend_b"), keyed(A, "resend_c")]
+    def send(token, body, prefer="return=representation,resolution=ignore-duplicates"):
+        return rest("POST", "yui_perf?on_conflict=user_id,row_key", token, body, prefer=prefer)
+    n0 = count(A)
+    s, r = send(tokA, again)
+    check("a keyed batch of 3 lands 3", s == 201 and len(r) == 3 and count(A) == n0 + 3, f"{s} {r if s != 201 else len(r)}")
+    s, r = send(tokA, again)
+    check("the same batch again: 201, nothing stored", s == 201 and r == [] and count(A) == n0 + 3, f"{s} {r} {count(A)}")
+    s, r = send(tokA, again[1:] + [keyed(A, "resend_d")])
+    check("a batch with 2 sent rows and 1 new stores only the new one", s == 201 and [x["name"] for x in r] == ["resend_d"]
+          and count(A) == n0 + 4, f"{s} {r if s != 201 else [x['name'] for x in r]}")
+    s, r = send(tokA, [again[0], again[0]])
+    check("the same key twice in one batch stores nothing new", s == 201 and r == [] and count(A) == n0 + 4, f"{s} {r}")
+    s, r = send(tokB, [{**again[0], "user_id": B}], prefer="return=minimal,resolution=ignore-duplicates")
+    check("keys are per account: B's row with A's key lands", s == 201 and count(B) == 2, f"{s} {r} {count(B)}")
+    sql(f"delete from yui_perf where user_id = '{B}' and name = 'resend_a'")  # B keeps one row for the checks below
+    s, r = send(tokB, [{**again[0], "user_id": A}])
+    check("B cannot insert as A through the upsert path either", refused(s) and count(A) == n0 + 4, f"{s} {code(r)}")
+    s, r = rest("POST", "yui_perf", tokA, again[0], prefer="return=representation")
+    check("without ignore-duplicates a resent key is refused (409), never stored twice", s == 409 and count(A) == n0 + 4, f"{s} {code(r)}")
+    s, r = rest("POST", "yui_perf", tokA, [full(row(A, "interval", "keyless"))] * 2, prefer="return=representation")
+    check("rows without a key (builds before YUI-107) still land", s == 201 and len(r) == 2, f"{s} {code(r)}")
+    s, r = send(tokA, {**keyed(A, "bad_key"), "row_key": "hello there"})
+    check("a row_key that is not a uuid is refused", refused(s), f"{s} {code(r)}")
+    rk = sql("""select has_column_privilege('yui_user', 'public.yui_perf', 'row_key', 'INSERT') i,
+                       has_column_privilege('yui_user', 'public.yui_perf', 'row_key', 'UPDATE') u,
+                       (select data_type from information_schema.columns where table_schema = 'public'
+                          and table_name = 'yui_perf' and column_name = 'row_key') t""")[0]
+    check("row_key: a uuid column yui_user may insert, never update", rk == {"i": True, "u": False, "t": "uuid"}, f"{rk}")
 
     print("== Owner only")
     s, r = rest("GET", "yui_perf?select=id,user_id", tokB)
