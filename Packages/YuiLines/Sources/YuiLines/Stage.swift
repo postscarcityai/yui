@@ -75,4 +75,32 @@ extension YuiLines {
         guard !screen.isEmpty, !screen.contains(where: \.isWhitespace), page(of: String(screen)) != 1 else { return nil }
         return (String(screen), String(body[body.index(after: nl)...]))
     }
+
+    /// Talk about this (spec TALK-ABOUT.md): a `[yui] attach section= id= rev=`
+    /// line naming one Controls item, then the words. Not an item: the words as they are.
+    public static func attachBody(section: String, id: String, rev: String, words: String) -> String {
+        guard isAttachItem(section: section, id: id, rev: rev) else { return words }
+        return "[yui] attach section=\(section) id=\(id) rev=\(rev)\n" + words
+    }
+
+    /// The other way: the item and words of a message about an item, else nil.
+    public static func readAttach(_ body: String) -> (section: String, id: String, rev: String, words: String)? {
+        let head = "[yui] attach "
+        guard body.hasPrefix(head), let nl = body.firstIndex(of: "\n") else { return nil }
+        var line = body[body.index(body.startIndex, offsetBy: head.count)..<nl]
+        if line.hasSuffix("\r") { line = line.dropLast() }
+        let parts = line.split(separator: " ", omittingEmptySubsequences: false)
+        guard parts.count == 3, parts[0].hasPrefix("section="), parts[1].hasPrefix("id="), parts[2].hasPrefix("rev=")
+        else { return nil }
+        let section = String(parts[0].dropFirst(8)), id = String(parts[1].dropFirst(3)), rev = String(parts[2].dropFirst(4))
+        guard isAttachItem(section: section, id: id, rev: rev) else { return nil }
+        return (section, id, rev, String(body[body.index(after: nl)...]))
+    }
+
+    static func isAttachItem(section: String, id: String, rev: String) -> Bool {
+        section.range(of: #"^[a-z]{1,20}$"#, options: .regularExpression) != nil
+            && id.range(of: #"^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$"#, options: .regularExpression) != nil
+            && !id.contains("..")
+            && rev.range(of: #"^[A-Za-z0-9]{1,64}$"#, options: .regularExpression) != nil
+    }
 }

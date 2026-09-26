@@ -23,6 +23,8 @@ struct Vector: Sendable, CustomTestStringConvertible {
     let talk: [Int]?
     /// Words typed on a screen and the body the agent reads: screen, words, body.
     let typed: [String: String]?
+    /// Words about a Controls item: item (section, id, rev, or null), words, body.
+    let attach: YLValue?
     /// The drawer after the input (spec section 5, The drawer).
     let menu: YLValue?
     /// A timeline's rows after the input, {rows: [{id, kind}], mark} (YUI-111).
@@ -56,6 +58,7 @@ enum Vectors {
                 pages: v["pages"]?.array?.map { Int($0.number!) },
                 talk: v["talk"]?.array?.map { Int($0.number!) },
                 typed: v["typed"]?.object?.compactMapValues { $0.string },
+                attach: v["attach"],
                 menu: v["menu"],
                 rows: v["rows"],
                 style: v["style"]?.object?.compactMapValues { $0.string } ?? [:],
@@ -125,6 +128,20 @@ func conformance(_ v: Vector) {
             #expect(read == nil, "typed read back: \(String(describing: read))")
         } else {
             #expect(read?.screen == screen && read?.words == words, "typed read back: \(String(describing: read))")
+        }
+    }
+
+    if let a = v.attach, let words = a["words"]?.string, let body = a["body"]?.string {
+        let item = a["item"]?.object?.compactMapValues { $0.string } ?? [:]
+        let made = YuiLines.attachBody(section: item["section"] ?? "", id: item["id"] ?? "", rev: item["rev"] ?? "",
+                                       words: words)
+        #expect(made == body, "attach body: \(made)")
+        let read = YuiLines.readAttach(body)
+        if made == words {
+            #expect(read == nil, "attach read back: \(String(describing: read))")
+        } else {
+            #expect(read?.section == item["section"] && read?.id == item["id"] && read?.rev == item["rev"]
+                        && read?.words == words, "attach read back: \(String(describing: read))")
         }
     }
 

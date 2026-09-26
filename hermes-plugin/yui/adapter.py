@@ -110,6 +110,15 @@ Transport: the gateway dials OUT to Supabase (PROOF). No inbound ports.
      one line on what changed. The capability report goes to yui-connect
      (action=controls) with the commands.
 
+ 17. Talk about this (YUI-69, talk.py): a person's message that starts with
+     `[yui] attach section= id= rev=` is about one Controls item. Before the
+     turn the line gets the item under it (redacted, once per rev per
+     thread, `readonly=yes` when something is hidden); from anyone but the
+     owner, or in a group, only the words go through. The agent proposes a
+     change with the yui_propose tool or `hermes yui propose`; the taps on
+     `choose@prop-<id>` (Apply, Keep it as is) and the conflict card's Ask
+     again are taken here with no agent turn, only for the owner.
+
 The channel guide (CHANNEL.md, synced verbatim from yuigui/spec/CHANNEL.md by
 ../sync_channel.py) is this platform's system-prompt hint, so it is in the
 system prompt on every turn on the Yui channel, and only there. Its restyle
@@ -146,7 +155,7 @@ from gateway.config import Platform, PlatformConfig
 from gateway.platforms.base import (BasePlatformAdapter, MessageEvent, MessageType, ProcessingOutcome,
                                     SendResult)
 
-from . import board, compat, connector, controls, flywheel, groups, media, mentions, needs, outbox, restyle, sandbox, textbomb
+from . import board, compat, connector, controls, flywheel, groups, media, mentions, needs, outbox, restyle, sandbox, talk, textbomb
 from . import commands as slash
 
 logger = logging.getLogger(__name__)
@@ -306,6 +315,7 @@ class YuiAdapter(BasePlatformAdapter):
         self._commands_sent: Optional[str] = None    # fingerprint of the /command list Yui has (YUI-61)
         self._controls_sent: Optional[str] = None    # the agents Yui has this host's controls report for (YUI-70)
         self._controls: Optional[controls.Host] = None
+        self._talk: Optional[talk.Talk] = None
         self._control_changes: Dict[str, List[str]] = {}  # agent id -> settings changed since its last turn
 
     # Inbound is authorized upstream: RLS on yui_messages only ever shows this
@@ -572,7 +582,8 @@ class YuiAdapter(BasePlatformAdapter):
                         continue
                     if (await self._control(aid, row) or await self._owner_only(aid, row)
                             or await self._board_order(aid, row)
-                            or await self._need_answer(aid, row)):
+                            or await self._need_answer(aid, row)
+                            or await self._talk_tap(aid, row)):
                         continue
                     self._queue.setdefault(self._key(row), []).append(row)
                 for key in [k for k in self._queue if k.split("~")[0] == aid]:
@@ -688,10 +699,51 @@ class YuiAdapter(BasePlatformAdapter):
         self._acks.add(row["id"])
         return True
 
-    async def _confirm(self, aid: str, row: dict, text: str) -> None:
+    def _talky(self) -> "talk.Talk":
+        if getattr(self, "_controls", None) is None:
+            self._controls = controls.Host(self._state_dir().parent)
+        if getattr(self, "_talk", None) is None:
+            self._talk = talk.Talk(self._controls)
+        return self._talk
+
+    async def _talk_tap(self, aid: str, row: dict) -> bool:
+        """Apply / Keep it as is on a proposal, or Ask again on its conflict card (YUI-69): no turn.
+        Ask again becomes the person's message about the item's current rev and goes to the agent."""
+        tap = talk.Talk.tap_of(row)
+        if not tap:
+            return False
+        owner = row.get("user_id") == self._user_id and self._key(row) == aid
+        t = self._talky()
+        if owner and tap["kind"] == "again":
+            body = await asyncio.to_thread(t.again, tap["pid"])
+            if body:
+                row.update(kind="text", body=body)  # queued like anything the person typed
+                return False
+        await self._mark([row["id"]], "delivered_at")
+        if not owner:
+            await self._confirm(aid, row, "Only the owner can do that.")
+            return True
+        if tap["kind"] == "again":
+            await self._confirm(aid, row, "That's gone from the host. Pull Controls to refresh.")
+            return True
+        try:
+            out = await asyncio.to_thread(t.take, tap, who=row.get("user_id") or "", agent=aid)
+        except Exception as e:
+            logger.warning("[yui] proposal %s: %s", tap["pid"], e)
+            out = {"reply": "The host couldn't do that. Try again in a minute.", "note": None}
+        if out.get("note"):
+            self._notes.setdefault(aid, []).append(out["note"])
+        logger.info("[yui] proposal %s %s: %s", tap["pid"], tap.get("choice"), "applied" if out.get("applied") else "no write")
+        if out.get("reply"):
+            await self._confirm(aid, row, out["reply"], extra={"talk": {"applied": out["applied"]}} if out.get("applied") else None)
+        else:
+            self._acks.add(row["id"])
+        return True
+
+    async def _confirm(self, aid: str, row: dict, text: str, extra: Optional[dict] = None) -> None:
         """One line back for a tap the gateway handled itself, named by the row so a restart never replays it."""
         reply = {"id": str(uuid.uuid4()), "user_id": row.get("user_id") or self._user_id, "agent_id": aid,
-                 "sender": "agent", "body": text, "kind": "text", "meta": {"turn": [row["id"]], "board": True}}
+                 "sender": "agent", "body": text, "kind": "text", "meta": {"turn": [row["id"]], "board": True, **(extra or {})}}
         # A confirmation of the person's own tap: no push.
         if await self._write_row(reply) == "retry":
             await asyncio.to_thread(self._outbox.add, reply, None, False)
@@ -774,8 +826,18 @@ class YuiAdapter(BasePlatformAdapter):
             user_name="Yui user" if owner else "Yui user (shared)",
         )
         texts, photos, types = [], [], []
+        t = self._talky() if getattr(self, "_remote_ref", None) else None
+        if t:  # whose turn this is, for a proposal made during it (YUI-69)
+            try:
+                await asyncio.to_thread(t.turn, agent=row["agent_id"], user=row["user_id"], key=key, owner=owner,
+                                        owner_user=self._user_id or "")
+            except OSError as e:
+                logger.warning("[yui] talk state: %s", e)
         for r in rows:
             text = r["body"]
+            if t and r.get("kind") == "text" and text.startswith("[yui] attach "):  # Talk about this (YUI-69)
+                mine = owner and r.get("user_id") == self._user_id and not groups.threads_in([r])
+                text = await asyncio.to_thread(t.expand, text, key=key, owner=mine, profile=self._remote_ref or "")
             if media.USER_PATH.search(r["body"] + json.dumps(r.get("meta") or {})):
                 text, p, t = await asyncio.to_thread(media.localize, r["body"], r.get("meta") or {},
                                                      self._token, logger)
@@ -1261,6 +1323,8 @@ def register(ctx) -> None:
     ctx.register_hook("pre_gateway_dispatch", handoff.rewrite_slash)
     ctx.register_hook("pre_llm_call", handoff.inject_howto)
     ctx.register_hook("pre_llm_call", compat.turn_note)
+    ctx.register_tool(name="yui_propose", toolset="yui", schema=talk.SCHEMA, handler=talk.tool_handler,
+                      description=talk.SCHEMA["description"], emoji="🐰")
     ctx.register_command("yui", handoff.slash_command,
                          description="Hand what we're doing to the Yui app, with a push to your phone",
                          args_hint="[note]")

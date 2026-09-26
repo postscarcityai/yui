@@ -226,8 +226,13 @@ class Host:
 
     # -- entry point --------------------------------------------------------------
 
-    def handle(self, req: dict, *, owner: bool, who: str = "", agent: str = "") -> tuple[dict, Optional[str]]:
-        """(answer meta, change for the agent's note or None)."""
+    def handle(self, req: dict, *, owner: bool, who: str = "", agent: str = "", via: str = "",
+               proposal: str = "", dry: bool = False) -> tuple[dict, Optional[str]]:
+        """(answer meta, change for the agent's note or None).
+
+        `dry` runs every check a write would (Talk about this, YUI-69: a
+        proposal is checked before it reaches the phone) and writes nothing.
+        `via` and `proposal` go on the log line."""
         req = req if isinstance(req, dict) else {}
         base = {"v": V, "req": str(req.get("req") or "")[:40]}
         try:
@@ -259,6 +264,9 @@ class Host:
                     raise Refused("bad_verb")
             if op == "delete" and req.get("confirmed") is not True:
                 raise Refused("confirm")
+            if dry:
+                rev, item = self._check(op, section, iid, req)
+                return {**base, "ok": True, "rev": rev, "item": item}, None
             self._rate()
             if op == "act":
                 old, rev, item, change = getattr(self, f"_{section}_act")(iid, req["verb"])
@@ -273,7 +281,7 @@ class Host:
                 else:
                     rev, item, change = getattr(self, f"_{section}_delete")(iid), None, None
                     change = self._deleted_change(section, iid)
-            self._log(who, op, section, iid, old, rev, agent)
+            self._log(who, op, section, iid, old, rev, agent, via, proposal)
             out = {**base, "ok": True, "rev": rev, "item": item}
             if item and item.get("id") and item["id"] != iid:
                 out["id"] = item["id"]  # a memory entry's id follows its text
@@ -324,11 +332,28 @@ class Host:
             except OSError:
                 pass
 
+    def _check(self, op: str, section: str, iid: str, req: dict) -> tuple:
+        """What a write would refuse, without writing: (current rev, item)."""
+        cur, item = getattr(self, f"_{section}_get")(iid)
+        if op == "act":
+            return cur, item
+        if req.get("rev") != cur:
+            raise Refused("conflict", rev=cur, item=item)
+        if op == "put":
+            getattr(self, f"_{section}_prepare")(iid, req)
+        elif section == "skills" and iid in self._bundled():
+            raise Refused("bundled")
+        return cur, item
+
     def _log(self, who: str, op: str, section: str, iid: str, old: Optional[str], new: Optional[str],
-             agent: str) -> None:
+             agent: str, via: str = "", proposal: str = "") -> None:
         self._yui.mkdir(parents=True, exist_ok=True)
         line = {"at": _now(), "who": who, "agent": agent, "op": op, "section": section, "id": iid,
                 "old": old, "new": new}
+        if via:
+            line["via"] = via
+        if proposal:
+            line["proposal"] = proposal
         with open(self._yui / "controls.log", "a", encoding="utf-8") as f:
             f.write(json.dumps(line) + "\n")
 
@@ -356,13 +381,17 @@ class Host:
         return rev_of(raw), {"id": SOUL, "text": text, "outline": outline[:20], "read_only": hid,
                              "updated": _mtime(self._soul)}
 
-    def _soul_put(self, iid: str, req: dict):
+    def _soul_prepare(self, iid: str, req: dict) -> str:
         _, cur = self._soul_get(iid)
         if cur["read_only"]:
             raise Refused("read_only")
         text = _text_value(req)
         if not text.strip():
             raise Refused("empty")
+        return text
+
+    def _soul_put(self, iid: str, req: dict):
+        text = self._soul_prepare(iid, req)
         self.trash("soul", SOUL, src=self._soul)
         _atomic_write(self._soul, text)
         rev, item = self._soul_get(iid)
@@ -421,7 +450,7 @@ class Host:
             self.trash("memory", MEMORY_FILES[kind], src=path)
             _atomic_write(path, ENTRY_DELIMITER.join(entries) if entries else "")
 
-    def _memory_put(self, iid: str, req: dict):
+    def _memory_prepare(self, iid: str, req: dict):
         kind, entries, i = self._mem_find(iid)
         if redact(entries[i])[1]:
             raise Refused("read_only")
@@ -437,6 +466,10 @@ class Host:
         entries = entries[:i] + [text] + entries[i + 1:]
         if len(ENTRY_DELIMITER.join(entries)) > self._mem_limit(kind):
             raise Refused("too_long")
+        return kind, entries, text
+
+    def _memory_put(self, iid: str, req: dict):
+        kind, entries, text = self._memory_prepare(iid, req)
         self._mem_write(kind, entries)
         new = self._mem_id(kind, text)
         rev, item = self._memory_get(new)
@@ -530,7 +563,7 @@ class Host:
                              "read_only": hid, "enabled": iid not in self._disabled(),
                              "bundled": iid in self._bundled(), "updated": _mtime(d / "SKILL.md")}
 
-    def _skills_put(self, iid: str, req: dict):
+    def _skills_prepare(self, iid: str, req: dict):
         d = self._skill_dir(iid)
         if redact((d / "SKILL.md").read_text(encoding="utf-8", errors="replace"))[1]:
             raise Refused("read_only")
@@ -538,6 +571,10 @@ class Host:
         fm = self._frontmatter(text)
         if not fm.get("name") or not fm.get("description"):
             raise Refused("no_frontmatter")
+        return d, text
+
+    def _skills_put(self, iid: str, req: dict):
+        d, text = self._skills_prepare(iid, req)
         self.trash("skills", iid, src=d / "SKILL.md")
         _atomic_write(d / "SKILL.md", text)
         rev, item = self._skills_get(iid)
@@ -631,7 +668,7 @@ class Host:
                 "last_error": redact(str(j.get("last_error") or ""))[0][:200] or None}
         return self._job_rev(j), item
 
-    def _schedules_put(self, iid: str, req: dict):
+    def _schedules_prepare(self, iid: str, req: dict):
         j = self._job(iid)
         v = req.get("value") if isinstance(req.get("value"), dict) else {}
         updates = {}
@@ -656,6 +693,10 @@ class Host:
             updates["schedule_display"] = parsed.get("display") or s.strip()
         if not updates:
             raise Refused("bad_op", "Nothing to save.")
+        return j, updates
+
+    def _schedules_put(self, iid: str, req: dict):
+        j, updates = self._schedules_prepare(iid, req)
         self.trash("schedules", iid, text=json.dumps(j, indent=2, default=str))
         self.cron.update_job(iid, updates)
         rev, item = self._schedules_get(iid)

@@ -350,6 +350,11 @@ def build_parser(ap: argparse.ArgumentParser, with_profile: bool = True) -> None
     m.add_argument("--text", help="chat text to send above it")
     m.add_argument("--to", help="which Yui agent's thread (default: this profile's)")
     m.set_defaults(fn=cmd_media)
+    try:
+        from . import talk
+    except ImportError:  # run as a script
+        import talk
+    talk.add_cli(sub)
     if with_profile:
         for sp in (p, a, c, m):
             sp.add_argument("--profile", "-p", help="Hermes profile (default: the active one)")
