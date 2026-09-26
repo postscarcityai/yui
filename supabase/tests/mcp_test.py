@@ -184,6 +184,12 @@ try:
     res, text, d = tool(ct, "yui_show", {"lines": newer})
     check("theme app, table create, put, query and shapes lines are accepted",
           not res.get("isError") and d and d["ids"][:2] == [{"id": "today", "preset": "query"}, {"id": "n1", "preset": "shapes"}], text)
+    # YUI-63 step 2: a doing line parses here too (the copy was stale once and refused it as unknown).
+    res, text, d = tool(ct, "yui_show", {"lines": 'doing "Reading your calendar" 2/5\nask "Ready?"'})
+    print("   yui_show doing:", json.dumps({"isError": res.get("isError", False), "text": text}))
+    check("a doing line is accepted",
+          not res.get("isError") and d and d["ids"] == [{"id": "n1", "preset": "ask"}]
+          and thread()[-1]["body"] == '```yui\ndoing "Reading your calendar" 2/5\nask "Ready?"\n```', text)
 
     print("== E. yui_answers")
     res, text, d = tool(ct, "yui_answers", {"screen_id": screen["id"]})

@@ -7,13 +7,28 @@ on:
   pull_request:
   push:
     branches: [main]
+  schedule:
+    # yuigui changes the parser without a push here, so the drift check also runs daily.
+    - cron: "17 12 * * *"
 permissions:
   contents: read
 concurrency:
-  group: checks-${{ github.event.pull_request.number || github.sha }}
+  group: checks-${{ github.event_name }}-${{ github.event.pull_request.number || github.sha }}
   cancel-in-progress: true
 jobs:
+  mcp-parser:
+    # INT-3: yui-mcp carries a copy of yuigui's Yui Lines parser. Fails when the copy is older than yuigui main.
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with: { persist-credentials: false }
+      - uses: actions/checkout@v4
+        with: { repository: postscarcityai/yuigui, path: yuigui, persist-credentials: false, sparse-checkout: site/lib/yl }
+      - name: yui-mcp's yl.mjs matches yuigui main
+        run: YUI_YL_SOURCE=yuigui/site/lib/yl/yl.mjs python3 supabase/scripts/sync_yl.py --check
   conformance:
+    if: github.event_name != 'schedule'
     runs-on: macos-15
     timeout-minutes: 20
     steps:
