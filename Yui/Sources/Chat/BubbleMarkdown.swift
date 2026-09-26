@@ -9,6 +9,28 @@ enum BubbleMarkdown {
     /// The words as styled text. SwiftUI's Text draws the emphasis and code
     /// intents in the bubble's own font, so Dynamic Type still applies.
     static func attributed(_ text: String) -> AttributedString {
+        // A thread draws the same words again and again (every row, every pass):
+        // parse each text once (YUI-101).
+        if let hit = cache.object(forKey: text as NSString) { return hit.value }
+        let out = parse(text)
+        cache.setObject(Parsed(out, plain: String(out.characters)), forKey: text as NSString)
+        return out
+    }
+
+    private final class Parsed {
+        let value: AttributedString
+        let plain: String
+        init(_ value: AttributedString, plain: String) { self.value = value; self.plain = plain }
+    }
+
+    /// NSCache is thread-safe and gives memory back under pressure.
+    nonisolated(unsafe) private static let cache: NSCache<NSString, Parsed> = {
+        let c = NSCache<NSString, Parsed>()
+        c.countLimit = 2000
+        return c
+    }()
+
+    private static func parse(_ text: String) -> AttributedString {
         var out = AttributedString()
         let lines = text.replacingOccurrences(of: "\r\n", with: "\n").components(separatedBy: "\n")
         var i = 0
@@ -42,7 +64,8 @@ enum BubbleMarkdown {
     /// The words with the marks taken off: what Copy, Select text, VoiceOver and
     /// the long-answer pages get.
     static func plain(_ text: String) -> String {
-        String(attributed(text).characters)
+        if let hit = cache.object(forKey: text as NSString) { return hit.plain }
+        return String(attributed(text).characters)
     }
 
     // MARK: Lines

@@ -27,6 +27,10 @@ enum PerfInterval: String, CaseIterable, Sendable {
     case threadOpenCold = "thread_open_cold"
     case launch
     case resume
+    /// A finger lifts on a tap, to the first frame after the app handled it (YUI-101).
+    case tap
+    /// Not a time: hitch ms per second while the thread scrolls (YUI-101). Under 5 is smooth.
+    case scrollHitch = "scroll_hitch"
 
     /// The signpost name Instruments shows.
     var signpost: StaticString {
@@ -40,6 +44,8 @@ enum PerfInterval: String, CaseIterable, Sendable {
         case .threadOpenCold: "thread_open_cold"
         case .launch: "launch"
         case .resume: "resume"
+        case .tap: "tap"
+        case .scrollHitch: "scroll_hitch"
         }
     }
 }
@@ -130,6 +136,7 @@ final class Perf {
 
     private func waitForFrame() {
         guard link == nil else { return }
+        lastFrame = 0
         let l = CADisplayLink(target: FrameTarget(self), selector: #selector(FrameTarget.tick(_:)))
         l.add(to: .main, forMode: .common)
         link = l
@@ -142,7 +149,8 @@ final class Perf {
         let shown = l.targetTimestamp
         let done = ending.filter { $0.ended <= shown }
         ending.removeAll { $0.ended <= shown }
-        if live.watching { live.tick(l) } else if ending.isEmpty { l.invalidate(); link = nil }
+        if live.watching { live.tick(l) } else if ending.isEmpty, scrolling == nil { l.invalidate(); link = nil }
+        hitch(l)
         for e in done {
             signposter.endInterval(e.i.signpost, e.state)
             record(e.i, ms: max(0, (shown - e.start) * 1000))
@@ -155,10 +163,50 @@ final class Perf {
         Task.detached(priority: .utility) { await PerfStore.shared.add(i.rawValue, ms: ms) }
     }
 
+    /// Speed on (YUI-101): a frame that came more than half a frame late is a
+    /// hitch; the log gets how late, so a run can sum hitch ms per second.
+    private var lastFrame: CFTimeInterval = 0
+    private func hitch(_ l: CADisplayLink) {
+        defer { lastFrame = l.timestamp }
+        let each = l.targetTimestamp - l.timestamp
+        guard lastFrame > 0, each > 0, l.timestamp - lastFrame < 1 else { return }
+        let late = l.timestamp - lastFrame - each
+        guard late > each / 2 else { return }
+        scrolling?.late += late
+        if verbose { Self.log.debug("perf hitch \(late * 1000, format: .fixed(precision: 1), privacy: .public) ms") }
+    }
+
+    /// The thread is scrolling: frames are watched until it rests, then the late
+    /// time per second of scrolling is one `scroll_hitch` sample.
+    private var scrolling: (since: CFTimeInterval, late: Double)?
+    func scrollMoving(_ moving: Bool) {
+        if moving {
+            guard scrolling == nil else { return }
+            scrolling = (CACurrentMediaTime(), 0)
+            waitForFrame()
+        } else if let s = scrolling {
+            scrolling = nil
+            let secs = CACurrentMediaTime() - s.since
+            if secs > 0.25 { record(.scrollHitch, ms: s.late * 1000 / secs) }
+        }
+    }
+
+    /// A finger lifted on a tap (TapClock): `tap` runs from the touch to the first
+    /// frame after the app has handled it, so a slow body or a blocked main thread shows.
+    func tapped(at: CFTimeInterval) {
+        begin(.tap, at: at)
+        DispatchQueue.main.async { Perf.shared.end(.tap) }
+    }
+
     /// The overlay wants the frame rate: keep the link running while it is up.
     func watchFrames(_ on: Bool) {
         live.watching = on
         if on { waitForFrame() }
+    }
+
+    /// Speed on at launch: frames are watched from the start, for the hitch log.
+    func watchIfVerbose() {
+        if verbose { watchFrames(true) }
     }
 
     nonisolated static let log = Logger(subsystem: "com.yuigui.app", category: "perf")
@@ -246,4 +294,43 @@ struct SpeedOverlay: View {
             .onDisappear { Perf.shared.watchFrames(false) }
         }
     }
+}
+
+/// Every tap in the app, timed (YUI-101): a recognizer on the window that never
+/// wins, never delays a touch and never cancels one. A finger that lifts close to
+/// where it went down is a tap; `Perf.tapped` measures from the touch's own time.
+final class TapClock: UIGestureRecognizer, UIGestureRecognizerDelegate {
+    private var start: CGPoint?
+
+    static func attach(to window: UIWindow) {
+        guard !(window.gestureRecognizers ?? []).contains(where: { $0 is TapClock }) else { return }
+        let clock = TapClock(target: nil, action: nil)
+        clock.cancelsTouchesInView = false
+        clock.delaysTouchesBegan = false
+        clock.delaysTouchesEnded = false
+        clock.delegate = clock
+        window.addGestureRecognizer(clock)
+    }
+
+    override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent) {
+        start = touches.count == 1 ? touches.first?.location(in: view) : nil
+    }
+
+    override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent) {
+        if let start, let t = touches.first, hypot(t.location(in: view).x - start.x, t.location(in: view).y - start.y) < 10 {
+            let at = t.timestamp
+            MainActor.assumeIsolated { Perf.shared.tapped(at: at) }
+        }
+        start = nil
+        state = .failed
+    }
+
+    override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent) {
+        start = nil
+        state = .failed
+    }
+
+    override func reset() { start = nil }
+
+    func gestureRecognizer(_ g: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool { true }
 }

@@ -24,7 +24,8 @@ struct ChatView: View {
     @State private var showAgents = ProcessInfo.processInfo.arguments.contains("-yuiAgents")
     /// The agent's drawer (YUI-54): open, and where a drag has it (points from its resting place).
     @State private var drawerOpen = ProcessInfo.processInfo.arguments.contains("-yuiDrawer")
-    @State private var drawerDrag: CGFloat?
+    /// Only the drawer's own layer reads the drag, so a drag frame never re-runs this body (YUI-101).
+    @State private var drawerMotion = DrawerMotion()
     /// Controls, "Name, look and notifications": that agent's edit sheet.
     @State private var editingAgent: YuiAgent?
     /// The first-run button opens Add agent straight from the chat.
@@ -65,6 +66,11 @@ struct ChatView: View {
     @State private var atBottom = true
     /// Agent messages that landed while scrolled up: the count on the arrow.
     @State private var unread = 0
+    /// How many of the newest rows the thread draws (YUI-101). A long thread opens
+    /// on its last screens only; scrolling near the top draws the next batch above,
+    /// and the bottom anchor keeps what you are reading where it is.
+    @State private var window = Self.windowStep
+    static let windowStep = 60
     /// The page on show (YUI-31): 1 the chat, 2 to 12 the agent's screens. Follows `store.page`.
     @State private var page: Int? = 1
     /// Reduce Motion: pages cross-fade instead of sliding.
@@ -106,7 +112,7 @@ struct ChatView: View {
                         // screen the pager is scrolled along, so the drag pages back instead.
                         .gesture(DrawerPan(direction: .right, enabled: !drawerOpen && !store.stageShowing) { x in
                             focused = false
-                            drawerDrag = max(0, x)
+                            drawerMotion.drag = max(0, x)
                         } ended: { x, v in
                             settleDrawer(open: x > drawerWidth * Drawer.threshold || v > Drawer.flick)
                         })
@@ -231,7 +237,10 @@ struct ChatView: View {
                     .presentationCornerRadius(theme.radius.card)
             }
         }
-        .overlay { drawer }
+        .overlay {
+            DrawerLayer(motion: drawerMotion, open: drawerOpen, shows: !firstRun, width: drawerWidth * Drawer.fraction,
+                        reduceMotion: reduceMotion, settle: settleDrawer) { drawerContent }
+        }
         // Belt and braces (YUI-80): while the chat is stepped back, a tap or a swipe on it
         // closes the stage. The stage covers it, so this only answers if the stage never drew.
         .overlay {
@@ -266,7 +275,7 @@ struct ChatView: View {
         .environment(\.ylAnswers, store.ylAnswers)
         .environment(\.yuiMedia, store.agent.flatMap { a in account.session?.userID == "demo" ? nil : YuiMedia(account: account, agentID: a.id) })
         .environment(\.ylTimers, store.timers)
-        .environment(\.restyleNewest, store.messages.last { $0.yl?.restyle != nil }?.id)
+        .environment(\.restyleNewest, store.restyleNewest)
         .onChange(of: agentStyle, initial: true) { store.style = agentStyle }
         // The stage's reply went, or its screens stopped being staged: close it (YUI-80).
         .onChange(of: store.stageShowing) { store.settleStage() }
@@ -305,6 +314,14 @@ struct ChatView: View {
             if mode == "select" { selecting = m; return }
             if mode == "bar" { openReactions(m.id) } else { store.react(m.id, with: Reaction.all.first { $0.meaning == mode } ?? Reaction.all[0]) }
         }
+        // -yuiAutoScroll (YUI-101): 4 s after the thread shows, it scrolls itself up and
+        // back the way a finger does, so frames can be timed with no test touching the app.
+        .task(id: store.loaded) {
+            guard store.loaded, ProcessInfo.processInfo.arguments.contains("-yuiAutoScroll"), !Self.autoScrolled else { return }
+            Self.autoScrolled = true
+            try? await Task.sleep(for: .seconds(4))
+            AutoScroll.run()
+        }
         // -yuiThemeDemo "say Autumn it is.\ntheme autumn": the agent restyles itself, live, for screenshots.
         // -yuiDemoPrompt "Tabata tonight?" puts the person's message above it, after
         // -yuiDemoDelay seconds [1.5] (demo clips wait for the recording to catch up).
@@ -337,10 +354,9 @@ struct ChatView: View {
         // -yuiThreadRows <path>: a JSON array of yui_messages rows, loaded the way a
         // reopened thread loads them (answers-on-reopen tests, no network).
         .task {
-            guard let path = UserDefaults.standard.string(forKey: "yuiThreadRows"),
-                  let data = FileManager.default.contents(atPath: path),
-                  let rows = try? JSONDecoder().decode([ThreadRow].self, from: data) else { return }
+            guard let rows = Self.debugRows() else { return }
             store.load(rows)
+            Perf.shared.threadShown()
             // -yuiShelfOpen <name>: tap that saved screen on the shelf, for screenshots.
             if let name = UserDefaults.standard.string(forKey: "yuiShelfOpen") {
                 try? await Task.sleep(for: .seconds(1))
@@ -356,13 +372,24 @@ struct ChatView: View {
                 try? await Task.sleep(for: .seconds(agents.selected?.liveness == .notListening ? 5 : 30))
             }
         }
-        .onChange(of: agents.selected?.id, initial: true) {
+        .onChange(of: agents.selected?.id, initial: true) { old, new in
             // The demo account keeps the local demo chat, with the agent's face on it.
-            if account.session?.userID == "demo" { store.demo(agents.selected); return }
+            if account.session?.userID == "demo" {
+                store.demo(agents.selected)
+                #if DEBUG
+                // -yuiThreadRows: each thread switch loads the rows again, timed (YUI-101).
+                // Not the first showing: that keeps the seeded chat the rows load under.
+                if old != new, !store.messages.isEmpty, let rows = Self.debugRows() { store.reopen(rows) }
+                #endif
+                return
+            }
             store.attach(agents.selected, account: account)
         }
         .onChange(of: agents.selected) { store.refreshAgent(agents.selected) }
-        .onChange(of: store.agent?.id, initial: true) { push.visibleAgentID = store.agent?.id }
+        .onChange(of: store.agent?.id, initial: true) {
+            push.visibleAgentID = store.agent?.id
+            window = Self.windowStep
+        }
         // A notification tap or yui://agent/<id>/thread: straight to that thread.
         .onChange(of: push.pendingAgentID, initial: true) {
             guard let id = push.pendingAgentID else { return }
@@ -403,62 +430,23 @@ struct ChatView: View {
 
     private var drawerWidth: CGFloat { (UIApplication.shared.connectedScenes.first as? UIWindowScene)?.screen.bounds.width ?? 390 }
 
-    /// How far out the drawer is, 0 closed to 1 open, following a drag when there is one.
-    private var drawerShown: CGFloat {
-        let w = drawerWidth * Drawer.fraction
-        guard let d = drawerDrag else { return drawerOpen ? 1 : 0 }
-        return min(1, max(0, drawerOpen ? 1 + d / w : d / w))
-    }
-
     /// Springs open or shut from wherever the finger let go. Reduce Motion: a fade.
     private func settleDrawer(open: Bool) {
         if open { focused = false }
         withAnimation(reduceMotion ? .easeInOut(duration: 0.2) : theme.spring) {
             drawerOpen = open
-            drawerDrag = nil
+            drawerMotion.drag = nil
         }
     }
 
-    /// Over the chat, from the left, stopping short so the chat peeks out on the right.
-    /// A tap on that sliver or a drag back to the left closes it.
-    @ViewBuilder private var drawer: some View {
-        let p = drawerShown
-        if !firstRun, p > 0 || drawerOpen {
-            GeometryReader { geo in
-                let w = geo.size.width * Drawer.fraction
-                ZStack(alignment: .leading) {
-                    Color.black.opacity(0.32 * p)
-                        .ignoresSafeArea()
-                        .contentShape(.rect)
-                        .onTapGesture { settleDrawer(open: false) }
-                        .accessibilityLabel("Close the menu")
-                        .accessibilityAddTraits(.isButton)
-                        .accessibilityAction { settleDrawer(open: false) }
-                    AgentDrawer(store: store, close: { settleDrawer(open: false) },
-                                compose: { composer.draft = $0; focused = true },
-                                manage: { settleDrawer(open: false); showAgents = true },
-                                add: { settleDrawer(open: false); addFirst = true },
-                                edit: { editingAgent = $0 },
-                                reduceMotion: reduceMotion)
-                        .frame(width: w)
-                        .background {
-                            UnevenRoundedRectangle(bottomTrailingRadius: 34, topTrailingRadius: 34)
-                                .fill(theme.swatch(scheme).background)
-                                .shadow(color: .black.opacity(0.18 * p), radius: 24, x: 6)
-                                .ignoresSafeArea()
-                        }
-                        .offset(x: reduceMotion ? 0 : -w * (1 - p))
-                        .opacity(reduceMotion ? p : 1)
-                        .accessibilityAddTraits(.isModal)
-                }
-                .gesture(DrawerPan(direction: .left) { x in
-                    drawerDrag = min(0, x)
-                } ended: { x, v in
-                    settleDrawer(open: !(x < -w * Drawer.threshold || v < -Drawer.flick))
-                })
-            }
-            .transition(.identity)
-        }
+    /// The drawer itself; `DrawerLayer` slides it and dims the chat.
+    private var drawerContent: some View {
+        AgentDrawer(store: store, close: { settleDrawer(open: false) },
+                    compose: { composer.draft = $0; focused = true },
+                    manage: { settleDrawer(open: false); showAgents = true },
+                    add: { settleDrawer(open: false); addFirst = true },
+                    edit: { editingAgent = $0 },
+                    reduceMotion: reduceMotion)
     }
 
     /// Page 1: the thread itself, or the empty chat before the first message.
@@ -473,7 +461,8 @@ struct ChatView: View {
                 // so VoiceOver and UI tests saw only the plain bubbles.
                 VStack(spacing: theme.spacing.m) {
                     // A reply with nothing left to draw gets no row, not a lone face (YUI-80).
-                    ForEach(store.messages.filter { $0.yl?.isBlank != true }) { m in
+                    let all = store.shown
+                    ForEach(all.count > window ? Array(all.suffix(window)) : all) { m in
                         Group {
                             if let yl = m.yl {
                                 YLReply(screen: yl, scope: m.id, agent: store.agent, style: agentStyle,
@@ -483,6 +472,7 @@ struct ChatView: View {
                                         react: { store.react(m.id, with: $0) },
                                         select: { selecting = m },
                                         reply: { startReply(m.id) }) { store.openStage(m.id) }
+                                    .equatable()
                             } else {
                                 Bubble(message: m, agent: m.from.map { f in agents.agents.first { $0.id == f.agentID } }
                                             ?? store.agent,
@@ -500,6 +490,7 @@ struct ChatView: View {
                                                ? { agents.selectedID = f.agentID } : nil
                                        },
                                        read: { store.readAsPages(m) })
+                                    .equatable()
                             }
                         }
                         // Scrolled to from a reply's chip: a short glow says "this one".
@@ -560,7 +551,9 @@ struct ChatView: View {
                 let below = geo.contentSize.height - geo.contentInsets.top - geo.contentOffset.y - geo.containerSize.height
                 return below / max(geo.containerSize.height, 1)
             } action: { _, screens in
-                atBottom = screens < 0.04
+                // Every frame of a scroll lands here: write state only when it changes.
+                let bottom = screens < 0.04
+                if atBottom != bottom { atBottom = bottom }
                 followScroll(screens: screens)
             }
             // Content or insets changed size (a sent photo, the composer, the keyboard):
@@ -570,6 +563,12 @@ struct ChatView: View {
             } action: { _, _ in
                 if pinned, !dragging, !atBottom { position.scrollTo(edge: .bottom) }
             }
+            // Within a screen of the top of what's drawn: draw the next older batch.
+            .onScrollGeometryChange(for: Bool.self) { geo in
+                geo.contentOffset.y + geo.contentInsets.top < geo.containerSize.height
+            } action: { _, near in
+                if near, store.shown.count > window { window += Self.windowStep }
+            }
             .onScrollPhaseChange { _, phase in settleScroll(phase) }
             // The keyboard often goes a moment after the drag settles.
             .onChange(of: focused) {
@@ -577,7 +576,8 @@ struct ChatView: View {
                 dismissPin = false
                 jumpToBottom()
             }
-            .onChange(of: store.messages.map(\.id)) { old, new in countNew(old: old, new: new) }
+            // The newest row's id, not every id: one string compared per pass (YUI-101).
+            .onChange(of: store.messages.last?.id) { old, _ in countNew(after: old) }
             // The agent's saved screens, one tap from the stage (YUI-32).
             .safeAreaInset(edge: .top, spacing: 0) {
                 if !store.shelf.screens.isEmpty {
@@ -952,6 +952,12 @@ struct ChatView: View {
     private func goToOriginal(of q: ReplyQuote) {
         guard let id = store.original(of: q) else { return }
         focused = false
+        // An old message above what's drawn: draw down to it first, then go.
+        if let i = store.shown.firstIndex(where: { $0.id == id }), store.shown.count - i > window {
+            window = store.shown.count - i + Self.windowStep / 2
+            Task { @MainActor in scrollTarget = id }
+            return
+        }
         scrollTarget = id
     }
 
@@ -968,9 +974,9 @@ struct ChatView: View {
 
     /// New rows in the thread. Yours always brings you to the bottom; the
     /// agent's, while you read further up, add to the arrow's count.
-    private func countNew(old: [String], new: [String]) {
-        let before = Set(old)
-        let added = store.messages.filter { !before.contains($0.id) }
+    private func countNew(after old: String?) {
+        let from = old.flatMap { id in store.messages.lastIndex { $0.id == id } }.map { $0 + 1 } ?? 0
+        let added = store.messages[min(from, store.messages.count)...]
         guard !added.isEmpty else { return }
         if added.contains(where: \.fromUser) {
             jumpToBottom()
@@ -1002,6 +1008,7 @@ struct ChatView: View {
     /// A drag takes the pin away unless it ends at the bottom, or it let the keyboard
     /// go from a pinned thread; then the thread goes back to the newest message.
     private func settleScroll(_ phase: ScrollPhase) {
+        Perf.shared.scrollMoving(phase != .idle)
         switch phase {
         case .interacting, .tracking:
             if !dragging { dragging = true; dismissPin = pinned && focused }
@@ -1035,6 +1042,18 @@ struct ChatView: View {
         // The new field mounts on the next pass; focus it then so the keyboard stays.
         if keep { Task { @MainActor in focused = true } }
     }
+
+    #if DEBUG
+    /// -yuiAutoScroll runs once per launch.
+    @MainActor private static var autoScrolled = false
+
+    /// -yuiThreadRows <path>: a JSON array of yui_messages rows.
+    static func debugRows() -> [ThreadRow]? {
+        guard let path = UserDefaults.standard.string(forKey: "yuiThreadRows"),
+              let data = FileManager.default.contents(atPath: path) else { return nil }
+        return try? JSONDecoder().decode([ThreadRow].self, from: data)
+    }
+    #endif
 
     /// The demo account's canned answers (screenshots only; real accounts never see them).
     static let replies = [
@@ -1319,7 +1338,7 @@ struct ChatView: View {
 /// An agent reply in Yui Lines: the presets in line order, errors underneath.
 /// Components that open on the stage show here as one pill that reopens it.
 /// Hold it for reactions and Reply, Copy, Select text; swipe it left to reply (YUI-68).
-private struct YLReply: View {
+private struct YLReply: View, @MainActor Equatable {
     let screen: YLScreen
     let scope: String
     var agent: YuiAgent?
@@ -1333,6 +1352,12 @@ private struct YLReply: View {
     var reply: () -> Void = {}
     let openStage: () -> Void
     @Environment(\.yuiTheme) private var theme
+
+    /// What it draws, closures aside: a row that didn't change skips its body (YUI-101).
+    static func == (a: Self, b: Self) -> Bool {
+        a.scope == b.scope && a.screen == b.screen && a.agent == b.agent && a.style == b.style
+            && a.reaction == b.reaction && a.lifted == b.lifted && a.reduceMotion == b.reduceMotion
+    }
 
     var body: some View {
         let words = ReplyQuote.words(screen)
@@ -1385,7 +1410,7 @@ struct YLReplyItems: View {
     }
 }
 
-private struct Bubble: View {
+private struct Bubble: View, @MainActor Equatable {
     let message: ChatMessage
     var agent: YuiAgent?
     /// Still in the outbox: on the phone, not on Yui yet.
@@ -1407,6 +1432,12 @@ private struct Bubble: View {
     /// "Read as pages" under a folded answer (YUI-79).
     var read: () -> Void = {}
     @Environment(\.yuiTheme) private var theme
+
+    /// What it draws, closures aside: a row that didn't change skips its body (YUI-101).
+    static func == (a: Self, b: Self) -> Bool {
+        a.message == b.message && a.agent == b.agent && a.pending == b.pending && a.reaction == b.reaction
+            && a.lifted == b.lifted && a.reduceMotion == b.reduceMotion && (a.openFrom == nil) == (b.openFrom == nil)
+    }
 
     /// An agent's plain answer past `LongText.foldWords` folds: never a wall in the thread.
     /// Counted on the words as drawn, markdown marks off (YUI-76).
@@ -1893,6 +1924,116 @@ struct WorkingNote: View {
                 }
             }
             .accessibilityHidden(true)
+        }
+    }
+}
+
+#if DEBUG
+/// -yuiAutoScroll (YUI-101): moves the thread's own scroll view a frame at a time,
+/// 3 s up at 1200 pt/s and 3 s back down, like a long drag. Timed as one scroll.
+@MainActor
+final class AutoScroll: NSObject {
+    private static var running: AutoScroll?
+    private let view: UIScrollView
+    private var start: CFTimeInterval = 0
+    private var link: CADisplayLink?
+
+    private init(_ view: UIScrollView) { self.view = view }
+
+    static func run() {
+        let windows = UIApplication.shared.connectedScenes.compactMap { ($0 as? UIWindowScene)?.keyWindow }
+        guard let view = windows.flatMap(scrollViews).max(by: { $0.contentSize.height < $1.contentSize.height }) else { return }
+        let a = AutoScroll(view)
+        running = a
+        Perf.shared.scrollMoving(true)
+        let l = CADisplayLink(target: a, selector: #selector(tick(_:)))
+        l.add(to: .main, forMode: .common)
+        a.link = l
+    }
+
+    private static func scrollViews(in v: UIView) -> [UIScrollView] {
+        var out = v.subviews.flatMap(scrollViews)
+        if let s = v as? UIScrollView, s.contentSize.height > s.bounds.height * 2 { out.append(s) }
+        return out
+    }
+
+    @objc private func tick(_ l: CADisplayLink) {
+        if start == 0 { start = l.timestamp }
+        let t = l.timestamp - start
+        let dt = l.targetTimestamp - l.timestamp
+        guard t < 6 else {
+            l.invalidate()
+            Perf.shared.scrollMoving(false)
+            Self.running = nil
+            return
+        }
+        let top = -view.adjustedContentInset.top
+        let bottom = view.contentSize.height - view.bounds.height + view.adjustedContentInset.bottom
+        let y = view.contentOffset.y + (t < 3 ? -1200 : 1200) * dt
+        view.contentOffset.y = min(max(y, top), bottom)
+    }
+}
+#endif
+
+/// Where a drag has the drawer, points from its resting place (YUI-54). Its own
+/// object so only `DrawerLayer` observes it: a drag frame redraws the drawer, not the chat.
+@Observable @MainActor
+final class DrawerMotion {
+    var drag: CGFloat?
+}
+
+/// Over the chat, from the left, stopping short so the chat peeks out on the right.
+/// A tap on that sliver or a drag back to the left closes it.
+private struct DrawerLayer<Content: View>: View {
+    let motion: DrawerMotion
+    let open: Bool
+    let shows: Bool
+    /// The drawer's width.
+    let width: CGFloat
+    let reduceMotion: Bool
+    let settle: (Bool) -> Void
+    @ViewBuilder let content: () -> Content
+    @Environment(\.yuiTheme) private var theme
+    @Environment(\.colorScheme) private var scheme
+
+    /// How far out the drawer is, 0 closed to 1 open, following a drag when there is one.
+    private var shown: CGFloat {
+        guard let d = motion.drag else { return open ? 1 : 0 }
+        return min(1, max(0, open ? 1 + d / width : d / width))
+    }
+
+    var body: some View {
+        let p = shown
+        if shows, p > 0 || open {
+            GeometryReader { geo in
+                let w = geo.size.width * Drawer.fraction
+                ZStack(alignment: .leading) {
+                    Color.black.opacity(0.32 * p)
+                        .ignoresSafeArea()
+                        .contentShape(.rect)
+                        .onTapGesture { settle(false) }
+                        .accessibilityLabel("Close the menu")
+                        .accessibilityAddTraits(.isButton)
+                        .accessibilityAction { settle(false) }
+                    content()
+                        .frame(width: w)
+                        .background {
+                            UnevenRoundedRectangle(bottomTrailingRadius: 34, topTrailingRadius: 34)
+                                .fill(theme.swatch(scheme).background)
+                                .shadow(color: .black.opacity(0.18 * p), radius: 24, x: 6)
+                                .ignoresSafeArea()
+                        }
+                        .offset(x: reduceMotion ? 0 : -w * (1 - p))
+                        .opacity(reduceMotion ? p : 1)
+                        .accessibilityAddTraits(.isModal)
+                }
+                .gesture(DrawerPan(direction: .left) { x in
+                    motion.drag = min(0, x)
+                } ended: { x, v in
+                    settle(!(x < -w * Drawer.threshold || v < -Drawer.flick))
+                })
+            }
+            .transition(.identity)
         }
     }
 }

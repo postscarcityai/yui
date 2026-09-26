@@ -35,6 +35,11 @@ final class PerfMonitor {
         nc.addObserver(forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main) { _ in
             MainActor.assumeIsolated {
                 Perf.shared.end(.resume)
+                // Taps are timed from the window (YUI-101); attach is a no-op the second time.
+                for case let scene as UIWindowScene in UIApplication.shared.connectedScenes {
+                    scene.windows.forEach(TapClock.attach)
+                }
+                if !PerfMonitor.shared.activeOnce { Perf.shared.watchIfVerbose() }
                 PerfMonitor.shared.activeOnce = true
                 PerfMonitor.shared.foreground(true)
             }

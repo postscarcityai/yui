@@ -28,7 +28,7 @@ struct ChatMessage: Identifiable, Equatable {
 /// yuigui/spec/RELAY.md); detached, it is the local demo chat.
 @Observable @MainActor
 final class ChatStore {
-    var messages: [ChatMessage]
+    var messages: [ChatMessage] { didSet { derived = nil } }
     private(set) var events: [YLEvent] = []
     var spring: Animation = .default
     /// An agent reply carried a `theme` line: (agent id, props, message time).
@@ -37,7 +37,53 @@ final class ChatStore {
     // MARK: Stage (YUI-13, spec YL.md section 5)
 
     /// The open agent's style profile: decides what opens on the stage.
-    var style: [String: String] = [:]
+    var style: [String: String] = [:] { didSet { if style != oldValue { derived = nil } } }
+
+    /// What the thread reads on every pass, worked out once per change to the
+    /// messages or the style (YUI-101): a 500-row thread used to scan every
+    /// message for each row and each page on every frame of a drag.
+    private struct Derived {
+        var shown: [ChatMessage]
+        var wearers: Set<String>
+        var screens: [Int]
+        var talking: Set<Int>
+        var restyleNewest: String?
+    }
+    @ObservationIgnored private var derived: Derived?
+
+    private var derive: Derived {
+        // Reading `messages` and `style` keeps the views that ask observing them.
+        let messages = messages, style = style
+        if let derived { return derived }
+        var lastInRow: [String: (text: String?, any: String)] = [:]
+        var on = Set<Int>()
+        var restyle: String?
+        for m in messages {
+            if !m.fromUser {
+                var r = lastInRow[m.rowID] ?? (nil, m.id)
+                r.any = m.id
+                if m.yl == nil { r.text = m.id }
+                lastInRow[m.rowID] = r
+            }
+            guard let yl = m.yl else { continue }
+            for c in yl.top where c.page != 1 && !c.onStage(style) { on.insert(c.page) }
+            if yl.restyle != nil { restyle = m.id }
+        }
+        let d = Derived(shown: messages.filter { $0.yl?.isBlank != true },
+                        wearers: Set(lastInRow.values.map { $0.text ?? $0.any }),
+                        screens: [1] + on.sorted(),
+                        talking: Set(YuiLines.talking(messages.flatMap { $0.yl?.talkLines ?? [] })),
+                        restyleNewest: restyle)
+        derived = d
+        return d
+    }
+
+    /// The rows the thread draws: a reply with nothing left to draw gets none (YUI-80).
+    var shown: [ChatMessage] { derive.shown }
+
+    /// The newest reply offering Yui a new look (RESTYLE.md).
+    var restyleNewest: String? { derive.restyleNewest }
+
     /// The reply on the stage, and whether the stage is up or swiped away.
     private(set) var stageID: String?
     private(set) var stageOpen = false
@@ -131,14 +177,7 @@ final class ChatStore {
     /// The pages there are, in order: the chat, then each screen with something
     /// on it. A screen appears when a line lands there and goes when `>N clear`
     /// empties it; the numbers can skip (`>5` alone makes chat and screen 5).
-    var screens: [Int] {
-        var on = Set<Int>()
-        for m in messages {
-            guard let yl = m.yl else { continue }
-            for c in yl.top where c.page != 1 && !c.onStage(style) { on.insert(c.page) }
-        }
-        return [1] + on.sorted()
-    }
+    var screens: [Int] { derive.screens }
 
     /// What is on page `n`: each reply with something there, oldest first.
     /// A page keeps what lands on it across replies until `>2 clear`.
@@ -171,7 +210,7 @@ final class ChatStore {
 
     /// Pages the agent keeps the composer on (`>2 talk`, YUI-62), from every reply
     /// in order: `talk off` and `>2 clear` take it away again.
-    var talking: Set<Int> { Set(YuiLines.talking(messages.flatMap { $0.yl?.talkLines ?? [] })) }
+    var talking: Set<Int> { derive.talking }
 
     /// The composer shows on page `n`: the chat always, a page when the agent said `talk`.
     func talks(on n: Int) -> Bool { n == 1 || talking.contains(n) }
@@ -215,9 +254,7 @@ final class ChatStore {
     /// The bubble that wears a row's badge: its last text bubble, or its last
     /// card when the reply is all cards (a held card takes reactions too, YUI-68).
     func wearsReaction(_ m: ChatMessage) -> Bool {
-        guard !m.fromUser else { return false }
-        let row = messages.filter { $0.rowID == m.rowID && !$0.fromUser }
-        return (row.last { $0.yl == nil } ?? row.last)?.id == m.id
+        !m.fromUser && derive.wearers.contains(m.id)
     }
 
     func reaction(for m: ChatMessage) -> Reaction? { Reaction.named(reactions[m.rowID]) }
@@ -650,6 +687,25 @@ final class ChatStore {
         for row in rows { _ = add(row) }
         resume(rows)
     }
+
+    #if DEBUG
+    /// The demo account with `-yuiThreadRows` (YUI-101): opening a thread loads the
+    /// rows again, from nothing, and is timed like a real open, the network aside.
+    func reopen(_ rows: [ThreadRow]) {
+        messages = []
+        seen = []
+        answers = [:]
+        reactions = [:]
+        reacting = nil
+        replying = nil
+        stageID = nil
+        stageOpen = false
+        loaded = false
+        load(rows)
+        loaded = true
+        Perf.shared.threadShown()
+    }
+    #endif
 
     /// A thread opened mid-turn: its newest row is the person's and the agent
     /// has not finished it, so the working note picks up where it was.
