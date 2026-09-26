@@ -17,6 +17,8 @@
 //                                             chrome the person previews and applies (never silent)
 //   { op: "close", screen: "full", line }     `close` or bare ">chat": close the stage, back to screen 1
 //   { op: "talk",  screen, props: { on }, line }  `>2 talk`: page 2 keeps the composer (`talk off` takes it away)
+//   { op: "doing", screen, props: { text?, step?, of? }, line }  what the agent is doing, in the working
+//                                             row (`doing off`: props { off: true })
 //   { op: "menu",  screen, id, props: { bucket, label, sub?, say?, show?, url? }, line }
 //                                             an item in the agent's drawer (`menu done id`: props { done: true })
 //   { op: "table", screen, name, cols: [{ name, type, unit? }], line }  `table create`: an agent table on the phone (spec/TABLES.md)
@@ -45,20 +47,30 @@ export const PRESETS = [
   "query",
 ];
 // Not presets, but valid line heads.
-export const CORE = ["say", "custom", "save", "show", "forget", "clear", "end", "theme", "close", "talk", "menu", "put"];
+export const CORE = ["say", "custom", "save", "show", "forget", "clear", "end", "theme", "close", "talk", "menu", "put", "doing"];
 
 // Groups: a group head collects the lines that follow it on the same screen,
 // as long as each one is a member preset. Anything else ends the group, and
 // so does `end`. Comments, blank lines and error lines do not. A narrate
 // can hold another group (a deck), a deck or plan a sketch (a page's picture).
 export const GROUPS = {
-  deck: ["page", "ask", "choose", "pick", "sketch"],
+  deck: ["page", "ask", "choose", "pick", "sketch", "shapes", "math", "chart", "stat", "calc"],
   plan: ["page", "ask", "choose", "pick", "slide", "form", "mic", "camera", "sketch"],
   narrate: ["page", "compare", "image", "video", "card", "stat", "chart", "math", "storyboard", "gallery", "deck"],
   timeline: ["done", "now", "next"],
   sketch: ["row", "after"],
   shapes: ["shape"],
 };
+
+// A timeline's rows. A patch's `kind=` moves one to another of these.
+export const ROWS = GROUPS.timeline;
+
+// Where the now marker sits in a timeline's rows (in line order): before the
+// first row that is not done, or after the last row when all are done.
+export function markAt(rows) {
+  const at = rows.findIndex((r) => r.preset !== "done");
+  return at < 0 ? rows.length : at;
+}
 
 const IDENT = /^[a-z_][\w-]*$/i;
 
@@ -865,6 +877,86 @@ function flowGraph(f) {
   return clean({ dir: f.dir, start, nodes, edges, source: f.src.join("\n") });
 }
 
+// ---------- flow variants (spec/FLOWS.md, section 9) ----------
+// `flow <base> as=<name>` makes a variant of a saved flow: the lines up to
+// `end` say only what changes. `drop a b` takes steps out, `%% id: <step>`
+// rewords one, `add new after id: <step>` puts a step in after another. The
+// parser keeps them in order; flowVariant applies them to the base's graph.
+const VARIANT_ADD = /^add\s+(\w+)\s+after\s+(\w+)\s*:\s*(.*)$/;
+const VARIANT_BAD = "flow: a variant line is drop, add or a %% step";
+
+function newVariant(head) {
+  return { id: head.id, screen: head.screen, src: [], depth: 0, variant: true, changes: [] };
+}
+
+// One line of an open variant. Returns an error message or null.
+function variantStatement(v, t) {
+  if (!t || /^#(\s|$)/.test(t)) return null;
+  const step = (id, text) => {
+    const head = text.match(/^([a-z]+)(?=\s|$)/);
+    if (head && PRESETS.includes(head[1]) && !FLOW_STEPS.includes(head[1])) return `flow: a ${head[1]} cannot be a step (${FLOW_STEPS.join(", ")})`;
+    return stepOf(text) || id;
+  };
+  if (t.startsWith("%%")) {
+    const m = t.match(/^%%\s*(\w+)\s*:\s*(.*)$/);
+    if (!m) return null;
+    const s = step(m[1], m[2]);
+    if (typeof s === "string") return s === m[1] ? null : s;
+    v.changes.push({ op: "step", id: m[1], preset: s.preset, props: s.props });
+    return null;
+  }
+  const drop = t.match(/^drop((?:\s+\w+)+)\s*$/);
+  if (drop) {
+    for (const id of drop[1].trim().split(/\s+/)) v.changes.push({ op: "drop", id });
+    return null;
+  }
+  const add = t.match(VARIANT_ADD);
+  if (add) {
+    const s = step(add[1], add[3]);
+    if (typeof s === "string") return s === add[1] ? VARIANT_BAD : s;
+    v.changes.push({ op: "add", id: add[1], after: add[2], preset: s.preset, props: s.props });
+    return null;
+  }
+  return VARIANT_BAD;
+}
+
+// A base flow's graph with a variant's changes applied, in order. A change
+// that names a step the base does not have (or adds one it already has) is
+// skipped, so a variant survives its base being edited.
+export function flowVariant(base, changes = []) {
+  let nodes = (base.nodes || []).map((n) => ({ ...n }));
+  let edges = (base.edges || []).map((e) => ({ ...e }));
+  let start = base.start;
+  const has = (id) => nodes.some((n) => n.id === id);
+  for (const c of changes) {
+    if (c.op === "drop" && has(c.id)) {
+      // Edges into the step go where it went: its default edge, else its first.
+      const out = edges.filter((e) => e.from === c.id);
+      const on = (out.find((e) => !e.when) || out[0] || {}).to;
+      edges = edges.filter((e) => e.from !== c.id).flatMap((e) => (e.to !== c.id ? [e] : on && on !== e.from ? [{ ...e, to: on }] : []));
+      nodes = nodes.filter((n) => n.id !== c.id);
+      if (start === c.id) start = on && has(on) ? on : (nodes[0] || {}).id;
+    } else if (c.op === "step" && has(c.id)) {
+      nodes = nodes.map((n) => (n.id === c.id ? { ...n, preset: c.preset, props: c.props } : n));
+    } else if (c.op === "add" && !has(c.id) && (nodes.find((n) => n.id === c.after) || {}).preset) {
+      // The new step takes over the edges out of `after`, and `after` goes to it.
+      edges = edges.map((e) => (e.from === c.after ? { ...e, from: c.id } : e));
+      edges.push({ from: c.after, to: c.id });
+      const at = nodes.findIndex((n) => n.id === c.after);
+      nodes.splice(at + 1, 0, { id: c.id, preset: c.preset, props: c.props });
+    }
+  }
+  return clean({ dir: base.dir, start, nodes, edges });
+}
+
+// A variant's name and title from its `as=`: "Restaurant intake" and
+// "restaurant-intake" are both the name restaurant-intake, title "Restaurant intake".
+export function variantName(as) {
+  const name = String(as || "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+  const t = String(as || "").trim().replace(/[-_]+/g, " ");
+  return { name, title: t.charAt(0).toUpperCase() + t.slice(1) };
+}
+
 // ---------- flow runtime ----------
 // Pure helpers the renderers share: where Next goes, the path taken, and
 // what goes in the event. `g` is a flow's props (resolve("flow", props)).
@@ -994,9 +1086,9 @@ export class Parser {
   // Group bookkeeping for one parsed op. Errors (and null) leave groups open.
   group(op) {
     // A theme line restyles the app, a menu line fills the drawer and a data
-    // line (table create, put) writes to the phone, not the screen: they
-    // leave groups alone.
-    if (!op || op.op === "error" || op.op === "theme" || op.op === "menu" || op.op === "table" || op.op === "put") return op;
+    // line (table create, put) writes to the phone and a doing line sits in
+    // the working row, not on the screen: they leave groups alone.
+    if (!op || op.op === "error" || op.op === "theme" || op.op === "menu" || op.op === "table" || op.op === "put" || op.op === "doing") return op;
     // Closing the stage ends whatever group was open on it, like `>2` would.
     if (op.op === "close") { this.open = []; return op; }
     if (op.op === "end") {
@@ -1026,7 +1118,11 @@ export class Parser {
       if (FLOW_HEADER.test(t)) { this.flow = newFlow(h, src.replace(/\r$/, "")); return null; }
     }
     const op = this.group(this.parseLine(src));
-    if (op && op.op === "add" && op.preset === "flow") this.flowHead = { id: op.id, screen: op.screen, pre: [] };
+    if (op && op.op === "add" && op.preset === "flow") {
+      // `as=` makes it a variant of the saved flow it names: its lines follow.
+      if (op.props.as !== undefined) this.flow = newVariant(op);
+      else this.flowHead = { id: op.id, screen: op.screen, pre: [] };
+    }
     return op;
   }
 
@@ -1047,14 +1143,15 @@ export class Parser {
       return this.flowDone(line);
     }
     f.src.push(line);
-    const err = flowStatement(f, t);
+    const err = f.variant ? variantStatement(f, t) : flowStatement(f, t);
     return err ? { op: "error", screen: f.screen, message: err, line } : null;
   }
 
   flowDone(line) {
     const f = this.flow;
     this.flow = null;
-    return { op: "patch", screen: f.screen, target: f.id, props: flowGraph(f), line };
+    const props = f.variant ? clean({ changes: f.changes, source: f.src.join("\n") }) : flowGraph(f);
+    return { op: "patch", screen: f.screen, target: f.id, props, line };
   }
 
   parseLine(src) {
@@ -1105,6 +1202,12 @@ export class Parser {
       if (!preset) return { op: "error", screen, message: `patch: nothing called "${target}"`, line };
       if (preset === "custom") return { op: "error", screen, message: "patch: custom blocks are replaced, not patched", line };
       const props = RAW.has(preset) ? rawArgs(preset, body.slice(head.length)) : parseArgs(preset, tokens);
+      // A timeline row moves with `kind=` (YUI-111): done, now or next. The
+      // row keeps its id and place; from here on the id is that preset.
+      if (ROWS.includes(preset) && props.kind !== undefined) {
+        if (!ROWS.includes(props.kind)) return { op: "error", screen, message: "patch: kind= is done, now or next", line };
+        if (!ROWS.includes(target)) this.ids.set(target, props.kind);
+      }
       return { op: "patch", screen, target, props, line };
     }
 
@@ -1133,6 +1236,7 @@ export class Parser {
       if (word !== "on" && word !== "off") return { op: "error", screen, message: "talk: takes nothing, on or off", line };
       return { op: "talk", screen, props: { on: word === "on" }, line };
     }
+    if (head === "doing") return doingLine(screen, tokens, line);
 
     // Agent tables (spec/TABLES.md): `table create` and `put` write to the phone.
     if (head === "put") return putLine(screen, tokens, line);
@@ -1151,6 +1255,37 @@ export class Parser {
     const props = RAW.has(preset) ? rawArgs(preset, body.slice(head.length)) : parseArgs(preset, tokens);
     return { op: "add", screen, preset, id, props, line };
   }
+}
+
+// ---------- doing (spec section 5, The working row) ----------
+// `doing "Reading your calendar" 2/5`: a few words on what the agent is doing,
+// and a bar when a last bare `n/m` says how far along it is. `doing off` puts
+// the working word back. Words and a step only: keys and flags are errors.
+const STEP = /^(\d+)\/(\d+)$/;
+function doingLine(screen, tokens, line) {
+  const bad = (m) => ({ op: "error", screen, message: `doing: ${m}`, line });
+  if (tokens.length === 1 && !tokens[0].quoted && tokens[0].raw === "off") return { op: "doing", screen, props: { off: true }, line };
+  if (tokens.some((t) => t.key !== undefined || (!t.quoted && !t.parts && /^\+[a-z][\w-]*$/i.test(t.raw)))) return bad("takes words and a step like 2/5, no keys or flags");
+  const last = tokens[tokens.length - 1];
+  const sm = last && !last.quoted && !last.parts && last.raw.match(STEP);
+  const words = sm ? tokens.slice(0, -1) : tokens;
+  const text = words.map((t) => t.text).filter(Boolean).join(" ");
+  if (!text && !sm) return bad("needs words, a step like 2/5, or off");
+  const props = text ? { text } : {};
+  if (sm) {
+    props.step = Number(sm[1]);
+    props.of = Number(sm[2]);
+    if (props.of < 1 || props.step > props.of) return bad("the step is n/m with n from 0 to m");
+  }
+  return { op: "doing", screen, props, line };
+}
+
+// The working row after these ops: the newest doing, or null when there is
+// none or the last one was `doing off`.
+export function doingOf(ops) {
+  let now = null;
+  for (const o of ops) if (o && o.op === "doing") now = o.props.off ? null : { ...o.props };
+  return now;
 }
 
 // ---------- menu (spec section 5, The drawer) ----------
@@ -1408,6 +1543,31 @@ export function readTyped(body) {
   return { screen: m[1], words: body.slice(m[0].length) };
 }
 
+// Talk about this (spec/TALK-ABOUT.md): a message about one Controls item.
+// A `[yui] attach section= id= rev=` line names the item, then the words. The
+// line is a reference; the host puts the item's text in the agent's turn.
+// An item that is not one (a missing key, a space in an id) sends the words as they are.
+const ATTACH_SECTION = /^[a-z]{1,20}$/;
+const ATTACH_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/;
+const ATTACH_REV = /^[A-Za-z0-9]{1,64}$/;
+
+export function attachBody(item, words) {
+  const { section, id, rev } = item || {};
+  if (!ATTACH_SECTION.test(section || "") || !ATTACH_ID.test(id || "") || id.includes("..") || !ATTACH_REV.test(rev || "")) {
+    return words;
+  }
+  return `[yui] attach section=${section} id=${id} rev=${rev}\n${words}`;
+}
+
+// The other way: `{ section, id, rev, words }` for a message about an item, else null.
+export function readAttach(body) {
+  const m = /^\[yui\] attach section=(\S+) id=(\S+) rev=(\S+)\r?\n/.exec(body);
+  if (!m) return null;
+  const [, section, id, rev] = m;
+  if (attachBody({ section, id, rev }, "") === "") return null;
+  return { section, id, rev, words: body.slice(m[0].length) };
+}
+
 // ---------- defaults ----------
 
 export function resolve(preset, props) {
@@ -1544,7 +1704,11 @@ export function apply(state, op, style = {}) {
       }
       if (hit) {
         const next = [...s.screens[hit.k]];
-        next[hit.i] = { ...hit.c, props: { ...hit.c.props, ...op.props } };
+        // `kind=` on a row re-kinds it in place: same key and place, so the
+        // now marker moves and nothing else does (YUI-111).
+        const { kind, ...rest } = op.props;
+        if (ROWS.includes(hit.c.preset) && ROWS.includes(kind)) next[hit.i] = { ...hit.c, preset: kind, props: { ...hit.c.props, ...rest } };
+        else next[hit.i] = { ...hit.c, props: { ...hit.c.props, ...op.props } };
         s.screens[hit.k] = next;
       } else s.errors = [...s.errors, `patch: no live "${op.target}" on screen`];
       break;
@@ -1592,6 +1756,9 @@ export function apply(state, op, style = {}) {
     }
     case "menu":
       s.menu = menuOf([op], s.menu || undefined); break;
+    // The working row, not a screen: the newest doing wins, `doing off` clears it.
+    case "doing":
+      s.doing = doingOf([op]); break;
     case "theme":
       // An app restyle is only a proposal until the person taps Apply: it
       // waits in `restyle` and leaves the agent's own look alone.
@@ -1633,6 +1800,7 @@ export function toJSON(ops) {
       case "focus": return { focus: Number(o.screen) || o.screen };
       case "close": return { close: true };
       case "talk": return { talk: o.props.on, ...scr };
+      case "doing": return { doing: o.props };
       case "menu": return { menu: o.id, ...o.props };
       case "table": return { table: o.name, cols: o.cols };
       case "put": return { put: o.table, ...(o.key !== undefined ? { key: o.key } : {}), ...o.values, ...(o.delete ? { delete: true } : {}) };
