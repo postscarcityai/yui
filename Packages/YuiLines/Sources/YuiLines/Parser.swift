@@ -203,6 +203,14 @@ public struct YLParser: Sendable {
                 return YLNode(op: .error, screen: screen, message: "patch: custom blocks are replaced, not patched", line: line)
             }
             let props = rawPresets.contains(preset) ? rawArgs(preset, rest(body, head)) : parseArgs(preset, tokens)
+            // A timeline row moves with `kind=` (YUI-111): done, now or next. The
+            // row keeps its id and place; from here on the id is that preset.
+            if timelineRows.contains(preset), let kind = props["kind"] {
+                guard let k = kind.string, timelineRows.contains(k) else {
+                    return YLNode(op: .error, screen: screen, message: "patch: kind= is done, now or next", line: line)
+                }
+                if !timelineRows.contains(target) { ids[target] = k }
+            }
             return YLNode(op: .patch, screen: screen, target: target, props: props, line: line)
         }
 

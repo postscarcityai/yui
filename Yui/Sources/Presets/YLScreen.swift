@@ -7,7 +7,8 @@ struct YLComponent: Identifiable, Equatable, Sendable {
     let serial: Int
     /// The YL id events go back under: `@id` from the line, or `n1`, `c2`, ...
     let ylID: String
-    let preset: String
+    /// Its kind. Only a timeline row's changes, by a patch's `kind=` (YUI-111).
+    private(set) var preset: String
     var screen: String
     var props: [String: YLValue]
     var line: String
@@ -19,6 +20,15 @@ struct YLComponent: Identifiable, Equatable, Sendable {
     var art: Int? = nil
 
     var id: Int { serial }
+
+    /// A patch's props merged in. `kind=` on a timeline row re-kinds it in place
+    /// (YUI-111, YL.md timeline, Moving a row): same id and place, so the now
+    /// marker moves and nothing else does.
+    mutating func patch(_ new: [String: YLValue]) {
+        var new = new
+        if let kind = rowKind(of: preset, patch: new) { preset = kind; new["kind"] = nil }
+        props.merge(new) { $1 }
+    }
 }
 
 /// Screen state for one agent reply. Applies parser nodes in order the way
@@ -64,7 +74,7 @@ struct YLScreen: Equatable, Sendable {
                                      line: node.line))
                 return
             }
-            components[i].props.merge(node.props ?? [:]) { $1 }
+            components[i].patch(node.props ?? [:])
         case .clear:
             components.removeAll { $0.screen == node.screen }
             talkLines.append(node)

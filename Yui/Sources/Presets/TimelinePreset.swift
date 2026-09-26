@@ -28,7 +28,8 @@ struct TimelinePreset: View {
     var body: some View {
         let s = theme.swatch(scheme)
         let rows = rows
-        let split = rows.firstIndex { $0.preset != "done" } ?? rows.count
+        // The now marker: moves when a patch re-kinds a row (YUI-111).
+        let split = markAt(rows.map(\.preset))
         let fold = lone ? 0 : Int(c.number("fold") ?? 5)
         let hidden = !unfolded && fold > 0 && split > fold ? split - fold : 0
         let tail = Array(rows[split...])

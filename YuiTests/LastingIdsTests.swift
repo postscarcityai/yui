@@ -73,6 +73,35 @@ final class LastingIdsTests: XCTestCase {
         XCTAssertNil(shelf["war room"]?.parts.first?.props["lock"])
     }
 
+    /// YUI-111: `kind=` moves a timeline row in place, on the page and in the
+    /// saved copy, and the id answers to its new kind from then on.
+    func testAPatchMovesATimelineRowInPlace() {
+        let saved = Self.agent("r1", """
+        >2
+        timeline@war
+        done@rel-a "Saved screens"
+        now@rel-b "Reply to a message"
+        next@rel-c "Each agent's home"
+        save war room
+        """, at: "2026-09-25T10:00:00Z")
+        let moved = Self.agent("r2", "~rel-b kind=done at=\"Sep 26\"\n~rel-c kind=now", at: "2026-09-25T10:05:00Z")
+        let store = ChatStore()
+        store.load([saved, moved])
+        let rows = store.messages.compactMap(\.yl).flatMap(\.components).filter { timelineRows.contains($0.preset) }
+        XCTAssertEqual(rows.map(\.ylID), ["rel-a", "rel-b", "rel-c"], "rows keep their place")
+        XCTAssertEqual(rows.map(\.preset), ["done", "done", "now"])
+        XCTAssertEqual(markAt(rows.map(\.preset)), 2, "the now marker moved down one")
+        XCTAssertEqual(component(store, "rel-b")?.props["at"], .string("Sep 26"))
+        XCTAssertNil(component(store, "rel-b")?.props["kind"], "kind= is the preset, not a prop")
+        XCTAssertEqual(store.lastingIds["rel-b"], "done")
+        XCTAssertEqual(store.shelf["war room"]?.parts.map(\.preset), ["timeline", "done", "done", "now"])
+        XCTAssertTrue(store.messages.compactMap(\.yl).allSatisfy { $0.errors.isEmpty })
+
+        // A later reply reaches it by its new kind, not its old one.
+        store.load([saved, moved, Self.agent("r3", "~done@rel-b sub=shipped", at: "2026-09-25T10:06:00Z")])
+        XCTAssertEqual(component(store, "rel-b")?.props["sub"], .string("shipped"))
+    }
+
     func testAClearedPageTakesItsIdsWithIt() {
         let store = ChatStore()
         store.load([Self.board, Self.agent("r2", ">2 clear", at: "2026-09-25T10:05:00Z"),

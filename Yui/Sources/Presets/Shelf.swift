@@ -17,6 +17,13 @@ struct SavedScreen: Codable, Equatable, Sendable {
         var props: [String: YLValue]
         var line: String
         var inGroup: String?
+
+        /// A later patch merged in; `kind=` re-kinds a timeline row (YUI-111).
+        mutating func patch(_ new: [String: YLValue]) {
+            var new = new
+            if let kind = rowKind(of: preset, patch: new) { preset = kind; new["kind"] = nil }
+            props.merge(new) { $1 }
+        }
     }
 
     var name: String
@@ -80,7 +87,7 @@ struct Shelf: Codable, Equatable, Sendable {
         var changed = false
         for (name, s) in entries where s.at <= at {
             guard let i = s.parts.lastIndex(where: { $0.ylID == target }) else { continue }
-            entries[name]?.parts[i].props.merge(node.props ?? [:]) { $1 }
+            entries[name]?.parts[i].patch(node.props ?? [:])
             changed = true
         }
         return changed

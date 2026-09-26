@@ -25,6 +25,8 @@ struct Vector: Sendable, CustomTestStringConvertible {
     let typed: [String: String]?
     /// The drawer after the input (spec section 5, The drawer).
     let menu: YLValue?
+    /// A timeline's rows after the input, {rows: [{id, kind}], mark} (YUI-111).
+    let rows: YLValue?
     let style: [String: String]
     /// Ids that last from earlier replies, id -> preset (spec section 5).
     let known: [String: String]
@@ -55,6 +57,7 @@ enum Vectors {
                 talk: v["talk"]?.array?.map { Int($0.number!) },
                 typed: v["typed"]?.object?.compactMapValues { $0.string },
                 menu: v["menu"],
+                rows: v["rows"],
                 style: v["style"]?.object?.compactMapValues { $0.string } ?? [:],
                 known: v["known"]?.object?.compactMapValues { $0.string } ?? [:]
             )
@@ -138,6 +141,26 @@ func conformance(_ v: Vector) {
             }))
         }))
         #expect(got == want, "menu: \(json(got))")
+    }
+
+    if let want = v.rows {
+        // Timeline rows after the input is applied to an empty screen: adds in
+        // line order, a patch lands on the newest id or preset match, and
+        // `kind=` re-kinds a row in place (YL.md, timeline, Moving a row).
+        var parts: [(id: String, preset: String)] = []
+        for n in YuiLines.parse(v.input, known: v.known) {
+            if n.op == .add { parts.append((n.id ?? "", n.preset ?? "say")) }
+            if n.op == .patch, let t = n.target, let i = parts.lastIndex(where: { $0.id == t || $0.preset == t }),
+               let kind = rowKind(of: parts[i].preset, patch: n.props ?? [:]) {
+                parts[i].preset = kind
+            }
+        }
+        let rows = parts.filter { timelineRows.contains($0.preset) }
+        let got = YLValue.object([
+            "rows": .array(rows.map { .object(["id": .string($0.id), "kind": .string($0.preset)]) }),
+            "mark": .number(Double(markAt(rows.map(\.preset)))),
+        ])
+        #expect(got == want, "rows: \(json(got))")
     }
 
     #expect(v.expected.contains { $0["op"] == "error" } == v.error, "`error` flag does not match expected")

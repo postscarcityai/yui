@@ -29,6 +29,22 @@ let groups: [String: Set<String>] = [
     "shapes": ["shape"],
 ]
 
+/// A timeline's rows. A patch's `kind=` moves one to another of these (YUI-111).
+public let timelineRows: Set<String> = ["done", "now", "next"]
+
+/// Where the now marker sits among a timeline's row presets, in line order:
+/// before the first row that is not done, or after the last when all are done.
+public func markAt(_ rows: [String]) -> Int {
+    rows.firstIndex { $0 != "done" } ?? rows.count
+}
+
+/// The kind a patch moves a component to: its `kind=` when both the component
+/// and the kind are timeline rows, else nil (a shape's `kind` is its own prop).
+public func rowKind(of preset: String, patch props: [String: YLValue]) -> String? {
+    guard timelineRows.contains(preset), let kind = props["kind"]?.string, timelineRows.contains(kind) else { return nil }
+    return kind
+}
+
 let chartTypes: Set<String> = ["line", "bar", "area", "scatter", "pie", "donut"]
 
 /// Keys whose values are never typed: a quiz answer is compared with option
