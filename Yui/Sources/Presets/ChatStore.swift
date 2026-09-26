@@ -343,6 +343,14 @@ final class ChatStore {
     /// component of that id and preset. YL ids repeat across replies (`n1` in
     /// every one), and a later reply's `n1` owns every answer after it lands.
     private func record(id: String, preset: String, value: [String: YLValue]) {
+        // A tapped review item in the drawer: no component to file it under,
+        // but it stops waiting on the person (the menu button's dot).
+        if preset == "menu" {
+            guard value["bucket"] == .string("review") else { return }
+            menu.markSeen(id)
+            if let agentID = agent?.id { menu.store(agentID: agentID) }
+            return
+        }
         guard let m = messages.last(where: { $0.yl?.components.contains { $0.ylID == id && $0.preset == preset } == true })
         else { return }
         answers[m.id, default: [:]][id] = value

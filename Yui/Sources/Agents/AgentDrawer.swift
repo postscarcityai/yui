@@ -102,8 +102,9 @@ extension ChatStore {
         return out
     }
 
-    /// Everything waiting on the person: the thread's open asks plus the agent's review items.
-    var waitingCount: Int { awaitingYou.count + menu.review.count }
+    /// Everything waiting on the person: the thread's open asks plus the agent's
+    /// review items not yet tapped. What the menu button's dot and its VoiceOver count read.
+    var waitingCount: Int { awaitingYou.count + menu.waiting.count }
 }
 
 // MARK: The drawer

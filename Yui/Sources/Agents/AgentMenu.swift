@@ -10,7 +10,14 @@ struct AgentMenu: Codable, Equatable, Sendable {
     /// The newest reply applied. History replays on every open, so an older reply is skipped.
     private var at: Date = .distantPast
 
+    /// Review items the person tapped: the agent has them now, so they stop waiting
+    /// (feedback AI3Pbaid). They stay in the drawer until `menu done`; a later line
+    /// putting the same id back makes it wait again.
+    private(set) var seen: Set<String> = []
+
     var review: [YLMenuItem] { lists.review }
+    /// Review items still waiting on the person.
+    var waiting: [YLMenuItem] { lists.review.filter { !seen.contains($0.id) } }
     var backlog: [YLMenuItem] { lists.backlog }
     var shortcuts: [YLMenuItem] { lists.shortcut }
 
@@ -20,11 +27,30 @@ struct AgentMenu: Codable, Equatable, Sendable {
         guard at >= self.at else { return }
         self.at = at
         lists = YuiLines.menu(nodes, into: lists)
+        seen.subtract(nodes.compactMap(\.id))
+    }
+
+    /// The person tapped a review item: it went to the agent.
+    mutating func markSeen(_ id: String) {
+        if lists.review.contains(where: { $0.id == id }) { seen.insert(id) }
     }
 
     /// The person held it and chose Remove.
     mutating func remove(_ id: String) {
         lists.apply(YLNode(op: .menu, screen: "1", id: id, props: ["done": .bool(true)], line: "menu done \(id)"))
+        seen.remove(id)
+    }
+
+    init() {}
+
+    // Files written before `seen` have no key for it.
+    private enum CodingKeys: String, CodingKey { case lists, at, seen }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        lists = try c.decode(YLMenu.self, forKey: .lists)
+        at = try c.decode(Date.self, forKey: .at)
+        seen = try c.decodeIfPresent(Set<String>.self, forKey: .seen) ?? []
     }
 
     // MARK: On the phone

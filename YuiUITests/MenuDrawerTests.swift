@@ -85,6 +85,11 @@ final class MenuDrawerTests: XCTestCase {
         waitGone(close, "a tap on the review item did not close the drawer")
         XCTAssertTrue(app.staticTexts["Invite Dana to the beta?"].waitForExistence(timeout: 5),
                       "the tap did not go back to the agent as the person's reply")
+        // It went to the agent, so nothing waits: the button's dot goes at once (feedback AI3Pbaid).
+        let quiet = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == nil OR value == ''"), object: menu)
+        XCTAssertEqual(XCTWaiter.wait(for: [quiet], timeout: 5), .completed, "the dot stayed after the review item was tapped")
+        sleep(1)
+        shot("3b-no-dot")
 
         // A shortcut with say= ending in a space goes in the composer to finish.
         menu.tap()

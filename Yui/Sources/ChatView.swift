@@ -429,21 +429,22 @@ struct ChatView: View {
 
     // MARK: The agent's drawer (YUI-54)
 
-    /// Top left: the drawer, also a drag right on the chat away. What's waiting on
-    /// you sits on the button's glass as a count.
+    /// Top left: the drawer, also a drag right on the chat away. Something waiting
+    /// on you puts a small dot on the button's glass, no number (feedback AI3Pbaid);
+    /// it goes the moment the last one is answered. VoiceOver still hears how many.
     private func menuItem(_ c: Swatch) -> some ToolbarContent {
         let n = store.waitingCount
         return ToolbarItem(placement: .topBarLeading) {
             Button { settleDrawer(open: true) } label: {
                 Image(systemName: "line.3.horizontal")
                     .overlay(alignment: .topTrailing) {
-                        if n > 0 {
-                            Text("\(n)")
-                                .font(theme.font(10, .heavy)).foregroundStyle(c.onAccent)
-                                .padding(.horizontal, 4).frame(minWidth: 15, minHeight: 15)
-                                .background(c.accent, in: Capsule())
-                                .offset(x: 8, y: -8)
-                        }
+                        Circle()
+                            .fill(c.accent)
+                            .frame(width: 8, height: 8)
+                            .offset(x: 6, y: -5)
+                            .scaleEffect(n > 0 ? 1 : 0.2)
+                            .opacity(n > 0 ? 1 : 0)
+                            .animation(reduceMotion ? .easeInOut(duration: 0.2) : theme.spring, value: n > 0)
                     }
             }
             .tint(c.inkSoft)
