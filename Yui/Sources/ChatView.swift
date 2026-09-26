@@ -1,4 +1,5 @@
 import PhotosUI
+import QuartzCore
 import SwiftUI
 
 /// The chat with the selected agent (one thread per agent, over the relay).
@@ -693,7 +694,7 @@ struct ChatView: View {
 
     private func field(_ c: Swatch) -> some View {
         TextField(!photos.isEmpty ? "Add a caption" : talkPage.map { "About screen \($0)" } ?? "Say something nice",
-                  text: $draft, axis: .vertical)
+                  text: Binding(get: { draft }, set: { draft = $0; Perf.shared.span(.keystrokeRender) }), axis: .vertical)
             .font(theme.font(theme.type.body))
             .foregroundStyle(c.ink)
             .lineLimit(1...5)
@@ -903,6 +904,9 @@ struct ChatView: View {
     }
 
     private func send() {
+        // send_bubble (YUI-102): the tap to the frame with the bubble. Photo sends wait on
+        // the upload before their bubble, so they are not timed.
+        let tapped = CACurrentMediaTime()
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty || !photos.isEmpty, !sending else { return }
         if account.session?.userID != "demo" {
@@ -912,6 +916,7 @@ struct ChatView: View {
             if photos.isEmpty {
                 // Not sent (no agent, no session): the words stay in the field.
                 guard store.send(text, mention: to, screen: screen) else { return }
+                Perf.shared.span(.sendBubble, from: tapped)
                 clearComposer()
                 return
             }
@@ -932,6 +937,7 @@ struct ChatView: View {
         #if DEBUG
         // -yuiDemoReply: the demo account's agent answers through the store, working row and all (YUI-63).
         if photos.isEmpty, UserDefaults.standard.string(forKey: "yuiDemoReply") != nil, store.send(text, screen: talkPage) {
+            Perf.shared.span(.sendBubble, from: tapped)
             clearComposer()
             return
         }

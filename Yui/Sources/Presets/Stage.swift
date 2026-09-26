@@ -104,6 +104,8 @@ struct StageView: View {
             .accessibilityHidden(!open)
             .accessibilityAddTraits(open ? .isModal : [])
         }
+        // fullscreen_open (YUI-102) ends on the first frame with the stage up.
+        .onChange(of: open, initial: true) { if open { Perf.shared.end(.fullscreenOpen) } }
     }
 
     /// One deck, plan or narrate and nothing else: it gets the whole height.

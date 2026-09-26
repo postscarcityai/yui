@@ -87,6 +87,9 @@ rm -rf build && mkdir build
 xcodebuild -project Yui.xcodeproj -scheme Yui -destination 'generic/platform=iOS' \
   -archivePath build/Yui.xcarchive CURRENT_PROJECT_VERSION="$BUILD" $(scripts/build_stamp.sh) "${AUTH[@]}" archive > build/archive.log 2>&1 \
   || { tail -20 build/archive.log; exit 1; }
+# Keep this build's dSYMs (YUI-102): yui_perf_report.py symbolicates hang and
+# crash stacks against them after build/ is gone.
+mkdir -p ~/.yui-dsyms/"$BUILD" && cp -R build/Yui.xcarchive/dSYMs/. ~/.yui-dsyms/"$BUILD"/ 2>/dev/null || true
 # release-testing = ad hoc: signed for the registered devices, production APNs
 # like TestFlight, so pushes keep working.
 cat > build/export.plist <<PLIST

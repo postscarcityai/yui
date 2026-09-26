@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import QuartzCore
 import SwiftUI
 import YuiLines
 
@@ -70,6 +71,8 @@ final class ChatStore {
     var stageShowing: Bool { stageOpen && !stageComponents.isEmpty }
 
     func openStage(_ id: String) {
+        // fullscreen_open (YUI-102) ends on StageView's first frame.
+        if !stageOpen || stageID != id { Perf.shared.begin(.fullscreenOpen) }
         withAnimation(spring) {
             stageID = id
             stageOpen = true
@@ -619,11 +622,16 @@ final class ChatStore {
         do {
             // Overlap the last poll by 10 s: a row can commit after a later one.
             let rows = try await client.fetch(since: cursor.map { YuiTime.before($0, seconds: 10) })
+            // arrive_drawn (YUI-102) starts when the rows are here and ends on the frame that shows them.
+            let arrived = CACurrentMediaTime()
             guard agent?.id == agentID else { return }
-            for row in rows { add(row) }
+            var landed = false
+            for row in rows where add(row) && row.sender == "agent" { landed = true }
+            if landed, !first { Perf.shared.span(.arriveDrawn, from: arrived) }
             if first { resume(rows) }
             if let last = rows.last?.createdAt, last > (cursor ?? "") { cursor = last }
             loaded = true
+            if first { Perf.shared.threadShown() }
             // No time limit on a turn: the dots stay until the reply comes or the
             // host says the turn is over. Asleep or offline agents get their own note.
             if waiting, Date.now.timeIntervalSince(turnCheckedAt) > 4, Outbox.shared.pending(agentID: agentID).isEmpty {
@@ -632,13 +640,14 @@ final class ChatStore {
             }
         } catch {
             loaded = true
+            if first { Perf.shared.cancel(.threadOpen); Perf.shared.cancel(.threadOpenCold) }
         }
         if first { restorePending() }
     }
 
     /// Thread rows, oldest first, the way a poll adds them. Tests and `-yuiThreadRows` use it.
     func load(_ rows: [ThreadRow]) {
-        for row in rows { add(row) }
+        for row in rows { _ = add(row) }
         resume(rows)
     }
 
@@ -659,10 +668,12 @@ final class ChatStore {
         if let done = row.handledAt.flatMap(YuiTime.date), now.timeIntervalSince(done) > 20 { waiting = false }
     }
 
-    private func add(_ row: ThreadRow) {
+    /// True when the row was new.
+    @discardableResult
+    private func add(_ row: ThreadRow) -> Bool {
         let id = row.id.lowercased()
         // Polls overlap: only a row not seen before can end the wait.
-        guard seen.insert(id).inserted else { return }
+        guard seen.insert(id).inserted else { return false }
         // Another agent's answer copied in (YUI-44) doesn't end this agent's turn.
         if row.sender == "agent", Mentions.from(meta: row.meta) == nil { waiting = false; pickedUpAt = nil }
         var new: [ChatMessage] = []
@@ -717,11 +728,12 @@ final class ChatStore {
                 }
             }
         }
-        guard !new.isEmpty else { return }
+        guard !new.isEmpty else { return false }
         withAnimation(loaded ? spring : nil) { messages.append(contentsOf: new) }
         // Live replies can take the stage; history loading on open never does.
         if loaded { for m in new where m.yl != nil { stageUpdate(m.id, before: nil) } }
         pageUpdate(live)
+        return true
     }
 
     /// Adds an agent reply and feeds it through the stream parser a line at a

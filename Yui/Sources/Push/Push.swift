@@ -179,6 +179,8 @@ final class YuiAppDelegate: NSObject, UIApplicationDelegate {
                      didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
         // Set before launch finishes so a tap that cold-starts the app is delivered.
         UNUserNotificationCenter.current().delegate = PushCenter.shared
+        // Speed reporting (YUI-102): MetricKit, memory samples, the batches.
+        PerfMonitor.shared.start()
         return true
     }
 

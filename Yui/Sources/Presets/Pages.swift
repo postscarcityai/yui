@@ -37,6 +37,12 @@ struct PagedThread<Chat: View>: View {
         }
         .scrollTargetBehavior(.paging)
         .scrollPosition(id: $page)
+        // swipe (YUI-102): the finger lifts, the page settles.
+        .onScrollPhaseChange { old, new in
+            if old == .interacting, new != .interacting { Perf.shared.begin(.swipe) }
+            if new == .idle { Perf.shared.end(.swipe) }
+            if new == .interacting { Perf.shared.cancel(.swipe) }
+        }
         .scrollIndicators(.hidden)
         // Chat only: nothing to swipe to, so the chat doesn't rubber-band sideways.
         .scrollDisabled(screens.count < 2)

@@ -33,6 +33,8 @@ struct SettingsView: View {
                 HelpSection()
                 AccountSection()
                 AboutSection()
+                // Dev builds only (PERF.md section 4): TestFlight and App Store builds have no switch.
+                if PerfSettings.available { SpeedSwitch() }
             }
             .padding(theme.spacing.xl)
         }
@@ -309,6 +311,29 @@ private struct AboutSection: View {
         .sensoryFeedback(.success, trigger: copied) { _, now in now }
         .accessibilityIdentifier("aboutBuild")
         .accessibilityHint("Copies the version, build and commit")
+    }
+}
+
+/// Settings > About this build > Speed (YUI-102), on Dev builds only: every
+/// speed sample goes to the console by name, and a small overlay shows the last
+/// keystroke and the frame rate.
+private struct SpeedSwitch: View {
+    @Environment(\.yuiTheme) private var theme
+    @Environment(\.colorScheme) private var scheme
+    @AppStorage(PerfSettings.key) private var on = false
+
+    var body: some View {
+        let c = theme.swatch(scheme)
+        Toggle(isOn: $on) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Speed").font(theme.font(theme.type.body, .bold)).foregroundStyle(c.ink)
+                Text("Log every timing and show the frame rate. Dev builds only.")
+                    .font(theme.font(theme.type.caption)).foregroundStyle(c.inkSoft)
+            }
+        }
+        .tint(c.accent)
+        .padding(.horizontal, theme.spacing.l)
+        .accessibilityIdentifier("speedSwitch")
     }
 }
 

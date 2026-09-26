@@ -121,7 +121,11 @@ final class AgentStore {
 
     /// The agent the chat talks to. Falls back to the default agent.
     var selectedID: String? {
-        didSet { UserDefaults.standard.set(selectedID, forKey: "selectedAgent") }
+        didSet {
+            UserDefaults.standard.set(selectedID, forKey: "selectedAgent")
+            // A tap on an agent (YUI-102): thread_open runs until its newest messages show.
+            if selectedID != oldValue, selectedID != nil { Perf.shared.threadTapped() }
+        }
     }
     var selected: YuiAgent? {
         agents.first { $0.id == selectedID } ?? agents.first { $0.isDefault } ?? agents.first

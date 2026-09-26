@@ -54,6 +54,10 @@ struct YuiApp: App {
                 account.willSignOut = { await PushCenter.shared.stop() }
                 await PushCenter.shared.start(account: account)
             }
+            // Speed rows (YUI-102) go out with this account's token; the demo account sends none.
+            .task(id: account.session?.userID ?? "") { PerfMonitor.shared.signedIn(account.isSignedIn ? account : nil) }
+            // Dev builds with Speed on: the last keystroke and the frame rate (PERF.md section 4).
+            .overlay(alignment: .topTrailing) { SpeedOverlay() }
             // Messages that didn't make it out (no network, app killed) go now (YUI-28).
             .task(id: account.session?.userID ?? "") {
                 guard account.isSignedIn, account.session?.userID != "demo" else { return }
