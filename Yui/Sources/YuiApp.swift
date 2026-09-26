@@ -7,6 +7,7 @@ struct YuiApp: App {
     @Environment(\.scenePhase) private var scenePhase
     @State private var account: Account
     @State private var agents: AgentStore
+    @State private var looks = AppLookStore.shared
 
     init() {
         let account = Account()
@@ -30,7 +31,18 @@ struct YuiApp: App {
             )) { ConnectApprovalSheet(request: $0) }
             .environment(account)
             .environment(agents)
-            .onChange(of: account.isSignedIn) { agents.reset() }
+            .environment(looks)
+            .onChange(of: account.isSignedIn) {
+                agents.reset()
+                if !account.isSignedIn { looks.clear() }
+            }
+            // Yui's own look lives on the account (RESTYLE.md section 6): fetched once
+            // signed in, written on the person's taps only.
+            .task(id: account.session?.userID ?? "") {
+                guard account.isSignedIn, account.session?.userID != "demo" else { looks.save = nil; return }
+                looks.save = { [account] state in await account.saveLook(state) }
+                if let json = await account.fetchLook() { looks.loaded(json.value) }
+            }
             .preferredColorScheme(appearance.colorScheme)
             .environment(PushCenter.shared)
             .task { await account.checkAppleCredential() }
@@ -60,20 +72,45 @@ struct YuiApp: App {
     }
 }
 
-/// The whole app wears the look of the agent you are talking to (YUI-20):
-/// open a coach agent's thread and everything, sheets included, turns coach.
-/// No agent (signed out, the demo chat): Yui's own look.
+/// An agent's thread wears that agent's look (YUI-20): that is how you know who
+/// you are talking to. Everything else, and Yui's own thread, wears Yui's own
+/// look, the one the person picked from a `theme app` card (YUI-43, RESTYLE.md).
+/// With "Agents keep their own looks" off, every thread wears the app look too.
 struct AgentThemed<Content: View>: View {
     @Environment(AgentStore.self) private var agents
     @Environment(Account.self) private var account
+    @Environment(AppLookStore.self) private var looks
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @ViewBuilder var content: Content
 
     var body: some View {
-        let theme = account.isSignedIn ? agents.selected?.yuiTheme ?? .yui : .yui
+        let app = looks.theme
+        let theme = account.isSignedIn ? agents.selected.map { Self.thread($0, app: app, looks: looks) } ?? app : app
         content
             .environment(\.yuiTheme, theme)
+            .environment(\.appTheme, app)
             .environment(\.agentStyle, account.isSignedIn ? agents.selected?.theme?.style ?? [:] : [:])
-            .animation(.easeInOut(duration: 0.45), value: theme)
+            // Applying a look crossfades the chrome; none under Reduce Motion.
+            .animation(reduceMotion || ProcessInfo.processInfo.arguments.contains("-yuiReduceMotion")
+                       ? nil : .easeInOut(duration: 0.45), value: theme)
+    }
+
+    /// What a thread wears. Yui's own follows the app look unless its look was set on its own.
+    static func thread(_ agent: YuiAgent, app: YuiTheme, looks: AppLookStore) -> YuiTheme {
+        if agent.isYui { return agent.theme?.isEmpty == false ? agent.yuiTheme : app }
+        return looks.state.agentsKeepLooks ? agent.yuiTheme : app
+    }
+}
+
+/// Yui's own look, for the chrome that is nobody's thread: sheets, Settings, the agent list.
+private struct AppThemeKey: EnvironmentKey {
+    static let defaultValue = YuiTheme.yui
+}
+
+extension EnvironmentValues {
+    var appTheme: YuiTheme {
+        get { self[AppThemeKey.self] }
+        set { self[AppThemeKey.self] = newValue }
     }
 }
 

@@ -29,6 +29,9 @@ struct YLScreen: Equatable, Sendable {
     private(set) var errors: [YLNode] = []
     /// `theme` lines in this reply, in order. They restyle the agent, not the screen.
     private(set) var looks: [[String: String]] = []
+    /// The reply's `theme app` line (spec RESTYLE.md): a look offered for Yui itself.
+    /// Drawn as one preview card; with several, the last one is the card.
+    private(set) var restyle: [String: String]?
     private var saved: [String: SavedScreen] = [:]
     /// This reply's saves and forgets, in order, for the thread's shelf (YUI-32).
     private(set) var shelfOps: [ShelfOp] = []
@@ -92,13 +95,14 @@ struct YLScreen: Equatable, Sendable {
         case .menu:
             menuLines.append(node)
         case .theme:
-            looks.append((node.props ?? [:]).compactMapValues { v in v.string ?? v.number.map(YLComponent.format) })
+            let props = (node.props ?? [:]).compactMapValues { v in v.string ?? v.number.map(YLComponent.format) }
+            if props["scope"] == "app" { restyle = props } else { looks.append(props) }
         case .error:
             errors.append(node)
         }
     }
 
-    var isEmpty: Bool { components.isEmpty && errors.isEmpty && looks.isEmpty }
+    var isEmpty: Bool { components.isEmpty && errors.isEmpty && looks.isEmpty && restyle == nil }
 
     /// A later reply's `>2 clear` reaching what this one put on screen 2. Its own
     /// talk lines stay as they were: the thread reads them in order.
@@ -143,7 +147,7 @@ struct YLScreen: Equatable, Sendable {
     /// Nothing to draw in the thread: a reply of only patches, saves or a `close`,
     /// or one whose screen `>N clear` emptied (every war room refresh). The chat
     /// skips it instead of showing a face with no bubble (YUI-80).
-    var isBlank: Bool { top.isEmpty && errors.isEmpty && looks.isEmpty }
+    var isBlank: Bool { top.isEmpty && errors.isEmpty && looks.isEmpty && restyle == nil }
 
     /// The group head `c` joined: the newest head before it with that id.
     func head(of c: YLComponent) -> YLComponent? {

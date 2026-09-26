@@ -34,6 +34,71 @@ public enum YuiLines {
     }
 }
 
+// `theme app [set] key=value...` (yuigui spec/YL.md, theme app; RESTYLE.md): a
+// restyle of Yui's own chrome, not the agent's look. Stricter than an agent's
+// theme: an unknown set, key or value is an error line, never quietly dropped,
+// because the preview must be exactly what Apply does. Same tables as the JS
+// reference (site/lib/yl/look.mjs) and AgentLook.
+extension YuiLines {
+    static let appSets: Set<String> = [
+        "yui", "candy", "berry", "cherry", "coral", "sunset", "peach", "autumn", "honey",
+        "lemon", "lime", "matcha", "forest", "mint", "teal", "sky", "ocean", "midnight",
+        "lavender", "grape", "slate", "mono", "wizard", "coach", "zen", "studio", "night", "counsel",
+    ]
+    static let appPapers: Set<String> = ["cream", "paper", "white", "mist", "sand", "blush"]
+    static let appStyleKeys: Set<String> = ["screen", "gallery", "chart", "buttons"]
+
+    /// ^#[0-9a-f]{6}$ with the i flag
+    static func isHex6(_ v: String) -> Bool {
+        let u = Array(v.unicodeScalars)
+        return u.count == 7 && u[0] == "#" && u[1...].allSatisfy { $0.isASCII && $0.properties.isASCIIHexDigit }
+    }
+
+    /// nil for a key the app does not take, else whether it takes this value.
+    static func appValueOK(_ key: String, _ v: String) -> Bool? {
+        switch key {
+        case "accent": return isHex6(v) || appSets.contains(v)
+        case "bg": return isHex6(v) || appPapers.contains(v)
+        case "radius": return ["round", "soft", "square"].contains(v)
+        case "font": return ["rounded", "default", "serif", "mono"].contains(v)
+        case "weight": return ["regular", "bold", "heavy"].contains(v)
+        case "motion": return ["bouncy", "calm", "snappy"].contains(v)
+        default: return nil
+        }
+    }
+
+    /// One `theme app` line after `theme app`: a theme node with `props.scope` "app".
+    static func appTheme(screen: String, tokens: ArraySlice<Token>, line: String) -> YLNode {
+        func bad(_ m: String) -> YLNode { YLNode(op: .error, screen: screen, message: "theme app: \(m)", line: line) }
+        var props: [String: YLValue] = ["scope": .string("app")]
+        var words: [String] = []
+        for t in tokens {
+            if let k = t.key {
+                let v = t.value.joined(separator: "|")
+                if appStyleKeys.contains(k) { return bad("\(k)= is one agent's style, not the app's") }
+                guard let ok = appValueOK(k, v) else { return bad("unknown key \(k)=") }
+                guard ok else { return bad("\(k)=\(v) is not a value the app takes") }
+                props[k] = .string(v)
+            } else if !t.quoted, t.parts == nil, isFlag(t.raw) {
+                return bad("\(t.raw) is not a flag here; the person always sees a preview first")
+            } else {
+                words.append(t.text)
+            }
+        }
+        if words.count > 1 { return bad("one set name, not \"\(words.joined(separator: " "))\"") }
+        if let name = words.first {
+            if name == "reset" {
+                if props.count > 1 { return bad("reset takes nothing else") }
+            } else if !appSets.contains(name) {
+                return bad("no set named \(name)")
+            }
+            props["name"] = .string(name)
+        }
+        if props.count == 1 { return bad("needs a set name, reset or keys") }
+        return YLNode(op: .theme, screen: screen, props: props, line: line)
+    }
+}
+
 /// Line-at-a-time parser. Stateful: it remembers the focused screen, the
 /// auto-id counter and which preset each id belongs to, so `~hiit rounds=10`
 /// knows to parse its args as a timer. Use one per reply. `known` is the ids
@@ -159,7 +224,12 @@ public struct YLParser: Sendable {
             self.screen = "1"
             return YLNode(op: .close, screen: "full", line: line)
         }
-        if head == "theme" { return YLNode(op: .theme, screen: screen, props: parseArgs("theme", tokens), line: line) }
+        if head == "theme" {
+            if let t0 = tokens.first, t0.key == nil, !t0.quoted, t0.parts == nil, t0.text == "app" {
+                return YuiLines.appTheme(screen: screen, tokens: tokens.dropFirst(), line: line)
+            }
+            return YLNode(op: .theme, screen: screen, props: parseArgs("theme", tokens), line: line)
+        }
         if head == "talk" {
             // `talk` or `talk on` turns the composer on for this page, `talk off` takes it away.
             let word = tokens.isEmpty ? "on" : tokens.count == 1 ? tokens[0].text : nil

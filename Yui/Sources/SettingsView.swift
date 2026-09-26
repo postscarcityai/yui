@@ -28,6 +28,7 @@ struct SettingsView: View {
                 .padding(theme.spacing.l)
                 .background(c.surface, in: .rect(cornerRadius: theme.radius.card))
                 .overlay(RoundedRectangle(cornerRadius: theme.radius.card).stroke(c.outline, lineWidth: 1.5))
+                LookSection()
                 AgentAccessSection()
                 HelpSection()
                 AccountSection()
@@ -37,6 +38,65 @@ struct SettingsView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(c.background)
+    }
+}
+
+/// Settings > Look (YUI-43, RESTYLE.md): Yui's own look, whether agents keep
+/// theirs, and the way back to Yui's look in one tap, no agent needed.
+private struct LookSection: View {
+    @Environment(AppLookStore.self) private var looks
+    @Environment(\.yuiTheme) private var theme
+    @Environment(\.colorScheme) private var scheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        let c = theme.swatch(scheme)
+        VStack(alignment: .leading, spacing: theme.spacing.m) {
+            Text("Look").font(theme.font(theme.type.caption, .bold)).foregroundStyle(c.inkSoft)
+            HStack(spacing: theme.spacing.m) {
+                Circle().fill(c.accent).frame(width: 22, height: 22)
+                    .overlay(Circle().stroke(c.outline, lineWidth: 1.5))
+                Text(AppLook.name(looks.state.look))
+                    .font(theme.font(theme.type.body, theme.strong)).foregroundStyle(c.ink)
+                Spacer(minLength: 0)
+            }
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("Yui's look, \(AppLook.name(looks.state.look))")
+            .accessibilityIdentifier("look-name")
+            Text("Ask any of your agents for a new look, like \u{201C}make Yui feel like autumn.\u{201D}")
+                .font(theme.font(theme.type.caption)).foregroundStyle(c.inkSoft)
+                .fixedSize(horizontal: false, vertical: true)
+            Toggle(isOn: Binding(get: { looks.state.agentsKeepLooks },
+                                 set: { on in withAnimation(motion) { looks.setAgentsKeepLooks(on) } })) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Agents keep their own looks").font(theme.font(theme.type.body, .semibold)).foregroundStyle(c.ink)
+                    Text(looks.state.agentsKeepLooks ? "Each thread wears its agent's look." : "Every thread wears Yui's look.")
+                        .font(theme.font(theme.type.caption)).foregroundStyle(c.inkSoft)
+                }
+            }
+            .tint(c.accent)
+            .frame(minHeight: 44)
+            .accessibilityIdentifier("look-agents-keep")
+            if looks.state.look != nil {
+                Button {
+                    withAnimation(motion) { looks.reset() }
+                } label: {
+                    Label("Back to Yui's look", systemImage: "arrow.uturn.backward")
+                        .font(theme.font(theme.type.body, .bold)).foregroundStyle(c.ink)
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                        .background(c.background, in: .rect(cornerRadius: theme.radius.bubble))
+                }
+                .buttonStyle(BounceButtonStyle())
+                .accessibilityIdentifier("look-reset")
+            }
+        }
+        .padding(theme.spacing.l)
+        .background(c.surface, in: .rect(cornerRadius: theme.radius.card))
+        .overlay(RoundedRectangle(cornerRadius: theme.radius.card).stroke(c.outline, lineWidth: 1.5))
+    }
+
+    private var motion: Animation? {
+        reduceMotion || ProcessInfo.processInfo.arguments.contains("-yuiReduceMotion") ? nil : .easeInOut(duration: 0.45)
     }
 }
 

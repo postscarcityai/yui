@@ -2,7 +2,10 @@ import Foundation
 
 // Contrast check for every agent look: each named set, a spread of seeded
 // agents, and Yui's shipped theme, in light and dark. WCAG AA: text 4.5:1,
-// controls 3:1. Run: scripts/check_themes.sh (exits 1 on any failure).
+// controls 3:1. Also every app look (YUI-96, yuigui spec/RESTYLE.md section 4):
+// each set offered as `theme app <set>`, keys alone on top of a set, hostile
+// keys, and `theme app reset`, which must be exactly Yui's shipped look.
+// Run: scripts/check_themes.sh (exits 1 on any failure).
 
 struct Pair { let label: String; let fg: String; let bg: String; let min: Double }
 
@@ -35,7 +38,27 @@ for (label, props) in hostile {
     themes.append(("hostile " + label, AgentLook.theme(AgentLook().applying(props, at: nil, by: "agent"), name: "Test")))
 }
 
+// App looks (YUI-96): what Apply would put on, built the way the preview card builds it.
 var failures = 0
+func app(_ props: [String: String], on current: AgentLook? = nil) -> YuiTheme {
+    AppLook.theme(AppLook.offered(props.merging(["scope": "app"]) { a, _ in a }, on: current))
+}
+for s in AgentLook.sets { themes.append(("app " + s.name, app(["name": s.name]))) }
+themes.append(("app autumn+keys", app(["name": "autumn", "font": "serif", "bg": "sand", "motion": "calm"])))
+themes.append(("app keys on ocean", app(["accent": "lemon"], on: AgentLook(preset: "ocean"))))
+for (label, props) in hostile { themes.append(("app hostile " + label, app(props))) }
+// Reset is Yui's own look, whatever was on before; so is `theme app yui`.
+for (label, props) in [("reset", ["name": "reset"]), ("yui", ["name": "yui"])] {
+    for before in [nil, AgentLook(preset: "autumn"), AgentLook(accent: "#7B5CFF", bg: "sand")] {
+        let offered = AppLook.offered(props.merging(["scope": "app"]) { a, _ in a }, on: before)
+        if offered != nil || app(props, on: before) != .yui {
+            failures += 1
+            print("FAIL app \(label) on \(before?.preset ?? before?.accent ?? "yui"): not Yui's own look")
+        }
+    }
+}
+print("app reset and app yui: Yui's own look from every starting look")
+
 var worst = Double.infinity
 for (name, t) in themes {
     for (mode, p) in [("light", t.light), ("dark", t.dark)] {
@@ -43,7 +66,7 @@ for (name, t) in themes {
         for pr in pairs(p) {
             let c = RGB.contrast(RGB(hex: pr.fg)!, RGB(hex: pr.bg)!)
             worst = min(worst, c / pr.min)
-            let brandException = (name == "yui (shipped)" || name == "set yui") && mode == "light" && pr.label == "accent/background"
+            let brandException = ["yui (shipped)", "set yui", "app yui"].contains(name) && mode == "light" && pr.label == "accent/background"
             if c < pr.min && brandException {
                 line.append("EXCEPTION \(pr.label) \(String(format: "%.2f", c)): Yui's brand coral on cream, kept as shipped")
             } else if c < pr.min {

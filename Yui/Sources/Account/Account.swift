@@ -266,3 +266,37 @@ final class Account {
         SHA256.hash(data: Data(s.utf8)).map { String(format: "%02x", $0) }.joined()
     }
 }
+
+// MARK: Yui's own look (YUI-43, RESTYLE.md section 6)
+
+/// The account's `yui_users.look`: nil is Yui's own look.
+struct AccountLook { let value: [String: Any]? }
+
+extension Account {
+    /// The look on the account, or nil when it could not be read (the cache stays).
+    func fetchLook() async -> AccountLook? {
+        guard let reply = try? await lookCall(["action": "look"]) else { return nil }
+        return AccountLook(value: reply["look"] as? [String: Any])
+    }
+
+    /// Writes the look after the person's tap. A failed write keeps the phone's copy;
+    /// the next tap sends the whole look again.
+    func saveLook(_ state: AppLookState) async {
+        _ = try? await lookCall(["action": "set_look", "look": state.json ?? NSNull()])
+    }
+
+    private func lookCall(_ body: [String: Any]) async throws -> [String: Any] {
+        let token = try await validAccessToken()
+        var req = URLRequest(url: YuiBackend.function("yui-account"))
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.setValue(YuiBackend.publishableKey, forHTTPHeaderField: "apikey")
+        req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        req.httpBody = try JSONSerialization.data(withJSONObject: body)
+        let (data, response) = try await URLSession.shared.data(for: req)
+        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+            throw AccountError.server("look")
+        }
+        return (try JSONSerialization.jsonObject(with: data) as? [String: Any]) ?? [:]
+    }
+}

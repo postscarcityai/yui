@@ -765,7 +765,8 @@ final class ChatStore {
         pageUpdate(nodes)
         stageUpdate(id, before: before)
         // Demo streams restyle live too, stamped now.
-        for n in nodes where n.op == .theme {
+        // `theme app` is an offer for Yui itself: a card, never this agent's look.
+        for n in nodes where n.op == .theme && n.props?["scope"]?.string != "app" {
             guard let agentID = agent?.id else { continue }
             onLook?(agentID, (n.props ?? [:]).compactMapValues { v in v.string ?? v.number.map(YLComponent.format) },
                     Date.now.formatted(.iso8601))

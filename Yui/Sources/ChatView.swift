@@ -10,6 +10,8 @@ struct ChatView: View {
     @Environment(AgentStore.self) private var agents
     @Environment(PushCenter.self) private var push
     @Environment(\.agentStyle) private var agentStyle
+    /// Yui's own look (RESTYLE.md): sheets and Settings wear it, not the open agent's.
+    @Environment(\.appTheme) private var appTheme
     @State private var draft = ""
     /// Bumped on every send: a fresh text field. Clearing `draft` alone can leave
     /// the sent words drawn in the field (TestFlight feedback APthnqcdHvqEP).
@@ -197,7 +199,8 @@ struct ChatView: View {
             .sheet(isPresented: $showSettings) {
                 SettingsView()
                     .presentationDetents([.medium, .large], selection: $settingsDetent)
-                    .presentationCornerRadius(theme.radius.card)
+                    .presentationCornerRadius(appTheme.radius.card)
+                    .environment(\.yuiTheme, appTheme)
             }
             .sheet(isPresented: $addFirst) {
                 // Paired and "Say hi": the new agent's thread is the chat.
@@ -206,7 +209,8 @@ struct ChatView: View {
                     addFirst = false
                 }
                 .presentationDetents([.large])
-                .presentationCornerRadius(theme.radius.card)
+                .presentationCornerRadius(appTheme.radius.card)
+                .environment(\.yuiTheme, appTheme)
             }
             // Select text: the held message's words, read-only, to copy any part.
             .sheet(item: $selecting) { m in
@@ -217,7 +221,8 @@ struct ChatView: View {
             .sheet(isPresented: $showAgents) {
                 AgentsView()
                     .presentationDetents([.medium, .large])
-                    .presentationCornerRadius(theme.radius.card)
+                    .presentationCornerRadius(appTheme.radius.card)
+                    .environment(\.yuiTheme, appTheme)
             }
             .sheet(item: $editingAgent) { agent in
                 EditAgentSheet(agent: agent)
@@ -260,6 +265,7 @@ struct ChatView: View {
         .environment(\.ylAnswers, store.ylAnswers)
         .environment(\.yuiMedia, store.agent.flatMap { a in account.session?.userID == "demo" ? nil : YuiMedia(account: account, agentID: a.id) })
         .environment(\.ylTimers, store.timers)
+        .environment(\.restyleNewest, store.messages.last { $0.yl?.restyle != nil }?.id)
         .onChange(of: agentStyle, initial: true) { store.style = agentStyle }
         // The stage's reply went, or its screens stopped being staged: close it (YUI-80).
         .onChange(of: store.stageShowing) { store.settleStage() }
@@ -1235,6 +1241,15 @@ struct ChatView: View {
                     ChatMessage(text: "Yui build 96 is ready in TestFlight.", fromUser: false),
                     ChatMessage(text: "", fromUser: false, yl: YLScreen(buildReady))]
         }
+        // -yuiDemoRestyle: an agent offers Yui a new look twice (YUI-96): the first card
+        // retired, the second the live preview.
+        if ProcessInfo.processInfo.arguments.contains("-yuiDemoRestyle") {
+            return [ChatMessage(text: "Can Yui look cooler?", fromUser: true),
+                    ChatMessage(text: "", fromUser: false, yl: YLScreen("say Ocean, maybe?\ntheme app ocean")),
+                    ChatMessage(text: "Warmer. Make Yui feel like autumn", fromUser: true),
+                    ChatMessage(text: "", fromUser: false,
+                                yl: YLScreen("say Here's autumn, next to Yui as it is now.\ntheme app autumn"))]
+        }
         // -yuiDemoUnknown: a reply with presets from a newer Yui (beta feedback ANJPrtB7CHynwGR5mqNVPSM).
         if ProcessInfo.processInfo.arguments.contains("-yuiDemoUnknown") {
             return [ChatMessage(text: "What changed on the INT-7 ask?", fromUser: true),
@@ -1288,6 +1303,10 @@ private struct YLReply: View {
                     YLErrorRow(node: $1)
                 }
                 ForEach(Array(screen.looks.enumerated()), id: \.offset) { _ in LookNote(agent: agent) }
+                // Yui's own look, offered (RESTYLE.md). A shared agent never restyles: nothing drawn.
+                if let props = screen.restyle, agent?.isShared != true {
+                    RestyleCard(props: props, scope: scope, agent: agent)
+                }
             }
             .environment(\.ylScope, scope)
             .environment(\.ylComponents, screen.components)

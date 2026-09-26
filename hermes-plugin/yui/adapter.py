@@ -95,9 +95,17 @@ Transport: the gateway dials OUT to Supabase (PROOF). No inbound ports.
      or a page of points inside a deck or plan, and each turn on the channel
      gets a note naming what to skip.
 
+ 15. Restyle (YUI-96, restyle.py): a `theme app` line offers the person a
+     look for the whole app. It goes out only from the owner's turn to a
+     phone at or above yui_limits restyle_min_build; anywhere else it is
+     dropped (an old phone: the agent's next turn gets one note). The guide's
+     sentence teaching it is added to the turn only in the same case. The
+     preview card's taps read `[yui] restyle theme app choice=apply name=...`.
+
 The channel guide (CHANNEL.md, synced verbatim from yuigui/spec/CHANNEL.md by
 ../sync_channel.py) is this platform's system-prompt hint, so it is in the
-system prompt on every turn on the Yui channel, and only there.
+system prompt on every turn on the Yui channel, and only there. Its restyle
+block is the one exception: per turn, only where the line may go out (15).
 """
 
 import asyncio
@@ -130,7 +138,7 @@ from gateway.config import Platform, PlatformConfig
 from gateway.platforms.base import (BasePlatformAdapter, MessageEvent, MessageType, ProcessingOutcome,
                                     SendResult)
 
-from . import board, compat, connector, flywheel, groups, media, mentions, needs, outbox, sandbox, textbomb
+from . import board, compat, connector, flywheel, groups, media, mentions, needs, outbox, restyle, sandbox, textbomb
 from . import commands as slash
 
 logger = logging.getLogger(__name__)
@@ -166,8 +174,18 @@ def load_guide() -> tuple[str, str]:
 
 
 def platform_hint() -> str:
+    """The fixed guide, every turn on the channel. The restyle sentence is cut
+    out: it goes into the turn only where `theme app` may go out (restyle.py)."""
     version, body = load_guide()
-    return f"Yui channel guide {version}\n\n{body}"
+    return f"Yui channel guide {version}\n\n{restyle.split_guide(body)[0].strip()}"
+
+
+def restyle_prompt(owner: bool) -> str:
+    """The guide's restyle sentence (YUI-96) for this turn: the owner's, on a
+    phone at or above restyle_min_build. "" anywhere else."""
+    if not restyle.allowed(owner, compat.PHONE["build"]):
+        return ""
+    return restyle.split_guide(load_guide()[1])[1]
 
 
 STYLE_WORDS = {
@@ -403,6 +421,20 @@ class YuiAdapter(BasePlatformAdapter):
         self._set_agents(data.get("agents") or [])
         compat.seen(data)  # the oldest app build among the person's phones
         save_session_cache(data)
+        await self._read_limits()
+
+    async def _read_limits(self) -> None:
+        """yui_limits restyle_min_build (YUI-96): the oldest build `theme app`
+        lines go to. Best effort: on a failure the last value stands (none yet:
+        every such line is dropped)."""
+        try:
+            r = await self._client.get(f"{REST}/yui_limits", headers=self._rest_headers(),
+                                       params={"select": "value", "name": "eq.restyle_min_build"})
+            rows = r.json() if r.status_code < 300 else []
+            if rows:
+                restyle.LIMIT["min_build"] = int(rows[0]["value"])
+        except Exception as e:
+            logger.warning("[yui] limits: %s", e)
 
     async def _heartbeat_loop(self) -> None:
         while self._running:
@@ -694,6 +726,8 @@ class YuiAdapter(BasePlatformAdapter):
                                                      self._token, logger)
                 photos += p
                 types += t
+            if r.get("kind") == "event":
+                text = restyle.tap_text(text)  # `[yui] restyle theme app choice=...` (YUI-96)
             texts.append(text)
         # Board orders saved since the last turn (YUI-66) and what other agents
         # were asked and answered in this thread (YUI-44): the agent reads them first.
@@ -714,7 +748,7 @@ class YuiAdapter(BasePlatformAdapter):
             raw_message=row if len(rows) == 1 else rows,
             message_id=row["id"],
             timestamp=_parse_ts(row.get("created_at")),
-            channel_prompt=look_prompt(agent),
+            channel_prompt="\n".join(p for p in (look_prompt(agent), restyle_prompt(owner)) if p),
         )
         self._last_inbound[key] = time.time()
         for r in rows:
@@ -860,6 +894,16 @@ class YuiAdapter(BasePlatformAdapter):
             return SendResult(success=True, message_id=None)
         if len(body) > MAX_MESSAGE_LENGTH:
             body = body[:MAX_MESSAGE_LENGTH]
+        # `theme app` (YUI-96): only from the owner's turn to a phone that draws the preview.
+        body, dropped = restyle.gate(body, user_id == self._user_id, compat.PHONE["build"])
+        if dropped:
+            logger.info("[yui] theme app line dropped (%s)", dropped)
+            if dropped == "old":
+                n = restyle.note(compat.PHONE["build"])
+                if n not in self._notes.get(agent_id, []):
+                    self._notes.setdefault(agent_id, []).append(n)
+            if not body:
+                return SendResult(success=True, message_id=None)
         flywheel.record(body, connector.current_profile())  # custom shapes only, off unless yui.flywheel
         textbomb.record(body, connector.current_profile(), "handoff" if sender else "reply", logger)
         body = compat.downgrade(body, compat.PHONE["build"])  # what the phone can't draw: words
@@ -1061,6 +1105,9 @@ async def _standalone_send(pconfig, chat_id: str, message: str, *, thread_id: Op
                 return {"error": "yui: unreachable, try again when online"}
             mid = str(uuid.uuid4())
             text = compat.downgrade(message.strip(), cache.get("app_build"))
+            text = restyle.gate(text, True, cache.get("app_build"))[0]  # no limit read: dropped (YUI-96)
+            if not text:
+                return {"success": True, "platform": "yui", "chat_id": target["id"], "message_id": None}
             outbox.Outbox().add({"id": mid, "user_id": cache["user_id"], "agent_id": target["id"],
                                  "sender": "agent", "body": text[:MAX_MESSAGE_LENGTH], "kind": "text"},
                                 sender, True)
@@ -1073,6 +1120,18 @@ async def _standalone_send(pconfig, chat_id: str, message: str, *, thread_id: Op
         body = "\n\n".join([message.strip()] + [
             media_fence("video" if f.lower().endswith((".mp4", ".mov", ".m4v")) else "image", f)
             for f in files if f.lower().rsplit(".", 1)[-1] in media.TYPES]).strip()
+        if restyle.has_line(body):  # `theme app` (YUI-96): out of process is always the owner's thread
+            try:
+                lr = await c.get(f"{REST}/yui_limits", params={"select": "value", "name": "eq.restyle_min_build"},
+                                 headers={"apikey": connector.PUBLISHABLE, "authorization": f"Bearer {s['access_token']}"})
+                lim = lr.json() if lr.status_code < 300 else []
+                if lim:
+                    restyle.LIMIT["min_build"] = int(lim[0]["value"])
+            except (httpx.HTTPError, ValueError, KeyError):
+                pass
+            body = restyle.gate(body, True, s.get("app_build"))[0]
+            if not body:
+                return {"success": True, "platform": "yui", "chat_id": target["id"], "message_id": None}
         flywheel.record(body, connector.current_profile())
         textbomb.record(body, connector.current_profile(), "out-of-process", logger)
         body = compat.downgrade(body, s.get("app_build"))

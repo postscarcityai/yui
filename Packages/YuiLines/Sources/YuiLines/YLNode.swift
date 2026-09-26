@@ -19,6 +19,7 @@ public struct YLNode: Codable, Equatable, Sendable {
         /// `end`: close the open group (deck, plan, narrate); `target` is its id.
         case end
         /// Restyle the agent's look: `props` (a named set in `props.name`). No id, no event.
+        /// `theme app ...` has `props.scope` "app": a restyle of Yui's own chrome, previewed first.
         case theme
         /// `close` or bare `>chat`: close the stage; later lines go to screen 1. Screen is `full`.
         case close

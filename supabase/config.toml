@@ -25,3 +25,6 @@ verify_jwt = false
 
 [functions.yui-oauth]
 verify_jwt = false
+
+[functions.yui-account]
+verify_jwt = false

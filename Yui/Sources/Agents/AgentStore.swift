@@ -51,11 +51,13 @@ struct YuiAgent: Codable, Identifiable, Equatable, Sendable {
     /// The /commands its host accepts, as its plugin reports them (YUI-61).
     /// Nil: the host has no registry (MCP, OpenClaw, webhook), so no suggestions.
     var commands: [AgentCommand]? = nil
+    /// Someone else's agent, shared with this person (YUI-57). Nil from older servers.
+    var shared: Bool? = nil
 
     enum CodingKeys: String, CodingKey {
         case id, name, handle, color, avatar, kind, status, sort, theme
         case connectorID = "connector_id", connectorName = "connector_name", remoteRef = "remote_ref"
-        case lastSeenAt = "last_seen_at", isDefault = "is_default", pushMuted = "push_muted", presence, commands
+        case lastSeenAt = "last_seen_at", isDefault = "is_default", pushMuted = "push_muted", presence, commands, shared
     }
 }
 
@@ -72,6 +74,7 @@ struct AgentCommand: Codable, Equatable, Hashable, Sendable, Identifiable {
 extension YuiAgent {
     var isYui: Bool { avatar == "yui" }
     var muted: Bool { pushMuted ?? false }
+    var isShared: Bool { shared ?? false }
     var liveness: Liveness {
         if let p = presence.flatMap(Liveness.init(rawValue:)) { return p }
         switch status {
