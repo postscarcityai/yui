@@ -411,6 +411,8 @@ struct ChatView: View {
         .onChange(of: store.agent?.id, initial: true) {
             push.visibleAgentID = store.agent?.id
             window = Self.windowStep
+            // Each thread keeps its own unsent words (feedback AK-9fNEZU).
+            composer.show(agent: store.agent?.id)
         }
         // A notification tap or yui://agent/<id>/thread: straight to that thread.
         .onChange(of: push.pendingAgentID, initial: true) {

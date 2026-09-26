@@ -7,6 +7,12 @@ import SwiftUI
 // its hints, and the send button swaps on the first word and the last delete.
 // The chat's body reads none of it.
 
+// Half-typed words stay (TestFlight feedback AK-9fNEZU, 2026-09-26: "I was writing in
+// the text box and then a new answer came in and took over the screen with a full
+// screen. But then when I came back my query was lost"). Each agent's thread keeps
+// its own draft on the phone: a full screen, another agent, the app going to the
+// background or being closed leave it where it was. Sending clears it.
+
 /// The words in the composer.
 @MainActor @Observable
 final class ComposerModel {
@@ -14,7 +20,20 @@ final class ComposerModel {
         didSet {
             let has = draft.contains { !$0.isWhitespace }
             if has != hasWords { hasWords = has }
+            if draft != oldValue { Drafts.save(draft, for: agentID) }
         }
+    }
+    /// Whose thread the words belong to.
+    private(set) var agentID: String?
+
+    init() { Drafts.resetIfAsked() }
+
+    /// Another thread: its own words, as they were left.
+    func show(agent id: String?) {
+        guard id != agentID else { return }
+        agentID = id
+        let saved = Drafts.load(id)
+        if saved != draft { draft = saved; fieldID += 1 }
     }
     /// Something to send besides spaces. Set only when it flips, so `SendOrMic` isn't told per key.
     private(set) var hasWords = false
@@ -32,6 +51,40 @@ final class ComposerModel {
             i = before
         }
         return text[i...]
+    }
+}
+
+/// Each thread's unsent words, kept on the phone (feedback AK-9fNEZU). One small
+/// defaults entry per agent, gone once the words are sent or deleted.
+@MainActor
+enum Drafts {
+    private static let prefix = "yui.draft."
+
+    static func load(_ agent: String?) -> String {
+        guard let agent else { return "" }
+        return UserDefaults.standard.string(forKey: prefix + agent) ?? ""
+    }
+
+    static func save(_ words: String, for agent: String?) {
+        guard let agent else { return }
+        if words.isEmpty {
+            UserDefaults.standard.removeObject(forKey: prefix + agent)
+        } else {
+            UserDefaults.standard.set(words, forKey: prefix + agent)
+        }
+    }
+
+    /// The demo account (UI tests, screenshots) starts every thread empty, so one
+    /// test's words don't turn up in the next; `-yuiDraftsKeep` keeps them. Once per
+    /// launch, so a chat that is built again keeps what was typed since.
+    private static var wasReset = false
+
+    static func resetIfAsked() {
+        let args = ProcessInfo.processInfo.arguments
+        guard !wasReset, args.contains("-yuiDemoAccount"), !args.contains("-yuiDraftsKeep") else { return }
+        wasReset = true
+        let d = UserDefaults.standard
+        for key in d.dictionaryRepresentation().keys where key.hasPrefix(prefix) { d.removeObject(forKey: key) }
     }
 }
 
