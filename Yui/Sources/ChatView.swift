@@ -691,6 +691,9 @@ struct ChatView: View {
         .onChange(of: scenePhase) { _, now in if now != .active { handsFreeDo(.stop) } }
         // A new thread starts how its agent is set: Talk opens hands-free (YUI-14).
         .task(id: store.agent?.id) {
+            #if DEBUG
+            if UserDefaults.standard.string(forKey: "yuiHandsFreeDemo") != nil { return }  // screenshots hold a state
+            #endif
             handsFreeDo(.stop)
             guard let id = store.agent?.id, TalkMode.of(id) == .talk, !firstRun else { return }
             #if DEBUG
@@ -731,7 +734,7 @@ struct ChatView: View {
             talk.fakeWords = UserDefaults.standard.string(forKey: "yuiPTTFake")
             // -yuiHandsFreeDemo listening|sending|waiting|reading|paused: that state, for screenshots.
             if let at = UserDefaults.standard.string(forKey: "yuiHandsFreeDemo"), let hf = HandsFree.demo(at) {
-                let words = UserDefaults.standard.string(forKey: "yuiPTTDemo") ?? "What's on my calendar tomorrow morning?"
+                let words = UserDefaults.standard.string(forKey: "yuiPTTDemo") ?? "Is my morning free tomorrow?"
                 if hf.state == .listening { talk.demo(words) }
                 handsFreeWords = words
                 handsFree = hf
@@ -1010,7 +1013,8 @@ struct ChatView: View {
                 .stroke(paused ? c.outline : c.accent, lineWidth: live ? 2 : 1.5))
         }
         .buttonStyle(.plain)
-        .disabled(!paused)
+        // Not .disabled: that dims the live words. Only a paused bar takes the tap.
+        .allowsHitTesting(paused)
         .animation(reduceMotion ? nil : theme.spring, value: handsFree.state)
         .accessibilityElement(children: .combine)
         .accessibilityHint(paused ? "Double tap to keep talking." : "")

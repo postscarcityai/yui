@@ -141,11 +141,40 @@ final class ComposerAttachTests: XCTestCase {
         shot("08-talk-reduce-motion")
     }
 
-    func testTapOnMicExplainsHold() {
-        let app = launch()
+    /// YUI-14: a tap on the mic goes hands-free. The fake voice talks, goes quiet, the words
+    /// send, the demo agent answers, and the mic opens again on its own. Stop goes back to typing.
+    func testTapGoesHandsFreeAndComesBackAfterTheReply() {
+        // No apostrophes: launch arguments split on them.
+        let words = "Is my morning free tomorrow"
+        let app = launch(["-yuiPTTFake", words, "-yuiDemoReply", "say Two things before noon. Standup at 9, dentist at 11."])
         let talk = app.descendants(matching: .any)["talk"].firstMatch
         XCTAssertTrue(talk.waitForExistence(timeout: 20))
         talk.tap()
-        XCTAssertTrue(app.descendants(matching: .any)["composer-note"].waitForExistence(timeout: 3), "a tap on the mic says nothing")
+        let bar = app.descendants(matching: .any)["hands-free"].firstMatch
+        XCTAssertTrue(bar.waitForExistence(timeout: 3), "a tap on the mic did not go hands-free")
+        XCTAssertFalse(app.buttons["attach"].exists, "the + stays up hands-free")
+        XCTAssertTrue(app.staticTexts[words].waitForExistence(timeout: 6), "a pause did not send the words")
+        let reply = app.staticTexts.containing(NSPredicate(format: "label CONTAINS 'Standup at 9'")).firstMatch
+        XCTAssertTrue(reply.waitForExistence(timeout: 8), "the reply never landed")
+        shot("15-hands-free-after-reply")
+        let back = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == 'listening'"), object: bar)
+        XCTAssertEqual(XCTWaiter().wait(for: [back], timeout: 5), .completed, "the mic did not reopen after the reply")
+        XCTAssertFalse(app.keyboards.firstMatch.exists, "hands-free brought the keyboard up")
+        app.buttons["hands-free-stop"].tap()
+        XCTAssertTrue(app.descendants(matching: .any)["composer"].firstMatch.waitForExistence(timeout: 3), "stop did not bring the field back")
+        XCTAssertFalse(bar.exists)
+    }
+
+    /// Screenshots of each hands-free state, light and dark (YUI_SHOTS, YUI_APPEARANCE).
+    func testHandsFreeStates() {
+        for (i, state) in ["listening", "sending", "waiting", "reading", "paused"].enumerated() {
+            let app = launch(["-yuiHandsFreeDemo", state, "-yuiPTTDemo", "Is my morning free tomorrow"])
+            let bar = app.descendants(matching: .any)["hands-free"].firstMatch
+            XCTAssertTrue(bar.waitForExistence(timeout: 20), "no hands-free bar for \(state)")
+            XCTAssertEqual(bar.value as? String, state)
+            sleep(1)
+            shot("1\(i)-hands-free-\(state)")
+            app.terminate()
+        }
     }
 }
