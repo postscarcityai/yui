@@ -235,6 +235,13 @@ final class ChatStore {
     /// What the agent says it is doing on this turn (`doing`, YUI-63): its
     /// words and step for the working row. Nil: the working word.
     private(set) var doing: YLDoing?
+    /// How long this agent's recent turns took, pickup to finished, oldest
+    /// first (TestFlight AE1JyD1P: "give a range, like an iPhone install").
+    /// The working row turns them into "Usually 1 to 3 min".
+    private(set) var turnTimes: [TimeInterval] = []
+    private var timed = Set<String>()
+    /// Turns kept for the range.
+    static let turnTimesKept = 20
     private var turnCheckedAt = Date.distantPast
     /// A reopened thread only resumes a turn this recent (the host gives up on
     /// a turn after 30 minutes, TURN_TIMEOUT_SECONDS in the plugin).
@@ -540,6 +547,8 @@ final class ChatStore {
         reading = nil
         page = agent.flatMap { pages[$0.id] } ?? 1
         seen = []
+        turnTimes = []
+        timed = []
         cursor = nil
         waiting = false
         pickedUpAt = nil
@@ -764,6 +773,8 @@ final class ChatStore {
     func reopen(_ rows: [ThreadRow]) {
         messages = []
         seen = []
+        turnTimes = []
+        timed = []
         answers = [:]
         reactions = [:]
         reacting = nil
@@ -816,7 +827,21 @@ final class ChatStore {
         // Words for the working row only once the host has the row: a queued
         // row has none of its own yet.
         if row.deliveredAt != nil { setDoing(Self.doing(row.doing)) }
+        time(row)
         if let done = row.handledAt.flatMap(YuiTime.date), now.timeIntervalSince(done) > 20 { waiting = false }
+    }
+
+    /// A finished turn on one of the person's rows: keep how long it took.
+    /// Once per row; a turn over the host's 30 minutes is not a real one.
+    private func time(_ row: ThreadRow) {
+        guard row.sender == "user", !timed.contains(row.id.lowercased()),
+              let start = row.deliveredAt.flatMap(YuiTime.date),
+              let done = row.handledAt.flatMap(YuiTime.date) else { return }
+        timed.insert(row.id.lowercased())
+        let took = done.timeIntervalSince(start)
+        guard took >= 1, took <= Self.turnWindow else { return }
+        turnTimes.append(took)
+        if turnTimes.count > Self.turnTimesKept { turnTimes.removeFirst(turnTimes.count - Self.turnTimesKept) }
     }
 
     /// True when the row was new.
@@ -826,6 +851,7 @@ final class ChatStore {
         if row.kind == "control" { return false }  // settings traffic (YUI-70), never in the thread
         // Polls overlap: only a row not seen before can end the wait.
         guard seen.insert(id).inserted else { return false }
+        time(row)
         // Another agent's answer copied in (YUI-44) doesn't end this agent's turn.
         if row.sender == "agent", Mentions.from(meta: row.meta) == nil { waiting = false; pickedUpAt = nil; doing = nil }
         if row.sender == "agent", let done = TalkAbout.applied(meta: row.meta), done == about?.id {

@@ -45,7 +45,7 @@ final class WorkingNoteTests: XCTestCase {
             XCTAssertFalse(w.contains("—"), w)
             XCTAssertLessThanOrEqual(w.count, 20, "keep the words short: \(w)")
         }
-        XCTAssertEqual(WorkingNote.accessibility(name: "Yui", label: "Pondering · 2s", long: false), "Yui: Pondering · 2s")
+        XCTAssertEqual(WorkingNote.accessibility(name: "Yui", label: "Pondering · 2s"), "Yui: Pondering · 2s")
     }
 
     func testReopenedMidTurnKeepsWorking() {
@@ -86,7 +86,7 @@ final class WorkingNoteTests: XCTestCase {
         XCTAssertEqual(WorkingNote.label(since: now.addingTimeInterval(-14), pickedUp: picked, now: now, doing: d),
                        "Reading your calendar, step 2 of 5 · 12s")
         XCTAssertEqual(WorkingNote.accessibility(name: "Yui", label: WorkingNote.label(since: nil, pickedUp: picked, now: now,
-                                                                                         doing: d), long: false),
+                                                                                         doing: d)),
                        "Yui: Reading your calendar, step 2 of 5 · 12s")
         // A step alone keeps the working word.
         let word = WorkingNote.word(pickedUp: picked, now: now)
@@ -119,5 +119,49 @@ final class WorkingNoteTests: XCTestCase {
         let waiting = ChatStore()
         waiting.load([Self.reply, queued])
         XCTAssertNil(waiting.doing, "a row the host has not picked up shows no words")
+    }
+
+    /// TestFlight AE1JyD1P: "some expectation on how long it will take ...
+    /// like when you install new software on an iPhone". The row learns from
+    /// this agent's finished turns and says the usual range under the time.
+    func testUsualRangeFromPastTurns() {
+        XCTAssertNil(WorkingNote.usual([30, 40]), "two turns is too few to guess")
+        let r = try! XCTUnwrap(WorkingNote.usual([70, 95, 400, 120, 150, 60, 110, 5]))
+        XCTAssertEqual(r.lowerBound, 60)
+        XCTAssertEqual(r.upperBound, 150, "the odd 400s turn stretches the range")
+        XCTAssertEqual(WorkingNote.range(60...150), "1 to 3 min")
+        XCTAssertEqual(WorkingNote.range(12...23), "10 to 25s")
+        XCTAssertEqual(WorkingNote.range(40...130), "40s to 3 min")
+        XCTAssertEqual(WorkingNote.range(125...170), "2 to 3 min")
+        XCTAssertEqual(WorkingNote.range(180...180), "about 3 min")
+        XCTAssertEqual(WorkingNote.range(2...4), "about 5s")
+        XCTAssertEqual(WorkingNote.range(50...58), "50s to 1 min")
+        for t in [3.0, 20, 59, 61, 600, 1800] {
+            XCTAssertFalse(WorkingNote.range(t...t * 1.5).contains("—"))
+        }
+    }
+
+    func testNoteUnderTheRow() {
+        XCTAssertNil(WorkingNote.note(elapsed: 30, usual: nil))
+        XCTAssertEqual(WorkingNote.note(elapsed: 130, usual: nil), "Long jobs are fine. Leave any time, the answer lands here.")
+        XCTAssertEqual(WorkingNote.note(elapsed: 10, usual: 60...150), "Usually 1 to 3 min.")
+        XCTAssertEqual(WorkingNote.note(elapsed: 130, usual: 60...150), "Usually 1 to 3 min. Leave any time, the answer lands here.")
+        XCTAssertEqual(WorkingNote.note(elapsed: 200, usual: 60...150),
+                       "Longer than usual (1 to 3 min). Leave any time, the answer lands here.")
+        XCTAssertEqual(WorkingNote.accessibility(name: "Yui", label: "Pondering · 12s", note: "Usually 1 to 3 min."),
+                       "Yui: Pondering · 12s. Usually 1 to 3 min.")
+    }
+
+    /// The store keeps each finished turn's time, pickup to done, once per
+    /// row, from history and from the live turn, and drops a switched agent's.
+    func testStoreKeepsTurnTimes() {
+        let store = ChatStore()
+        store.load([Self.user("u1", sent: 900, pickedUp: 890, done: 800), Self.reply,
+                    Self.user("u2", sent: 500, pickedUp: 495, done: 465),
+                    Self.user("u3", sent: 4000, pickedUp: 3990, done: 1000),
+                    Self.user("u4", sent: 60, pickedUp: 55)])
+        XCTAssertEqual(store.turnTimes.map { $0.rounded() }, [90, 30], "a turn past the host's 30 minutes or an open one is not a turn time")
+        store.load([Self.user("u2", sent: 500, pickedUp: 495, done: 465)])
+        XCTAssertEqual(store.turnTimes.count, 2, "a row seen again counts again")
     }
 }

@@ -149,4 +149,41 @@ final class WorkingNoteTests: XCTestCase {
             app.terminate()
         }
     }
+
+    /// TestFlight AE1JyD1P: the counter only counted up. With a few finished
+    /// turns in the thread, the row says how long this agent usually takes.
+    func testUsualRangeUnderTheRow() throws {
+        let shots = ProcessInfo.processInfo.environment["YUI_SHOTS"].map { URL(fileURLWithPath: $0) }
+        var rows: [[String: Any]] = []
+        // Four finished turns of 70s, 95s, 120s and 150s, then one in progress.
+        for (n, took) in [70.0, 95, 120, 150].enumerated() {
+            let sent = 3000 - Double(n) * 500
+            rows.append(["id": "u\(n)", "sender": "user", "kind": "text", "body": "Question \(n + 1)",
+                         "created_at": Self.ts(sent), "delivered_at": Self.ts(sent - 2), "handled_at": Self.ts(sent - 2 - took)])
+            rows.append(["id": "a\(n)", "sender": "agent", "kind": "text", "body": "Answer \(n + 1)",
+                         "created_at": Self.ts(sent - 2 - took)])
+        }
+        rows.append(["id": "u9", "sender": "user", "kind": "text", "body": "Build it", "created_at": Self.ts(40),
+                     "delivered_at": Self.ts(38)])
+        let rowsFile = FileManager.default.temporaryDirectory.appending(path: "yui-usual-rows.json")
+        try JSONSerialization.data(withJSONObject: rows).write(to: rowsFile)
+        for appearance in ["light", "dark"] {
+            let app = XCUIApplication()
+            app.launchArguments = ["-yuiDemoAccount", "-yuiDemoAgents", "-yuiAgent", "wizard", "-appearance", appearance,
+                                   "-yuiThreadRows", rowsFile.path]
+            app.launch()
+            XCTAssertTrue(app.staticTexts["Build it"].waitForExistence(timeout: 15), "the thread never loaded")
+            let note = app.descendants(matching: .any)["working"]
+            XCTAssertTrue(note.waitForExistence(timeout: 5), "no working row mid-turn")
+            XCTAssertTrue(note.label.contains("Usually 1 to 2 min"), "the row gives no usual range: \(note.label)")
+            XCTAssertFalse(note.label.contains("Long jobs are fine"), note.label)
+            let png = XCUIScreen.main.screenshot().pngRepresentation
+            if let shots { try? png.write(to: shots.appending(path: "working-usual-\(appearance).png")) }
+            let a = XCTAttachment(data: png, uniformTypeIdentifier: "public.png")
+            a.name = "working-usual-\(appearance)"
+            a.lifetime = .keepAlways
+            add(a)
+            app.terminate()
+        }
+    }
 }

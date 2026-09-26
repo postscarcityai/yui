@@ -546,7 +546,8 @@ struct ChatView: View {
                                   : "\(agent.name) is offline. It gets this when its gateway starts again.",
                                   icon: agent.liveness == .asleep ? "moon.zzz" : "powersleep")
                     } else if store.waiting {
-                        WorkingNote(agent: store.agent, since: store.waitingSince, pickedUp: store.pickedUpAt, doing: store.doing).id("typing")
+                        WorkingNote(agent: store.agent, since: store.waitingSince, pickedUp: store.pickedUpAt, doing: store.doing,
+                                    usual: WorkingNote.usual(store.turnTimes)).id("typing")
                     }
                     if let error = store.error {
                         Text(error)
@@ -2012,12 +2013,17 @@ private struct FirstRun: View {
 /// (`doing`, YL.md section 5, The working row; YUI-63 step 2) its words take
 /// the word's place, and a thin bar in its accent shows the step when it
 /// knows how many there are. The seconds keep counting from the start.
+/// Under the row, how long this agent usually takes, from its recent turns
+/// ("Usually 1 to 3 min", TestFlight AE1JyD1P: "like when you install new
+/// software on an iPhone, it tells you how long it takes").
 struct WorkingNote: View {
     var agent: YuiAgent?
     var since: Date?
     var pickedUp: Date?
     /// The agent's newest `doing`: its words and step. Nil: the working word.
     var doing: YLDoing? = nil
+    /// How long this agent's turns usually take. Nil: too few to say.
+    var usual: ClosedRange<TimeInterval>? = nil
     @Environment(\.yuiTheme) private var theme
     @Environment(\.colorScheme) private var scheme
     @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
@@ -2063,12 +2069,54 @@ struct WorkingNote: View {
     /// After this long, add that it's fine to leave.
     static let longTurn: TimeInterval = 120
 
+    /// Turns needed before the row guesses a range.
+    static let usualNeeds = 3
+
+    /// The usual range from recent turn times: the middle of them (20th to
+    /// 80th percentile), so one odd turn doesn't stretch it. Nil under three.
+    static func usual(_ times: [TimeInterval]) -> ClosedRange<TimeInterval>? {
+        guard times.count >= usualNeeds else { return nil }
+        let t = times.sorted()
+        func at(_ p: Double) -> TimeInterval { t[Int((Double(t.count - 1) * p).rounded())] }
+        return at(0.2)...at(0.8)
+    }
+
+    /// "10 to 25s", "40s to 2 min", "1 to 3 min", "about 2 min". The low end
+    /// rounds down and the high end up, so the range never promises too much.
+    static func range(_ r: ClosedRange<TimeInterval>) -> String {
+        func low(_ t: TimeInterval) -> (Int, Bool) {
+            t < 60 ? (max(5, Int(t) / 5 * 5), false) : (Int(t) / 60, true)
+        }
+        func high(_ t: TimeInterval) -> (Int, Bool) {
+            t < 60 ? (min(60, max(5, Int((t / 5).rounded(.up)) * 5)), false) : (Int((t / 60).rounded(.up)), true)
+        }
+        let (lo, loMin) = low(r.lowerBound)
+        var (hi, hiMin) = high(r.upperBound)
+        if !hiMin, hi == 60 { (hi, hiMin) = (1, true) }
+        if loMin, hiMin, lo == hi { return "about \(hi) min" }
+        if !loMin, !hiMin, lo == hi { return "about \(hi)s" }
+        if loMin, hiMin { return "\(lo) to \(hi) min" }
+        if !loMin, !hiMin { return "\(lo) to \(hi)s" }
+        return "\(lo)s to \(hi) min"
+    }
+
+    /// The line under the row, or nil: how long it usually takes, then past
+    /// that, that it's running long; after two minutes, that leaving is fine.
+    static func note(elapsed: TimeInterval, usual: ClosedRange<TimeInterval>?) -> String? {
+        let leave = "Leave any time, the answer lands here."
+        guard let usual else { return elapsed > longTurn ? "Long jobs are fine. \(leave)" : nil }
+        if elapsed > usual.upperBound { return "Longer than usual (\(range(usual))). \(leave)" }
+        let said = "Usually \(range(usual))."
+        return elapsed > longTurn ? "\(said) \(leave)" : said
+    }
+
     var body: some View {
         let c = theme.swatch(scheme)
         let name = agent?.name ?? "Your agent"
         TimelineView(.periodic(from: .now, by: 1)) { ctx in
             let word = Self.shown(doing, pickedUp: pickedUp, now: ctx.date)
             let took = (pickedUp ?? since).map { Self.elapsed(ctx.date.timeIntervalSince($0)) }
+            let note = (pickedUp ?? since).flatMap { Self.note(elapsed: ctx.date.timeIntervalSince($0), usual: usual) }
             HStack(alignment: .top, spacing: theme.spacing.s) {
                 AgentFace(agent: agent)
                 VStack(alignment: .leading, spacing: theme.spacing.xs) {
@@ -2102,27 +2150,29 @@ struct WorkingNote: View {
                     .padding(.vertical, theme.spacing.s + 2)
                     .background(c.agentBubble, in: RoundedRectangle(cornerRadius: theme.radius.bubble))
                     .overlay(RoundedRectangle(cornerRadius: theme.radius.bubble).stroke(c.outline, lineWidth: 1.5))
-                    if let start = pickedUp ?? since, ctx.date.timeIntervalSince(start) > Self.longTurn {
-                        Text("Long jobs are fine. Leave any time, the answer lands here.")
+                    if let note {
+                        Text(note)
                             .font(theme.font(theme.type.caption, .semibold))
                             .foregroundStyle(c.inkSoft)
                             .padding(.leading, theme.spacing.xs)
+                            .contentTransition(.opacity)
                             .transition(.opacity)
+                            .accessibilityIdentifier("working-usual")
                     }
                 }
                 Spacer(minLength: 48)
             }
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(Self.accessibility(name: name, label: Self.label(since: since, pickedUp: pickedUp, now: ctx.date, doing: doing),
-                                                   long: (pickedUp ?? since).map { ctx.date.timeIntervalSince($0) > Self.longTurn } ?? false))
+                                                   note: note))
             .accessibilityIdentifier("working")
         }
         .transition(.opacity)
     }
 
-    /// VoiceOver: who, then the row. "Yui: Pondering · 12s".
-    static func accessibility(name: String, label: String, long: Bool) -> String {
-        "\(name): \(label)" + (long ? ". Long jobs are fine. Leave any time, the answer lands here." : "")
+    /// VoiceOver: who, the row, then the line under it. "Yui: Pondering · 12s. Usually 1 to 3 min."
+    static func accessibility(name: String, label: String, note: String? = nil) -> String {
+        "\(name): \(label)" + (note.map { ". " + $0.trimmingCharacters(in: CharacterSet(charactersIn: ".")) + "." } ?? "")
     }
 
     /// How far along the agent is: a thin bar in its accent, filled to the
