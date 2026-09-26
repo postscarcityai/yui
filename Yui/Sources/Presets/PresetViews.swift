@@ -101,6 +101,7 @@ struct PresetCard<Content: View>: View {
     /// Full screen: no card, the content fills the screen (YUI-82).
     var flat = false
     @ViewBuilder var content: Content
+    @Environment(\.ylBare) private var bare
     @Environment(\.yuiTheme) private var theme
     @Environment(\.colorScheme) private var scheme
 
@@ -111,6 +112,10 @@ struct PresetCard<Content: View>: View {
                 .padding(.horizontal, theme.spacing.s)
                 .padding(.vertical, theme.spacing.s)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        } else if bare {
+            // A plan step or deck page: the page is the card (feedback APXu3dFU).
+            VStack(alignment: .leading, spacing: theme.spacing.m) { content }
+                .frame(maxWidth: .infinity, alignment: .leading)
         } else {
             VStack(alignment: .leading, spacing: theme.spacing.m) { content }
                 .frame(maxWidth: .infinity, alignment: .leading)

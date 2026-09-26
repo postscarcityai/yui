@@ -10,6 +10,27 @@ import YuiLines
 extension EnvironmentValues {
     /// True inside the stage, where a deck is already full screen.
     @Entry var ylOnStage = false
+    /// A step of a plan or a page of a deck: the page is the card, so a preset
+    /// drawn there has no card of its own (feedback APXu3dFU: "not a huge fan of
+    /// cards within cards"). In the chat a preset keeps its card.
+    @Entry var ylBare = false
+}
+
+/// A question on a full-screen page sits in the middle of the room between the
+/// progress bar and the buttons, not pinned under the bar (feedback APXu3dFU).
+/// Taller than the room, it starts at the top and scrolls.
+struct StageCenter<Content: View>: View {
+    @ViewBuilder var content: Content
+
+    var body: some View {
+        GeometryReader { geo in
+            ScrollView {
+                content.frame(maxWidth: .infinity, minHeight: geo.size.height, alignment: .leading)
+            }
+            .scrollBounceBehavior(.basedOnSize)
+            .scrollIndicators(.hidden)
+        }
+    }
 }
 
 extension YLComponent {
@@ -289,6 +310,7 @@ private struct DeckBody: View {
                             page(p).onAppear { seen.insert(i) }
                         }
                     }
+                    .environment(\.ylBare, true)
                 }
             } else {
                 TabView(selection: $at) {
@@ -297,8 +319,8 @@ private struct DeckBody: View {
                             if p.preset == "page" {
                                 StoryPage(c: p, active: i == at, showNotes: notes)
                             } else {
-                                ScrollView { PresetView(component: p).padding(.vertical, theme.spacing.xl) }
-                                    .scrollBounceBehavior(.basedOnSize)
+                                StageCenter { PresetView(component: p).padding(.vertical, theme.spacing.xl) }
+                                    .environment(\.ylBare, true)
                             }
                         }
                         .tag(i)
@@ -352,6 +374,7 @@ private struct DeckBody: View {
                         if i < pages.count - 1 { Divider().overlay(s.outline) }
                     }
                 }
+                .environment(\.ylBare, true)
             } else {
                 // Pages drawn the way full screen draws them, at their own height:
                 // the card grows and shrinks with the page, arrows right under it.
@@ -421,6 +444,7 @@ private struct DeckBody: View {
             StoryPage(c: p, active: active, showNotes: notes, inline: true)
         } else {
             PresetView(component: p).padding(.vertical, theme.spacing.xs)
+                .environment(\.ylBare, true)
         }
     }
 
@@ -510,8 +534,10 @@ struct PlanPreset: View {
                             // A page is a step to read: full size, no answer, Next moves on.
                             if step.preset == "page", onStage { StoryPage(c: step, active: i == cur) }
                             else if step.preset == "page" { PagePreset(c: step).padding(.vertical, theme.spacing.s) }
+                            else if onStage { StageCenter { PresetView(component: step) } }
                             else { PresetView(component: step) }
                         }
+                        .environment(\.ylBare, true)
                         .environment(\.ylEmit, relay(emit, pass: false) { e in record(e, step: step, i: i, steps: steps, review: review) })
                         .frame(height: i == cur ? nil : 0, alignment: .top)
                         .clipped()
