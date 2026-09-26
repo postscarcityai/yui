@@ -491,7 +491,7 @@ struct ChatView: View {
                             if let yl = m.yl {
                                 YLReply(screen: yl, scope: m.id, agent: store.agent, style: agentStyle,
                                         reaction: store.wearsReaction(m) ? store.reaction(for: m) : nil,
-                                        lifted: store.reacting == m.id, reduceMotion: reduceMotion,
+                                        lifted: store.reacting == m.id,
                                         open: { openReactions(m.id) },
                                         react: { store.react(m.id, with: $0) },
                                         select: { selecting = m },
@@ -1129,7 +1129,7 @@ struct ChatView: View {
         withAnimation(.easeOut(duration: 0.2)) { store.reacting = nil }
     }
 
-    /// Reply (hold menu or left swipe): the quote goes above the composer and the keyboard comes up.
+    /// Reply (hold menu): the quote goes above the composer and the keyboard comes up.
     private func startReply(_ id: String) {
         store.startReply(id)
         focused = true
@@ -1533,7 +1533,7 @@ struct ChatView: View {
 
 /// An agent reply in Yui Lines: the presets in line order, errors underneath.
 /// Components that open on the stage show here as one pill that reopens it.
-/// Hold it for reactions and Reply, Copy, Select text; swipe it left to reply (YUI-68).
+/// Hold it for reactions and Reply, Copy, Select text (YUI-68).
 private struct YLReply: View, @MainActor Equatable {
     let screen: YLScreen
     let scope: String
@@ -1541,7 +1541,6 @@ private struct YLReply: View, @MainActor Equatable {
     var style: [String: String] = [:]
     var reaction: Reaction?
     var lifted = false
-    var reduceMotion = false
     var open: () -> Void = {}
     var react: (Reaction?) -> Void = { _ in }
     var select: () -> Void = {}
@@ -1552,7 +1551,7 @@ private struct YLReply: View, @MainActor Equatable {
     /// What it draws, closures aside: a row that didn't change skips its body (YUI-101).
     static func == (a: Self, b: Self) -> Bool {
         a.scope == b.scope && a.screen == b.screen && a.agent == b.agent && a.style == b.style
-            && a.reaction == b.reaction && a.lifted == b.lifted && a.reduceMotion == b.reduceMotion
+            && a.reaction == b.reaction && a.lifted == b.lifted
     }
 
     var body: some View {
@@ -1570,7 +1569,6 @@ private struct YLReply: View, @MainActor Equatable {
                 YLReplyItems(screen: screen, scope: scope, style: style, openStage: openStage)
                     .modifier(Reactable(text: words, reaction: reaction, lifted: lifted,
                                         open: open, react: react, select: select, reply: reply, card: true))
-                    .modifier(SwipeToReply(reply: reply, reduceMotion: reduceMotion))
                 // Presets this build can't draw fold into one Update chip, never raw lines (ANJPrtB7CHynwGR5mqNVPSM).
                 if screen.errors.contains(where: UpdateChip.covers) { UpdateChip() }
                 ForEach(Array(screen.errors.filter { !UpdateChip.covers($0) }.enumerated()), id: \.offset) {
@@ -1619,7 +1617,7 @@ private struct Bubble: View, @MainActor Equatable {
     var open: () -> Void = {}
     var react: (Reaction?) -> Void = { _ in }
     var select: () -> Void = {}
-    /// Hold menu Reply or a left swipe (YUI-68).
+    /// Hold menu Reply (YUI-68).
     var reply: () -> Void = {}
     /// The chip on a sent reply: back to the message it quotes.
     var goToQuote: (ReplyQuote) -> Void = { _ in }
@@ -1696,7 +1694,6 @@ private struct Bubble: View, @MainActor Equatable {
                     text
                 }
             }
-            .modifier(SwipeToReply(reply: reply, reduceMotion: reduceMotion))
             .opacity(pending ? 0.6 : 1)
             if !message.fromUser { Spacer(minLength: 48) }
         }

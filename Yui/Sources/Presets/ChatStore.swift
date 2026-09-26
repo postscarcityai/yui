@@ -298,7 +298,7 @@ final class ChatStore {
     /// The bubble just scrolled to from a reply's chip: it glows for a moment.
     private(set) var flashing: String?
 
-    /// Hold menu Reply, or a left swipe: quote this bubble or card in the composer.
+    /// Hold menu Reply: quote this bubble or card in the composer.
     func startReply(_ messageID: String) {
         guard let m = messages.first(where: { $0.id == messageID }), let q = ReplyQuote(m) else { return }
         withAnimation(spring) { replying = q }

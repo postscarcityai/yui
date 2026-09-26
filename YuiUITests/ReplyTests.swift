@@ -2,8 +2,9 @@ import XCTest
 
 /// Reply to a message (YUI-68, Chris's gesture map of 2026-09-25):
 ///   1. Hold a bubble or a card: reactions (agent's only) plus Reply, Copy, Select text.
-///   2. Swipe a bubble LEFT: reply. The quote sits above the composer, x drops it.
-///   3. Drag on the background beside a bubble: the next screen, not a reply.
+///   2. The quote sits above the composer, x drops it.
+///   3. Drag sideways, on a bubble or beside it: the next screen, never a reply.
+///      Swipe to reply is gone (feedback AACnEo9w): it blocked the pager's drag.
 /// Sent, the reply wears a chip; tapping it scrolls back to the original.
 /// Demo account, no network (`-yuiLongThread` above `-yuiThreadRows`).
 /// Screenshots go to `YUI_SHOTS` when set.
@@ -19,16 +20,6 @@ final class ReplyTests: XCTestCase {
 
     func testLight() throws { try run("light") }
     func testDark() throws { try run("dark") }
-
-    /// Reduce Motion: no slide, the quote just appears.
-    func testReduceMotionSwipe() throws {
-        let app = try launch("light", extra: ["-yuiReduceMotion"])
-        let bubble = text(app, Self.proposal)
-        swipeLeft(bubble)
-        XCTAssertTrue(app.descendants(matching: .any)["reply-bar"].waitForExistence(timeout: 4),
-                      "a left swipe under Reduce Motion set no quote")
-        shot("reply-reduce-motion")
-    }
 
     private func run(_ appearance: String) throws {
         let app = try launch(appearance)
@@ -84,12 +75,14 @@ final class ReplyTests: XCTestCase {
         tab1.tap()
         waitShowing(tab1, "the Chat tab did not come back")
 
-        // 2. Swipe the bubble itself left: a reply, and still on the chat.
+        // The bubble itself pages too: a left swipe on it sets no quote.
         swipeLeft(bubble)
-        XCTAssertTrue(bar.waitForExistence(timeout: 4), "a left swipe on a bubble set no quote")
-        waitShowing(tab1, "a left swipe on a bubble paged instead")
-        app.buttons["reply-cancel"].tap()
-        XCTAssertTrue(bar.waitForNonExistence(timeout: 4))
+        waitShowing(tab2, "a left swipe on a bubble did not page to screen 2")
+        XCTAssertFalse(bar.exists, "a left swipe on a bubble set a reply")
+        shot("reply-5-bubble-pages-\(appearance)")
+        tab1.tap()
+        waitShowing(tab1, "the Chat tab did not come back")
+        waitHittable(bubble, "the proposal is not back on screen")
 
         // Reply to an old message, send, and the chip goes back to it.
         let old = text(app, "Message 2. Here's a longer answer")
@@ -101,7 +94,9 @@ final class ReplyTests: XCTestCase {
             sleep(1)
         }
         XCTAssertTrue(old.isHittable, "could not scroll up to Message 2")
-        swipeLeft(old)
+        old.press(forDuration: 0.8)
+        XCTAssertTrue(reply.waitForExistence(timeout: 5), "no Reply when holding an old message")
+        reply.tap()
         XCTAssertTrue(bar.waitForExistence(timeout: 4))
         XCTAssertTrue(bar.label.contains("Message 2"), "wrong quote: \(bar.label)")
         let field = app.textFields["composer"].exists ? app.textFields["composer"] : app.textViews["composer"]
@@ -114,11 +109,11 @@ final class ReplyTests: XCTestCase {
         waitHittable(chip, "the sent reply is not on screen")
         XCTAssertFalse(old.isHittable, "Message 2 is still on screen: nothing to scroll back to")
         sleep(1)
-        shot("reply-5-sent-chip-\(appearance)")
+        shot("reply-6-sent-chip-\(appearance)")
         chip.tap()
         XCTAssertTrue(app.descendants(matching: .any)["reply-original"].waitForExistence(timeout: 1.5),
                       "the original did not light up")
-        shot("reply-6-original-\(appearance)")
+        shot("reply-7-original-\(appearance)")
         waitHittable(old, "tapping the chip did not scroll back to Message 2")
     }
 

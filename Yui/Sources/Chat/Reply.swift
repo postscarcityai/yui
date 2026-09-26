@@ -1,11 +1,10 @@
 import Foundation
 import SwiftUI
-import UIKit
 import YuiLines
 
 // Reply to one message (YUI-68, TestFlight feedback AG9JzU4LeWl-TFeKWftiFIE):
-// hold a bubble or a card and tap Reply, or swipe a bubble left. The quote sits
-// above the composer; sent, it rides an ordinary text row:
+// hold a bubble or a card and tap Reply. No swipe: it took the sideways drag the
+// pager needs (feedback AACnEo9w). The quote sits above the composer; sent, it rides an ordinary text row:
 //   body  [yui] reply to=<row id> from=agent quote="first line"
 //         <the words>
 //   meta  {"reply_to": {"msg": "<row id>", "from": "agent", "quote": "first line"}}
@@ -205,107 +204,5 @@ struct ReplyChip: View {
         .accessibilityLabel("Reply to \(quote.author(agent: agent)): \(quote.quote)")
         .accessibilityHint("Shows the message")
         .accessibilityIdentifier("reply-chip")
-    }
-}
-
-/// Swipe a bubble left to reply (Chris, 2026-09-25). A UIKit pan so it can say
-/// no before it starts: up and down belong to the thread's scroll, right to the
-/// pager (and the drawer later), and a drag that starts at the screen's right
-/// edge pages too, so screen 2 is always one edge swipe away. Only a clearly
-/// leftward drag on the bubble itself is a reply; the gutter beside a bubble
-/// still pages. The pager and the thread wait for it to say no.
-struct ReplySwipe: UIGestureRecognizerRepresentable {
-    /// The finger's sideways travel, 0 or less, while it is down.
-    var changed: (CGFloat) -> Void
-    /// Let go (or cancelled) at this travel.
-    var ended: (CGFloat) -> Void
-
-    /// A drag starting this close to the right edge is a page swipe.
-    static let edge: CGFloat = 28
-
-    func makeUIGestureRecognizer(context: Context) -> UIPanGestureRecognizer {
-        let g = UIPanGestureRecognizer()
-        g.delegate = context.coordinator
-        g.maximumNumberOfTouches = 1
-        return g
-    }
-
-    func makeCoordinator(converter: CoordinateSpaceConverter) -> Coordinator { Coordinator() }
-
-    func handleUIGestureRecognizerAction(_ g: UIPanGestureRecognizer, context: Context) {
-        let x = min(0, g.translation(in: g.view).x)
-        switch g.state {
-        case .began, .changed: changed(x)
-        case .ended: ended(x)
-        case .cancelled, .failed: ended(0)
-        default: break
-        }
-    }
-
-    final class Coordinator: NSObject, UIGestureRecognizerDelegate {
-        func gestureRecognizerShouldBegin(_ g: UIGestureRecognizer) -> Bool {
-            guard let pan = g as? UIPanGestureRecognizer, let view = pan.view else { return false }
-            let v = pan.velocity(in: view)
-            let t = pan.translation(in: view)
-            let dx = abs(v.x) > 1 ? v.x : t.x
-            let dy = abs(v.x) > 1 ? v.y : t.y
-            guard dx < 0, abs(dx) > abs(dy) * 1.4 else { return false }
-            if let window = view.window {
-                let start = pan.location(in: window).x - t.x
-                if start > window.bounds.width - ReplySwipe.edge { return false }
-            }
-            return true
-        }
-
-        /// The pager's and the thread's pans wait for this one to decline.
-        func gestureRecognizer(_ g: UIGestureRecognizer, shouldBeRequiredToFailBy other: UIGestureRecognizer) -> Bool {
-            other.view is UIScrollView && other is UIPanGestureRecognizer
-        }
-    }
-}
-
-/// A bubble or card that answers a left swipe with a reply: it follows the
-/// finger, an arrow comes in behind it, a tick at the threshold, and letting go
-/// past it sets the quote. Reduce Motion: nothing slides, the quote just appears.
-struct SwipeToReply: ViewModifier {
-    let reply: () -> Void
-    var reduceMotion = false
-    @State private var dx: CGFloat = 0
-    @State private var armed = false
-    @Environment(\.yuiTheme) private var theme
-    @Environment(\.colorScheme) private var scheme
-
-    /// Past this, letting go replies.
-    static let threshold: CGFloat = 64
-
-    func body(content: Content) -> some View {
-        let c = theme.swatch(scheme)
-        let progress = min(1, -dx / Self.threshold)
-        content
-            .offset(x: reduceMotion ? 0 : dx)
-            .background(alignment: .trailing) {
-                Image(systemName: "arrowshape.turn.up.left.fill")
-                    .font(.system(size: 16, weight: .bold))
-                    .foregroundStyle(armed ? c.onAccent : c.inkSoft)
-                    .frame(width: 32, height: 32)
-                    .background(armed ? c.accent : c.surface, in: Circle())
-                    .overlay(Circle().stroke(c.outline, lineWidth: armed ? 0 : 1))
-                    .scaleEffect(reduceMotion ? 1 : 0.6 + 0.4 * progress)
-                    .opacity(progress)
-                    .offset(x: 44)
-                    .accessibilityHidden(true)
-            }
-            .gesture(ReplySwipe { x in
-                // Past the threshold it drags heavier, like a rubber band.
-                dx = x > -Self.threshold ? x : -Self.threshold + (x + Self.threshold) * 0.3
-                let now = x <= -Self.threshold
-                if now != armed { armed = now }
-            } ended: { x in
-                let go = x <= -Self.threshold
-                withAnimation(.spring(response: 0.3, dampingFraction: 0.75)) { dx = 0 }
-                armed = false
-                if go { reply() }
-            })
-            .sensoryFeedback(.impact(weight: .light), trigger: armed) { _, now in now }
     }
 }
