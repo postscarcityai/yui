@@ -33,10 +33,11 @@ jobs:
       - name: Changed files stay out of the hands-off paths
         env:
           BASE: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD: ${{ github.event.pull_request.head.sha }}
         run: |
-          bad=$(git diff --name-only "$BASE"...HEAD | grep -E '^(\.github/|scripts/(testflight|devbuild|asc\.py|build_stamp)|supabase/|Packages/YuiLines/Tests/YuiLinesTests/Resources/conformance/|.*\.(p8|p12|mobileprovision|cer)$|.*\.env$|yui\.env)' || true)
+          bad=$(git diff --name-only "$BASE"..."$PR_HEAD" | grep -E '^(\.github/|scripts/(testflight|devbuild|asc\.py|build_stamp)|supabase/|Packages/YuiLines/Tests/YuiLinesTests/Resources/conformance/|.*\.(p8|p12|mobileprovision|cer)$|.*\.env$|yui\.env)' || true)
           # project.yml is fair game (new targets), but not its team or signing keys.
-          sign=$(git diff "$BASE"...HEAD -- project.yml | grep -E '^[+-][^+-].*(DEVELOPMENT_TEAM|CODE_SIGN|PROVISIONING_PROFILE|YUI_TEAM_ID)' || true)
+          sign=$(git diff "$BASE"..."$PR_HEAD" -- project.yml | grep -E '^[+-][^+-].*(DEVELOPMENT_TEAM|CODE_SIGN|PROVISIONING_PROFILE|YUI_TEAM_ID)' || true)
           if [ -n "$bad$sign" ]; then
             echo "This pull request changes files or settings an outside pull request may not touch:"
             [ -n "$bad" ] && echo "$bad"
