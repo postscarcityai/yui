@@ -51,7 +51,11 @@ final class AttachmentsTests: XCTestCase {
         }()).pngData { ctx in UIColor.systemTeal.setFill(); ctx.fill(CGRect(x: 0, y: 0, width: 4000, height: 3000)) }
         let p = try XCTUnwrap(ComposerPhoto(big))
         XCTAssertEqual(Array(p.jpeg.prefix(3)), [0xFF, 0xD8, 0xFF], "not a JPEG")
-        XCTAssertEqual(max(p.preview.size.width, p.preview.size.height) * p.preview.scale, YuiMedia.maxSide)
+        let sent = try XCTUnwrap(UIImage(data: p.jpeg))
+        XCTAssertEqual(max(sent.size.width, sent.size.height) * sent.scale, YuiMedia.maxSide)
+        // The preview is decoded for its 200 pt tile, not at the size sent (YUI-100).
+        XCTAssertLessThan(max(p.preview.size.width, p.preview.size.height) * p.preview.scale, YuiMedia.maxSide)
+        XCTAssertGreaterThanOrEqual(min(p.preview.size.width, p.preview.size.height) * p.preview.scale, 600)
         XCTAssertNil(ComposerPhoto(Data("not a picture".utf8)))
     }
 

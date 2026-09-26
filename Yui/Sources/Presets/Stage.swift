@@ -37,6 +37,12 @@ final class TimerRuns {
         runs[key] = r
         return r
     }
+
+    /// Another thread opened (YUI-100): timers nobody started go, since a new one is the
+    /// same. Started ones stay, so a paused or running timer is as it was on the way back.
+    func prune() {
+        runs = runs.filter { $0.value.started || $0.value.running }
+    }
 }
 
 extension YLComponent {

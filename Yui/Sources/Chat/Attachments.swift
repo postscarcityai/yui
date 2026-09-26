@@ -22,7 +22,9 @@ struct ComposerPhoto: Identifiable, Equatable {
     let preview: UIImage
 
     init?(_ data: Data) {
-        guard let jpeg = YuiMedia.jpeg(data), let preview = UIImage(data: jpeg) else { return nil }
+        // The preview is drawn at 200 pt at most: decoded that small, not at the 2048 px sent (YUI-100).
+        guard let jpeg = YuiMedia.jpeg(data),
+              let preview = Pictures.downsample(jpeg, points: CGSize(width: 200, height: 200), scale: 3) else { return nil }
         self.jpeg = jpeg
         self.preview = preview
     }

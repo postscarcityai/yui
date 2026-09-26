@@ -13,7 +13,8 @@ enum BubbleMarkdown {
         // parse each text once (YUI-101).
         if let hit = cache.object(forKey: text as NSString) { return hit.value }
         let out = parse(text)
-        cache.setObject(Parsed(out, plain: String(out.characters)), forKey: text as NSString)
+        // Cost by length (YUI-100): a SOUL.md weighs more than a "Got it".
+        cache.setObject(Parsed(out, plain: String(out.characters)), forKey: text as NSString, cost: text.utf8.count * 3)
         return out
     }
 
@@ -27,6 +28,7 @@ enum BubbleMarkdown {
     nonisolated(unsafe) private static let cache: NSCache<NSString, Parsed> = {
         let c = NSCache<NSString, Parsed>()
         c.countLimit = 2000
+        c.totalCostLimit = 8 << 20
         return c
     }()
 

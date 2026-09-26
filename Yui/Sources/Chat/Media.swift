@@ -107,7 +107,11 @@ private actor SignedCache {
         guard let url = links[path], let exp = YuiMedia.expiry(url), exp.timeIntervalSinceNow > 300 else { return nil }
         return url
     }
-    func put(_ path: String, _ url: URL) { links[path] = url }
+    func put(_ path: String, _ url: URL) {
+        // Expired links go as new ones come (YUI-100): the map never outgrows what is live.
+        links = links.filter { (YuiMedia.expiry($0.value)?.timeIntervalSinceNow ?? 0) > 0 }
+        links[path] = url
+    }
 }
 
 /// A YL media token as a URL. Relative paths (`/demo/room.jpg`) are the site's.

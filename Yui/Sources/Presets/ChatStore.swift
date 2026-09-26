@@ -25,13 +25,12 @@ struct ChatMessage: Identifiable, Equatable {
     var about: String? = nil
 }
 
-/// The chat's messages plus the event log going back to the agent.
+/// The chat's messages and the events going back to the agent.
 /// Attached to an agent, it is that agent's thread (yui_messages, spec
 /// yuigui/spec/RELAY.md); detached, it is the local demo chat.
 @Observable @MainActor
 final class ChatStore {
     var messages: [ChatMessage] { didSet { derived = nil; waitingCache = nil } }
-    private(set) var events: [YLEvent] = []
     var spring: Animation = .default
     /// An agent reply carried a `theme` line: (agent id, props, message time).
     var onLook: (@MainActor (String, [String: String], String) -> Void)?
@@ -354,7 +353,6 @@ final class ChatStore {
     }
 
     func receive(_ e: YLEvent) {
-        events.insert(e, at: 0)
         if e.echo != nil { record(id: e.id, preset: e.preset, value: e.value) }
         #if DEBUG
         // `-yuiEventLog <path>`: UI tests read back the events a tap sent.
@@ -516,6 +514,7 @@ final class ChatStore {
         self.account = account
         messages = []
         answers = [:]
+        timers.prune()
         shelf = agent.map { Shelf.load(agentID: $0.id) } ?? Shelf()
         menu = agent.map { AgentMenu.load(agentID: $0.id) } ?? AgentMenu()
         reactions = [:]

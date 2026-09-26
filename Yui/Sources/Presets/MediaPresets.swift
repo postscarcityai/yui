@@ -6,32 +6,54 @@ import YuiLines
 // `image`, `video` and `camera` (spec yuigui/spec/YL.md). Gallery, compare,
 // storyboard and image edit live in MediaSetPresets.swift and reuse RemoteImage.
 
-/// A picture from a YL URL, re-signed when its link has expired.
+/// A picture from a YL URL, re-signed when its link has expired. Decoded at the size
+/// it is drawn and kept in the shared picture cache (YUI-100), not at full size per row.
 struct RemoteImage: View {
     let src: URL
     var fit: ContentMode = .fill
-    @State private var url: URL?
+    @State private var image: UIImage?
+    @State private var failed = false
+    @State private var size: CGSize = .zero
+    /// The picture showing is the whole thing: a bigger frame has nothing more to decode.
+    @State private var whole = false
     @Environment(\.yuiMedia) private var media
     @Environment(\.yuiTheme) private var theme
     @Environment(\.colorScheme) private var scheme
+    @Environment(\.displayScale) private var scale
+
+    private struct Need: Equatable { let src: URL; let w: Int; let h: Int }
 
     var body: some View {
         let s = theme.swatch(scheme)
-        AsyncImage(url: url, transaction: Transaction(animation: theme.spring)) { phase in
-            switch phase {
-            case .success(let image):
-                image.resizable().aspectRatio(contentMode: fit)
-            case .failure:
+        Group {
+            if let image {
+                Image(uiImage: image).resizable().aspectRatio(contentMode: fit)
+            } else if failed {
                 Label("Picture unavailable", systemImage: "photo.badge.exclamationmark")
                     .font(theme.font(theme.type.caption, .bold))
                     .foregroundStyle(s.inkSoft)
                     .frame(maxWidth: .infinity, minHeight: 160)
                     .background(s.background)
-            default:
+            } else {
                 s.background.overlay(ProgressView().tint(s.accent)).frame(minHeight: 160)
             }
         }
-        .task(id: src) { url = await media?.fresh(src) ?? src }
+        .onGeometryChange(for: CGSize.self) { $0.size } action: { size = $0 }
+        // Sides in 64 pt steps: a frame that settles a point at a time is one load.
+        .task(id: Need(src: src, w: Int((size.width / 64).rounded(.up)), h: Int((size.height / 64).rounded(.up)))) {
+            guard size.width > 0, size.height > 0 else { return }
+            if let image, whole || Pictures.sharp(image, size, scale: scale, fill: fit == .fill) { return }
+            let points = size
+            let url = await media?.fresh(src) ?? src
+            let id = YuiMedia.bucketPath(src) ?? src.absoluteString
+            guard let made = await Pictures.load(url, id: id, points: points, scale: scale) else {
+                if image == nil { failed = true }
+                return
+            }
+            withAnimation(image == nil ? theme.spring : nil) { image = made.image }
+            whole = made.whole
+            failed = false
+        }
     }
 }
 
@@ -144,14 +166,15 @@ struct VideoPreset: View {
             }
         }
         .task(id: src) {
+            release()
             guard let src else { return }
             let url = await media?.fresh(src) ?? src
             let p = AVPlayer(url: url)
             p.isMuted = c.flag("mute") || c.flag("auto")
             if c.flag("loop") {
                 looper = NotificationCenter.default.addObserver(forName: AVPlayerItem.didPlayToEndTimeNotification,
-                                                                object: p.currentItem, queue: .main) { _ in
-                    Task { @MainActor in p.seek(to: .zero); p.play() }
+                                                                object: p.currentItem, queue: .main) { [weak p] _ in
+                    Task { @MainActor in p?.seek(to: .zero); p?.play() }
                 }
             }
             ender = NotificationCenter.default.addObserver(forName: AVPlayerItem.didPlayToEndTimeNotification,
@@ -169,7 +192,18 @@ struct VideoPreset: View {
                 break
             }
         }
-        .onDisappear { player?.pause() }
+        .onDisappear(perform: release)
+    }
+
+    /// The observers hold the player and its item until removed (YUI-100): let both go
+    /// when the row leaves, and before a new one is made.
+    private func release() {
+        for token in [looper, ender].compactMap({ $0 }) { NotificationCenter.default.removeObserver(token) }
+        looper = nil
+        ender = nil
+        player?.pause()
+        player?.replaceCurrentItem(with: nil)
+        player = nil
     }
 }
 
@@ -246,7 +280,7 @@ struct CameraPreset: View {
     }
 
     private func send(_ data: Data) async {
-        preview = UIImage(data: data)
+        preview = Pictures.downsample(data, points: CGSize(width: 400, height: 220), scale: 3)
         guard let media else { state = .failed("Photos need a signed-in account"); return }
         state = .sending
         do {

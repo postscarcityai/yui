@@ -809,7 +809,10 @@ struct ImageEditPreset: View {
     private func load() async {
         guard let src = YLMediaURL.url(c.string("src")) else { failed = true; return }
         let url = await media?.fresh(src) ?? src
-        if let (data, _) = try? await URLSession.shared.data(from: url), let img = UIImage(data: data) {
+        // Drawn the width of the card at most: a 12 MP picture decodes at that, not in full (YUI-100).
+        let screen = CGSize(width: 440, height: 440)
+        if let (data, _) = try? await URLSession.shared.data(from: url),
+           let img = await Task.detached(operation: { Pictures.downsample(data, points: screen, scale: 3) }).value {
             image = img
         } else {
             failed = true

@@ -80,6 +80,20 @@ enum LongText {
     static let headWords = 8
     static let itemHeadWords = 12
 
+    /// How many pages `story` makes, kept per text (YUI-100): a folded row's
+    /// "Read as pages" counts once, not on every render of the thread.
+    static func pageCount(_ text: String) -> Int {
+        if let hit = pageCounts.object(forKey: text as NSString) { return hit.intValue }
+        let n = story(text).count
+        pageCounts.setObject(NSNumber(value: n), forKey: text as NSString)
+        return n
+    }
+    nonisolated(unsafe) private static let pageCounts: NSCache<NSString, NSNumber> = {
+        let c = NSCache<NSString, NSNumber>()
+        c.countLimit = 500
+        return c
+    }()
+
     /// The text as a story (YUI-82, TestFlight build 96: "we're telling a story
     /// visually with the letters"), one idea per page: each list item is its own
     /// page, prose goes a sentence or two at a time. A short first sentence, or

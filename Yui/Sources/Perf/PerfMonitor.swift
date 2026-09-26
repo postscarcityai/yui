@@ -13,6 +13,8 @@ final class PerfMonitor {
     private let metrics = PerfMetrics()
     private var memoryTimer: Timer?
     private var batchTimer: Timer?
+    /// `-yuiMemEvery <secs>` (YUI-100): the footprint logged that often, for scripts/memory.sh. Log only, not stored.
+    private var memLogTimer: Timer?
     private var started = false
     /// A cold launch also posts willEnterForeground under scenes: resume counts only after the first activation.
     private var activeOnce = false
@@ -69,8 +71,10 @@ final class PerfMonitor {
     private func foreground(_ on: Bool) {
         memoryTimer?.invalidate()
         batchTimer?.invalidate()
+        memLogTimer?.invalidate()
         memoryTimer = nil
         batchTimer = nil
+        memLogTimer = nil
         if on {
             let ctx = PerfContext.now()
             Task.detached { await PerfStore.shared.setContext(ctx) }
@@ -80,6 +84,14 @@ final class PerfMonitor {
             }
             batchTimer = Timer.scheduledTimer(withTimeInterval: 3600, repeats: true) { _ in
                 Task.detached { await PerfStore.shared.flush() }
+            }
+            let every = UserDefaults.standard.double(forKey: "yuiMemEvery")
+            if every > 0 {
+                memLogTimer = Timer.scheduledTimer(withTimeInterval: every, repeats: true) { _ in
+                    if let mb = PerfMonitor.footprintMB() {
+                        Perf.log.debug("perf mem_footprint \(mb, format: .fixed(precision: 1), privacy: .public) MB")
+                    }
+                }
             }
         } else {
             // One batch on the way out; the system gives us a moment to send it.

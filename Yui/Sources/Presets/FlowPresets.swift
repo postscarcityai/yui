@@ -355,15 +355,22 @@ private struct DeckBody: View {
             } else {
                 // Pages drawn the way full screen draws them, at their own height:
                 // the card grows and shrinks with the page, arrows right under it.
-                TabView(selection: $at) {
-                    ForEach(Array(pages.enumerated()), id: \.element.serial) { i, p in
-                        ScrollView { inlinePage(p, active: i == at) }
-                            .scrollBounceBehavior(.basedOnSize)
-                            .scrollIndicators(.hidden)
-                            .tag(i)
+                // A paging scroll, not TabView(selection:): each inline TabView that left
+                // the thread leaked its pages in a SwiftUI cycle (YUI-100, `leaks`).
+                ScrollView(.horizontal) {
+                    HStack(spacing: 0) {
+                        ForEach(pages.indices, id: \.self) { i in
+                            ScrollView { inlinePage(pages[i], active: i == at) }
+                                .scrollBounceBehavior(.basedOnSize)
+                                .scrollIndicators(.hidden)
+                                .containerRelativeFrame(.horizontal)
+                        }
                     }
+                    .scrollTargetLayout()
                 }
-                .tabViewStyle(.page(indexDisplayMode: .never))
+                .scrollTargetBehavior(.paging)
+                .scrollIndicators(.hidden)
+                .scrollPosition(id: Binding(get: { at }, set: { if let i = $0 { at = i } }))
                 .frame(height: pagerHeight)
                 .background(alignment: .top) {
                     // Every page laid out once, unseen, to know its height before it shows.

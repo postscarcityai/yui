@@ -579,6 +579,9 @@ struct ChatView: View {
                 if near, store.shown.count > window { window += Self.windowStep }
             }
             .onScrollPhaseChange { _, phase in settleScroll(phase) }
+            .onReceive(NotificationCenter.default.publisher(for: UIApplication.didReceiveMemoryWarningNotification)) { _ in
+                if atBottom { window = Self.windowStep }
+            }
             // The keyboard often goes a moment after the drag settles.
             .onChange(of: focused) {
                 guard !focused, dismissPin, !dragging else { return }
@@ -1026,6 +1029,9 @@ struct ChatView: View {
         case .interacting, .tracking:
             if !dragging { dragging = true; dismissPin = pinned && focused }
         case .idle:
+            // Back at the newest message: the older rows drawn on the way up go again (YUI-100),
+            // so one long scroll up does not keep the whole thread alive.
+            if atBottom, window > Self.windowStep { window = Self.windowStep }
             guard dragging else { return }
             dragging = false
             if dismissPin, !focused {
@@ -1513,7 +1519,7 @@ private struct Bubble: View, @MainActor Equatable {
                     // Copy and Select text still get every word.
                     VStack(alignment: .leading, spacing: theme.spacing.s) {
                         text
-                        ReadAsPages(pages: LongText.story(message.plain).count, action: read)
+                        ReadAsPages(pages: LongText.pageCount(message.plain), action: read)
                     }
                 } else if !message.text.isEmpty {
                     text
