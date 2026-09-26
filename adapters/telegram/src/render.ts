@@ -71,18 +71,21 @@ export const HOW: Record<string, "keyboard" | "text" | "app" | "member"> = {
   ask: "keyboard", choose: "keyboard", pick: "keyboard",
   say: "text", list: "text", card: "text", stat: "text", table: "text", step: "text", timeline: "text",
   done: "member", now: "member", next: "member",
-  sketch: "text", row: "text", after: "member",
+  sketch: "text", row: "text", after: "member", shapes: "text", shape: "text",
   timer: "app", slide: "app", form: "app", image: "app", camera: "app", mic: "app",
   gallery: "app", video: "app", compare: "app", storyboard: "app",
   chart: "app", math: "app", calc: "app",
   deck: "app", page: "app", plan: "app", project: "app", narrate: "app",
   game: "app", flow: "app", custom: "app",
+  // A query reads the agent's tables, which live on the phone: open it in
+  // Yui (YL.md 10). `table create` and `put` draw nothing, here or there.
+  query: "app",
 };
 
 const ICON: Record<string, string> = {
   timer: "⏱", slide: "🎚", form: "📝", image: "🖼", camera: "📷", mic: "🎙", gallery: "🖼", video: "🎬",
   compare: "↔️", storyboard: "🎞", chart: "📈", math: "∑", calc: "🧮", deck: "📚", page: "📄", plan: "🗂",
-  project: "📁", narrate: "🔊", game: "🎮", flow: "🧭", custom: "✨", table: "📋", timeline: "🗓",
+  project: "📁", narrate: "🔊", game: "🎮", flow: "🧭", custom: "✨", table: "📋", timeline: "🗓", query: "📋",
 };
 
 export const esc = (s: unknown) => String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -136,7 +139,10 @@ type Node = { id: string; key: string; preset: string; props: Record<string, any
 // One fence of Yui Lines.
 export async function renderYL(yl: string, opts: Options): Promise<Rendered> {
   let s = initialState();
-  for (const op of parse(yl)) s = apply(s, op);
+  // `table create` and `put` write to the agent's tables on the phone and draw
+  // nothing (YL.md 10), so Telegram skips them: a put to a table made in an
+  // earlier reply is no error here.
+  for (const op of parse(yl)) if (op.op !== "table" && op.op !== "put") s = apply(s, op);
   // Telegram has no room for screens or a stage: everything in line order (YL.md 10).
   const nodes: Node[] = (Object.values(s.screens).flat() as Node[]).sort((a, b) => a.seq - b.seq);
   const errors: string[] = [...s.errors];
@@ -182,6 +188,12 @@ export async function renderYL(yl: string, opts: Options): Promise<Rendered> {
         break;
       case "row":
         messages.push(msg(sketch({}, [n])));
+        break;
+      case "shapes":
+        messages.push(msg(shapes(p, nodes.filter((m) => m.in === n.id))));
+        break;
+      case "shape": // outside a shapes group: a one-part drawing
+        messages.push(msg(shapes({}, [n])));
         break;
       case "after": break; // outside a sketch it draws nothing, in the app too
       case "card": messages.push(await card(n, opts)); break;
@@ -232,6 +244,7 @@ export function label(n: { preset: string; props?: Record<string, any> }): strin
     case "custom": return "A custom screen";
     case "timeline": return `Reorder: ${named || "the timeline"}`;
     case "table": return `Table: ${named || "your data"}`;
+    case "query": return p.title || `Your ${p.table || "data"}`;
     default: return named || n.preset[0].toUpperCase() + n.preset.slice(1);
   }
 }
@@ -307,6 +320,28 @@ function sketch(p: any, members: Node[]) {
     `<i>${esc(members[cut].props?.label || "After")}</i>`, ...rows(members.slice(cut + 1)),
   ];
   return [p.title ? `<b>${esc(p.title)}</b>` : "", ...body].filter(Boolean).join("\n") || "✏️";
+}
+
+// shapes (YUI-104): the drawing as words. Title, then the labels in line
+// order with each connector as an arrow between them (its own label on it),
+// then the caption. Unlabelled shapes and paths are left out, and so is a
+// connector with nothing on one side of it.
+function shapes(p: any, members: Node[]) {
+  const parts: { link: boolean; text: string }[] = [];
+  for (const m of members) {
+    const q = m.props || {};
+    if (q.kind === "line" || q.kind === "arrow") {
+      const mark = q.kind === "arrow" ? "→" : "—";
+      parts.push({ link: true, text: q.label ? `<i>${esc(q.label)}</i> ${mark}` : mark });
+    } else if (q.kind !== "path" && q.label) {
+      if (parts.length && !parts[parts.length - 1].link) parts.push({ link: true, text: "·" });
+      parts.push({ link: false, text: q.dash ? `<i>${esc(q.label)}</i>` : esc(q.label) });
+    }
+  }
+  while (parts[0]?.link) parts.shift();
+  while (parts[parts.length - 1]?.link) parts.pop();
+  const chain = parts.filter((x, i) => !(x.link && parts[i - 1]?.link)).map((x) => x.text).join(" ");
+  return [p.title ? `<b>${esc(p.title)}</b>` : "", chain, p.caption ? `<i>${esc(p.caption)}</i>` : ""].filter(Boolean).join("\n") || "🔷";
 }
 
 async function card(n: Node, opts: Options): Promise<Message> {

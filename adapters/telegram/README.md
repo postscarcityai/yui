@@ -30,7 +30,7 @@ tap 1 "Pull": [yui] n1 choose changed choice=Pull
 | `src/taps.ts` | `tap(callback_data, store)`: a button press to `{event, line, echo, toast, keyboard}`. `replies(cb, tap)`: the answerCallbackQuery and editMessageReplyMarkup calls. |
 | `src/webapp.ts` | Mini App taps: `readWebAppData(message)` for `sendData`, `readBridgePost(body, botToken)` for the bridge, `verifyInitData` (Telegram's HMAC check). |
 | `src/share.ts` | the share-code format the Mini App link uses. |
-| `src/vendor/` | yuigui's `yl.mjs` parser and the MCP App's event formatter, copied by `node scripts/sync-vendor.mjs`. Never edit here. |
+| `src/vendor/` | yuigui's `yl.mjs` parser (with every module it imports, like `tables.mjs` and `look.mjs`) and the MCP App's event formatter, copied by `node scripts/sync-vendor.mjs`. Never edit here. |
 
 `callback_data` holds 64 bytes, so a button carries `y:<token>:<index>` and the component waits in the `Store` you pass. `MemoryStore` is fine for one process; a bot that restarts or scales needs one on its KV or database.
 
@@ -39,7 +39,7 @@ Keep the bot token in the bot's environment. It never goes in a link, a chat or 
 ## Tests
 
 ```
-npm test                                    # render, taps, webapp, vendor: 62 checks
+npm test                                    # render, taps, webapp, vendor: 73 checks
 node tests/miniapp_e2e.mjs --base https://www.yuigui.com --shots /tmp/tg
 ```
 

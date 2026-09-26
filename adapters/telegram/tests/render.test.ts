@@ -54,6 +54,9 @@ const LINE: Record<string, string> = {
   sketch: 'sketch "Card ids" frame=bubble\nrow "Parked t_1 in the backlog" +x note="an id"\nrow\nrow "Install" +button +hi',
   row: 'row "Plain words" +hi',
   after: 'sketch "Fix"\nrow Old +x\nafter Now\nrow New +hi',
+  shapes: 'shapes "How an ask lands" caption="It ships to your phone."\nshape circle You\nshape arrow\nshape box Board +fill\nshape arrow label=ships\nshape circle Phone',
+  shape: "shape circle Solo +pulse",
+  query: 'table create meals Day:date Cal:number:kcal\nput meals Day=today Cal=640\nquery meals where=Day=today sum=Cal as stat "Today"',
   custom: 'custom {"type":"text","text":"hi"}',
 };
 
@@ -93,7 +96,7 @@ for (const preset of [...PRESETS, "custom"]) {
 
 test("every playground sample renders with nothing dropped", { skip: !hasHub && "no yuigui checkout" }, async () => {
   const s = await import(join(HUB, "site/lib/yl/samples.mjs"));
-  const all = [...s.SCREENS, ...s.DEMOS, ...s.MEDIA, ...s.SCIENCE, ...s.FLOWS];
+  const all = [...s.SCREENS, ...s.DEMOS, ...s.MEDIA, ...s.SCIENCE, ...s.FLOWS, ...(s.DATA || [])];
   assert.ok(all.length >= 50);
   const seen = new Set<string>();
   for (const x of all) {
@@ -208,5 +211,28 @@ test("labels name what waits in the app", () => {
 test("menu lines send nothing and a +fold card shows open (YL.md 5, The drawer; 10)", async () => {
   const r = await renderYL('say Drafted.\nmenu backlog@deload "Deload week plan" sub=drafting\nmenu done dana\ncard "Deload" "Lighter sets, more sleep." +fold', opts());
   assert.deepEqual(r.messages.map((m) => m.text), ["Drafted.", "<b>Deload</b>\nLighter sets, more sleep."]);
+  assert.deepEqual(r.errors, []);
+});
+
+test("shapes: title, the labels as a chain with the arrows between, the caption", async () => {
+  const r = await renderYL(LINE.shapes, opts());
+  assert.deepEqual(r.messages.map((m) => m.text), ["<b>How an ask lands</b>\nYou → Board <i>ships</i> → Phone\n<i>It ships to your phone.</i>"]);
+  const loose = await renderYL('shapes "Parts"\nshape@a box A\nshape@b box B\nshape arrow from=a to=b +dash\nshape path pts=1,4|3,4\nshape dot', opts());
+  assert.equal(loose.messages[0].text, "<b>Parts</b>\nA · B"); // a trailing arrow and unlabelled parts are left out
+  assert.equal((await renderYL(LINE.shape, opts())).messages[0].text, "Solo");
+});
+
+test("agent tables: table create and put send nothing, a query opens in Yui", async () => {
+  const quiet = await renderYL("put meals Day=today Cal=640\ntable create lifts Day:date Weight:number", opts());
+  assert.deepEqual(quiet.messages, []);
+  assert.deepEqual(quiet.errors, [], "a put to a table from an earlier reply is not an error here");
+  const r = await renderYL(LINE.query, opts());
+  assert.equal(r.messages.length, 1);
+  assert.match(r.messages[0].text, /Open in Yui.*\n📋 Today$/s);
+});
+
+test("theme app sends nothing: the restyle is offered in the app", async () => {
+  const r = await renderYL("theme app autumn", opts());
+  assert.deepEqual(r.messages, []);
   assert.deepEqual(r.errors, []);
 });

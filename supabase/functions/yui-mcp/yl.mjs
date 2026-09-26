@@ -13,10 +13,14 @@
 //   { op: "focus", screen, line }             bare ">2": later lines go to screen 2
 //   { op: "end",   screen, target, line }     close the open group (deck, plan, narrate)
 //   { op: "theme", screen, props, line }      restyle this agent's look (props.name = a named set)
+//                                             `theme app ...`: props.scope "app", a restyle of Yui's own
+//                                             chrome the person previews and applies (never silent)
 //   { op: "close", screen: "full", line }     `close` or bare ">chat": close the stage, back to screen 1
 //   { op: "talk",  screen, props: { on }, line }  `>2 talk`: page 2 keeps the composer (`talk off` takes it away)
 //   { op: "menu",  screen, id, props: { bucket, label, sub?, say?, show?, url? }, line }
 //                                             an item in the agent's drawer (`menu done id`: props { done: true })
+//   { op: "table", screen, name, cols: [{ name, type, unit? }], line }  `table create`: an agent table on the phone (spec/TABLES.md)
+//   { op: "put",   screen, table, key?, values, delete?, line }  upsert one row of an agent table by key
 //   { op: "error", screen, message, line }
 // A `flow` head is an add; the Mermaid lines after it are buffered and its
 // `end` (or the end of the input) gives one patch on the flow with the graph
@@ -24,6 +28,9 @@
 // `props` holds only what the line actually said. Defaults live in resolve().
 // An add that joins an open group (a page under a deck) also carries `in`,
 // the group's id.
+
+import { emptyStore, write as writeTable } from "./tables.mjs";
+import { FONTS, MOTIONS, PAPERS, RADII, SETS, WEIGHTS } from "./look.mjs";
 
 export const PRESETS = [
   "timer", "ask", "choose", "pick", "slide", "form",
@@ -33,10 +40,12 @@ export const PRESETS = [
   "deck", "page", "plan", "project", "narrate",
   "timeline", "done", "now", "next",
   "sketch", "row", "after",
+  "shapes", "shape",
   "game", "flow",
+  "query",
 ];
 // Not presets, but valid line heads.
-export const CORE = ["say", "custom", "save", "show", "forget", "clear", "end", "theme", "close", "talk", "menu"];
+export const CORE = ["say", "custom", "save", "show", "forget", "clear", "end", "theme", "close", "talk", "menu", "put"];
 
 // Groups: a group head collects the lines that follow it on the same screen,
 // as long as each one is a member preset. Anything else ends the group, and
@@ -48,6 +57,7 @@ export const GROUPS = {
   narrate: ["page", "compare", "image", "video", "card", "stat", "chart", "math", "storyboard", "gallery", "deck"],
   timeline: ["done", "now", "next"],
   sketch: ["row", "after"],
+  shapes: ["shape"],
 };
 
 const IDENT = /^[a-z_][\w-]*$/i;
@@ -318,6 +328,26 @@ const P = {
   },
 
   say(pos) { return { text: joinText(pos) }; },
+  // query <table> [as table|list|chart|stat|send] [chart type] [title...]
+  // (spec/TABLES.md). The first bare word is the table, `as` picks the view.
+  query(pos) {
+    const o = {};
+    const rest = [];
+    const bare = (t) => t && !t.quoted && !t.parts;
+    for (let i = 0; i < pos.length; i++) {
+      const t = pos[i];
+      if (o.table === undefined && bare(t)) { o.table = t.text; continue; }
+      if (bare(t) && t.text === "as" && bare(pos[i + 1]) && QUERY_VIEWS.includes(pos[i + 1].text)) {
+        o.as = pos[++i].text;
+        if (o.as === "chart" && bare(pos[i + 1]) && CHART_TYPES.includes(pos[i + 1].text)) o.type = pos[++i].text;
+        continue;
+      }
+      rest.push(t);
+    }
+    if (rest.length) o.title = joinText(rest);
+    return o;
+  },
+
   // theme [named set] key=value...: the positional text is the set's name.
   theme(pos) { return pos.length ? { name: joinText(pos) } : {}; },
 
@@ -426,6 +456,21 @@ const P = {
   row(pos) { return pos.length ? { text: joinText(pos) } : {}; },
   after(pos) { return pos.length ? { label: joinText(pos) } : {}; },
 
+  // shapes [title...] (caption= w= h=), then `shape KIND [label...]` lines:
+  // the first bare word is the kind, wherever it sits (as in game), the rest
+  // is the label. Positions stay as written (at=2,3); the renderer reads them.
+  shapes(pos) { return P.calc(pos); },
+  shape(pos) {
+    const o = {};
+    const text = [];
+    for (const t of pos) {
+      if (o.kind === undefined && !t.parts && !t.quoted && GAME_WORD.test(t.text)) o.kind = t.text;
+      else text.push(t);
+    }
+    if (text.length) o.label = joinText(text);
+    return o;
+  },
+
   // game KIND [title...]: the first bare word (not quoted, not options) is
   // the kind, wherever it sits; the rest is the title.
   game(pos) {
@@ -486,10 +531,12 @@ const LISTS = {
   compare: ["notes", "labels"],
   chart: ["names", "color"],
   table: ["units"],
+  query: ["where", "sort", "cols", "y", "sum", "avg", "min", "max", "names", "color"],
   page: ["points"],
   project: ["facts", "next"],
   pick: ["answer"],
   game: ["items"],
+  shape: ["pts"],
 };
 const asList = (v) => (Array.isArray(v) ? v : String(v).split("|")).map((x) => (typeof x === "string" ? x : String(x)));
 // Highlight boxes: hl=x,y,w,h|x,y,w,h in percent of the image. A box that is
@@ -946,9 +993,10 @@ export class Parser {
 
   // Group bookkeeping for one parsed op. Errors (and null) leave groups open.
   group(op) {
-    // A theme line restyles the app and a menu line fills the drawer, not the
-    // screen: they leave groups alone.
-    if (!op || op.op === "error" || op.op === "theme" || op.op === "menu") return op;
+    // A theme line restyles the app, a menu line fills the drawer and a data
+    // line (table create, put) writes to the phone, not the screen: they
+    // leave groups alone.
+    if (!op || op.op === "error" || op.op === "theme" || op.op === "menu" || op.op === "table" || op.op === "put") return op;
     // Closing the stage ends whatever group was open on it, like `>2` would.
     if (op.op === "close") { this.open = []; return op; }
     if (op.op === "end") {
@@ -1074,12 +1122,23 @@ export class Parser {
       this.screen = "1";
       return { op: "close", screen: "full", line };
     }
-    if (head === "theme") return { op: "theme", screen, props: parseArgs("theme", tokens), line };
+    if (head === "theme") {
+      const t0 = tokens[0];
+      if (t0 && !t0.key && !t0.quoted && !t0.parts && t0.text === "app") return appTheme(screen, tokens.slice(1), line);
+      return { op: "theme", screen, props: parseArgs("theme", tokens), line };
+    }
     if (head === "talk") {
       // `talk` or `talk on` turns the composer on for this page, `talk off` takes it away.
       const word = tokens.length === 0 ? "on" : tokens.length === 1 ? tokens[0].text : null;
       if (word !== "on" && word !== "off") return { op: "error", screen, message: "talk: takes nothing, on or off", line };
       return { op: "talk", screen, props: { on: word === "on" }, line };
+    }
+
+    // Agent tables (spec/TABLES.md): `table create` and `put` write to the phone.
+    if (head === "put") return putLine(screen, tokens, line);
+    if (/^table(@|$)/.test(head) && tokens.length && !tokens[0].quoted && !tokens[0].key && tokens[0].raw === "create") {
+      if (head !== "table") return { op: "error", screen, message: "table create: takes no @id", line };
+      return tableCreate(screen, tokens.slice(1), line);
     }
 
     const hm = head.match(/^([a-z]+)(?:@([\w-]+))?$/);
@@ -1107,6 +1166,47 @@ export const MENU_LABEL = 60;
 // other characters as one "-": "Start today's workout" is start-today-s-workout.
 export function menuId(label) {
   return String(label).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "item";
+}
+
+// `theme app [set] key=value...` (spec/YL.md, theme app): a restyle of Yui's
+// own chrome, not the agent's look. Stricter than an agent's theme: the app
+// shows the person exactly what will change before anything does, so an
+// unknown set, key or value is an error line, never quietly dropped. Style
+// profile keys belong to one agent, and there is no flag that skips the preview.
+const APP_KEYS = {
+  accent: (v) => /^#[0-9a-f]{6}$/i.test(v) || Object.hasOwn(SETS, v),
+  bg: (v) => /^#[0-9a-f]{6}$/i.test(v) || Object.hasOwn(PAPERS, v),
+  radius: (v) => RADII.includes(v),
+  font: (v) => FONTS.includes(v),
+  weight: (v) => WEIGHTS.includes(v),
+  motion: (v) => MOTIONS.includes(v),
+};
+const STYLE_KEYS = ["screen", "gallery", "chart", "buttons"];
+function appTheme(screen, tokens, line) {
+  const bad = (message) => ({ op: "error", screen, message: `theme app: ${message}`, line });
+  const props = { scope: "app" };
+  const words = [];
+  for (const t of tokens) {
+    if (t.key) {
+      const v = Array.isArray(t.value) ? t.value.join("|") : t.value;
+      if (STYLE_KEYS.includes(t.key)) return bad(`${t.key}= is one agent's style, not the app's`);
+      if (!APP_KEYS[t.key]) return bad(`unknown key ${t.key}=`);
+      if (!APP_KEYS[t.key](v)) return bad(`${t.key}=${v} is not a value the app takes`);
+      props[t.key] = v;
+    } else if (!t.quoted && !t.parts && /^\+[a-z][\w-]*$/i.test(t.raw)) {
+      return bad(`${t.raw} is not a flag here; the person always sees a preview first`);
+    } else words.push(t.text);
+  }
+  if (words.length > 1) return bad(`one set name, not "${words.join(" ")}"`);
+  if (words.length) {
+    const name = words[0];
+    if (name === "reset") {
+      if (Object.keys(props).length > 1) return bad("reset takes nothing else");
+    } else if (!Object.hasOwn(SETS, name)) return bad(`no set named ${name}`);
+    props.name = name;
+  }
+  if (Object.keys(props).length === 1) return bad("needs a set name, reset or keys");
+  return { op: "theme", screen, props, line };
 }
 
 function menuLine(screen, tokens, line) {
@@ -1150,6 +1250,51 @@ export function menuOf(ops, menu = { review: [], backlog: [], shortcut: [] }) {
     m[bucket] = [{ id: o.id, label: cut, ...rest }, ...m[bucket]].slice(0, MENU_MAX);
   }
   return m;
+}
+
+// ---------- agent tables (spec/TABLES.md) ----------
+
+export const TABLE_TYPES = ["text", "number", "date", "bool"];
+export const QUERY_VIEWS = ["table", "list", "chart", "stat", "send"];
+const TABLE_NAME = /^[A-Za-z][\w-]*$/;
+const COL_DEF = /^([A-Za-z_][\w-]*):([a-z]+)(?::(\S+))?$/;
+
+// table create <name> col:type ... (number columns may carry a unit: Cal:number:kcal)
+function tableCreate(screen, tokens, line) {
+  const bad = (message) => ({ op: "error", screen, message: `table create: ${message}`, line });
+  const [nameTok, ...rest] = tokens;
+  if (!nameTok || nameTok.quoted || nameTok.parts || nameTok.key || !TABLE_NAME.test(nameTok.raw)) return bad("needs a name, then col:type ...");
+  if (!rest.length) return bad("needs at least one col:type");
+  const cols = [];
+  for (const t of rest) {
+    const m = t.quoted || t.key ? null : t.raw.match(COL_DEF);
+    if (!m) return bad(`"${t.raw}" is not col:type`);
+    if (!TABLE_TYPES.includes(m[2])) return bad(`"${m[2]}" is not text, number, date or bool`);
+    if (m[3] && m[2] !== "number") return bad(`only number columns take a unit ("${t.raw}")`);
+    cols.push({ name: m[1], type: m[2], ...(m[3] ? { unit: m[3] } : {}) });
+  }
+  return { op: "table", screen, name: nameTok.raw, cols, line };
+}
+
+// put <table> [key] col=value ... [+delete]. Other flags set a bool column: +Done is Done=on.
+function putLine(screen, tokens, line) {
+  const { kv, flags, pos } = split(tokens);
+  const bad = (message) => ({ op: "error", screen, message: `put: ${message}`, line });
+  const [tableTok, keyTok, ...extra] = pos;
+  if (!tableTok || tableTok.quoted || tableTok.parts || !TABLE_NAME.test(tableTok.raw)) return bad("needs a table name");
+  if (extra.length) return bad("one key, then col=value ...");
+  if (keyTok && keyTok.parts) return bad("a key has no |");
+  const { delete: del, ...on } = flags;
+  const values = { ...on, ...kv };
+  const op = { op: "put", screen, table: tableTok.raw };
+  if (keyTok) op.key = keyTok.text;
+  if (del) {
+    if (!keyTok) return bad("+delete needs a key");
+    if (Object.keys(values).length) return bad("+delete takes no values");
+    return { ...op, values: {}, delete: true, line };
+  }
+  if (!Object.keys(values).length) return bad("needs at least one col=value");
+  return { ...op, values, line };
 }
 
 // Parse a whole document at once. `known`: ids that last (Parser above).
@@ -1333,8 +1478,17 @@ export function resolve(preset, props) {
       return { title: "", frame: "window", before: "Before", ...p };
     case "row":
       return { text: "", ...p };
+    case "query":
+      return { table: "", as: "table", title: "", where: [], sort: [], ...p };
     case "after":
       return { label: "After", ...p };
+    case "shapes":
+      return { title: "", caption: "", w: 10, h: 6, ...p };
+    case "shape": {
+      const r = { label: "", ...p };
+      r.kind = String(p.kind ?? "box").toLowerCase();
+      return r;
+    }
     case "game": {
       // Cells outside 1-9 are ignored, and a cell both marks claim is x's.
       const cells = (v) => [...new Set((v || []).filter((n) => Number.isInteger(n) && n >= 1 && n <= 9))];
@@ -1356,7 +1510,7 @@ export function resolve(preset, props) {
 // `stage` is true while the stage is open over the chat. Staged components
 // stay on their own screen with `stage: true`; renderers draw them on the stage.
 export function initialState() {
-  return { focus: "1", screens: { "1": [] }, saved: {}, errors: [], customs: [], stage: false, talk: {}, menu: { review: [], backlog: [], shortcut: [] } };
+  return { focus: "1", screens: { "1": [] }, saved: {}, errors: [], customs: [], stage: false, talk: {}, menu: { review: [], backlog: [], shortcut: [] }, data: emptyStore() };
 }
 
 export function apply(state, op, style = {}) {
@@ -1439,7 +1593,20 @@ export function apply(state, op, style = {}) {
     case "menu":
       s.menu = menuOf([op], s.menu || undefined); break;
     case "theme":
+      // An app restyle is only a proposal until the person taps Apply: it
+      // waits in `restyle` and leaves the agent's own look alone.
+      if (op.props.scope === "app") { const { scope, ...rest } = op.props; s.restyle = rest; break; }
       s.theme = op.props.name ? { ...op.props } : { ...(s.theme || {}), ...op.props }; break;
+    // Agent tables (spec/TABLES.md) live in the agent's store, not on a screen.
+    // Every query on screen reads it, so a put redraws them. `style.today`
+    // pins the date words for tests; otherwise it is this device's date.
+    case "table":
+    case "put": {
+      const r = writeTable(s.data || emptyStore(), op, { today: style.today, now: style.now });
+      s.data = r.store;
+      if (r.error) s.errors = [...s.errors, `${r.error}: ${op.line.trim()}`];
+      break;
+    }
     case "error":
       s.errors = [...s.errors, `${op.message}: ${op.line.trim()}`]; break;
   }
@@ -1467,6 +1634,8 @@ export function toJSON(ops) {
       case "close": return { close: true };
       case "talk": return { talk: o.props.on, ...scr };
       case "menu": return { menu: o.id, ...o.props };
+      case "table": return { table: o.name, cols: o.cols };
+      case "put": return { put: o.table, ...(o.key !== undefined ? { key: o.key } : {}), ...o.values, ...(o.delete ? { delete: true } : {}) };
       default: return { error: o.message };
     }
   });

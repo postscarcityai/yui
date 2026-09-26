@@ -173,6 +173,14 @@ try:
     check("returns the tap ids the parser gave", d["ids"] == [{"id": "brk", "preset": "timer"}, {"id": "n1", "preset": "choose"}], d)
     res, text, d2 = tool(ct, "yui_show", {"lines": '```yui\nask "Ready?"\n```'})
     check("a fence around the lines comes off", thread()[-1]["body"] == '```yui\nask "Ready?"\n```', thread()[-1]["body"])
+    # INT-22: the copy carries yl.mjs's imports, so the lines since agent
+    # tables and the restyle parse here like in the app.
+    newer = ('theme app autumn\ntable create meals Day:date Cal:number:kcal\nput meals Day=today Cal=640\n'
+             'query@today meals where=Day=today sum=Cal as stat "Today"\n'
+             'shapes "How an ask lands" caption="It ships to your phone."\nshape circle You\nshape arrow\nshape box Board +fill\nend')
+    res, text, d = tool(ct, "yui_show", {"lines": newer})
+    check("theme app, table create, put, query and shapes lines are accepted",
+          not res.get("isError") and d and d["ids"][:2] == [{"id": "today", "preset": "query"}, {"id": "n1", "preset": "shapes"}], text)
 
     print("== E. yui_answers")
     res, text, d = tool(ct, "yui_answers", {"screen_id": screen["id"]})
