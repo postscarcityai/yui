@@ -130,8 +130,11 @@ public final class YuiSound: @unchecked Sendable {
         }
     }
 
-    /// false: .ambient (mixes, the silent switch mutes). true: .playback with .mixWithOthers.
-    @MainActor public var playsOnSilent = false {
+    /// true (default): .playback with .mixWithOthers, so a beat plays with the
+    /// ringer on silent and still mixes with other apps' audio. Chris pressed
+    /// Play on a silenced phone and heard nothing (feedback AGhvH8tM, Sep 26).
+    /// false: .ambient (mixes, the silent switch mutes).
+    @MainActor public var playsOnSilent = true {
         didSet { if running, oldValue != playsOnSilent { configureSession() } }
     }
 
