@@ -792,6 +792,8 @@ private struct ControlsAboutCard: View {
             .background(c.surface, in: .rect(cornerRadius: 20))
             .overlay(RoundedRectangle(cornerRadius: 20).stroke(c.outline, lineWidth: 1))
             .padding(.top, theme.spacing.m)
+            // A container, so its id doesn't cover the button's (drawer-edit-agent).
+            .accessibilityElement(children: .contain)
             .accessibilityIdentifier("controls-about-card")
         }
     }
