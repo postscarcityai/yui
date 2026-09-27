@@ -727,11 +727,21 @@ function tilesToTable(lines: string[]): string[] {
 // real header becomes a row. It moves to name=, which the phone shows as the title.
 const QUOTED_TITLE = /^(\s*(?:>[\w-]+\s+)?table(?:@[\w-]+)?)\s+"((?:[^"\\]|\\.)*)"(?=\s+[^\s"=]*\|)/;
 
+// A row written `"Eggs (2 large)"|140|12g` (the quote closed before the pipes) draws as its first cell alone on the
+// phone: it is rejoined into one quoted row, `"Eggs (2 large)|140|12g"`.
+const SPLIT_ROW = /"((?:[^"\\|]|\\.)*)"((?:\|(?:"(?:[^"\\]|\\.)*"|[^\s|"]+))+)/g;
+
+function tableLine(l: string): string {
+  if (!/^\s*(?:>[\w-]+\s+)?table(?:@[\w-]+)?\s/.test(l) || /^\s*(?:>[\w-]+\s+)?table\s+create\b/.test(l)) return l;
+  return l.replace(QUOTED_TITLE, '$1 name="$2"')
+    .replace(SPLIT_ROW, (_m, first: string, rest: string) => `"${first}${rest.replace(/"/g, "")}"`);
+}
+
 /** The answer on at most MOST_PAGES stage pages where short ones can share a page. */
 export function unsprawl(text: string): string {
   text = text.split(/(^```[^\n]*\n[\s\S]*?^```[ \t]*$)/m)
     .map((p, i) => (i % 2 === 1 && /^```yui\b/.test(p)
-      ? tilesToTable(p.split("\n")).map((l) => l.replace(QUOTED_TITLE, '$1 name="$2"')).join("\n") : p)).join("");
+      ? tilesToTable(p.split("\n")).map(tableLine).join("\n") : p)).join("");
   const parts = text.split(/(^```[^\n]*\n[\s\S]*?^```[ \t]*$)/m);
   const isYui = (i: number) => i % 2 === 1 && /^```yui\b/.test(parts[i]);
   const paras = (p: string) => p.split(/\n\s*\n/).filter((x) => x.trim());

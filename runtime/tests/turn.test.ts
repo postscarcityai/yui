@@ -487,6 +487,9 @@ test("an answer over 4 short pages is merged, never split into 7 (t_a88dc3b5)", 
     'Roughly 505 kcal.\n```yui\ntable Macros Item|Amount "Calories|505kcal (a guess)" "Protein|19g" "Carbs|54g" "Fat|23g"\n```');
   // A quoted table title moves to name=, so the header stays the header.
   assert.equal(unsprawl('```yui\ntable "Two eggs, toast" Item|Kcal "Eggs|140"\n```'), '```yui\ntable name="Two eggs, toast" Item|Kcal "Eggs|140"\n```');
+  // A row with its quote closed before the pipes is one row again.
+  assert.equal(unsprawl('```yui\ntable Breakfast Item|Kcal "Eggs (2 large)"|140 "Toast|160"\n```'),
+    '```yui\ntable Breakfast Item|Kcal "Eggs (2 large)|140" "Toast|160"\n```');
   const two = '```yui\nstat 178.9lb Weight delta=-2.3\nstat "24M km2" "A sixth of the land"\n```';
   assert.equal(unsprawl(two), two);
   // Four or fewer, or pages too long to share, stay as written.
