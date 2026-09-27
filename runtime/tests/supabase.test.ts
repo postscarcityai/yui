@@ -80,3 +80,15 @@ test("only the person's own uploads get signed", async () => {
   assert.equal(url, "https://db.test/storage/v1/object/sign/yui-media/x?token=t");
   assert.equal(calls.length, 1);
 });
+
+test("web lookups: the caps and the person's own Firecrawl key come from the database", async () => {
+  const { store, calls } = fakeDb((_m, p) => p.includes("take_search") ? [{ ok: false, used: 50, lim: 50, per_turn: 2, why: "month" }]
+    : p.includes("search_key_get") ? "fc-theirs" : undefined);
+  assert.deepEqual(await store.takeSearch(U, false), { ok: false, used: 50, limit: 50, perTurn: 2, why: "month" });
+  assert.match(calls[0].path, /\/rest\/v1\/rpc\/yui_native_take_search$/);
+  assert.deepEqual(calls[0].body, { uid: U, own: false });
+  assert.equal(await store.searchKey(U), "fc-theirs");
+  assert.deepEqual(calls[1].body, { uid: U });
+  const none = fakeDb(() => null);
+  assert.equal(await none.store.searchKey(U), null);
+});

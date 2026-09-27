@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Native Yui, go live (NATIVE-1). Run from the repo root, by a maintainer:
-#   bash runtime/scripts/go-live.sh              set Yui's OpenRouter key
+#   bash runtime/scripts/go-live.sh              set Yui's OpenRouter key and Firecrawl key
 #   bash runtime/scripts/go-live.sh --wake       also make a new wake secret (function + vault)
 # Nothing is printed or written to disk; the key is typed with input hidden.
 # Set a monthly spend ceiling on the key at openrouter.ai first.
@@ -15,6 +15,14 @@ read -r -s -p "Yui's OpenRouter key (input hidden): " OR_KEY; echo
 supabase secrets set --project-ref "$REF" YUI_OPENROUTER_KEY="$OR_KEY" >/dev/null
 unset OR_KEY
 echo "YUI_OPENROUTER_KEY set"
+
+# Web search (YUI-142): Yui's Firecrawl key. Free lookups a month per person are in yui_limits.
+read -r -s -p "Yui's Firecrawl key, for web search (input hidden, Enter to skip): " FC_KEY; echo
+if [ -n "$FC_KEY" ]; then
+  supabase secrets set --project-ref "$REF" YUI_FIRECRAWL_KEY="$FC_KEY" >/dev/null
+  echo "YUI_FIRECRAWL_KEY set"
+fi
+unset FC_KEY
 
 if [ "${1:-}" = "--wake" ]; then
   [ -f supabase/.temp/project-ref ] || supabase link --project-ref "$REF" >/dev/null

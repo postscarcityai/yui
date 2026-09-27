@@ -21,6 +21,8 @@ final class PushCenter: NSObject {
 
     /// A thread to open, from a notification tap or a link. ChatView consumes it.
     var pendingAgentID: String?
+    /// Settings to open from a link (`yui://settings/search`, YUI-142): the section, "" for the top. ChatView consumes it.
+    var pendingSettings: String?
     /// Bumped by a silent push that says the agent list changed (a revoke, YUI-97).
     private(set) var listChanged = 0
 
@@ -125,13 +127,24 @@ final class PushCenter: NSObject {
     /// This app's build ("112", a test build "112.1"): hosts send only the presets it can draw.
     static let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? ""
 
-    /// `yui://agent/<id>/thread` (also `yui://agent/<id>`).
+    /// `yui://agent/<id>/thread` (also `yui://agent/<id>`), and `yui://settings[/<section>]`.
     @discardableResult
     func open(_ url: URL) -> Bool {
+        if let section = Self.settingsSection(url) {
+            pendingSettings = section
+            return true
+        }
         guard url.scheme == "yui", url.host() == "agent", let id = url.pathComponents.dropFirst().first,
               !id.isEmpty else { return false }
         pendingAgentID = id
         return true
+    }
+
+    /// `yui://settings` is "", `yui://settings/search` is "search"; anything else is nil.
+    nonisolated static func settingsSection(_ url: URL) -> String? {
+        guard url.scheme == "yui", url.host() == "settings" else { return nil }
+        let section = url.pathComponents.dropFirst().first ?? ""
+        return SettingsView.sections.contains(section) ? section : ""
     }
 
     private func call(_ body: [String: Any], bearer: String) async throws {

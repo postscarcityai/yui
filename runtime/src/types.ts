@@ -69,6 +69,15 @@ export interface OwnKey {
   key: string;
 }
 
+/** One web lookup taken from the person's allowance (yui_limits native_searches_*). */
+export interface SearchTake {
+  ok: boolean;
+  used: number; // this month, this one included when ok
+  limit: number; // free a month on Yui's key
+  perTurn: number; // lookups one turn may make
+  why?: "month" | "day"; // which cap said no
+}
+
 /** Which model serves which kind of turn (yui_native_models). */
 export interface Routes {
   text: string;

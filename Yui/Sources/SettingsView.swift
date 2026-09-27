@@ -1,44 +1,57 @@
 import SwiftUI
 
 struct SettingsView: View {
+    /// A section to open at (`yui://settings/search`).
+    var focus: String? = nil
+    /// The sections a `yui://settings/<section>` link can open at.
+    static let sections: Set<String> = ["search"]
+
     @AppStorage("appearance") private var appearance: Appearance = .system
     @Environment(\.yuiTheme) private var theme
     @Environment(\.colorScheme) private var scheme
 
     var body: some View {
         let c = theme.swatch(scheme)
-        ScrollView {
-            VStack(spacing: theme.spacing.xl) {
-                VStack(spacing: theme.spacing.s) {
-                    Wordmark(height: 56)
-                    Text("Make Yui feel like yours.").font(theme.font(theme.type.body, .semibold)).foregroundStyle(c.inkSoft)
-                }
-                // Clear of the sheet's grabber (Chris, build 96: the wordmark sat under it).
-                .padding(.top, theme.spacing.l)
-                VStack(alignment: .leading, spacing: theme.spacing.m) {
-                    Text("Appearance").font(theme.font(theme.type.caption, .bold)).foregroundStyle(c.inkSoft)
-                    HStack(spacing: theme.spacing.s) {
-                        ForEach(Appearance.allCases) { option in
-                            AppearanceOption(option: option, selected: option == appearance) {
-                                withAnimation(theme.spring) { appearance = option }
+        ScrollViewReader { reader in
+            ScrollView {
+                VStack(spacing: theme.spacing.xl) {
+                    VStack(spacing: theme.spacing.s) {
+                        Wordmark(height: 56)
+                        Text("Make Yui feel like yours.").font(theme.font(theme.type.body, .semibold)).foregroundStyle(c.inkSoft)
+                    }
+                    // Clear of the sheet's grabber (Chris, build 96: the wordmark sat under it).
+                    .padding(.top, theme.spacing.l)
+                    VStack(alignment: .leading, spacing: theme.spacing.m) {
+                        Text("Appearance").font(theme.font(theme.type.caption, .bold)).foregroundStyle(c.inkSoft)
+                        HStack(spacing: theme.spacing.s) {
+                            ForEach(Appearance.allCases) { option in
+                                AppearanceOption(option: option, selected: option == appearance) {
+                                    withAnimation(theme.spring) { appearance = option }
+                                }
                             }
                         }
                     }
+                    .padding(theme.spacing.l)
+                    .background(c.surface, in: .rect(cornerRadius: theme.radius.card))
+                    .overlay(RoundedRectangle(cornerRadius: theme.radius.card).stroke(c.outline, lineWidth: 1.5))
+                    StageFirstSection()
+                    LookSection()
+                    AgentAccessSection()
+                    ModelKeySection()
+                    SearchKeySection().id("search")
+                    HelpSection()
+                    AccountSection()
+                    AboutSection()
+                    // Dev builds only (PERF.md section 4): TestFlight and App Store builds have no switch.
+                    if PerfSettings.available { SpeedSwitch() }
                 }
-                .padding(theme.spacing.l)
-                .background(c.surface, in: .rect(cornerRadius: theme.radius.card))
-                .overlay(RoundedRectangle(cornerRadius: theme.radius.card).stroke(c.outline, lineWidth: 1.5))
-                StageFirstSection()
-                LookSection()
-                AgentAccessSection()
-                ModelKeySection()
-                HelpSection()
-                AccountSection()
-                AboutSection()
-                // Dev builds only (PERF.md section 4): TestFlight and App Store builds have no switch.
-                if PerfSettings.available { SpeedSwitch() }
+                .padding(theme.spacing.xl)
             }
-            .padding(theme.spacing.xl)
+            .task(id: focus) {
+                guard let focus else { return }
+                try? await Task.sleep(for: .milliseconds(350)) // the sheet settles, then the section
+                withAnimation(theme.spring) { reader.scrollTo(focus, anchor: .top) }
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(c.background)
@@ -343,6 +356,118 @@ private struct ModelKeySection: View {
             self.error = error.localizedDescription
         }
         working = false
+    }
+}
+
+/// Settings > Web search (YUI-142): Yui and the crew look things up on Yui's
+/// Firecrawl key, a set number of times a month. A person's own Firecrawl key
+/// lifts that. Typed here only, never in chat: it goes to Yui's server once, is
+/// checked with Firecrawl and kept in its vault; the phone shows the last four.
+private struct SearchKeySection: View {
+    @Environment(AgentStore.self) private var store
+    @Environment(\.yuiTheme) private var theme
+    @Environment(\.colorScheme) private var scheme
+    @State private var search: NativeStatus.Search?
+    @State private var key = ""
+    @State private var working = false
+    @State private var error: String?
+    @State private var saved = false
+
+    var body: some View {
+        let c = theme.swatch(scheme)
+        Group {
+            if store.agents.contains(where: { $0.kind == "hosted" }) {
+                VStack(alignment: .leading, spacing: theme.spacing.m) {
+                    Text("Web search").font(theme.font(theme.type.caption, .bold)).foregroundStyle(c.inkSoft)
+                    if let search {
+                        if let k = search.key {
+                            HStack {
+                                Image(systemName: "magnifyingglass").foregroundStyle(c.inkSoft)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("Your Firecrawl key").font(theme.font(theme.type.body, .bold)).foregroundStyle(c.ink)
+                                    Text("Ends in \(k.hint)").font(theme.font(theme.type.caption)).foregroundStyle(c.inkSoft)
+                                }
+                                Spacer(minLength: 0)
+                                Button("Remove") { Task { await run { try await store.removeSearchKey() } } }
+                                    .font(theme.font(theme.type.caption, .bold)).tint(.red).disabled(working)
+                                    .accessibilityIdentifier("search-key-remove")
+                            }
+                            Text("Your crew looks things up on your key, with no monthly limit.")
+                                .font(theme.font(theme.type.caption)).foregroundStyle(c.inkSoft)
+                        } else {
+                            Text(SearchKeyWords.left(search))
+                                .font(theme.font(theme.type.body)).foregroundStyle(c.ink)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .accessibilityIdentifier("search-left")
+                            SecureField("Paste your Firecrawl key", text: $key)
+                                .textInputAutocapitalization(.never).autocorrectionDisabled()
+                                .padding(theme.spacing.m)
+                                .background(c.background, in: .rect(cornerRadius: theme.radius.bubble))
+                                .accessibilityIdentifier("search-key-field")
+                            Button {
+                                Task {
+                                    await run {
+                                        try await store.setSearchKey(key.trimmingCharacters(in: .whitespacesAndNewlines))
+                                        key = ""
+                                        saved = true
+                                    }
+                                }
+                            } label: {
+                                Label(working ? "Checking the key" : "Save key", systemImage: "checkmark")
+                                    .font(theme.font(theme.type.body, .bold)).foregroundStyle(c.ink)
+                                    .frame(maxWidth: .infinity).padding(.vertical, theme.spacing.m)
+                                    .background(c.background, in: .rect(cornerRadius: theme.radius.bubble))
+                            }
+                            .buttonStyle(BounceButtonStyle())
+                            .disabled(working || key.isEmpty)
+                            .accessibilityIdentifier("search-key-save")
+                            Link(destination: URL(string: "https://www.firecrawl.dev/app/api-keys")!) {
+                                Label("Get a key at firecrawl.dev", systemImage: "arrow.up.right")
+                                    .font(theme.font(theme.type.caption, .bold)).foregroundStyle(c.accent)
+                            }
+                            Text("Your key goes to Yui's server once and is kept locked away there. The app never shows it again.")
+                                .font(theme.font(theme.type.caption)).foregroundStyle(c.inkSoft)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    } else if error == nil {
+                        ProgressView()
+                    }
+                    if saved { Text("Saved. Your crew searches on it from the next message.").font(theme.font(theme.type.caption, .semibold)).foregroundStyle(c.accent) }
+                    if let error { Text(error).font(theme.font(theme.type.caption, .semibold)).foregroundStyle(.red) }
+                }
+                .padding(theme.spacing.l)
+                .background(c.surface, in: .rect(cornerRadius: theme.radius.card))
+                .overlay(RoundedRectangle(cornerRadius: theme.radius.card).stroke(c.outline, lineWidth: 1.5))
+                .task { await load() }
+            }
+        }
+    }
+
+    private func load() async {
+        do { search = try await store.nativeStatus().search } catch { self.error = error.localizedDescription }
+    }
+
+    private func run(_ work: () async throws -> Void) async {
+        working = true
+        error = nil
+        saved = false
+        do {
+            try await work()
+            await load()
+        } catch {
+            self.error = error.localizedDescription
+        }
+        working = false
+    }
+}
+
+/// What Settings > Web search says about the free lookups left.
+enum SearchKeyWords {
+    static func left(_ s: NativeStatus.Search) -> String {
+        let left = max(s.limit - s.used, 0)
+        return left == 0
+            ? "Your \(s.limit) free web searches are used up this month. Add your own Firecrawl key and searches have no limit."
+            : "Your crew has \(left) of \(s.limit) free web searches left this month. Add your own Firecrawl key for no limit."
     }
 }
 

@@ -277,8 +277,10 @@ struct CardPreset: View {
             if !folded {
                 if let link {
                     OptionPill(text: c.string("cta") ?? "Open", fill: s.accent, ink: s.onAccent, grow: true,
-                               icon: "arrow.up.right") { openURL(link) }
-                        .accessibilityHint("Opens in Safari")
+                               icon: inApp ? "gearshape" : "arrow.up.right") {
+                        if inApp { PushCenter.shared.open(link) } else { openURL(link) }
+                    }
+                        .accessibilityHint(inApp ? "Opens Settings" : "Opens in Safari")
                 } else if let cta = c.string("cta") {
                     OptionPill(text: cta, fill: s.accent, ink: s.onAccent, grow: true) {
                         emit(c.event(["cta": .string(cta)], echo: cta))
@@ -312,10 +314,12 @@ struct CardPreset: View {
     /// the chat, so the agent does not answer a tap that already did its job.
     /// Other schemes are ignored and the button emits `{cta}` as usual.
     private var link: URL? {
-        guard let raw = c.string("url"), let u = URL(string: raw),
-              ["https", "itms-services"].contains(u.scheme?.lowercased() ?? "") else { return nil }
-        return u
+        guard let raw = c.string("url"), let u = URL(string: raw) else { return nil }
+        // yui://settings/<section> opens Yui's own Settings (YUI-142); no other app link.
+        if PushCenter.settingsSection(u) != nil { return u }
+        return ["https", "itms-services"].contains(u.scheme?.lowercased() ?? "") ? u : nil
     }
+    private var inApp: Bool { link?.scheme == "yui" }
 }
 
 // MARK: - table

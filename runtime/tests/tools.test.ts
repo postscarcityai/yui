@@ -1,4 +1,4 @@
-// Check-ins, search, hand-offs and a person's own key.
+// Check-ins, hand-offs and a person's own key. Web search: search.test.ts.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { next, parseLine, zoned } from "../src/schedule.ts";
@@ -66,25 +66,6 @@ test("a one-time check-in is gone once it fires; cancel removes one", async () =
   store.say(basil.id, "stop the lunch one");
   await runAgent(store, basil.id, { provider, now: () => now, fetch: fakeModel(() => "Done.\n```schedule\ncancel s1\n```").fetch });
   assert.equal(await store.schedule(daily.id), null);
-});
-
-test("search: one query, then the answer with results, within the daily allowance", async () => {
-  const { store, byHandle } = await freshYui();
-  store.maxSearches = 1;
-  const gouda = await byHandle("gouda");
-  const m = fakeModel((c) => c.body.plugins ? "Here's a classic boom bap pattern." : "```search\nboom bap drum pattern\n```");
-  store.say(gouda.id, "what's a boom bap pattern?");
-  await runAgent(store, gouda.id, { provider: { ...provider, web: true }, fetch: m.fetch });
-  assert.equal(m.calls.length, 2);
-  assert.deepEqual(m.calls[1].body.plugins, [{ id: "web", max_results: 5 }]);
-  assert.match(String(lastUser(m.calls[1]).content), /^Search the web for: boom bap drum pattern/);
-  assert.equal(store.data.rows.filter((r) => r.agent_id === gouda.id).pop()!.body, "Here's a classic boom bap pattern.");
-  // Out of searches today: answered from what it knows.
-  store.say(gouda.id, "and trap?");
-  const m2 = fakeModel((c) => /isn't available/.test(String(lastUser(c).content)) ? "From memory: trap hats roll." : "```search\ntrap drums\n```");
-  await runAgent(store, gouda.id, { provider: { ...provider, web: true }, fetch: m2.fetch });
-  assert.equal(m2.calls[1].body.plugins, undefined);
-  assert.match(store.data.rows.filter((r) => r.agent_id === gouda.id).pop()!.body, /From memory/);
 });
 
 test("hand-off: Yui passes the person to Gouda, who opens its own thread with the context", async () => {

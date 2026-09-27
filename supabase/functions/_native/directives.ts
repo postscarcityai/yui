@@ -23,6 +23,9 @@
 //   every mon,wed 07:00 "..."   lo-fi drum patterns 80 bpm  gouda "Wants a lo-fi beat, plays bass"
 //   cancel s1                   ```                         ```
 //   ```
+//                               ```fetch
+//                               https://example.com/a-page
+//                               ```
 
 export type MemoryOp =
   | { op: "note"; body: string }
@@ -44,15 +47,16 @@ export interface Extracted {
   memory: MemoryOp[];
   agents: AgentOp[];
   schedule: string[]; // raw lines, parsed with the person's time zone (schedule.ts)
-  search: string | null; // one query per turn
+  search: string | null; // one query per block
+  fetch: string | null; // one page per block
   handoff: Handoff[];
 }
 
-const FENCE = /```(remember|agents|schedule|search|handoff)[ \t]*\n([\s\S]*?)(?:\n```|$)/g;
+const FENCE = /```(remember|agents|schedule|search|fetch|handoff)[ \t]*\n([\s\S]*?)(?:\n```|$)/g;
 
 /** Splits a reply into what the person sees and what the runtime does. */
 export function extract(reply: string): Extracted {
-  const out: Extracted = { text: "", memory: [], agents: [], schedule: [], search: null, handoff: [] };
+  const out: Extracted = { text: "", memory: [], agents: [], schedule: [], search: null, fetch: null, handoff: [] };
   out.text = reply.replace(FENCE, (_m, kind: string, body: string) => {
     for (const line of body.split("\n")) {
       const l = line.trim();
@@ -67,6 +71,8 @@ export function extract(reply: string): Extracted {
         out.schedule.push(l);
       } else if (kind === "search") {
         out.search ??= l.slice(0, 200);
+      } else if (kind === "fetch") {
+        out.fetch ??= l.slice(0, 500);
       } else {
         const h = l.match(/^@?([a-z0-9-]+)\s+"((?:[^"\\]|\\.)*)"$/i);
         if (h) out.handoff.push({ target: h[1].toLowerCase(), note: h[2].replace(/\\(.)/g, "$1").slice(0, 500) });

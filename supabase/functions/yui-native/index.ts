@@ -14,6 +14,9 @@
 //   {action: "key_set", provider, key, model?, base_url?}
 //                                              checks the key with the provider, then keeps it in Vault
 //   {action: "key_remove"}
+//   {action: "search_key_set", key}            their own Firecrawl key: checked with Firecrawl, kept in Vault,
+//                                              lifts the free monthly web search cap
+//   {action: "search_key_remove"}
 //   {action: "timezone", tz}                   "America/New_York"
 //   {action: "agent_model", agent_id, model}   a model from the list, or "default"
 // What agents remember and their check-ins the app reads, fixes and deletes
@@ -21,13 +24,15 @@
 // yui_native_schedules).
 //
 // Secrets: YUI_NATIVE_SECRET (same string as the vault's yui_native_secret),
-// YUI_OPENROUTER_KEY (Yui's own key, with a spend ceiling on OpenRouter).
+// YUI_OPENROUTER_KEY (Yui's own key, with a spend ceiling on OpenRouter),
+// YUI_FIRECRAWL_KEY (Yui's own Firecrawl key for web search; free lookups a month per person in yui_limits).
 // The runtime lives in runtime/ and is copied to ../_native by runtime/scripts/build.mjs.
 import { openRouter, runAgent, runScheduled, type TurnResult } from "../_native/turn.ts";
 import { SupabaseStore } from "../_native/supabase.ts";
 import { MODELS, PROVIDERS } from "../_native/models.ts";
 import { answerControl } from "../_native/controls.ts";
 import { validZone } from "../_native/schedule.ts";
+import { Firecrawl } from "../_native/search.ts";
 import { admin, assertActive, failure, json, take, verifyAccessToken } from "../_shared/yui.ts";
 
 const env = (n: string) => Deno.env.get(n) ?? "";
@@ -69,7 +74,7 @@ async function fromDatabase(body: { agent_id?: string; schedule_id?: string; mes
   if (!UUID.test(id)) return new Response("invalid request", { status: 400 });
   // A Controls request: answered now (the app waits 5 seconds), never a turn.
   if (body.message_id && UUID.test(body.message_id) && await answerControl(store, body.message_id)) return json({ ok: true, control: true });
-  const opts = { provider: openRouter(key), log: (m: string) => console.log(`yui-native ${id.slice(0, 8)}: ${m}`) };
+  const opts = { provider: openRouter(key), search: { key: env("YUI_FIRECRAWL_KEY") || undefined }, log: (m: string) => console.log(`yui-native ${id.slice(0, 8)}: ${m}`) };
   const run: Promise<TurnResult> = body.schedule_id ? runScheduled(store, id, opts) : runAgent(store, id, opts);
   await later(run.then(async (r) => {
     for (const m of r.replies) await push(m);
@@ -108,14 +113,31 @@ async function fromApp(req: Request, b: Body): Promise<Response> {
   await take(db, `agents:u:${userId}`, "agents_api");
   switch (b.action) {
     case "status": {
-      const [{ data: key }, { data: user }, { data: usage }] = await Promise.all([
+      const [{ data: key }, { data: user }, { data: usage }, { data: searchKey }, { data: lims }] = await Promise.all([
         db.from("yui_native_keys").select("provider, model, hint, base_url").eq("user_id", userId).maybeSingle(),
         db.from("yui_users").select("timezone").eq("id", userId).maybeSingle(),
-        db.from("yui_native_usage").select("turns").eq("user_id", userId).eq("month", new Date().toISOString().slice(0, 7) + "-01").maybeSingle(),
+        db.from("yui_native_usage").select("turns, searches").eq("user_id", userId).eq("month", new Date().toISOString().slice(0, 7) + "-01").maybeSingle(),
+        db.from("yui_native_search_keys").select("hint").eq("user_id", userId).maybeSingle(),
+        db.from("yui_limits").select("name, value").in("name", ["native_free_turns", "native_searches_per_month"]),
       ]);
-      const { data: lim } = await db.from("yui_limits").select("value").eq("name", "native_free_turns").maybeSingle();
+      const lim = (n: string, d: number) => Number(lims?.find((l: { name: string }) => l.name === n)?.value ?? d);
       return json({ key: key ?? null, providers: PROVIDERS, models: MODELS, timezone: user?.timezone ?? null,
-                    turns: { used: usage?.turns ?? 0, limit: Number(lim?.value ?? 100) } });
+                    turns: { used: usage?.turns ?? 0, limit: lim("native_free_turns", 100) },
+                    search: { used: usage?.searches ?? 0, limit: lim("native_searches_per_month", 50), key: searchKey ?? null } });
+    }
+    case "search_key_set": {
+      const key = typeof b.key === "string" ? b.key.trim() : "";
+      if (key.length < 8 || key.length > 200 || /\s/.test(key)) return json({ error: "invalid_key" }, 400);
+      const problem = await new Firecrawl(key).check();
+      if (problem) return json({ error: "key_check_failed", message: problem }, 400);
+      const { error } = await db.rpc("yui_native_search_key_set", { uid: userId, secret: key });
+      if (error) throw error;
+      return json({ ok: true, search: { key: { hint: key.slice(-4) } } });
+    }
+    case "search_key_remove": {
+      const { error } = await db.rpc("yui_native_search_key_remove", { uid: userId });
+      if (error) throw error;
+      return json({ ok: true });
     }
     case "key_set": {
       const p = PROVIDERS.find((x) => x.id === b.provider);

@@ -14,6 +14,7 @@ Needs Node 22.18 or newer. No dependencies.
 
 ```
 export OPENROUTER_API_KEY=...          # in your shell, never in a file you share
+export FIRECRAWL_API_KEY=...           # optional: web search and page reading (firecrawl.dev)
 node runtime/cli.ts chat               # talk to Yui; /agents, /use gouda, /memory, /quit
 node runtime/cli.ts try "make me a lo-fi beat" --agent gouda
 node runtime/cli.ts memory             # what your agents remember about you
@@ -38,8 +39,9 @@ Copy a folder, change it, run `node runtime/scripts/build.mjs` (it loads every f
 1. The person's new rows are marked delivered; the working row says "Thinking".
 2. The prompt: the channel guide, the runtime's rules (`src/prompt.ts`), the agent's soul and favorite screens, what it remembers, the crew (for Yui), then the newest thread that fits.
 3. A turn with a photo goes to the model that sees (`yui_native_models`); every other turn to the agent's model or the default.
-4. The agent may end its answer with a `remember` block (facts on the shared about-you card, its own notes, forgetting) and, for Yui or a blank agent, an `agents` block (make, fork, rename, remove, or set itself up). The runtime takes both out and applies them; the person sees only the answer.
-5. The answer is written with `meta.turn`, the rows are marked handled, and a push goes out.
+4. An answer that is only a `search` block (a query) or a `fetch` block (a link) is looked up on Firecrawl (`src/search.ts`) and the model is asked again with what came back, a few times a turn at most. Sources the answer doesn't link show under it as cards. On Yui's key each person has free lookups a month and a day (`yui_limits`); past them the agent answers from what it knows and a card opens Settings, where a person's own Firecrawl key lifts the cap.
+5. The agent may end its answer with a `remember` block (facts on the shared about-you card, its own notes, forgetting) and, for Yui or a blank agent, an `agents` block (make, fork, rename, remove, or set itself up). The runtime takes both out and applies them; the person sees only the answer.
+6. The answer is written with `meta.turn`, the rows are marked handled, and a push goes out.
 
 Memory: each agent's notes are its own (at most 40, oldest go first); the about-you card (at most 30 facts) is shared by every native agent on the person's Yui and never by connected agents. People see, fix and forget both.
 

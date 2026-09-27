@@ -4,7 +4,7 @@
 // PostgREST and Storage with the service key, so it runs in the edge function
 // and, for a check, from a laptop. Never ship the service key to a client.
 import type { Store } from "./store.ts";
-import { DEFAULT_ROUTES, type MemoryItem, type NativeAgent, type OwnKey, type Profile, type Routes, type Row, type ScheduleItem } from "./types.ts";
+import { DEFAULT_ROUTES, type MemoryItem, type NativeAgent, type OwnKey, type Profile, type Routes, type Row, type ScheduleItem, type SearchTake } from "./types.ts";
 
 export class SupabaseStore implements Store {
   private url: string;
@@ -232,8 +232,18 @@ export class SupabaseStore implements Store {
     await this.rest("DELETE", `yui_native_schedules?id=eq.${id}`, undefined, "return=minimal");
   }
 
-  async takeSearch(userId: string) {
-    return (await this.rpc("yui_native_take_search", { uid: userId })) === true;
+  async takeSearch(userId: string, own: boolean): Promise<SearchTake> {
+    const r = await this.rpc("yui_native_take_search", { uid: userId, own });
+    const row = Array.isArray(r) ? r[0] : r;
+    const why = row?.why === "month" || row?.why === "day" ? row.why : undefined;
+    return { ok: !!row?.ok, used: Number(row?.used ?? 0), limit: Number(row?.lim ?? 0), perTurn: Number(row?.per_turn ?? 1),
+             ...(why ? { why } : {}) };
+  }
+
+  async searchKey(userId: string): Promise<string | null> {
+    const r = await this.rpc("yui_native_search_key_get", { uid: userId });
+    const k = Array.isArray(r) ? r[0] : r;
+    return typeof k === "string" && k ? k : null;
   }
 
   async ownKey(userId: string): Promise<OwnKey | null> {

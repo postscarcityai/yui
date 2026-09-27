@@ -16,6 +16,7 @@ import { applyMemory } from "./memory.ts";
 import { applyAgentOps } from "./agents.ts";
 import { buildTurn, photoPaths, type CrewEntry } from "./prompt.ts";
 import { next, parseLine, validZone } from "./schedule.ts";
+import { Firecrawl, LookupError, searchInvite, sourceCards, type Source } from "./search.ts";
 import type { Store } from "./store.ts";
 import type { NativeAgent, OwnKey, Row, ScheduleItem } from "./types.ts";
 
@@ -25,7 +26,6 @@ export interface Provider {
   headers?: Record<string, string>;
   extra?: Record<string, unknown>; // sent with every request (OpenRouter's provider rules)
   model?: string; // this provider's own model, when it is not OpenRouter's ids (a person's Groq key)
-  web?: boolean; // can search the web in a call (OpenRouter's web plugin)
 }
 
 const OPENROUTER = "https://openrouter.ai/api/v1";
@@ -37,7 +37,6 @@ export function openRouter(key: string): Provider {
     key,
     headers: { "HTTP-Referer": "https://www.yuigui.com", "X-Title": "Yui" },
     extra: { provider: { data_collection: "deny" } },
-    web: true,
   };
 }
 
@@ -49,6 +48,7 @@ export function ownProvider(k: OwnKey): Provider {
 
 export interface TurnOptions {
   provider: Provider; // Yui's own; a person's own key replaces it
+  search?: SearchOptions; // web lookups (Firecrawl); none: agents answer from what they know
   fetch?: typeof fetch; // the model side only (tests)
   fetchMedia?: typeof fetch; // fetching a person's photo to inline it (tests)
   maxTokens?: number; // default 2000
@@ -58,6 +58,12 @@ export interface TurnOptions {
   log?: (msg: string) => void;
   now?: () => number;
   newId?: () => string;
+}
+
+export interface SearchOptions {
+  key?: string; // Yui's Firecrawl key; a person's own key (Settings) replaces it and lifts the monthly cap
+  fetch?: typeof fetch; // the Firecrawl side (tests)
+  base?: string;
 }
 
 export interface TurnResult {
@@ -176,7 +182,9 @@ async function oneTurn(store: Store, agent: NativeAgent, rows: Row[], opts: Turn
   const req = { model, messages, max_tokens: opts.maxTokens ?? 2000 };
 
   let answer: Completion;
+  let looked: Looked = { sources: [] };
   try {
+    let sent: typeof req & { messages: any[] } = req;
     try {
       answer = await ask(opts, provider, req);
     } catch (e) {
@@ -186,19 +194,13 @@ async function oneTurn(store: Store, agent: NativeAgent, rows: Row[], opts: Turn
       const inlined = await inlineImages(messages, opts.fetchMedia ?? fetch);
       if (!inlined) throw e;
       log(`${p.name}: the model couldn't fetch the photo, sending it inline`);
-      answer = await ask(opts, provider, { ...req, messages: inlined });
+      sent = { ...req, messages: inlined };
+      answer = await ask(opts, provider, sent);
     }
-    // A search block alone: look it up, then ask again with the results.
-    const first = extract(answer.text);
-    if (first.search) {
-      const allowed = provider.web && await store.takeSearch(agent.userId);
-      if (last) await store.doing(last, `Looking up ${first.search.slice(0, 40)}`);
-      log(`${p.name}: search "${first.search}"${allowed ? "" : " (not allowed)"}`);
-      const followUp = allowed
-        ? { ...req, messages: [...messages, { role: "user" as const, content: `Search the web for: ${first.search}\n\n[yui] The results are attached. Answer the person now, with no search block.` }],
-            plugins: [{ id: "web", max_results: 5 }] }
-        : { ...req, messages: [...messages, { role: "user" as const, content: "[yui] Search isn't available right now. Answer from what you know, and say briefly that you couldn't look it up." }] };
-      answer = await ask(opts, provider, followUp);
+    // A search or fetch block alone: look it up, then ask again with what came back.
+    if (hasLookup(answer.text)) {
+      looked = await lookUp(store, agent, opts, provider, sent, answer, last, log);
+      answer = looked.answer!;
     }
   } catch (e: any) {
     if (last) await store.doing(last, null);
@@ -230,13 +232,17 @@ async function oneTurn(store: Store, agent: NativeAgent, rows: Row[], opts: Turn
   if (out.schedule.length) notes.push(...await applySchedules(store, agent, out.schedule, schedules, tzRaw ? tz : "UTC", now, log));
   let body = out.text;
   if (notes.length) body += `\n\n(I couldn't do all of that: ${notes.join("; ")}.)`;
+  // Sources the answer didn't link, and the invite to add a Firecrawl key when the free lookups ran out.
+  const cards = [...sourceCards(body, looked.sources), ...(looked.capped ? [searchInvite(looked.capped.why, looked.capped.limit)] : [])];
+  if (cards.length && body.trim()) body = `${body.trim()}\n\`\`\`yui\n${cards.join("\n")}\n\`\`\``;
   if (!body.trim() && answer.finish === "length") body = `${p.name} ran out of room before it could answer. Try a shorter message.`;
 
   if (last) await store.doing(last, null);
   if (body.trim()) {
     await say(body.trim(), {
       ...(real.length ? { turn: real } : {}),
-      native: { model, ...(answer.usage ? { usage: answer.usage } : {}), ...(budget.left <= 10 ? { left: budget.left } : {}) },
+      native: { model, ...(answer.usage ? { usage: answer.usage } : {}), ...(budget.left <= 10 ? { left: budget.left } : {}),
+                ...(looked.sources.length ? { sources: looked.sources.slice(0, 8) } : {}), ...(looked.capped ? { search_capped: looked.capped.why } : {}) },
       ...(depth === 0 && !real.length && rows[0]?.body.startsWith("[yui] check-in") ? { checkin: true } : {}),
     });
   }
@@ -282,6 +288,85 @@ async function applySchedules(store: Store, agent: NativeAgent, lines: string[],
     else log(`${agent.profile.name}: check-in set for ${new Date(at).toISOString()}`);
   }
   return problems;
+}
+
+interface Looked {
+  answer?: Completion;
+  sources: Source[];
+  capped?: { why: "month" | "day"; limit: number }; // Yui's free lookups ran out this turn
+}
+
+function hasLookup(text: string): boolean {
+  const x = extract(text);
+  return !!(x.search || x.fetch);
+}
+
+/**
+ * Runs the agent's lookups one at a time, each answered with a new model call,
+ * until it answers the person or hits the turn's cap (yui_limits
+ * native_searches_per_turn). On Yui's key each lookup comes out of the free
+ * month and day; the person's own Firecrawl key only counts them.
+ */
+async function lookUp(store: Store, agent: NativeAgent, opts: TurnOptions, provider: Provider, req: { messages: any[] } & Record<string, unknown>,
+                      first: Completion, last: string | undefined, log: (m: string) => void): Promise<Looked> {
+  const p = agent.profile;
+  const theirs = await store.searchKey(agent.userId);
+  const key = theirs ?? opts.search?.key;
+  const fc = key ? new Firecrawl(key, opts.search?.fetch ?? fetch, opts.search?.base) : null;
+  const out: Looked = { sources: [] };
+  let messages = req.messages;
+  let answer = first;
+  let perTurn = 1;
+  for (let n = 0; ; n++) {
+    const x = extract(answer.text);
+    const look = x.search ? { kind: "search" as const, q: x.search } : x.fetch ? { kind: "fetch" as const, q: x.fetch } : null;
+    if (!look) break;
+    let note: string;
+    if (n >= perTurn || n >= 4) {
+      note = "[yui] That's all the lookups for this turn. Answer the person now with what you have, with no search or fetch block.";
+    } else if (!fc) {
+      note = "[yui] Search isn't available right now. Answer from what you know, and say briefly that you couldn't look it up.";
+    } else {
+      const take = await store.takeSearch(agent.userId, !!theirs);
+      perTurn = Math.max(1, take.perTurn);
+      if (!take.ok) {
+        out.capped = { why: take.why ?? "month", limit: take.limit };
+        note = `[yui] The free web searches are used up ${take.why === "day" ? "for today" : "for this month"}. Answer from what you know, say in one line that you couldn't look it up, and don't write a search block again this turn.`;
+        log(`${p.name}: ${look.kind} "${look.q}" (free lookups used up, ${take.why})`);
+      } else {
+        if (last) await store.doing(last, look.kind === "search" ? `Looking up ${look.q.slice(0, 40)}` : `Reading ${hostName(look.q)}`);
+        try {
+          const found = look.kind === "search" ? await fc.search(look.q) : await fc.fetchPage(look.q);
+          out.sources.push(...found.sources);
+          note = `[yui] ${look.kind === "search" ? `Web results for "${look.q}"` : "The page"}:\n\n${found.text}\n\n`
+            + "[yui] Answer the person now from these, and name where it came from. If one page is worth reading in full, "
+            + "you may write a fetch block with its link instead.";
+          log(`${p.name}: ${look.kind} "${look.q.slice(0, 80)}", ${found.sources.length} source(s), ${take.used}/${take.limit} this month${theirs ? " (their key)" : ""}`);
+        } catch (e) {
+          if (!(e instanceof LookupError)) throw e;
+          const whose = theirs && (e.status === 401 || e.status === 402) ? " (it's their own Firecrawl key, in Settings)" : "";
+          note = `[yui] The lookup didn't work: ${e.message}${whose}. Answer from what you know and say so in one line.`;
+          log(`${p.name}: ${look.kind} failed: ${e.message}`);
+        }
+      }
+    }
+    messages = [...messages, { role: "assistant", content: answer.text }, { role: "user", content: note }];
+    answer = await ask(opts, provider, { ...req, messages });
+    if (n >= perTurn || out.capped || !fc) {
+      // Asked to answer without looking again: whatever block it still wrote is dropped by extract().
+      break;
+    }
+  }
+  out.answer = answer;
+  return out;
+}
+
+function hostName(u: string): string {
+  try {
+    return new URL(u).hostname.replace(/^www\./, "");
+  } catch {
+    return "a page";
+  }
 }
 
 /** Streams when it can; one retry when the model is busy. */

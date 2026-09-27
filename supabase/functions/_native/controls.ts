@@ -59,6 +59,7 @@ export interface ControlContext {
   agent: NativeAgent;
   owner: boolean;
   provider: string; // "OpenRouter, on Yui" or "your own Groq key"
+  searchKey?: boolean; // they added their own Firecrawl key
 }
 
 /** One answer for one request: {v, req, ok, ...}. Never throws. */
@@ -112,7 +113,8 @@ export async function answerControl(store: Store, rowId: string): Promise<boolea
   const provider = own ? `your own ${({ openrouter: "OpenRouter", trustedrouter: "TrustedRouter", groq: "Groq", custom: "model server" } as Record<string, string>)[own.provider]} key`
     : "OpenRouter, on Yui";
   const req = row.meta ?? {};
-  const ans = await handleControl(req, { store, agent, owner: row.user_id === agent.userId, provider });
+  const searchKey = !!(await store.searchKey(agent.userId));
+  const ans = await handleControl(req, { store, agent, owner: row.user_id === agent.userId, provider, searchKey });
   await store.controlAnswer(agent, row.id, bodyOf(req, ans), ans);
   return true;
 }
@@ -258,7 +260,7 @@ function modelInfo(ctx: ControlContext) {
   const name = !m || m === "default" ? "GLM 5.2 (GLM-5V-Turbo for photos)" : m;
   return { id: "model", model: name, provider: ctx.provider,
            toolsets: [{ name: "Every Yui screen", on: true }, { name: "Memory", on: true }, { name: "Check-ins", on: true },
-                      { name: "Web search", on: /OpenRouter/.test(ctx.provider) }, { name: "Hand-offs", on: true },
+                      { name: ctx.searchKey ? "Web search, your Firecrawl key" : "Web search", on: true }, { name: "Hand-offs", on: true },
                       ...(ctx.agent.profile.maker ? [{ name: "Makes agents", on: true }] : [])] };
 }
 

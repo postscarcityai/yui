@@ -9,6 +9,7 @@
 //
 // Model: OpenRouter by default, key from $OPENROUTER_API_KEY. Any other
 // OpenAI-compatible server: --url http://127.0.0.1:11434/v1 [--key-env NAME] --model qwen3:8b
+// Web search: Firecrawl, key from $FIRECRAWL_API_KEY (no key: agents answer from what they know).
 // State: ~/.yui-native/state.json (--state to change). Delete it to start over.
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
@@ -24,6 +25,7 @@ import { extract } from "./src/directives.ts";
 import type { NativeAgent } from "./src/types.ts";
 
 const USER = "local";
+const search = { key: process.env.FIRECRAWL_API_KEY || undefined };
 const here = dirname(fileURLToPath(import.meta.url));
 
 const { values: opt, positionals } = parseArgs({
@@ -102,7 +104,7 @@ async function pick(store: LocalStore, handle: string): Promise<NativeAgent> {
 async function dueCheckins(store: LocalStore, pv: Provider) {
   for (const s of store.due(Date.now())) {
     const before = new Set(store.data.rows.map((r) => r.id));
-    await runScheduled(store, s.id, { provider: pv, log: opt.verbose ? (m) => console.error(`  · ${m}`) : undefined });
+    await runScheduled(store, s.id, { provider: pv, search, log: opt.verbose ? (m) => console.error(`  · ${m}`) : undefined });
     for (const row of store.data.rows.filter((r) => !before.has(r.id) && r.sender === "agent")) {
       console.log(`\n${(await store.agent(row.agent_id))?.profile.name ?? "Agent"} (check-in): ${row.body}\n`);
     }
@@ -113,7 +115,7 @@ async function dueCheckins(store: LocalStore, pv: Provider) {
 async function turn(store: LocalStore, agent: NativeAgent, text: string, pv: Provider): Promise<void> {
   store.say(agent.id, text);
   const before = new Set(store.data.rows.map((r) => r.id));
-  const r = await runAgent(store, agent.id, { provider: pv, log: opt.verbose ? (m) => console.error(`  · ${m}`) : undefined });
+  const r = await runAgent(store, agent.id, { provider: pv, search, log: opt.verbose ? (m) => console.error(`  · ${m}`) : undefined });
   const fresh = store.data.rows.filter((row) => !before.has(row.id) && row.sender === "agent");
   for (const row of fresh) {
     const who = (await store.agent(row.agent_id))?.profile.name ?? "Agent";

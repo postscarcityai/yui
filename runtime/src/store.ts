@@ -3,7 +3,7 @@
 //   - LocalStore (below): one JSON object, for `node runtime/cli.ts` and tests.
 // Everything a turn needs goes through here, so the turn itself never knows
 // where it runs.
-import type { MemoryItem, NativeAgent, OwnKey, Profile, Routes, Row, ScheduleItem } from "./types.ts";
+import type { MemoryItem, NativeAgent, OwnKey, Profile, Routes, Row, ScheduleItem, SearchTake } from "./types.ts";
 import { DEFAULT_ROUTES } from "./types.ts";
 
 export interface Store {
@@ -41,8 +41,10 @@ export interface Store {
   setScheduleNext(id: string, nextAt: string | null): Promise<void>;
   updateSchedule(id: string, patch: Partial<Pick<ScheduleItem, "note" | "rule" | "nextAt" | "paused">>): Promise<void>;
   dropSchedule(id: string): Promise<void>;
-  /** Takes one web search from today's allowance. */
-  takeSearch(userId: string): Promise<boolean>;
+  /** Counts one web lookup. On Yui's key it must fit this month's free lookups and today's; `own` (their Firecrawl key) only counts. */
+  takeSearch(userId: string, own: boolean): Promise<SearchTake>;
+  /** The person's own Firecrawl key, when they added one in Settings. */
+  searchKey(userId: string): Promise<string | null>;
   /** The person's own model key, when they added one. */
   ownKey(userId: string): Promise<OwnKey | null>;
   /** One row of any kind, with its owner (control requests). */
@@ -61,7 +63,8 @@ export interface LocalData {
   schedules?: ScheduleItem[];
   timezones?: Record<string, string>;
   keys?: Record<string, OwnKey>;
-  searches?: Record<string, number>; // "<user>:<day>" -> count
+  searches?: Record<string, number>; // "<user>:<day>" and "<user>:<month>" -> count
+  searchKeys?: Record<string, string>; // a person's own Firecrawl key
 }
 
 export class LocalStore implements Store {
@@ -69,7 +72,9 @@ export class LocalStore implements Store {
   guideText: string;
   freeTurns: number;
   maxSchedules = 30;
-  maxSearches = 20;
+  maxSearches = 20; // a day
+  freeSearches = 50; // a month
+  searchesPerTurn = 2;
   onChange?: () => void;
   private locks = new Set<string>();
   private n = 0;
@@ -219,12 +224,21 @@ export class LocalStore implements Store {
     this.data.schedules = (this.data.schedules ?? []).filter((x) => x.id !== id);
     this.changed();
   }
-  async takeSearch(userId: string) {
-    const k = `${userId}:${new Date().toISOString().slice(0, 10)}`;
+  async takeSearch(userId: string, own: boolean): Promise<SearchTake> {
+    const now = new Date().toISOString();
+    const day = `${userId}:${now.slice(0, 10)}`;
+    const month = `${userId}:${now.slice(0, 7)}`;
     const s = (this.data.searches ??= {});
-    if ((s[k] ?? 0) >= this.maxSearches) return false;
-    s[k] = (s[k] ?? 0) + 1;
-    return true;
+    const base = { used: s[month] ?? 0, limit: this.freeSearches, perTurn: this.searchesPerTurn };
+    if (!own && base.used >= this.freeSearches) return { ok: false, ...base, why: "month" };
+    if (!own && (s[day] ?? 0) >= this.maxSearches) return { ok: false, ...base, why: "day" };
+    s[day] = (s[day] ?? 0) + 1;
+    s[month] = base.used + 1;
+    this.changed();
+    return { ok: true, ...base, used: base.used + 1 };
+  }
+  async searchKey(userId: string) {
+    return this.data.searchKeys?.[userId] ?? null;
   }
   async ownKey(userId: string) {
     return this.data.keys?.[userId] ?? null;

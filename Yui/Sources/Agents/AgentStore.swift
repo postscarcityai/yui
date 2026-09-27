@@ -196,6 +196,14 @@ final class AgentStore {
             let args = ProcessInfo.processInfo.arguments
             agents = args.contains("-yuiNoAgents") ? [] : args.contains("-yuiDemoAgents") ? Self.demoCrew
                 : args.contains("-yuiDemoShared") ? Self.demoShared : Self.demo
+            // -yuiDemoNative: Yui is a native (hosted) agent, with this month's free web searches used up (YUI-142).
+            if args.contains("-yuiDemoNative") {
+                agents = agents.map { a in
+                    var a = a
+                    if a.id == "demo-yui" { a.kind = "hosted" }
+                    return a
+                }
+            }
             // -yuiDemoControls: the demo's own Hermes agents report every section (YUI-70);
             // Counsel stays offline, Nova's host shares nothing.
             if args.contains("-yuiDemoControls") {
@@ -551,9 +559,17 @@ struct NativeStatus: Decodable, Equatable, Sendable {
         let used: Int
         let limit: Int
     }
+    /// Web search (YUI-142): free lookups this month on Yui's Firecrawl key, or their own key (last four only).
+    struct Search: Decodable, Equatable, Sendable {
+        struct Key: Decodable, Equatable, Sendable { let hint: String }
+        let used: Int
+        let limit: Int
+        let key: Key?
+    }
     let key: Key?
     let providers: [Provider]
     let turns: Turns
+    let search: Search? // older servers leave it out
 }
 
 /// A refusal from `yui-native`, in its own words ("the provider turned this key down").
@@ -564,8 +580,16 @@ struct NativeError: LocalizedError {
 
 extension AgentStore {
     func nativeStatus() async throws -> NativeStatus {
-        try await nativeCall(["action": "status"])
+        #if DEBUG
+        if isDemo, ProcessInfo.processInfo.arguments.contains("-yuiDemoNative") { return Self.demoNative }
+        #endif
+        return try await nativeCall(["action": "status"])
     }
+
+    #if DEBUG
+    static let demoNative = NativeStatus(key: nil, providers: [.init(id: "openrouter", label: "OpenRouter", needsModel: false)],
+                                         turns: .init(used: 31, limit: 100), search: .init(used: 50, limit: 50, key: nil))
+    #endif
 
     /// Checked with the provider first; a key that doesn't work is never kept.
     func setModelKey(provider: String, key: String, model: String?, baseURL: String?) async throws {
@@ -577,6 +601,15 @@ extension AgentStore {
 
     func removeModelKey() async throws {
         let _: NativeOK = try await nativeCall(["action": "key_remove"])
+    }
+
+    /// Their own Firecrawl key: checked with Firecrawl first, kept in Yui's vault, lifts the free search cap.
+    func setSearchKey(_ key: String) async throws {
+        let _: NativeOK = try await nativeCall(["action": "search_key_set", "key": key])
+    }
+
+    func removeSearchKey() async throws {
+        let _: NativeOK = try await nativeCall(["action": "search_key_remove"])
     }
 
     /// Native agents set check-ins in the person's own time. Sent when it changes.

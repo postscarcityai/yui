@@ -21,6 +21,8 @@ struct ChatView: View {
     @State private var store = ChatStore(messages: ChatView.seed)
     @State private var outbox = Outbox.shared
     @State private var showSettings = ProcessInfo.processInfo.arguments.contains("-yuiSettings")
+    /// A section to scroll to when Settings opens from a link (`yui://settings/search`).
+    @State private var settingsFocus: String?
     @State private var settingsDetent: PresentationDetent =
         ProcessInfo.processInfo.arguments.contains("-yuiSettingsLarge") ? .large : .medium
     @State private var showAgents = ProcessInfo.processInfo.arguments.contains("-yuiAgents")
@@ -226,7 +228,7 @@ struct ChatView: View {
             .toolbar(onChat ? .visible : .hidden, for: .navigationBar)
             .animation(theme.spring, value: onChat)
             .sheet(isPresented: $showSettings) {
-                SettingsView()
+                SettingsView(focus: settingsFocus)
                     .presentationDetents([.medium, .large], selection: $settingsDetent)
                     .presentationCornerRadius(appTheme.radius.card)
                     .environment(\.yuiTheme, appTheme)
@@ -440,6 +442,17 @@ struct ChatView: View {
             // Each thread keeps its own unsent words (feedback AK-9fNEZU).
             composer.show(agent: store.agent?.id)
         }
+        // yui://settings/search (the invite to add a Firecrawl key, YUI-142): Settings, at that section.
+        .onChange(of: push.pendingSettings, initial: true) {
+            guard let section = push.pendingSettings else { return }
+            push.pendingSettings = nil
+            showAgents = false
+            settleDrawer(open: false)
+            settingsFocus = section.isEmpty ? nil : section
+            settingsDetent = .large
+            showSettings = true
+        }
+        .onChange(of: showSettings) { if !showSettings { settingsFocus = nil } }
         // A notification tap or yui://agent/<id>/thread: straight to that thread.
         .onChange(of: push.pendingAgentID, initial: true) {
             guard let id = push.pendingAgentID else { return }
