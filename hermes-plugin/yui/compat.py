@@ -11,11 +11,24 @@ something it can:
     marks in markdown, which bubbles draw since build 94);
   * inside a deck or plan: a `page` whose points are those rows.
 
+  * a `flow` (YUI-155, feedback AMLn-Gg3): the plan it walks by default, the
+    same questions and one submit. A saved flow is looked up in the starter
+    flows (starter_flows.json, from yuigui by sync_flows.py).
+
 An unknown build (no phone has said yet) counts as older than all of them.
 `note` is the line added to the agent's turn so it skips them to begin with.
+A reply that promises questions but is left with nothing to tap gets one
+(`somewhere_to_go`): a full-screen answer never dead-ends.
 """
+import json
 import re
+from pathlib import Path
 from typing import Dict, List, Optional
+
+try:
+    from . import yuilines
+except ImportError:  # loaded by path in tests
+    import yuilines
 
 SHAPES_BUILD = 131  # the YUI-104 app commit (git rev-list --count)
 # YUI-113: a deck page's picture can be shapes, math, chart, stat or calc. Older
@@ -24,6 +37,8 @@ DECK_PICTURES_BUILD = 158
 MUSIC_BUILD = 175  # YUI-116 step 2: loop and drums drawn and played (56b38a3)
 KEYS_BUILD = 177  # YUI-116 step 3: keys and chords drawn and played (2b26871)
 TUNER_BUILD = 205  # YUI-116 step 4: tuner and metronome drawn and played (7b18b14)
+# YUI-115: no build runs flows yet. Set this to that app commit's count when it lands.
+FLOW_BUILD = 1_000_000
 
 # First app build whose parser knows each preset (git rev-list --count of the
 # commit that added it to Packages/YuiLines/Sources/YuiLines/Presets.swift).
@@ -36,11 +51,13 @@ MIN_BUILD: Dict[str, int] = {
     "loop": MUSIC_BUILD, "drums": MUSIC_BUILD,           # YUI-116 step 2: a beat and pads
     "keys": KEYS_BUILD, "chords": KEYS_BUILD,            # YUI-116 step 3: a keyboard and chord buttons
     "tuner": TUNER_BUILD, "metronome": TUNER_BUILD,      # YUI-116 step 4: a tuner and a click
+    "flow": FLOW_BUILD,                                  # YUI-115: runs as a plan until then
 }
 GROUPS = {"sketch": {"row", "after"}, "timeline": {"done", "now", "next"}, "shapes": {"shape"}}
 MEMBER_OF = {m: head for head, ms in GROUPS.items() for m in ms}
 STORY = {"deck", "plan"}  # a sketch in these is the picture of a page
 QUIET = {"menu"}  # draws nothing in the chat: dropped on old builds, never named in the note
+MADE_OVER = {"flow"}  # the plugin turns it into a preset the phone runs: agents keep sending it
 
 FENCE = re.compile(r"```yui[^\n]*\n(.*?)```", re.DOTALL)
 TOKEN = re.compile(r'[+\w-]+="(?:[^"\\]|\\.)*"(?:\|"(?:[^"\\]|\\.)*")*|"(?:[^"\\]|\\.)*"|\S+')
@@ -80,7 +97,7 @@ def too_new(build: Optional[int]) -> set:
 
 def note(build: Optional[int]) -> str:
     """A line for the agent's turn, or "" when the phone draws everything."""
-    heads = sorted({MEMBER_OF.get(p, p) for p in too_new(build) - QUIET})
+    heads = sorted({MEMBER_OF.get(p, p) for p in too_new(build) - QUIET - MADE_OVER})
     if not heads:
         return ""
     which = f"build {build}" if build else "an older build"
@@ -231,6 +248,166 @@ def _group_page(lines: List[str]) -> str:
     return f'page "{(title or "The picture").replace(chr(34), chr(39))}" points={quoted}'
 
 
+# ---------- flows as plans (YUI-155) ----------
+# Something to tap when a reply promised questions and nothing else is left.
+FALLBACK = 'ask@go "Want me to ask you here, one at a time?" "Yes, ask me"|"Not now"'
+MERMAID = re.compile(r"\s*(flowchart|graph)(\s|$)")
+STEP_NOTE = re.compile(r"^\s*%%\s*(\w+)\s*:\s*(.*)$")
+VARIANT_ADD = re.compile(r"^\s*add\s+(\w+)\s+after\s+\w+\s*:\s*(.*)$")
+_SAVED: Optional[dict] = None
+
+
+def _saved_flows() -> dict:
+    global _SAVED
+    if _SAVED is None:
+        _SAVED = json.loads((Path(__file__).resolve().parent / "starter_flows.json").read_text())
+    return _SAVED
+
+
+def _slug(s: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "", str(s or "").lower())
+
+
+def _is_step(text: str) -> bool:
+    return (text.split() or [""])[0] in yuilines.FLOW_STEPS
+
+
+def _raw_steps(source: str, into: Optional[dict] = None) -> dict:
+    """Each step's line as written, by node id: `%% id: <line>`, or `add id after x: <line>`
+    in a variant (the last one wins, as in the parser)."""
+    raw = dict(into or {})
+    for line in source.split("\n"):
+        m = STEP_NOTE.match(line) or VARIANT_ADD.match(line)
+        if m and _is_step(m.group(2).strip()):
+            raw[m.group(1)] = m.group(2).strip()
+    return raw
+
+
+def _graph(ops: list) -> Optional[dict]:
+    patch = next((o for o in ops if o["op"] == "patch"), None)
+    return patch["props"] if patch else None
+
+
+def _saved_flow(name: str, depth: int = 0) -> Optional[dict]:
+    """A saved flow by name (a starter, or a variant followed back to its base):
+    {g, raw, title, submit, id}, or None."""
+    saved = _saved_flows()
+    s = _slug(name)
+    f = next((f for f in saved["flows"] if _slug(f["name"]) == s or _slug(f["title"]) == s), None)
+    if f:
+        g = _graph(yuilines.parse(f'flow@{f["id"]}\n{f["source"]}\nend'))
+        return {"g": yuilines.resolve("flow", g), "raw": _raw_steps(f["source"]),
+                "title": f["title"], "submit": f["submit"], "id": f["id"]}
+    v = next((v for v in saved["variants"] if _slug(v["name"]) == s), None)
+    if not v or depth >= 5:
+        return None
+    return _variant(v["base"], v["name"], v["lines"], depth, v["id"])
+
+
+def _variant(base: str, as_: str, lines: str, depth: int = 0, fid: str = "") -> Optional[dict]:
+    b = _saved_flow(base, depth + 1)
+    if not b:
+        return None
+    changes = (_graph(yuilines.parse(f"flow {base} as={as_}\n{lines}\nend")) or {}).get("changes") or []
+    return {"g": yuilines.flow_variant(b["g"], changes), "raw": _raw_steps(lines, b["raw"]),
+            "title": yuilines.variant_name(as_)["title"], "submit": b["submit"], "id": fid or b["id"]}
+
+
+def _label_step(g: dict, sid: str) -> str:
+    """A step written as the node's label (`energy[choose Energy? Low|OK|High]`)."""
+    m = re.search(r"\b" + re.escape(sid) + r"\s*[\[({]+(.+?)[\])}]+", g.get("source") or "")
+    t = m.group(1).replace("#quot;", '"').strip() if m else ""
+    return t if _is_step(t) else ""
+
+
+def _flow_extent(lines: List[str], i: int) -> int:
+    """Index just past the flow whose head is lines[i]: an inline chart runs to its
+    own `end` (subgraphs have theirs), a variant to `end`, a saved flow is one line."""
+    j = i + 1
+    while j < len(lines) and lines[j].strip().startswith("%%"):
+        j += 1
+    inline = j < len(lines) and MERMAID.match(lines[j])
+    if not inline and not re.search(r"(^|\s)as=", lines[i]):
+        return i + 1
+    depth = 0
+    for k in range(i + 1, len(lines)):
+        t = lines[k].strip()
+        if inline and re.match(r"subgraph(\s|$)", t):
+            depth += 1
+        elif t == "end":
+            if depth == 0:
+                return k + 1
+            depth -= 1
+    return len(lines)
+
+
+def flow_plan(group: List[str]) -> List[str]:
+    """A flow (head, and its chart or variant lines) as the plan it walks by
+    default: every step on the path no answer has changed yet, keyed by node id,
+    one submit. [] when there is nothing to run (no saved flow by that name)."""
+    prefix = SCREEN.match(group[0]).group(1) if SCREEN.match(group[0]) else ""
+    body = [group[0][len(prefix):]] + group[1:]
+    ops = yuilines.parse("\n".join(body))
+    head = next((o for o in ops if o["op"] == "add" and o.get("preset") == "flow"), None)
+    if not head:
+        return []
+    props = head.get("props") or {}
+    g = _graph(ops)
+    if g and "nodes" in g:  # inline
+        f = {"g": yuilines.resolve("flow", g), "raw": _raw_steps(g.get("source") or ""),
+             "title": props.get("title") or "", "submit": "", "id": "flow"}
+    elif props.get("as"):
+        f = _variant(props.get("title") or "", props["as"], "\n".join(body[1:]))
+    else:
+        f = _saved_flow(props.get("title") or "")
+    if not f:
+        return []
+    fg = f["g"]
+    first = yuilines.flow_first(fg)
+    walk = [first] + yuilines.flow_ahead(fg, {}, first) if first else []
+    steps = []
+    for sid in walk:
+        raw = f["raw"].get(sid) or _label_step(fg, sid)
+        if not raw:
+            continue
+        preset, _, rest = raw.partition(" ")
+        steps.append(raw if preset == "page" else f"{preset.split('@')[0]}@{sid} {rest}".rstrip())
+    if not steps:
+        return []
+    explicit = re.match(r"flow@(\S+)", body[0].strip())
+    fid = explicit.group(1) if explicit else f["id"]
+    title = f["title"]  # a saved flow's `title` prop is its name, so the saved title wins
+    plan = f"plan@{fid}" + (' "' + title.replace('"', "'") + '"' if title else "")
+    submit = props.get("submit") or f["submit"]
+    if submit:
+        plan += ' submit="' + submit.replace('"', "'") + '"'
+    if props.get("review") is False:
+        plan += " review=off"
+    if props.get("inline"):
+        plan += " +inline"
+    return [prefix + plan] + steps + ["end"]
+
+
+ACTS = {"ask", "choose", "pick", "slide", "form", "camera", "mic", "plan", "flow", "deck", "narrate",
+        "timer", "game", "calc", "query", "loop", "drums", "keys", "chords", "tuner", "metronome"}
+PROMISE = re.compile(r"\b((a few|some|two|three|four|five|\d+|couple of|these|my|quick) (quick |short )?questions"
+                     r"|questions (first|for you)|interview|quiz you|step by step|walk you through|one at a time)\b", re.I)
+
+
+def somewhere_to_go(body: str) -> str:
+    """A reply whose words promise questions or steps, with a screen that has
+    nothing to tap, gets FALLBACK instead of a bare headline (feedback AMLn-Gg3)."""
+    blocks = FENCE.findall(body)
+    if not blocks or not PROMISE.search(FENCE.sub(" ", body)):
+        return body
+    for block in blocks:
+        for line in block.split("\n"):
+            _, head, preset, _, props, _ = _split(line)
+            if preset in ACTS or props.keys() & {"cta", "url", "open"}:
+                return body
+    return body.rstrip() + "\n\n```yui\n" + FALLBACK + "\n```"
+
+
 def _fence(block: str, gated: set) -> List[tuple]:
     """Split one fence body into ("yui", lines) and ("text", str) parts."""
     lines = block.split("\n")
@@ -241,6 +418,11 @@ def _fence(block: str, gated: set) -> List[tuple]:
     while i < len(lines):
         line = lines[i]
         _, head, preset, _, _, _ = _split(line)
+        if preset == "flow" and "flow" in gated and not head.startswith("~"):
+            end = _flow_extent(lines, i)
+            cur.extend(flow_plan(lines[i:end]) or [FALLBACK])
+            i = end
+            continue
         if preset in STORY and not head.startswith("~"):
             story = True
         elif preset == "end":
@@ -353,4 +535,4 @@ def downgrade(body: str, build: Optional[int]) -> str:
         return "\n\n".join(out)
 
     out = FENCE.sub(one, body)
-    return re.sub(r"\n{3,}", "\n\n", out).strip()
+    return somewhere_to_go(re.sub(r"\n{3,}", "\n\n", out).strip())

@@ -221,5 +221,91 @@ class Downgrade(unittest.TestCase):
         self.assertEqual(compat.downgrade(plain, 150), plain)
 
 
+@unittest.skipUnless(YL.exists() and shutil.which("node"), "yuigui checkout or node not found")
+class Flows(unittest.TestCase):
+    """YUI-155, feedback AMLn-Gg3: "interview me for a personal brand site" came back
+    as a headline and `flow website-intake`, which no build runs yet, so the phone
+    drew nothing to tap. A flow now goes out as the plan it walks by default."""
+
+    INTAKE = ("Let's build your personal brand site. A few quick questions first.\n\n"
+              + fence("flow website-intake"))
+    QUESTIONS = ["biz", "kind", "goal", "pages", "brand", "budget"]
+
+    def plan_of(self, body):
+        got = ops(body)
+        self.assertFalse([o for o in got if o["op"] == "error"], got)
+        self.assertFalse([o for o in got if o.get("preset") == "flow"], got)
+        plan = next(o for o in got if o.get("preset") == "plan")
+        return plan, [o for o in got if o.get("in") == plan["id"]]
+
+    def test_website_intake_on_build_205_is_a_plan_with_the_intake_questions(self):
+        for build in (205, 208, None):
+            out = compat.downgrade(self.INTAKE, build)
+            self.assertTrue(out.startswith("Let's build your personal brand site."))
+            plan, steps = self.plan_of(out)
+            self.assertEqual(plan["id"], "intake")
+            self.assertEqual(plan["props"]["title"], "Client website intake")
+            self.assertEqual(plan["props"]["submit"], "Send the brief")
+            self.assertEqual([s["preset"] for s in steps][0], "page")
+            self.assertEqual([s["id"] for s in steps if s["preset"] != "page"], self.QUESTIONS)
+            self.assertNotIn(compat.FALLBACK, out)
+
+    def test_a_build_that_runs_flows_gets_the_flow(self):
+        self.assertEqual(compat.downgrade(self.INTAKE, compat.FLOW_BUILD), self.INTAKE)
+
+    def test_saved_by_title_and_a_starter_variant(self):
+        plan, steps = self.plan_of(compat.downgrade(fence('flow "Website intake" submit=Go +inline'), 208))
+        self.assertEqual(plan["props"]["submit"], "Go")
+        self.assertTrue(plan["props"].get("inline"))
+        plan, steps = self.plan_of(compat.downgrade(fence("flow restaurant-intake"), 208))
+        self.assertEqual(plan["props"]["title"], "Restaurant intake")
+        ids = [s["id"] for s in steps if s["preset"] != "page"]
+        self.assertIn("menu", ids)
+        self.assertNotIn("pages", ids)
+
+    def test_an_inline_flow_and_its_variant_lines(self):
+        body = fence('flow@c "Check-in" submit="Send"', "flowchart TD",
+                     '  %% sleep: slide "How did you sleep?" 1-10', "  sleep --> check{Rough?}",
+                     "  check -->|sleep<5| easy", "  check --> note",
+                     '  %% easy: page "Easy day" body="Go light."', "  easy --> note",
+                     "  note[mic Anything else?]", "end", 'card "After the flow"')
+        out = compat.downgrade(body, 205)
+        plan, steps = self.plan_of(out)
+        self.assertEqual(plan["id"], "c")
+        self.assertEqual([(s["preset"], s["id"]) for s in steps], [("slide", "sleep"), ("mic", "note")])
+        self.assertIn('card "After the flow"', out)
+        variant = fence("flow website-intake as=bakery-intake", "drop pages",
+                        'add cakes after goal: pick "Which cakes?" Birthday|Wedding', "end")
+        plan, steps = self.plan_of(compat.downgrade(variant, 205))
+        self.assertEqual(plan["props"]["title"], "Bakery intake")
+        self.assertEqual([s["id"] for s in steps if s["preset"] != "page"],
+                         ["biz", "kind", "goal", "cakes", "brand", "budget"])
+
+    def test_no_saved_flow_by_that_name_still_leaves_something_to_tap(self):
+        out = compat.downgrade("A few questions first.\n\n" + fence("flow no-such-flow"), 205)
+        self.assertIn(compat.FALLBACK, out)
+        self.assertEqual([o["preset"] for o in ops(out)], ["ask"])
+
+    def test_a_promise_with_nothing_to_tap_gets_the_fallback(self):
+        bare = "Let me interview you for the site.\n\n" + fence('card "Your brand site"')
+        self.assertIn(compat.FALLBACK, compat.downgrade(bare, 205))
+        tap = "A few questions first.\n\n" + fence('choose "Ready?" Yes|No')
+        self.assertEqual(compat.downgrade(tap, 205), tap)
+        link = "A few questions first.\n\n" + fence('card "Brief" url=https://example.com')
+        self.assertEqual(compat.downgrade(link, 205), link)
+        plain = "Here is the brief.\n\n" + fence('card "Your brand site"')
+        self.assertEqual(compat.downgrade(plain, 205), plain)
+
+    def test_the_turn_note_never_tells_agents_to_skip_flows(self):
+        self.assertEqual(compat.note(compat.TUNER_BUILD), "")
+        self.assertNotIn("flow", compat.note(100))
+
+    def test_the_saved_flows_match_yuigui(self):
+        sync = Path(__file__).resolve().parents[1] / "sync_flows.py"
+        r = subprocess.run([sys.executable, str(sync), "--check"], capture_output=True, text=True,
+                           env={"YUIGUI": str(YL.parents[3]), "PATH": "/usr/bin:/bin:/opt/homebrew/bin:/usr/local/bin"})
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
