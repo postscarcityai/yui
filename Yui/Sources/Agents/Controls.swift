@@ -80,6 +80,9 @@ struct ControlItem: Decodable, Equatable, Identifiable, Sendable {
     var model: String?
     var provider: String?
     var toolsets: [Toolset]?
+    /// A native agent's profile and its version (YUI-145): "Basil", 1.
+    var profile: String?
+    var version: Int?
     // channels
     var live: Bool?
 
@@ -93,7 +96,7 @@ struct ControlItem: Decodable, Equatable, Identifiable, Sendable {
 
     enum CodingKeys: String, CodingKey {
         case id, title, sub, group, description, text, outline, enabled, bundled, updated, rev, when, schedule
-        case paused, deliver, model, provider, toolsets, live
+        case paused, deliver, model, provider, toolsets, live, profile, version
         case readOnly = "read_only", nextRun = "next_run", lastRun = "last_run", lastOk = "last_ok"
         case lastError = "last_error", runningSoon = "running_soon"
     }
@@ -215,6 +218,10 @@ final class ControlsModel {
 
 /// A stand-in host with the plugin's rules: revs, conflicts, a hidden key, bundled skills.
 actor DemoControls: ControlsTransport {
+    /// A native agent's name (YUI-145): Model answers as yui-native does, from the eval list.
+    private let native: String?
+    init(native: String? = nil) { self.native = native }
+
     private var soul = """
     # Scout
 
@@ -327,6 +334,12 @@ actor DemoControls: ControlsTransport {
             jobs.removeAll { $0.id == id }
             return ok(["deleted": true])
         case ("model", "list"): return ok(["items": [["id": "model", "title": "claude-opus-5-5", "sub": "Claude on this Mac"]]])
+        case ("model", "get") where native != nil:
+            return ok(["item": ["id": "model", "model": "Yui's pick (GLM 5.2, GLM-5V-Turbo for photos)", "provider": "OpenRouter, on Yui",
+                                "profile": native ?? "", "version": 1,
+                                "toolsets": [["name": "Every Yui screen", "on": true], ["name": "Memory", "on": true],
+                                             ["name": "Check-ins", "on": true], ["name": "Web search", "on": true],
+                                             ["name": "Hand-offs", "on": true]]]])
         case ("model", "get"):
             return ok(["item": ["id": "model", "model": "claude-opus-5-5", "provider": "Claude on this Mac",
                                 "toolsets": [["name": "hermes-cli", "on": true], ["name": "kanban", "on": true],

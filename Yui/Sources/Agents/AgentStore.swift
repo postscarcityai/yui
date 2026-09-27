@@ -137,6 +137,18 @@ struct PairingCode: Codable, Equatable, Sendable {
     enum CodingKeys: String, CodingKey { case code, expiresAt = "expires_at" }
 }
 
+/// One of the crew every person starts with (Yui, Arnold, Basil...), as Add agent
+/// offers it (YUI-145). `agentID` is set while it is in the list.
+struct CrewStarter: Codable, Identifiable, Equatable, Sendable {
+    let base: String
+    let name: String
+    let role: String
+    let color: String
+    var agentID: String?
+    var id: String { base }
+    enum CodingKeys: String, CodingKey { case base, name, role, color, agentID = "agent_id" }
+}
+
 /// A management token for Settings > Agent access. The secret is only ever
 /// in the create reply.
 struct AgentAccessToken: Codable, Identifiable, Equatable, Sendable {
@@ -158,6 +170,8 @@ final class AgentStore {
     var error: String?
     /// An invited person's first name, for "Hi Maya. Sam set these up for you." (YUI-97).
     private(set) var firstName: String?
+    /// The crew Add agent offers, one tap each (YUI-145). Nil: this person has no native Yui.
+    private(set) var crew: [CrewStarter]?
     /// "Basil is no longer shared with you.": shared agents gone since the app opened.
     /// Kept until the app is next launched, never stored.
     private(set) var unshared: [String] = []
@@ -196,6 +210,17 @@ final class AgentStore {
             let args = ProcessInfo.processInfo.arguments
             agents = args.contains("-yuiNoAgents") ? [] : args.contains("-yuiDemoAgents") ? Self.demoCrew
                 : args.contains("-yuiDemoShared") ? Self.demoShared : Self.demo
+            // -yuiDemoFirstLaunch: a new person's first list, as yui-agents provisions it (YUI-145):
+            // Yui and the starter crew, native, above any paired agents (-yuiDemoAgents adds some).
+            // -yuiDemoWithout <handle>: that one was removed, so Add agent offers it again.
+            if args.contains("-yuiDemoFirstLaunch") {
+                let gone = UserDefaults.standard.string(forKey: "yuiDemoWithout")
+                let paired = args.contains("-yuiDemoAgents") ? Self.demoCrew.filter { $0.id != "demo-yui" } : []
+                agents = Self.demoStarters.filter { $0.handle != gone } + paired
+                crew = Self.crewOffer(agents)
+                // A first launch remembers no agent: it opens on the default, Yui.
+                selectedID = nil
+            }
             // -yuiDemoNative: Yui is a native (hosted) agent, with this month's free web searches used up (YUI-142).
             if args.contains("-yuiDemoNative") {
                 agents = agents.map { a in
@@ -242,6 +267,7 @@ final class AgentStore {
         loaded = false
         error = nil
         firstName = nil
+        crew = nil
         unshared = []
         notice = nil
     }
@@ -252,6 +278,7 @@ final class AgentStore {
             let r: ListReply = try await call(["action": "list"])
             apply(r.agents)
             firstName = r.firstName
+            crew = r.crew
             loaded = true
             error = nil
             if agents.contains(where: { $0.kind == "hosted" }) { await sendTimeZoneIfNeeded() }
@@ -301,6 +328,26 @@ final class AgentStore {
         agents.append(r.agent)
         guard let pairing = r.pairing else { throw AccountError.server("no_code") }
         return (r.agent, pairing)
+    }
+
+    /// Puts one of the crew back in the list (YUI-145). Nothing else in the list changes;
+    /// one already there comes back as is. Returns its id, to open its thread.
+    func addCrew(_ starter: CrewStarter) async throws -> String {
+        if let id = starter.agentID, agents.contains(where: { $0.id == id }) { return id }
+        #if DEBUG
+        if isDemo {
+            guard var a = Self.demoStarters.first(where: { $0.handle == starter.base }) else { throw AccountError.server("invalid_base") }
+            let hosted = agents.filter { $0.kind == "hosted" }.map(\.sort)
+            a.sort = (hosted.max() ?? -1) + 1
+            let at = agents.firstIndex { $0.kind != "hosted" } ?? agents.endIndex
+            agents.insert(a, at: at)
+            crew = Self.crewOffer(agents)
+            return a.id
+        }
+        #endif
+        let r: AgentReply = try await call(["action": "crew_add", "base": starter.base])
+        await refresh()
+        return r.agent.id
     }
 
     func newCode(for agent: YuiAgent) async throws -> PairingCode {
@@ -456,7 +503,8 @@ final class AgentStore {
     private struct ListReply: Decodable {
         let agents: [YuiAgent]
         var firstName: String? = nil
-        enum CodingKeys: String, CodingKey { case agents, firstName = "first_name" }
+        var crew: [CrewStarter]? = nil
+        enum CodingKeys: String, CodingKey { case agents, firstName = "first_name", crew }
     }
     private struct CreateReply: Decodable { let agent: YuiAgent; let pairing: PairingCode? }
     private struct AgentReply: Decodable { let agent: YuiAgent }
@@ -535,6 +583,36 @@ final class AgentStore {
                  status: .connected, lastSeenAt: .now, isDefault: false, sort: 2,
                  theme: AgentLook(preset: "ocean"), presence: "paused", shared: true, sharedBy: "Sam", clientSafe: false),
     ]
+    /// `-yuiDemoFirstLaunch`: Yui and the crew, native, the way yui_native_provision makes them
+    /// (runtime/profiles, Yui first and the default). Each thread opens on its first message.
+    static let demoStarters: [YuiAgent] = [
+        ("yui", "Yui", "brand"), ("arnold", "Arnold", "butter"), ("basil", "Basil", "mint"),
+        ("gouda", "Gouda", "lavender"), ("penny", "Penny", "butter"), ("quill", "Quill", "lavender"),
+    ].enumerated().map { i, s in
+        YuiAgent(id: "demo-\(s.0)", name: s.1, handle: s.0, color: s.2, avatar: s.0 == "yui" ? "yui" : nil, kind: "hosted",
+                 connectorName: "Yui", remoteRef: s.0, status: .connected, lastSeenAt: .now,
+                 isDefault: s.0 == "yui", sort: i - 7, presence: "online", controls: demoNativeReport)
+    }
+    static let demoRoles = ["yui": "Helper and maker", "arnold": "Trainer", "basil": "Nutritionist",
+                            "gouda": "Musician", "penny": "Planner", "quill": "Study buddy"]
+    /// What yui-agents `list` says about the crew for this list.
+    static func crewOffer(_ agents: [YuiAgent]) -> [CrewStarter] {
+        demoStarters.map { s in
+            CrewStarter(base: s.handle, name: s.name, role: demoRoles[s.handle] ?? "", color: s.color,
+                        agentID: agents.first { $0.kind == "hosted" && $0.handle == s.handle }?.id)
+        }
+    }
+    /// Each starter's first message, verbatim from runtime/profiles/<name>/first.yui
+    /// (FirstLaunchDemoTests checks they still match).
+    static let demoFirst: [String: String] = [
+        "yui": "Hi, I'm Yui. Your crew is here: Arnold trains, Basil feeds you, Gouda makes music, Penny keeps your lists and Quill helps you study. Or ask me anything.\n```yui\nchoose \"Where do you want to start?\" \"Get fit\"|\"Eat better\"|\"Make music\"|\"Plan my week\"|\"Learn something\" +other\n```",
+        "arnold": "Arnold here. Let's build a week you'll actually do. Anything hurting or any health condition I should plan around? Check with your doctor before starting if so.\n```yui\nplan \"Your training week\"\nchoose \"How many days a week?\" 2|3|4|5|6\npick \"What do you have?\" \"Just me\"|Dumbbells|Barbell|Bands|\"Pull-up bar\"|\"A gym\" +other\nchoose \"Any injuries or conditions?\" None|\"Yes, I'll tell you\" +other\nend\n```",
+        "basil": "I'm Basil. Tell me what you're after and anything you can't eat, and I'll keep it in mind every time.\n```yui\nplan \"Eating well\"\nchoose \"Main goal?\" \"More energy\"|\"Lose a little\"|\"Build muscle\"|\"Eat healthier\"|\"Just curious\" +other\npick \"Anything to avoid?\" None|Nuts|Dairy|Gluten|Shellfish|Meat +other\nend\n```",
+        "gouda": "Gouda here. Let's make some noise. Here's a beat to start; tell me what you play and I'll build from there.\n```yui\nloop 92 \"Lazy Sunday\" p=x...x.x.|....|...\nchoose \"What are we doing?\" \"Make a beat\"|\"Learn theory\"|\"Write a song\"|\"Practice plan\" +other\n```",
+        "penny": "Penny here. Let's get this week out of your head. What's on it?\n```yui\nform \"This week\" must:voice maybe:voice\n```",
+        "quill": "Quill here. Pick a topic and I'll teach it in five minutes, then quiz you.\n```yui\nchoose \"What are we learning?\" Math|Science|History|Languages|\"Something else\" +other\n```",
+    ]
+    static let demoNativeReport = AgentControls(v: 1, sections: ["soul": "rw", "memory": "rwd", "schedules": "rwd", "model": "r"])
     static let demoReport = AgentControls(v: 1, sections: ["soul": "rw", "memory": "rwd", "skills": "rwd",
                                                              "schedules": "rwd", "model": "r", "channels": "r"])
     static let demoCode = PairingCode(code: "123456", expiresAt: .now.addingTimeInterval(600))

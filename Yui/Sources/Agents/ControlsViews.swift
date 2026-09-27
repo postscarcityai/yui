@@ -946,6 +946,8 @@ private struct ModelScreen: View {
                     Card {
                         Fact(label: "Model", value: m.model ?? "?")
                         Fact(label: "Runs on", value: m.provider ?? "?")
+                        // A native agent: which profile it runs, and its version (YUI-145).
+                        if let p = m.profile { Fact(label: "Profile", value: "\(p), version \(m.version ?? 1)") }
                     }
                     Text("TOOLS").font(theme.font(theme.type.caption, .heavy)).kerning(0.8).foregroundStyle(c.inkSoft)
                     Card {
@@ -959,11 +961,13 @@ private struct ModelScreen: View {
                             .accessibilityElement(children: .combine)
                         }
                     }
-                    Text("Switching the model comes later, once your Mac can test one first. Keys never show here.")
+                    Text(m.profile != nil ? "Yui only runs models that pass its screen test. Keys never show here."
+                         : "Switching the model comes later, once your Mac can test one first. Keys never show here.")
                         .font(theme.font(theme.type.caption)).foregroundStyle(c.inkSoft)
                     TalkAboutButton(item: TalkItem(section: .model, itemID: "model", rev: rev,
                                                    title: TalkItem.title(.model, m),
                                                    text: "**Model:** \(m.model ?? "?")\n\n**Runs on:** \(m.provider ?? "?")\n\n"
+                                                       + (m.profile.map { "**Profile:** \($0), version \(m.version ?? 1)\n\n" } ?? "")
                                                        + "**Tools:** " + (m.toolsets ?? []).map(\.name).joined(separator: ", ")))
                 }
                 .padding(theme.spacing.l)

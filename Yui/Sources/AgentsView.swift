@@ -457,6 +457,13 @@ struct AddAgentSheet: View {
 
     private func nameStep(_ c: Swatch) -> some View {
         VStack(alignment: .leading, spacing: theme.spacing.l) {
+            // The crew, one tap each, next to pairing your own (YUI-145, feedback APsS404f7C).
+            if let crew = store.crew, !crew.isEmpty {
+                CrewPicker(crew: crew, open: done)
+                Text("Or connect your own")
+                    .font(theme.font(theme.type.title, .bold)).foregroundStyle(c.ink)
+                    .padding(.top, theme.spacing.s)
+            }
             HStack {
                 Spacer()
                 AgentAvatar(name: name.isEmpty ? "?" : name, size: 72)
@@ -498,6 +505,75 @@ struct AddAgentSheet: View {
             withAnimation(theme.spring) { pending = (agent, code) }
         } catch {
             self.error = "Couldn't make a code just now. Check your connection and tap again."
+        }
+    }
+}
+
+/// The crew in Add agent (YUI-145): each starter by name, one tap each. One that is
+/// gone comes back; one already in the list opens its thread. A tap only ever adds.
+private struct CrewPicker: View {
+    let crew: [CrewStarter]
+    let open: (String) -> Void
+    @Environment(AgentStore.self) private var store
+    @Environment(\.yuiTheme) private var theme
+    @Environment(\.colorScheme) private var scheme
+    @State private var adding: String?
+    @State private var error: String?
+
+    var body: some View {
+        let c = theme.swatch(scheme)
+        VStack(alignment: .leading, spacing: theme.spacing.m) {
+            Text("Your crew")
+                .font(theme.font(theme.type.title, .bold)).foregroundStyle(c.ink)
+            Text("They live in Yui. Nothing to set up.")
+                .font(theme.font(theme.type.caption)).foregroundStyle(c.inkSoft)
+            LazyVGrid(columns: [GridItem(.flexible(), spacing: theme.spacing.s), GridItem(.flexible())], spacing: theme.spacing.s) {
+                ForEach(crew) { s in chip(s, c) }
+            }
+            if let error {
+                Text(error).font(theme.font(theme.type.caption, .semibold)).foregroundStyle(.red)
+            }
+        }
+    }
+
+    private func chip(_ s: CrewStarter, _ c: Swatch) -> some View {
+        let here = s.agentID.map { id in store.agents.contains { $0.id == id } } ?? false
+        let face = YuiAgent(id: s.base, name: s.name, handle: s.base, color: s.color, avatar: s.base == "yui" ? "yui" : nil,
+                            kind: "hosted", status: .connected, isDefault: false, sort: 0)
+        return Button { Task { await tap(s) } } label: {
+            HStack(spacing: theme.spacing.s) {
+                AgentBadge(agent: face, size: 36).environment(\.yuiTheme, face.yuiTheme)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(s.name).font(theme.font(theme.type.body, .bold)).foregroundStyle(c.ink)
+                    Text(here ? "In your list" : s.role)
+                        .font(theme.font(theme.type.caption)).foregroundStyle(c.inkSoft).lineLimit(1)
+                }
+                Spacer(minLength: 0)
+                if adding == s.base {
+                    ProgressView().tint(c.inkSoft)
+                } else {
+                    Image(systemName: here ? "checkmark.circle.fill" : "plus.circle.fill")
+                        .font(.system(size: 20, weight: .bold)).foregroundStyle(here ? c.inkSoft : c.accent)
+                }
+            }
+            .padding(theme.spacing.s)
+            .background(c.surface, in: .rect(cornerRadius: theme.radius.bubble))
+            .overlay(RoundedRectangle(cornerRadius: theme.radius.bubble).stroke(c.outline, lineWidth: 1))
+        }
+        .buttonStyle(BounceButtonStyle())
+        .disabled(adding != nil)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(here ? "\(s.name), in your list" : "Add \(s.name), \(s.role)")
+        .accessibilityIdentifier("crew-\(s.base)")
+    }
+
+    private func tap(_ s: CrewStarter) async {
+        adding = s.base
+        defer { adding = nil }
+        do {
+            open(try await store.addCrew(s))
+        } catch {
+            self.error = "Couldn't add \(s.name) just now. Check your connection and tap again."
         }
     }
 }

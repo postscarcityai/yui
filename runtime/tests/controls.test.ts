@@ -1,7 +1,7 @@
 // The drawer's Controls tab against a native agent: the same rows the Hermes plugin answers.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { answerControl, handleControl, REPORT } from "../src/controls.ts";
+import { answerControl, handleControl, modelLabel, REPORT } from "../src/controls.ts";
 import { runAgent } from "../src/turn.ts";
 import { fakeModel, freshYui, provider, system, USER } from "./helpers.ts";
 
@@ -95,6 +95,12 @@ test("model is read only and names the provider, never a key", async () => {
   const yui = await byHandle("yui");
   const got = await ask(store, yui.id, { op: "get", section: "model", id: "model" });
   assert.equal(got.item.provider, "OpenRouter, on Yui");
+  // The model by its name on the eval list, and the profile it runs with its version (YUI-145).
+  assert.equal(got.item.model, "Yui's pick (GLM 5.2, GLM-5V-Turbo for photos)");
+  assert.equal(got.item.profile, "Yui");
+  assert.equal(got.item.version, 1);
+  assert.equal(modelLabel("z-ai/glm-5v-turbo"), "GLM-5V-Turbo");
+  assert.equal(modelLabel("some/other-model"), "some/other-model", "off the list: the id as is");
   assert.ok(got.item.toolsets.some((t: any) => t.name === "Makes agents"));
   assert.equal((await ask(store, yui.id, { op: "put", section: "model", id: "model", rev: got.rev, value: {} })).error, "not_allowed");
   store.data.keys = { [USER]: { provider: "groq", baseUrl: "https://api.groq.com/openai/v1", model: "m", key: "gsk-secret-value" } };

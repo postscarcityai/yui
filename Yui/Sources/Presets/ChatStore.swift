@@ -417,6 +417,14 @@ final class ChatStore {
         if let echo = e.echo {
             withAnimation(spring) { messages.append(ChatMessage(id: id, text: echo, fromUser: true)) }
         }
+        #if DEBUG
+        // -yuiDemoReplyTaps: a tap the agent would get is answered with -yuiDemoReply too (YUI-145).
+        if client == nil, e.relays, e.echo != nil, ProcessInfo.processInfo.arguments.contains("-yuiDemoReplyTaps"),
+           let reply = UserDefaults.standard.string(forKey: "yuiDemoReply") {
+            demoAnswer(reply)
+            return
+        }
+        #endif
         guard client != nil, e.relays else { return }
         post(id: id, body: e.line, kind: "event", meta: e.meta)
     }
@@ -520,7 +528,9 @@ final class ChatStore {
         if let client { return ControlsModel(transport: RelayControls(client: client), agentName: agent.name, report: report) }
         #if DEBUG
         if ProcessInfo.processInfo.arguments.contains("-yuiDemoAccount") {
-            return ControlsModel(transport: Self.demoControls, agentName: agent.name, report: report)
+            // A native agent answers as yui-native does (YUI-145).
+            let host = agent.kind == "hosted" ? DemoControls(native: agent.name) : Self.demoControls
+            return ControlsModel(transport: host, agentName: agent.name, report: report)
         }
         #endif
         return nil

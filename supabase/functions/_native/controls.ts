@@ -4,6 +4,7 @@
 // (hermes-plugin/yui/controls.py), served from the person's native Yui.
 // Personality (the soul), Memory (the about-you card and the agent's notes),
 // Schedules (check-ins) and Model (read only). No turn, no model call.
+import { MODELS } from "./models.ts";
 import type { Store } from "./store.ts";
 import { describe, next, parseLine } from "./schedule.ts";
 import type { MemoryItem, NativeAgent, ScheduleItem } from "./types.ts";
@@ -255,10 +256,17 @@ const schedules: Section = {
 
 // -- model (read only) ------------------------------------------------------------------------
 
+/** The model's name from the eval list (models.ts MODELS), or its id when it isn't there. */
+export function modelLabel(id: string | undefined): string {
+  const m = id || "default";
+  return MODELS.find((c) => c.id === m)?.label ?? m;
+}
+
 function modelInfo(ctx: ControlContext) {
-  const m = ctx.agent.profile.model;
-  const name = !m || m === "default" ? "GLM 5.2 (GLM-5V-Turbo for photos)" : m;
-  return { id: "model", model: name, provider: ctx.provider,
+  const p = ctx.agent.profile;
+  return { id: "model", model: modelLabel(p.model), provider: ctx.provider,
+           // Which profile it runs, and its version (YUI-145): "Basil" v1.
+           profile: p.name, version: p.version ?? 1,
            toolsets: [{ name: "Every Yui screen", on: true }, { name: "Memory", on: true }, { name: "Check-ins", on: true },
                       { name: ctx.searchKey ? "Web search, your Firecrawl key" : "Web search", on: true }, { name: "Hand-offs", on: true },
                       ...(ctx.agent.profile.maker ? [{ name: "Makes agents", on: true }] : [])] };

@@ -7,7 +7,7 @@
 //     codes. It is not a PostgREST JWT, so it can never read messages, and it
 //     cannot manage tokens, revoke hosts or delete the account.
 //
-// Actions: list, create, update, delete, reorder, pair_code,
+// Actions: list, create, update, delete, reorder, pair_code, crew_add,
 //          token_create, token_list, token_revoke, connector_revoke (app only).
 import {
   admin,
@@ -31,6 +31,7 @@ import {
   verifyAccessToken,
 } from "../_shared/yui.ts";
 import { starters } from "../_native/profiles.ts";
+import { type CrewOffer, crewOffer, crewRefusal, readdSort, starter } from "../_native/starters.ts";
 
 const PAIR_TTL_MINUTES = 10;
 
@@ -180,6 +181,21 @@ async function provisionNative(db: any, userId: string) {
   }
 }
 
+// YUI-145: the crew in Add agent, by name, with the agent each one is while it
+// is in the list. Null when this person has no native Yui (native_enabled off).
+// deno-lint-ignore no-explicit-any
+async function crewFor(db: any, userId: string): Promise<CrewOffer[] | null> {
+  const { data: hosted } = await db.from("yui_connectors").select("id").eq("user_id", userId)
+    .eq("kind", "hosted").is("revoked_at", null).limit(1);
+  if (!hosted?.length) return null;
+  const { data: rows, error } = await db.from("yui_native_profiles").select("agent_id, base:profile->>base")
+    .eq("user_id", userId);
+  if (error) throw error;
+  return crewOffer(rows ?? []);
+}
+
+const crewView = (o: CrewOffer) => ({ base: o.base, name: o.name, role: o.role, color: o.color, agent_id: o.agentId });
+
 type Action = { appOnly?: boolean; run: (userId: string, b: Body) => Promise<unknown> };
 
 const ACTIONS: Record<string, Action> = {
@@ -198,7 +214,31 @@ const ACTIONS: Record<string, Action> = {
       const { data: invite } = await db.from("yui_invites").select("first_name")
         .eq("claimed_user_id", userId).not("first_name", "is", null)
         .order("claimed_at", { ascending: false }).limit(1).maybeSingle();
-      return { agents, connectors, first_name: invite?.first_name ?? null };
+      const crew = await crewFor(db, userId).catch((e) => (console.error("crew", e), null));
+      return { agents, connectors, first_name: invite?.first_name ?? null, crew: crew?.map(crewView) ?? null };
+    },
+  },
+
+  // {base}. Puts one starter (Arnold, Basil...) back in the list, after the
+  // crew and above paired agents. Nothing else in the list changes. Already
+  // there: that agent, added false.
+  crew_add: {
+    async run(userId, b) {
+      const db = admin();
+      const prof = starter(b.base);
+      if (!prof) throw new HttpError(400, "invalid_base");
+      const offer = await crewFor(db, userId);
+      const had = offer?.find((o) => o.base === prof.base)?.agentId;
+      if (had) return { agent: await agentView(db, userId, had), added: false };
+      const { data: listed, error } = await db.from("yui_agents").select("kind, sort").eq("user_id", userId);
+      if (error) throw error;
+      const why = crewRefusal(offer, prof.base, (listed ?? []).filter((a: { kind: string }) => a.kind === "hosted").length);
+      if (why) throw new HttpError(why === "invalid_base" ? 400 : 409, why);
+      const { data, error: e2 } = await db.rpc("yui_native_add_agent", { uid: userId, prof, at_sort: readdSort(listed ?? []) });
+      if (e2) throw e2;
+      const id = Array.isArray(data) ? data[0]?.agent_id : data?.agent_id;
+      if (!id) throw new Error("yui_native_add_agent returned no agent");
+      return { agent: await agentView(db, userId, id), added: true };
     },
   },
 

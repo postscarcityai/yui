@@ -430,6 +430,14 @@ struct ChatView: View {
                 // -yuiThreadRows: each thread switch loads the rows again, timed (YUI-101).
                 // Not the first showing: that keeps the seeded chat the rows load under.
                 if old != new, !store.messages.isEmpty, let rows = Self.debugRows() { store.reopen(rows) }
+                // -yuiDemoFirstLaunch (YUI-145): each thread opens on the agent's first message,
+                // the row yui_native_provision writes, so a new person lands on Yui talking.
+                if ProcessInfo.processInfo.arguments.contains("-yuiDemoFirstLaunch"), old != new || store.messages.isEmpty,
+                   let a = agents.selected, let first = AgentStore.demoFirst[a.handle] {
+                    store.reopen([ThreadRow(id: "first-\(a.handle)", sender: "agent", body: first, kind: "text",
+                                            meta: .object(["native": .string("first")]),
+                                            createdAt: ISO8601DateFormatter().string(from: .now))])
+                }
                 #endif
                 return
             }
