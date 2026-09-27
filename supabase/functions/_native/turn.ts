@@ -26,9 +26,13 @@ export interface Provider {
   headers?: Record<string, string>;
   extra?: Record<string, unknown>; // sent with every request (OpenRouter's provider rules)
   model?: string; // this provider's own model, when it is not OpenRouter's ids (a person's Groq key)
+  reasoning?: number; // tokens the model may think before it answers, on top of the answer's (OpenRouter's reasoning.max_tokens)
 }
 
 const OPENROUTER = "https://openrouter.ai/api/v1";
+// GLM 5.2 left alone can think through the whole answer budget and say nothing
+// (YUI-162): the thinking gets its own 1000 on top, and the answer keeps its 2000.
+const REASONING = 1000;
 
 /** OpenRouter, on Yui's key for now (spec/NATIVE.md section 7). */
 export function openRouter(key: string): Provider {
@@ -37,6 +41,7 @@ export function openRouter(key: string): Provider {
     key,
     headers: { "HTTP-Referer": "https://www.yuigui.com", "X-Title": "Yui" },
     extra: { provider: { data_collection: "deny" } },
+    reasoning: REASONING,
   };
 }
 
@@ -179,9 +184,12 @@ async function oneTurn(store: Store, agent: NativeAgent, rows: Row[], opts: Turn
   const model = provider.model ?? (images.length ? routes.vision : p.model && p.model !== "default" ? p.model : routes.text);
   const { messages } = buildTurn({
     guide, agent, memory, crew, history: history.filter((h) => !real.includes(h.id)), turn: rows, images, photosLeftOut: Math.max(photos.length - 1, 0),
-    context: opts.context, reserve: opts.maxTokens ?? 2000, now, tz: tzRaw ? tz : undefined, schedules,
+    context: opts.context, reserve: (opts.maxTokens ?? 2000) + (provider.reasoning ?? 0), now, tz: tzRaw ? tz : undefined, schedules,
   });
-  const req = { model, messages, max_tokens: opts.maxTokens ?? 2000 };
+  const room = opts.maxTokens ?? 2000;
+  const req: { model: string; messages: any[]; max_tokens: number; reasoning?: Record<string, unknown> } = provider.reasoning
+    ? { model, messages, max_tokens: room + provider.reasoning, reasoning: { max_tokens: provider.reasoning } }
+    : { model, messages, max_tokens: room };
 
   let answer: Completion;
   let looked: Looked = { sources: [] };
@@ -203,6 +211,13 @@ async function oneTurn(store: Store, agent: NativeAgent, rows: Row[], opts: Turn
     if (hasLookup(answer.text)) {
       looked = await lookUp(store, agent, opts, provider, sent, answer, last, log);
       answer = looked.answer!;
+    }
+    // Thought the whole budget away and said nothing: ask once more without the thinking.
+    if (!answer.text.trim() && answer.finish === "length") {
+      log(`${p.name}: ${model} thought until it ran out of room, asking again without thinking`);
+      answer = await ask(opts, provider, provider.reasoning
+        ? { ...sent, messages: looked.messages ?? sent.messages, reasoning: { enabled: false } }
+        : { ...sent, messages: [...(looked.messages ?? sent.messages), { role: "user", content: RETRY_NOTE }] });
     }
   } catch (e: any) {
     if (last) await store.doing(last, null);
@@ -292,8 +307,11 @@ async function applySchedules(store: Store, agent: NativeAgent, lines: string[],
   return problems;
 }
 
+const RETRY_NOTE = "[yui] Your last try ran out of room while thinking. Answer the person now, shorter, with little thinking.";
+
 interface Looked {
   answer?: Completion;
+  messages?: any[]; // the conversation the last answer came from, lookups and all
   sources: Source[];
   capped?: { why: "month" | "day"; limit: number }; // Yui's free lookups ran out this turn
 }
@@ -360,6 +378,7 @@ async function lookUp(store: Store, agent: NativeAgent, opts: TurnOptions, provi
     }
   }
   out.answer = answer;
+  out.messages = messages;
   return out;
 }
 

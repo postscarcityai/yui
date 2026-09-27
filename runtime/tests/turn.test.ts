@@ -3,7 +3,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { LocalStore } from "../src/store.ts";
-import { runAgent } from "../src/turn.ts";
+import { openRouter, runAgent } from "../src/turn.ts";
 import { fakeModel, freshYui, lastUser, provider, system, USER } from "./helpers.ts";
 
 test("a turn answers, keeps what it learned out of sight, and marks the rows", async () => {
@@ -281,4 +281,75 @@ test("a turn's written answer has no dashes", async () => {
   const r = await runAgent(store, yui.id, { provider, fetch: m.fetch });
   assert.equal(store.data.rows.find((x) => x.id === r.replies[0])!.body, "Arnold's your trainer. Tap Arnold.");
   assert.match(system(m.calls[0]), /Never use an em dash/);
+});
+
+// YUI-162: GLM 5.2 could think through the whole budget and answer nothing.
+function thinker(answers: Array<{ content: string; finish: string }>) {
+  const calls: any[] = [];
+  const fetchImpl = (async (_url: string, init: any) => {
+    const body = JSON.parse(init.body);
+    calls.push(body);
+    const a = answers[Math.min(calls.length - 1, answers.length - 1)];
+    return new Response(JSON.stringify({ choices: [{ message: { role: "assistant", content: a.content, reasoning: "hmm ".repeat(50) }, finish_reason: a.finish }] }),
+                        { status: 200, headers: { "content-type": "application/json" } });
+  }) as unknown as typeof fetch;
+  return { calls, fetch: fetchImpl };
+}
+
+test("on OpenRouter the thinking gets its own cap, on top of the answer's room", async () => {
+  const { store, byHandle } = await freshYui();
+  const yui = await byHandle("yui");
+  const m = thinker([{ content: "Rome rose, then it fell.", finish: "stop" }]);
+  store.say(yui.id, "explain the rise and fall of Rome");
+  await runAgent(store, yui.id, { provider: openRouter("k"), fetch: m.fetch });
+  assert.equal(m.calls.length, 1);
+  assert.deepEqual(m.calls[0].reasoning, { max_tokens: 1000 });
+  assert.equal(m.calls[0].max_tokens, 3000, "2000 for the answer plus 1000 to think");
+  assert.equal(m.calls[0].provider.data_collection, "deny");
+});
+
+test("thought until it ran out of room: asks once more without thinking and uses that answer", async () => {
+  const { store, byHandle } = await freshYui();
+  const yui = await byHandle("yui");
+  const m = thinker([{ content: "", finish: "length" }, { content: "Rome rose on roads and fell on money.", finish: "stop" }]);
+  store.say(yui.id, "explain the rise and fall of Rome");
+  const r = await runAgent(store, yui.id, { provider: openRouter("k"), fetch: m.fetch });
+  assert.equal(m.calls.length, 2, "one retry, no more");
+  assert.deepEqual(m.calls[1].reasoning, { enabled: false });
+  assert.deepEqual(m.calls[1].messages, m.calls[0].messages, "the same conversation");
+  const reply = store.data.rows.find((x) => x.id === r.replies[0])!;
+  assert.equal(reply.body, "Rome rose on roads and fell on money.");
+});
+
+test("still empty after the retry: the ran-out-of-room line is the last resort", async () => {
+  const { store, byHandle } = await freshYui();
+  const yui = await byHandle("yui");
+  const m = thinker([{ content: "", finish: "length" }]);
+  store.say(yui.id, "explain everything");
+  const r = await runAgent(store, yui.id, { provider: openRouter("k"), fetch: m.fetch });
+  assert.equal(m.calls.length, 2);
+  const reply = store.data.rows.find((x) => x.id === r.replies[0])!;
+  assert.match(reply.body, /ran out of room/);
+});
+
+test("another server gets no reasoning field; its retry asks for a shorter answer", async () => {
+  const { store, byHandle } = await freshYui();
+  const yui = await byHandle("yui");
+  const m = thinker([{ content: "", finish: "length" }, { content: "Short answer.", finish: "stop" }]);
+  store.say(yui.id, "explain the rise and fall of Rome");
+  const r = await runAgent(store, yui.id, { provider, fetch: m.fetch });
+  assert.equal(m.calls.length, 2);
+  assert.equal(m.calls[0].reasoning, undefined);
+  assert.equal(m.calls[0].max_tokens, 2000);
+  assert.match(m.calls[1].messages.at(-1).content, /ran out of room while thinking/);
+  assert.equal(store.data.rows.find((x) => x.id === r.replies[0])!.body, "Short answer.");
+});
+
+test("a short answer that stopped at the limit is kept, no retry", async () => {
+  const { store, byHandle } = await freshYui();
+  const yui = await byHandle("yui");
+  const m = thinker([{ content: "Rome rose and", finish: "length" }]);
+  store.say(yui.id, "explain the rise and fall of Rome");
+  await runAgent(store, yui.id, { provider: openRouter("k"), fetch: m.fetch });
+  assert.equal(m.calls.length, 1);
 });
