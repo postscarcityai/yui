@@ -85,3 +85,13 @@ test("memory: notes, facts, forgetting, and the prompt numbers", () => {
   apply(Array.from({ length: MAX_NOTES + 5 }, (_, i) => ({ op: "note", body: `note ${i}` })));
   assert.equal(notesOf(items, "a1").length, MAX_NOTES, "the oldest notes make room");
 });
+
+test("a remember block with no fence at the end of a reply is taken, not shown (GLM, YUI-141)", () => {
+  const reply = "```yui\nstat@kcal1 720kcal Calories\n```\n\nremember\nnote: [n2] meal1 - poke bowl, ~720kcal\n";
+  const x = extract(reply);
+  assert.equal(x.text, "```yui\nstat@kcal1 720kcal Calories\n```");
+  assert.equal(x.memory.length, 1);
+  // A word in the middle of the text is only a word.
+  assert.equal(extract("Things to remember\nabout lunch").text, "Things to remember\nabout lunch");
+  assert.equal(extract("I'll search\nfor it").text, "I'll search\nfor it");
+});

@@ -86,7 +86,8 @@ export interface PromptInput {
   crew?: CrewEntry[]; // the person's native agents, for a maker
   history: Row[];
   turn: Row[];
-  images?: string[]; // signed URLs of photos in this turn
+  images?: string[]; // signed URLs of photos in this turn (one per turn)
+  photosLeftOut?: number; // photos in this turn the model is not shown
   now?: number; // ms; the prompt says the time in the person's zone
   tz?: string;
   schedules?: ScheduleItem[];
@@ -143,14 +144,15 @@ export function buildTurn(input: PromptInput): { messages: ChatMessage[]; droppe
   if (input.images?.length) {
     const last = messages[messages.length - 1];
     if (last?.role === "user") {
-      last.content = [{ type: "text", text: String(last.content) }, ...input.images.map((url) => ({ type: "image_url" as const, image_url: { url } }))];
+      const more = input.photosLeftOut ? `\n[yui] ${input.photosLeftOut} more photo${input.photosLeftOut > 1 ? "s" : ""} came with this turn; you see only the newest. Say so, and ask for the others one at a time.` : "";
+      last.content = [{ type: "text", text: String(last.content) + more }, ...input.images.map((url) => ({ type: "image_url" as const, image_url: { url } }))];
     }
   }
   messages.unshift({ role: "system", content: system });
   return { messages, dropped: past.length - kept.length };
 }
 
-/** Storage paths of the person's photos in these rows: `[yui] c1 camera photo=<path>`. */
+/** Storage paths of the person's photos in these rows, oldest first: `[yui] c1 camera photo=<path>`. */
 export function photoPaths(rows: Row[]): string[] {
   const out: string[] = [];
   for (const r of rows) {
@@ -159,5 +161,5 @@ export function photoPaths(rows: Row[]): string[] {
     }
     for (const p of r.meta?.media ?? []) if (typeof p === "string" && !out.includes(p)) out.push(p);
   }
-  return out.slice(0, 4);
+  return out;
 }

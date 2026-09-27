@@ -170,12 +170,13 @@ async function oneTurn(store: Store, agent: NativeAgent, rows: Row[], opts: Turn
   const tz = validZone(tzRaw);
   const crew: CrewEntry[] = mine.map((a) => ({ handle: a.profile.handle, name: a.profile.name, role: a.profile.role }));
 
+  // One photo per turn, the newest (spec/NATIVE.md, limits); the model hears how many it missed.
   const photos = photoPaths(rows);
-  const images = (await Promise.all(photos.map((x) => store.signMedia(x)))).filter((u): u is string => !!u);
+  const images = (await Promise.all(photos.slice(-1).map((x) => store.signMedia(x)))).filter((u): u is string => !!u);
   // A turn with a picture goes to the model that sees (spec/NATIVE.md section 6).
   const model = provider.model ?? (images.length ? routes.vision : p.model && p.model !== "default" ? p.model : routes.text);
   const { messages } = buildTurn({
-    guide, agent, memory, crew, history: history.filter((h) => !real.includes(h.id)), turn: rows, images,
+    guide, agent, memory, crew, history: history.filter((h) => !real.includes(h.id)), turn: rows, images, photosLeftOut: Math.max(photos.length - 1, 0),
     context: opts.context, reserve: opts.maxTokens ?? 2000, now, tz: tzRaw ? tz : undefined, schedules,
   });
   const req = { model, messages, max_tokens: opts.maxTokens ?? 2000 };

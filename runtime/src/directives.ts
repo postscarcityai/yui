@@ -52,11 +52,15 @@ export interface Extracted {
 }
 
 const FENCE = /```(remember|agents|schedule|search|fetch|handoff)[ \t]*\n([\s\S]*?)(?:\n```|$)/g;
+// GLM sometimes drops the fence on a block that ends the reply ("remember" alone on a
+// line, then its lines): taken the same way, never shown to the person (YUI-141).
+const BARE_TAIL = /(^|\n)(remember|agents|schedule|search|fetch|handoff)[ \t]*\n(?![\s\S]*```)([\s\S]*)$/;
 
 /** Splits a reply into what the person sees and what the runtime does. */
 export function extract(reply: string): Extracted {
   const out: Extracted = { text: "", memory: [], agents: [], schedule: [], search: null, fetch: null, handoff: [] };
-  out.text = reply.replace(FENCE, (_m, kind: string, body: string) => {
+  const fenced = reply.replace(BARE_TAIL, (_m, lead: string, kind: string, body: string) => `${lead}\`\`\`${kind}\n${body.trimEnd()}\n\`\`\``);
+  out.text = fenced.replace(FENCE, (_m, kind: string, body: string) => {
     for (const line of body.split("\n")) {
       const l = line.trim();
       if (!l || l.startsWith("#")) continue;

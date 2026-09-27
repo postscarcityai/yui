@@ -1203,6 +1203,13 @@ struct ChatView: View {
         }
         photos = []
         clearComposer()
+        #if DEBUG
+        // -yuiDemoReply answers a photo too (YUI-141: Basil reading a meal).
+        if let reply = UserDefaults.standard.string(forKey: "yuiDemoReply") {
+            withAnimation(ChatStore.sendSpring) { store.demoAnswer(reply) }
+            return
+        }
+        #endif
         Task {
             try? await Task.sleep(for: .milliseconds(700))
             withAnimation(theme.spring) {

@@ -591,30 +591,7 @@ final class ChatStore {
             let q = screen == nil && about == nil ? takeReply(for: text) : nil
             withAnimation(Self.sendSpring) {
                 messages.append(ChatMessage(text: text, fromUser: true, replyTo: q, fromScreen: screen, about: about?.title))
-                owe()
-            }
-            // -yuiDemoPickupAfter / -yuiDemoReplyAfter <seconds>: stretch the turn so the working row can be watched (YUI-63).
-            let d = UserDefaults.standard
-            let pickup = d.object(forKey: "yuiDemoPickupAfter") == nil ? 0.5 : d.double(forKey: "yuiDemoPickupAfter")
-            let answer = max(pickup, d.object(forKey: "yuiDemoReplyAfter") == nil ? 1.6 : d.double(forKey: "yuiDemoReplyAfter"))
-            // -yuiDemoDoing "Reading your calendar 1/3|Checking the weather 2/3|doing off": what the
-            // agent says it is doing (YUI-63), spread evenly between pickup and the answer.
-            let steps = (d.string(forKey: "yuiDemoDoing") ?? "").split(separator: "|").map {
-                YuiLines.doing(of: YuiLines.parse("doing \($0)"))
-            }
-            Task {
-                try? await Task.sleep(for: .seconds(pickup))
-                pickedUpAt = .now
-                let gap = (answer - pickup) / Double(steps.count + 1)
-                for step in steps {
-                    try? await Task.sleep(for: .seconds(gap))
-                    setDoing(step)
-                }
-                try? await Task.sleep(for: .seconds(steps.isEmpty ? answer - pickup : gap))
-                waiting = false
-                pickedUpAt = nil
-                doing = nil
-                stream(reply.replacingOccurrences(of: "\\n", with: "\n"))
+                demoAnswer(reply)
             }
             return true
         }
@@ -936,6 +913,43 @@ final class ChatStore {
         pageUpdate(live)
         return true
     }
+
+    #if DEBUG
+    /// The demo account's scripted answer (-yuiDemoReply), after a working row. A reply
+    /// with a ```yui fence lands as a real agent row does (YUI-141: a native agent's answer, verbatim).
+    func demoAnswer(_ reply: String) {
+        owe()
+        // -yuiDemoPickupAfter / -yuiDemoReplyAfter <seconds>: stretch the turn so the working row can be watched (YUI-63).
+        let d = UserDefaults.standard
+        let pickup = d.object(forKey: "yuiDemoPickupAfter") == nil ? 0.5 : d.double(forKey: "yuiDemoPickupAfter")
+        let answer = max(pickup, d.object(forKey: "yuiDemoReplyAfter") == nil ? 1.6 : d.double(forKey: "yuiDemoReplyAfter"))
+        // -yuiDemoDoing "Reading your calendar 1/3|Checking the weather 2/3|doing off": what the
+        // agent says it is doing (YUI-63), spread evenly between pickup and the answer.
+        let steps = (d.string(forKey: "yuiDemoDoing") ?? "").split(separator: "|").map {
+            YuiLines.doing(of: YuiLines.parse("doing \($0)"))
+        }
+        Task {
+            try? await Task.sleep(for: .seconds(pickup))
+            pickedUpAt = .now
+            let gap = (answer - pickup) / Double(steps.count + 1)
+            for step in steps {
+                try? await Task.sleep(for: .seconds(gap))
+                setDoing(step)
+            }
+            try? await Task.sleep(for: .seconds(steps.isEmpty ? answer - pickup : gap))
+            waiting = false
+            pickedUpAt = nil
+            doing = nil
+            let text = reply.replacingOccurrences(of: "\\n", with: "\n")
+            if text.contains("```yui") {
+                add(ThreadRow(id: UUID().uuidString.lowercased(), sender: "agent", body: text, kind: "text", meta: nil,
+                              createdAt: ISO8601DateFormatter().string(from: .now)))
+            } else {
+                stream(text)
+            }
+        }
+    }
+    #endif
 
     /// Adds an agent reply and feeds it through the stream parser a line at a
     /// time, the way a model's tokens will arrive, so each preset lands on its own.
