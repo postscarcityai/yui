@@ -211,8 +211,8 @@ async function oneTurn(store: Store, agent: NativeAgent, rows: Row[], opts: Turn
       looked = await lookUp(store, agent, opts, provider, sent, answer, last, log);
       answer = looked.answer!;
     }
-    // Thought the whole budget away and said nothing: ask once more without the thinking.
-    if (!answer.text.trim() && answer.finish === "length") {
+    // Thought the budget away and said nothing, or a few words cut off: ask once more without the thinking.
+    if (thoughtOut(answer, req.max_tokens)) {
       log(`${p.name}: ${model} thought until it ran out of room, asking again without thinking`);
       answer = await ask(opts, provider, provider.reasoning
         ? { ...sent, messages: looked.messages ?? sent.messages, reasoning: { enabled: false } }
@@ -304,6 +304,18 @@ async function applySchedules(store: Store, agent: NativeAgent, lines: string[],
     else log(`${agent.profile.name}: check-in set for ${new Date(at).toISOString()}`);
   }
   return problems;
+}
+
+/**
+ * Cut off at the limit with nothing to say, or with most of the budget spent
+ * thinking (GLM takes reasoning.max_tokens as a hint: one run thought 2958 of
+ * 3000 and left half a sentence). A long answer that simply ran long is kept.
+ */
+export function thoughtOut(a: Completion, maxTokens: number): boolean {
+  if (a.finish !== "length") return false;
+  if (!a.text.trim()) return true;
+  const thought = (a.usage as any)?.completion_tokens_details?.reasoning_tokens ?? Math.round(a.reasoning.length / 4);
+  return thought > maxTokens / 2;
 }
 
 const RETRY_NOTE = "[yui] Your last try ran out of room while thinking. Answer the person now, shorter, with little thinking.";

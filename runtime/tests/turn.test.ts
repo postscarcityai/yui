@@ -284,13 +284,14 @@ test("a turn's written answer has no dashes", async () => {
 });
 
 // YUI-162: GLM 5.2 could think through the whole budget and answer nothing.
-function thinker(answers: Array<{ content: string; finish: string }>) {
+function thinker(answers: Array<{ content: string; finish: string; thought?: number }>) {
   const calls: any[] = [];
   const fetchImpl = (async (_url: string, init: any) => {
     const body = JSON.parse(init.body);
     calls.push(body);
     const a = answers[Math.min(calls.length - 1, answers.length - 1)];
-    return new Response(JSON.stringify({ choices: [{ message: { role: "assistant", content: a.content, reasoning: "hmm ".repeat(50) }, finish_reason: a.finish }] }),
+    return new Response(JSON.stringify({ choices: [{ message: { role: "assistant", content: a.content, reasoning: "hmm ".repeat(50) }, finish_reason: a.finish }],
+                                         ...(a.thought ? { usage: { completion_tokens: 3000, completion_tokens_details: { reasoning_tokens: a.thought } } } : {}) }),
                         { status: 200, headers: { "content-type": "application/json" } });
   }) as unknown as typeof fetch;
   return { calls, fetch: fetchImpl };
@@ -345,10 +346,22 @@ test("another server gets no reasoning field; its retry asks for a shorter answe
   assert.equal(store.data.rows.find((x) => x.id === r.replies[0])!.body, "Short answer.");
 });
 
-test("a short answer that stopped at the limit is kept, no retry", async () => {
+test("half a sentence after thinking most of the budget counts as no answer", async () => {
   const { store, byHandle } = await freshYui();
   const yui = await byHandle("yui");
-  const m = thinker([{ content: "Rome rose and", finish: "length" }]);
+  const m = thinker([{ content: 'Rome grew, then crumbled.\n```yui\ndeck "Rome, rise and fall', finish: "length", thought: 2958 },
+                     { content: "Rome grew on roads and law, and fell on money and borders.", finish: "stop" }]);
+  store.say(yui.id, "explain the rise and fall of Rome");
+  const r = await runAgent(store, yui.id, { provider: openRouter("k"), fetch: m.fetch });
+  assert.equal(m.calls.length, 2);
+  assert.deepEqual(m.calls[1].reasoning, { enabled: false });
+  assert.match(store.data.rows.find((x) => x.id === r.replies[0])!.body, /fell on money/);
+});
+
+test("a long answer that ran long without much thinking is kept, no retry", async () => {
+  const { store, byHandle } = await freshYui();
+  const yui = await byHandle("yui");
+  const m = thinker([{ content: "Rome rose and", finish: "length", thought: 300 }]);
   store.say(yui.id, "explain the rise and fall of Rome");
   await runAgent(store, yui.id, { provider: openRouter("k"), fetch: m.fetch });
   assert.equal(m.calls.length, 1);
