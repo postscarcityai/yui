@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """YUI-49 end to end: a 👍 on the agent's message reaches the agent as a turn,
-and the agent builds what it proposed. Live against PROOF, on a throwaway account.
+and the agent builds what it proposed. Live against yuigui, on a throwaway account.
 
 The host is the real `yui` platform adapter under Hermes' real
 BasePlatformAdapter, in its own process. Its agent:

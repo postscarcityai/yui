@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""YUI-96 app look tests against PROOF (live). Helpers copied from theme_test.py.
+"""YUI-96 app look tests against yuigui (live). Helpers copied from theme_test.py.
 
 yui_users.look (migration 20260925100000_yui_user_look.sql) through the
 yui-account function (spec yuigui/spec/RESTYLE.md, section 6): set it, read it
@@ -12,7 +12,7 @@ accounts_test.py.
 """
 import base64, hashlib, hmac, json, os, subprocess, sys, time, urllib.request, urllib.error, uuid, secrets
 
-REF = "ewzzaoperdpxqxkshynx"
+REF = "txuibjxyfpalzvpneqgp"
 BASE = f"https://{REF}.supabase.co"
 YUI_TABLES = ["yui_users", "yui_apple_tokens", "yui_sessions", "yui_devices",
               "yui_agents", "yui_pairings", "yui_messages", "yui_connectors", "yui_mgmt_tokens"]

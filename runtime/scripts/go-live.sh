@@ -7,7 +7,7 @@
 # It does not switch native Yui on. That is one line after it:
 #   update yui_limits set value = 1 where name = 'native_enabled';
 set -euo pipefail
-REF=ewzzaoperdpxqxkshynx
+REF=txuibjxyfpalzvpneqgp
 command -v supabase >/dev/null || { echo "needs the supabase CLI"; exit 1; }
 
 read -r -s -p "Yui's OpenRouter key (input hidden): " OR_KEY; echo

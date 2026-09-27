@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""INT-2 end to end: the webhook bridges (Python and Node) against live PROOF.
+"""INT-2 end to end: the webhook bridges (Python and Node) against the live yuigui project.
 
 For each client, on a fresh throwaway account (never a real one):
 

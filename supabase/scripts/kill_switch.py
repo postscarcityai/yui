@@ -18,7 +18,7 @@ entry), like the tests. Prints ids only, never emails.
 """
 import argparse, base64, json, os, re, subprocess, sys, urllib.error, urllib.request
 
-REF = "ewzzaoperdpxqxkshynx"
+REF = "txuibjxyfpalzvpneqgp"
 UUID = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
 
 

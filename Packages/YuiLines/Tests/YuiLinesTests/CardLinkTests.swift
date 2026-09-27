@@ -8,7 +8,7 @@ import Testing
 // card's button is not a link and the tap goes to the agent instead of Safari.
 
 let fakeToken = "eyJraWQiOiJ0ZXN0IiwiYWxnIjoiSFMyNTYifQ.eyJ1cmwiOiJ5dWktYnVpbGRzLzYxLjEvbWFuaWZlc3QucGxpc3QifQ.c2lnbmF0dXJlLXRlc3Qtb25seQ"
-let manifest = "https://ewzzaoperdpxqxkshynx.supabase.co/storage/v1/object/sign/yui-builds/61.1-60480ca53c23/manifest.plist?token=\(fakeToken)"
+let manifest = "https://txuibjxyfpalzvpneqgp.supabase.co/storage/v1/object/sign/yui-builds/61.1-60480ca53c23/manifest.plist?token=\(fakeToken)"
 let encodedManifest = manifest.addingPercentEncoding(withAllowedCharacters: .alphanumerics.union(.init(charactersIn: "-._~")))!
 
 let installLinks = [

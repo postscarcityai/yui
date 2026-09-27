@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""YUI-7 relay tests against PROOF (live).
+"""YUI-7 relay tests against yuigui (live).
 
 The host's database token (role yui_connector, from yui-connect action=session)
 may read the user's messages and write agent replies only in threads of agents

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""YUI-44 @mention tests against PROOF (live).
+"""YUI-44 @mention tests against yuigui (live).
 
 The person, in agent A's thread, mentions agent B with one row. A is not
 asked (the row lands handled), B gets a copy with A's recent lines quoted,

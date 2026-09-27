@@ -523,7 +523,7 @@ const SCREEN_BLURB = "The Yui screen drawn inside the chat: the same Yui Lines t
 // Images on a screen come from Yui's own storage or from fal renders; the
 // sandbox loads nothing else (no scripts, fonts or connections from outside).
 // ChatGPT's openai/* keys say the same in its older shape (snake_case CSP).
-const IMAGE_DOMAINS = [Deno.env.get("SUPABASE_URL") ?? "https://ewzzaoperdpxqxkshynx.supabase.co", "https://fal.media", "https://*.fal.media"];
+const IMAGE_DOMAINS = [Deno.env.get("SUPABASE_URL") ?? "https://txuibjxyfpalzvpneqgp.supabase.co", "https://fal.media", "https://*.fal.media"];
 const SCREEN_META = {
   ui: { csp: { resourceDomains: IMAGE_DOMAINS }, prefersBorder: false },
   "openai/widgetCSP": { connect_domains: [], resource_domains: IMAGE_DOMAINS },

@@ -26,7 +26,7 @@ export class YuiApi implements ICredentialType {
 			displayName: 'Endpoint',
 			name: 'endpoint',
 			type: 'string',
-			default: 'https://ewzzaoperdpxqxkshynx.supabase.co/functions/v1/yui-mcp',
+			default: 'https://txuibjxyfpalzvpneqgp.supabase.co/functions/v1/yui-mcp',
 			description: "Yui's MCP server. Leave as is.",
 		},
 	];

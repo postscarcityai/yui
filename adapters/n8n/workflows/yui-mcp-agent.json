@@ -73,7 +73,7 @@
         220
       ],
       "parameters": {
-        "endpointUrl": "https://ewzzaoperdpxqxkshynx.supabase.co/functions/v1/yui-mcp",
+        "endpointUrl": "https://txuibjxyfpalzvpneqgp.supabase.co/functions/v1/yui-mcp",
         "serverTransport": "httpStreamable",
         "authentication": "bearerAuth",
         "include": "selected",

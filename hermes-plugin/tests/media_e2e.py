@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """YUI-21 end to end: an agent's picture reaches the app, the person's photo reaches the agent.
 
-Runs the real `yui` platform adapter as the agent against PROOF, on a
+Runs the real `yui` platform adapter as the agent against yuigui, on a
 throwaway account, never anyone's real one:
   1. Make a test user, an agent and a host connector (temp files only), plus
      a fresh session for the simulator.

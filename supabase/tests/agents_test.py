@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""YUI-15 agent registry tests against PROOF (live).
+"""YUI-15 agent registry tests against yuigui (live).
 
 Cross-user isolation on agents and connectors, column-level limits for the
 app token, management-token scope (manage agents, never read messages), the
@@ -10,7 +10,7 @@ accounts_test.py.
 """
 import base64, hashlib, hmac, json, os, subprocess, sys, time, urllib.request, urllib.error, uuid, secrets
 
-REF = "ewzzaoperdpxqxkshynx"
+REF = "txuibjxyfpalzvpneqgp"
 BASE = f"https://{REF}.supabase.co"
 YUI_TABLES = ["yui_users", "yui_apple_tokens", "yui_sessions", "yui_devices",
               "yui_agents", "yui_pairings", "yui_messages", "yui_connectors", "yui_mgmt_tokens"]

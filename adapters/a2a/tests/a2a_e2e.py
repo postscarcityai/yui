@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""INT-18 end to end: the A2A bridge against live PROOF and a scripted A2A agent.
+"""INT-18 end to end: the A2A bridge against the live yuigui project and a scripted A2A agent.
 
 The agent is tests/echo-agent.ts (no model, fixed answers). Never point this
 at an LLM host on this Mac. For each protocol run, on a fresh throwaway

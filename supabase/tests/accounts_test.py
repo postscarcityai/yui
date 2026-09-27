@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""YUI-6 account-layer tests against PROOF (live), extended by YUI-15.
+"""YUI-6 account-layer tests against yuigui (live), extended by YUI-15.
 
 Negative RLS: anon/authenticated cannot touch yui_* tables, yui_user cannot
 touch any portal table. Cross-user isolation. Edge function rejections. Then a
@@ -12,7 +12,7 @@ entry). Secrets are fetched at run time and never written to disk.
 """
 import base64, hashlib, hmac, json, os, subprocess, sys, time, urllib.request, urllib.error, uuid, secrets
 
-REF = "ewzzaoperdpxqxkshynx"
+REF = "txuibjxyfpalzvpneqgp"
 BASE = f"https://{REF}.supabase.co"
 YUI_TABLES = ["yui_users", "yui_apple_tokens", "yui_sessions", "yui_devices",
               "yui_agents", "yui_pairings", "yui_messages", "yui_connectors", "yui_mgmt_tokens"]
@@ -95,7 +95,7 @@ check("RLS enabled on every yui_ table", not rows, str(rows))
 rows = sql("select rolcanlogin, pg_has_role('authenticator','yui_user','member') m, pg_has_role('yui_user','authenticated','member') a from pg_roles where rolname='yui_user'")[0]
 check("yui_user is NOLOGIN, switchable by authenticator, not a member of authenticated", not rows["rolcanlogin"] and rows["m"] and not rows["a"], str(rows))
 auth = mgmt("config/auth")
-check("PROOF Auth still has signups disabled and Apple off", auth["disable_signup"] is True and not auth.get("external_apple_enabled"))
+check("yuigui Auth still has signups disabled and Apple off", auth["disable_signup"] is True and not auth.get("external_apple_enabled"))
 check("no Yui user landed in auth.users", sql("select count(*)::int n from auth.users where raw_app_meta_data->>'provider'='apple'")[0]["n"] == 0)
 
 print("\n== HTTP: anon key alone")

@@ -18,10 +18,10 @@ One connector per machine: its token lives in ~/.hermes/yui/connector.json
 import argparse, json, os, re, socket, subprocess, sys, urllib.error, urllib.request
 from pathlib import Path
 
-SUPABASE_URL = "https://ewzzaoperdpxqxkshynx.supabase.co"
+SUPABASE_URL = "https://txuibjxyfpalzvpneqgp.supabase.co"
 BASE = f"{SUPABASE_URL}/functions/v1/yui-connect"
 # Public client key (anon role only; it cannot read any yui_ table).
-PUBLISHABLE = "sb_publishable_OhqLI7p27yiELT4tn8i7JA_TnnwPYsS"
+PUBLISHABLE = "sb_publishable_9DhcBgazmSHaoOJChYtqwA_qyHvI_zc"
 COLORS = ["lavender", "mint", "butter", "brand"]
 
 

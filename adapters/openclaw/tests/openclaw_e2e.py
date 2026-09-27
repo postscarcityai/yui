@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""INT-1 end to end: the Yui channel plugin inside a real OpenClaw gateway, against live PROOF.
+"""INT-1 end to end: the Yui channel plugin inside a real OpenClaw gateway, against the live yuigui project.
 
 On a fresh throwaway account (never a real one), with OpenClaw in its own
 throwaway home (OPENCLAW_HOME / STATE_DIR / CONFIG_PATH, never ~/.openclaw):

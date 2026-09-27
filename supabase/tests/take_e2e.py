@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """YUI-116 step 5 end to end: a take recorded on the phone reaches the agent
-as links. Live against PROOF, on a throwaway account.
+as links. Live against yuigui, on a throwaway account.
 
 The host is the real `yui` platform adapter under Hermes' real
 BasePlatformAdapter, in its own process. Its scripted agent answers the first

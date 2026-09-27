@@ -8,7 +8,7 @@
 //
 // Returns {access_token, expires_in, refresh_token, user}; an Apple sign-in
 // also returns `invite` when it claimed one (YUI-56, see claimInvite below).
-// Yui users never enter Supabase Auth (PROOF keeps signups disabled).
+// Yui users never enter Supabase Auth (yuigui keeps signups disabled).
 import { createRemoteJWKSet, jwtVerify } from "npm:jose@5";
 import {
   ACCESS_TTL_SECONDS,
