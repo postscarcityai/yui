@@ -133,6 +133,15 @@ async function synthetic(store: Store, agent: NativeAgent, line: string, opts: T
                        created_at: new Date((opts.now ?? Date.now)()).toISOString() };
     await oneTurn(store, agent, [row], opts, log, result, depth);
     result.turns++;
+    // The person may have written while this ran: their own wake found the lock taken and left (t_a88dc3b5, a
+    // macros ask sent four hand-offs to Basil and his answer to the ask never came). Answer them before letting go.
+    for (let i = 0; i < (opts.maxTurns ?? 3); i++) {
+      const rows = await store.pending(agent.id);
+      if (!rows.length) break;
+      const done = await oneTurn(store, agent, rows, opts, log, result, depth);
+      result.turns++;
+      if (!done.handled) break;
+    }
   } finally {
     await store.unlock(agent.id);
   }
@@ -714,10 +723,15 @@ function tilesToTable(lines: string[]): string[] {
   return out;
 }
 
+// A table's title is a bare word; a quoted one (`table "Two eggs, toast" Item|Kcal ...`) reads as the header, and the
+// real header becomes a row. It moves to name=, which the phone shows as the title.
+const QUOTED_TITLE = /^(\s*(?:>[\w-]+\s+)?table(?:@[\w-]+)?)\s+"((?:[^"\\]|\\.)*)"(?=\s+[^\s"=]*\|)/;
+
 /** The answer on at most MOST_PAGES stage pages where short ones can share a page. */
 export function unsprawl(text: string): string {
   text = text.split(/(^```[^\n]*\n[\s\S]*?^```[ \t]*$)/m)
-    .map((p, i) => (i % 2 === 1 && /^```yui\b/.test(p) ? tilesToTable(p.split("\n")).join("\n") : p)).join("");
+    .map((p, i) => (i % 2 === 1 && /^```yui\b/.test(p)
+      ? tilesToTable(p.split("\n")).map((l) => l.replace(QUOTED_TITLE, '$1 name="$2"')).join("\n") : p)).join("");
   const parts = text.split(/(^```[^\n]*\n[\s\S]*?^```[ \t]*$)/m);
   const isYui = (i: number) => i % 2 === 1 && /^```yui\b/.test(parts[i]);
   const paras = (p: string) => p.split(/\n\s*\n/).filter((x) => x.trim());

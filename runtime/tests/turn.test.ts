@@ -485,6 +485,8 @@ test("an answer over 4 short pages is merged, never split into 7 (t_a88dc3b5)", 
   // Three or more loose stat tiles are one table: the stage plays each tile as a page.
   assert.equal(unsprawl('Roughly 505 kcal.\n```yui\nstat 505kcal Calories sub="a guess"\nstat 19g Protein\nstat 54g Carbs\nstat 23g Fat\n```'),
     'Roughly 505 kcal.\n```yui\ntable Macros Item|Amount "Calories|505kcal (a guess)" "Protein|19g" "Carbs|54g" "Fat|23g"\n```');
+  // A quoted table title moves to name=, so the header stays the header.
+  assert.equal(unsprawl('```yui\ntable "Two eggs, toast" Item|Kcal "Eggs|140"\n```'), '```yui\ntable name="Two eggs, toast" Item|Kcal "Eggs|140"\n```');
   const two = '```yui\nstat 178.9lb Weight delta=-2.3\nstat "24M km2" "A sixth of the land"\n```';
   assert.equal(unsprawl(two), two);
   // Four or fewer, or pages too long to share, stay as written.
@@ -504,4 +506,20 @@ test("a whole turn: Basil's markdown answer reaches the phone as a list (t_a88dc
   assert.doesNotMatch(reply.body, /\*\*|^- /m);
   assert.match(reply.body, /list "Meal plans" "Macros from a photo"/);
   assert.match(system(m.calls[0]), /No markdown anywhere/);
+});
+
+test("a person who writes during a hand-off is answered before the lock goes (t_a88dc3b5)", async () => {
+  const { store, byHandle } = await freshYui();
+  const yui = await byHandle("yui");
+  const basil = await byHandle("basil");
+  const m = fakeModel((c) => (system(c).includes("You are Basil") ? "Here you go.\n```yui\ntable Macros Item|Amount \"Calories|505 kcal\"\n```"
+    : "Basil does macros.\n```handoff\nbasil \"Wants a breakfast's macros\"\n```"));
+  store.say(yui.id, "Macros for two eggs?");
+  const mine = store.say(basil.id, "And break down a banana too.");
+  // Basil's own wake runs first and finds nothing it can take (the hand-off holds the lock in real life); here the
+  // hand-off simply runs first.
+  await runAgent(store, yui.id, { provider, fetch: m.fetch });
+  const row = store.data.rows.find((x) => x.id === mine)!;
+  assert.ok(row.handled_at, "Basil answered the person's own message too");
+  assert.ok(store.data.rows.some((x) => x.sender === "agent" && Array.isArray(x.meta?.turn) && x.meta.turn.includes(mine)));
 });

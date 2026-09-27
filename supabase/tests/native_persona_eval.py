@@ -135,9 +135,10 @@ def read(body):
     return blocks, ops, outside, words, quoted
 
 QUESTIONS = {"ask", "choose", "pick", "slide", "form", "mic", "camera"}
-def stage_pages(outside, ops):
+def stage_pages(outside, ops, questions=True):
     """About how many pages the phone plays this answer in (the app's StageChunks): a paragraph of chat text is one
-    (two sentences a page past 40 words), a say or a deck page one, a picture joins the line before it, questions one at the end."""
+    (two sentences a page past 40 words), a say or a deck page one, a picture joins the line before it, questions one at the end.
+    `questions=False` counts the pages to read ("4 at most"), without the one screen of questions after them."""
     n = 0
     for para in [p for p in re.split(r"\n\s*\n", outside) if p.strip()]:
         w = len(para.split())
@@ -153,7 +154,7 @@ def stage_pages(outside, ops):
         if p in ("say", "page"): n += 1; open_line = True; continue
         if open_line: open_line = False; continue
         n += 1
-    return n + (1 if qs else 0)
+    return n + (1 if qs and questions else 0)
 
 def doctor_notes(words):
     """The sentences that send them to a professional ("your doctor or diabetes educator" is one)."""
@@ -199,12 +200,12 @@ def score(handle, name, body, case=None, first=False):
     if case.get("screens"):
         add("reaches for the right screens", set(presets) & set(case["screens"]) or pointer, ",".join(presets) or ("a pointer" if pointer else ""))
     if case.get("open"):
-        # The runtime's rule (prompt.ts): chat text is one or two sentences, under 40 words.
+        # The channel guide's rule: chat text under about 50 words (the runtime aims for 40).
         n_words = len(outside.split())
-        add("answers first in one line", n_words <= 40, f"{n_words} words outside")
+        add("answers first in one line", n_words <= 50, f"{n_words} words outside")
         add("a screen, not words alone", presets or pointer, ",".join(presets))
-        n = stage_pages(outside, ops)
-        add("a few stage pages, not a sprawl", n <= 4, f"{n} pages")
+        n = stage_pages(outside, ops, questions=False)
+        add("a few stage pages, not a sprawl", n <= 4, f"{n} pages to read")
     if case.get("says"):
         add(case["why"], re.search(case["says"], body, re.I), words[:100].replace("\n", " / "))
     if case.get("never"):
@@ -225,17 +226,22 @@ def ask_agent(T, name, agent_id, first_body, log):
     log.append({"agent": name, "ask": "(opens the thread)", "answer": first_body,
                 "checks": score(handle, name, first_body, first=True)})
     for case in CASES[handle]:
-        s, r = rest("POST", "yui_messages", mint(T, ttl=900), {"user_id": T, "agent_id": agent_id, "sender": "user",
+        # The id is ours, so a POST the retry above sends twice (the first landed, its answer got lost) is a 409, never
+        # a second ask: that doubled the agent's answer in a run ("Already done! I broke that meal down just above").
+        mid = str(uuid.uuid4())
+        s, r = rest("POST", "yui_messages", mint(T, ttl=900), {"id": mid, "user_id": T, "agent_id": agent_id, "sender": "user",
                     "body": case["ask"], "kind": "text"}, prefer="return=representation")
-        if s not in (200, 201):
+        if s not in (200, 201, 409):
             log.append({"agent": name, "ask": case["ask"], "answer": "", "checks": [("the ask lands", False, str(s))]}); continue
-        mid, since, t0 = r[0]["id"], r[0]["created_at"], time.time()
+        since, t0 = sql(f"select created_at from yui_messages where id='{mid}'")[0]["created_at"], time.time()
         handled = False
         while time.time() < t0 + args.wait and not handled:
             time.sleep(4)
             handled = sql(f"select handled_at is not null as h from yui_messages where id='{mid}'")[0]["h"]
+        # Only the answers to this ask (meta.turn names it): another agent handing the person over to this one writes
+        # in this thread too (the macros ask sends four agents' hand-offs to Basil), and those are not this answer.
         rows = sql(f"select body from yui_messages where user_id='{T}' and agent_id='{agent_id}' and sender='agent' "
-                   f"and created_at > '{since}' order by created_at")
+                   f"and created_at > '{since}' and coalesce(meta->'turn', '[]'::jsonb) ? '{mid}' order by created_at")
         body = "\n".join(x["body"] or "" for x in rows)
         log.append({"agent": name, "ask": case["ask"], "answer": body, "seconds": round(time.time() - t0),
                     "checks": score(handle, name, body, case)})
