@@ -110,6 +110,7 @@ try:
         time.sleep(2)
     check("the person's first tap reaches Yui", bool(asked))
     check("hosted Yui answers", bool(answer), (answer or "")[:160].replace("\n", " | "))
+    check("her answer has no em or en dash (YUI-163)", bool(answer) and not re.search("[\u2013\u2014]", answer))
     words = first_words(answer or "")
     (OUT / "answer.txt").write_text(answer or "")
     (SHOTS / "replied").write_text(words)
@@ -119,6 +120,10 @@ try:
     txt = log.read_text()
     check("UI test: sign in, Yui talking, tap, Yui answers, crew in the list",
           rc == 0 and "Executed 1 test, with 0 failures" in txt, f"rc={rc}")
+    time.sleep(20)  # a hand-off (Arnold's opener) lands a few seconds after her answer
+    crew_said = sql(f"select body from yui_messages where user_id='{T}' and sender='agent'")
+    dashed = [r["body"][:80] for r in crew_said if re.search("[\u2013\u2014]", r["body"] or "")]
+    check("no crew answer on the account has a dash", not dashed, f"{len(crew_said)} answers" + (f", {dashed}" if dashed else ""))
 finally:
     if rec and rec.poll() is None:
         rec.send_signal(signal.SIGINT); rec.wait(timeout=30)
