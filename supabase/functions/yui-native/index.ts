@@ -4,7 +4,8 @@
 //
 // The database, with the x-yui-native secret header:
 //   {agent_id, message_id}  a person's new row in a hosted agent's thread
-//                           (trigger yui_native_wake): run that agent's turns.
+//                           (trigger yui_native_wake): run that agent's turns,
+//                           or answer it at once when it is a Controls request.
 //   {schedule_id}           a check-in is due (pg_cron, yui_native_tick).
 // The work runs after the answer (202), so pg_net's short timeout never cuts it.
 //
@@ -25,6 +26,7 @@
 import { openRouter, runAgent, runScheduled, type TurnResult } from "../_native/turn.ts";
 import { SupabaseStore } from "../_native/supabase.ts";
 import { MODELS, PROVIDERS } from "../_native/models.ts";
+import { answerControl } from "../_native/controls.ts";
 import { validZone } from "../_native/schedule.ts";
 import { admin, assertActive, failure, json, take, verifyAccessToken } from "../_shared/yui.ts";
 
@@ -60,11 +62,13 @@ function later(work: Promise<unknown>) {
   return rt?.waitUntil ? Promise.resolve() : work;
 }
 
-async function fromDatabase(body: { agent_id?: string; schedule_id?: string }): Promise<Response> {
+async function fromDatabase(body: { agent_id?: string; schedule_id?: string; message_id?: string }): Promise<Response> {
   const key = env("YUI_OPENROUTER_KEY");
   const store = new SupabaseStore(env("SUPABASE_URL"), env("SUPABASE_SERVICE_ROLE_KEY"));
   const id = body.schedule_id ?? body.agent_id ?? "";
   if (!UUID.test(id)) return new Response("invalid request", { status: 400 });
+  // A Controls request: answered now (the app waits 5 seconds), never a turn.
+  if (body.message_id && UUID.test(body.message_id) && await answerControl(store, body.message_id)) return json({ ok: true, control: true });
   const opts = { provider: openRouter(key), log: (m: string) => console.log(`yui-native ${id.slice(0, 8)}: ${m}`) };
   const run: Promise<TurnResult> = body.schedule_id ? runScheduled(store, id, opts) : runAgent(store, id, opts);
   await later(run.then(async (r) => {

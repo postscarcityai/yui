@@ -93,7 +93,7 @@ export async function runScheduled(store: Store, scheduleId: string, opts: TurnO
   const log = opts.log ?? (() => {});
   const result: TurnResult = { turns: 0, replies: [] };
   const s = await store.schedule(scheduleId);
-  if (!s) return result;
+  if (!s || s.paused) return result;
   const agent = await store.agent(s.agentId);
   const now = (opts.now ?? Date.now)();
   const at = next(s.rule, s.tz, now + 60_000);

@@ -21,7 +21,7 @@
 -- and set the same string as the function secret YUI_NATIVE_SECRET, plus
 -- YUI_OPENROUTER_KEY. Needs pg_net and pg_cron (both created here). Then: update yui_limits set value = 1 where name = 'native_enabled';
 
-create extension if not exists pg_net;
+create extension if not exists pg_net with schema extensions; -- its functions live in schema net
 
 -- Limits ------------------------------------------------------------------------
 insert into public.yui_limits (name, value, note) values

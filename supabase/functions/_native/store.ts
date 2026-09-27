@@ -40,11 +40,16 @@ export interface Store {
   /** A new check-in; null when the person is at the cap. */
   addSchedule(item: Omit<ScheduleItem, "id">): Promise<string | null>;
   setScheduleNext(id: string, nextAt: string | null): Promise<void>;
+  updateSchedule(id: string, patch: Partial<Pick<ScheduleItem, "note" | "rule" | "nextAt" | "paused">>): Promise<void>;
   dropSchedule(id: string): Promise<void>;
   /** Takes one web search from today's allowance. */
   takeSearch(userId: string): Promise<boolean>;
   /** The person's own model key, when they added one. */
   ownKey(userId: string): Promise<OwnKey | null>;
+  /** One row of any kind, with its owner (control requests). */
+  row(id: string): Promise<(Row & { agent_id: string; user_id: string }) | null>;
+  /** A control answer (kind control, no push); marks the request handled. */
+  controlAnswer(agent: NativeAgent, requestId: string, body: string, meta: Record<string, unknown>): Promise<void>;
 }
 
 /** Everything in one plain object: `JSON.stringify(store.data)` saves it. */
@@ -128,7 +133,7 @@ export class LocalStore implements Store {
   }
   async history(agentId: string, before: string, limit: number) {
     // <= in file order: rows written in the same millisecond still count (the turn drops its own rows).
-    return this.data.rows.filter((r) => r.agent_id === agentId && r.created_at <= before).slice(-limit);
+    return this.data.rows.filter((r) => r.agent_id === agentId && r.kind !== "control" && r.created_at <= before).slice(-limit);
   }
   async markDelivered(ids: string[]) {
     for (const r of this.data.rows) if (ids.includes(r.id) && !r.delivered_at) r.delivered_at = new Date().toISOString();
@@ -196,6 +201,21 @@ export class LocalStore implements Store {
     if (x) x.nextAt = nextAt;
     this.changed();
   }
+  async updateSchedule(id: string, patch: Partial<Pick<ScheduleItem, "note" | "rule" | "nextAt" | "paused">>) {
+    const x = (this.data.schedules ?? []).find((s) => s.id === id);
+    if (x) Object.assign(x, patch);
+    this.changed();
+  }
+  async row(id: string) {
+    const r = this.data.rows.find((x) => x.id === id);
+    if (!r) return null;
+    return { ...r, user_id: this.data.agents[r.agent_id]?.userId ?? (r as any).user_id ?? "" };
+  }
+  async controlAnswer(agent: NativeAgent, requestId: string, body: string, meta: Record<string, unknown>) {
+    this.data.rows.push({ id: this.id("row"), agent_id: agent.id, sender: "agent", kind: "control", body, meta: { ...meta, for: requestId },
+                          created_at: new Date().toISOString() });
+    await this.markHandled([requestId]);
+  }
   async dropSchedule(id: string) {
     this.data.schedules = (this.data.schedules ?? []).filter((x) => x.id !== id);
     this.changed();
@@ -212,7 +232,7 @@ export class LocalStore implements Store {
   }
   /** Due check-ins, for the CLI's clock. */
   due(now: number): ScheduleItem[] {
-    return (this.data.schedules ?? []).filter((x) => x.nextAt && Date.parse(x.nextAt) <= now);
+    return (this.data.schedules ?? []).filter((x) => !x.paused && x.nextAt && Date.parse(x.nextAt) <= now);
   }
 
   /** A person's message into an agent's thread (the CLI and the tests). */

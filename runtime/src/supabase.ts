@@ -175,7 +175,8 @@ export class SupabaseStore implements Store {
   }
 
   private toSchedule(x: any): ScheduleItem {
-    return { id: x.id, userId: x.user_id, agentId: x.agent_id, note: x.note, rule: x.rule, tz: x.tz, nextAt: x.next_at };
+    return { id: x.id, userId: x.user_id, agentId: x.agent_id, note: x.note, rule: x.rule, tz: x.tz, nextAt: x.next_at,
+             paused: !!x.paused, firedAt: x.fired_at ?? null };
   }
 
   async schedules(agentId: string) {
@@ -203,6 +204,27 @@ export class SupabaseStore implements Store {
 
   async setScheduleNext(id: string, nextAt: string | null) {
     await this.rest("PATCH", `yui_native_schedules?id=eq.${id}`, { next_at: nextAt }, "return=minimal");
+  }
+
+  async updateSchedule(id: string, patch: Partial<Pick<ScheduleItem, "note" | "rule" | "nextAt" | "paused">>) {
+    const body: Record<string, unknown> = {};
+    if (patch.note !== undefined) body.note = patch.note;
+    if (patch.rule !== undefined) body.rule = patch.rule;
+    if (patch.nextAt !== undefined) body.next_at = patch.nextAt;
+    if (patch.paused !== undefined) body.paused = patch.paused;
+    await this.rest("PATCH", `yui_native_schedules?id=eq.${id}`, body, "return=minimal");
+  }
+
+  async row(id: string) {
+    const [r] = await this.rest("GET", `yui_messages?select=id,user_id,agent_id,sender,kind,body,meta,created_at&id=eq.${id}`);
+    return r ?? null;
+  }
+
+  async controlAnswer(agent: NativeAgent, requestId: string, body: string, meta: Record<string, unknown>) {
+    await this.rest("POST", "yui_messages", { id: crypto.randomUUID(), user_id: agent.userId, agent_id: agent.id, sender: "agent",
+                                               kind: "control", body: body.slice(0, 300), meta: { ...meta, for: requestId } }, "return=minimal");
+    await this.rest("PATCH", `yui_messages?id=eq.${requestId}`, { delivered_at: new Date().toISOString(), handled_at: new Date().toISOString() },
+                    "return=minimal");
   }
 
   async dropSchedule(id: string) {

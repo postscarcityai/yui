@@ -57,6 +57,8 @@ export interface ScheduleItem {
   rule: { every: string; at: string } | { once: string };
   tz: string;
   nextAt: string | null;
+  paused?: boolean;
+  firedAt?: string | null;
 }
 
 /** A person's own model key (yui_native_keys), when they added one. */
