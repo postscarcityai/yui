@@ -62,6 +62,15 @@ struct ChatView: View {
     private static let cancelDistance: CGFloat = 110
     private var cancelArmed: Bool { talk.listening && micDragX <= -Self.cancelDistance }
     @State private var composerNote: String?
+    /// Stage first (YUI-119): Yui lives on the full screen and the chat is the record.
+    @State private var stageFirst = StageFirstModel()
+    @AppStorage(StageFirstModel.key) private var stageFirstStored = true
+    @AppStorage(StageFirstModel.micKey) private var stageMic = true
+    @AppStorage(StageFirstModel.typeKey) private var stageType = true
+    @AppStorage(StageFirstModel.attachKey) private var stageAttach = true
+    /// The stage's own T field: the chat's composer keeps `focused`.
+    @FocusState private var stageFocused: Bool
+    private var stageFirstOn: Bool { StageFirstModel.enabled(stored: stageFirstStored) }
     /// The thread's scroll, and whether it is far enough up to offer the way back down (YUI-50).
     @State private var position = ScrollPosition(edge: .bottom)
     @State private var scrolledUp = false
@@ -203,6 +212,14 @@ struct ChatView: View {
                         Wordmark(height: 26)
                     }
                 }
+                if stageFirstOn {
+                    // The record's way back to the full screen (YUI-119).
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button("Full screen", systemImage: "arrow.up.left.and.arrow.down.right") { openStageFirst() }
+                            .tint(c.inkSoft)
+                            .accessibilityIdentifier("back-to-stage")
+                    }
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Settings", systemImage: "gearshape.fill") { showSettings = true }
                         .tint(c.inkSoft)
@@ -281,6 +298,12 @@ struct ChatView: View {
                 .environment(\.ylComponents, yl.components)
                 .id(m.id)
                 .transition(.opacity)
+        }
+        stageFirstHooks
+        if stageFirstOn, stageFirst.open, !firstRun, store.agent != nil {
+            stageFirstLayer
+                .transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
+                .zIndex(2)
         }
         }
         .environment(\.ylEmit, store.emit)
@@ -497,7 +520,7 @@ struct ChatView: View {
                                         open: { openReactions(m.id) },
                                         react: { store.react(m.id, with: $0) },
                                         select: { selecting = m },
-                                        reply: { startReply(m.id) }) { store.openStage(m.id) }
+                                        reply: { startReply(m.id) }) { openStage(m.id) }
                                     .equatable()
                             } else {
                                 Bubble(message: m, agent: m.from.map { f in agents.agents.first { $0.id == f.agentID } }
@@ -1127,6 +1150,99 @@ struct ChatView: View {
             withAnimation(theme.spring) {
                 store.messages.append(ChatMessage(text: ChatView.replies.randomElement()!, fromUser: false))
             }
+        }
+    }
+
+    // MARK: Stage first (YUI-119)
+
+    /// A send puts the stage up on it, working; a new thread starts at the greeting.
+    /// Its own view, so the chat's long modifier chain stays type-checkable.
+    private var stageFirstHooks: some View {
+        Color.clear
+            .frame(width: 0, height: 0)
+            .accessibilityHidden(true)
+            .onChange(of: stageFirstOn, initial: true) { _, on in
+                store.stageFirst = on
+                withAnimation(theme.spring) { stageFirst.open = on }
+            }
+            .onChange(of: store.owed) {
+                guard stageFirstOn else { return }
+                focused = false
+                stageFocused = false
+                withAnimation(reduceMotion ? .easeInOut(duration: 0.2) : theme.spring) {
+                    stageFirst.follow(store.messages.last(where: \.fromUser)?.id)
+                }
+            }
+            .onChange(of: store.agent?.id) {
+                stageFirst.home()
+                stageFirst.seen = store.shown.count
+            }
+            .onChange(of: store.loaded) { if store.loaded { stageFirst.seen = store.shown.count } }
+    }
+
+    private var stageFirstLayer: some View {
+        StageFirstView(
+            store: store, model: stageFirst, agent: store.agent, agents: agents.agents, composer: composer,
+            focus: $stageFocused, photos: photos, sending: sending, mic: stageMicState,
+            showMic: stageMic || !stageType, showType: stageType || !stageMic, showAttach: stageAttach,
+            unread: max(0, store.shown.count - stageFirst.seen), reduceMotion: reduceMotion,
+            actions: StageActions(
+                settings: { showSettings = true },
+                pick: { agents.selectedID = $0 },
+                manage: { showAgents = true },
+                record: closeStageFirst,
+                mic: stageMicTap,
+                photos: {
+                    withAnimation(theme.spring) { stageFirst.typing = true }
+                    pickingPhotos = true
+                },
+                camera: UIImagePickerController.isSourceTypeAvailable(.camera) ? {
+                    withAnimation(theme.spring) { stageFirst.typing = true }
+                    shooting = true
+                } : nil,
+                send: send,
+                removePhoto: { p in photos.removeAll { $0.id == p.id } }))
+    }
+
+    /// The mic as the stage draws it: hands-free's state and what it hears.
+    private var stageMicState: StageMic {
+        let note: String? = switch handsFree.state {
+        case .paused(.denied): "Turn on the mic for Yui in Settings."
+        case .paused(.failed): "Can't listen right now. Tap the mic to try again."
+        case .paused(.quiet): "Paused. Tap the mic to keep talking."
+        case .paused(.interrupted): "Paused for the call or alarm."
+        default: nil
+        }
+        let live = handsFree.micOpen || handsFree.state == .finishing || handsFree.state == .sending
+        return StageMic(on: handsFree.on && note == nil, live: live, words: talk.transcript, note: note)
+    }
+
+    /// Tap: talk, hands-free. Tap while it hears words: send them now. Tap otherwise: stop.
+    private func stageMicTap() {
+        if handsFree.state == .listening, !talk.transcript.isEmpty { handsFreeDo(.endOfSpeech) }
+        else if handsFree.on, stageMicState.note == nil { handsFreeDo(.stop) }
+        else { handsFreeDo(.stop); handsFreeDo(.tap) }
+    }
+
+    /// The chat is the record: the stage goes down and the thread is there.
+    private func closeStageFirst() {
+        stageFocused = false
+        stageFirst.seen = store.shown.count
+        withAnimation(reduceMotion ? .easeInOut(duration: 0.2) : theme.spring) { stageFirst.open = false }
+    }
+
+    private func openStageFirst() {
+        focused = false
+        stageFirst.seen = store.shown.count
+        withAnimation(reduceMotion ? .easeInOut(duration: 0.2) : theme.spring) { stageFirst.open = true }
+    }
+
+    /// A pill in the record: with stage first, the reply plays again from its chunk.
+    private func openStage(_ id: String) {
+        guard stageFirstOn else { store.openStage(id); return }
+        focused = false
+        withAnimation(reduceMotion ? .easeInOut(duration: 0.2) : theme.spring) {
+            if !stageFirst.show(reply: id, in: store.messages) { store.openStage(id) }
         }
     }
 

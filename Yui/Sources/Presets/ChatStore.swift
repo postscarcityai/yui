@@ -90,6 +90,11 @@ final class ChatStore {
     private(set) var stageOpen = false
     /// Timer clocks for the whole thread, shared by the stage and the pills.
     let timers = TimerRuns()
+    /// Stage first is on (YUI-119): replies play on the full screen, so the old
+    /// stage no longer opens by itself (a pill in the record still opens it).
+    var stageFirst = false
+    /// Bumped each time the person sends something the agent will answer: the stage follows it.
+    private(set) var owed = 0
 
     /// A long plain answer read as pages (YUI-79): a deck made from its words, on the stage.
     private(set) var reading: ChatMessage?
@@ -141,7 +146,8 @@ final class ChatStore {
     private func stageUpdate(_ id: String, before: YLScreen?) {
         guard let yl = messages.first(where: { $0.id == id })?.yl else { return }
         let wanted = yl.wantsStage(style)
-        if wanted, yl.staged(style).count > (before?.staged(style).count ?? 0) {
+        // Stage first (YUI-119): the whole reply already plays full screen, so nothing pops up over it.
+        if wanted, !stageFirst, yl.staged(style).count > (before?.staged(style).count ?? 0) {
             openStage(id)
         } else if !wanted, yl.closedAt > (before?.closedAt ?? 0), stageID == id {
             closeStage()
@@ -711,6 +717,7 @@ final class ChatStore {
 
     /// A reply is owed: the working row shows and its seconds start.
     private func owe() {
+        owed += 1
         waiting = true
         waitingSince = .now
         pickedUpAt = nil
