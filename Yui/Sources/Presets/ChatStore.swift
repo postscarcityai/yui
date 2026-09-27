@@ -176,6 +176,16 @@ final class ChatStore {
         pageTurns += 1
     }
 
+    /// Bumped when the person asks for a screen (a pill in the chat, a drawer row), not
+    /// when a reply turns the page: with stage first the screens are on the stage, so
+    /// the chat opens it there (Chris, 2026-09-27).
+    private(set) var screenAsks = 0
+
+    func openScreen(_ n: Int) {
+        goToPage(n)
+        screenAsks += 1
+    }
+
     /// The person swiped to page `n`: note it, nothing to move.
     func showingPage(_ n: Int) {
         guard (1...YuiLines.maxPage).contains(n) else { return }
@@ -184,7 +194,7 @@ final class ChatStore {
     }
 
     /// Made once, like `ylShow`: the chat's "On screen 2" pills go through it.
-    @ObservationIgnored private(set) lazy var ylPage = YLPage { [weak self] n in self?.goToPage(n) }
+    @ObservationIgnored private(set) lazy var ylPage = YLPage { [weak self] n in self?.openScreen(n) }
 
     /// The pages there are, in order: the chat, then each screen with something
     /// on it. A screen appears when a line lands there and goes when `>N clear`

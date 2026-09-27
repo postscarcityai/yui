@@ -46,6 +46,12 @@ final class StagePagesTests: XCTestCase {
         XCTAssertFalse(app.descendants(matching: .any)["page-2"].exists, "the chat still has a screen beside it")
         sleep(1)
         shot("chat-plain")
+
+        // A screen's pill in the chat opens the stage on that screen.
+        let pill = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Go to screen 3")).firstMatch
+        XCTAssertTrue(pill.waitForExistence(timeout: 5), "no screen pill in the chat")
+        pill.tap()
+        XCTAssertTrue(app.descendants(matching: .any)["stage-screen-3"].waitForExistence(timeout: 5), "the pill did not open screen 3 on the stage")
     }
 
     private func shot(_ name: String) {

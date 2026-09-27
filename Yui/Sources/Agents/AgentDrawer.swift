@@ -417,7 +417,7 @@ private struct DrawerHome: View {
                     DrawerRow(icon: "rectangle.portrait.on.rectangle.portrait.fill", title: store.pageTitle(n),
                               sub: "Screen \(n)", tint: c.mint) {
                         close()
-                        store.goToPage(n)
+                        store.openScreen(n)
                     }
                     .accessibilityIdentifier("drawer-screen-\(n)")
                 }

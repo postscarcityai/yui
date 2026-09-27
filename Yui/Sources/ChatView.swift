@@ -1273,6 +1273,8 @@ struct ChatView: View {
                 stageFirst.seen = store.shown.count
             }
             .onChange(of: store.loaded) { if store.loaded { stageFirst.seen = store.shown.count } }
+            // The chat is one page, so a pill or drawer row for a screen opens the stage on it.
+            .onChange(of: store.screenAsks) { if !pagedChat, !stageFirst.open, store.page > 1 { openStageFirst() } }
     }
 
     private var stageFirstLayer: some View {
