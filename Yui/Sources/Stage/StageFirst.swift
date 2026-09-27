@@ -95,6 +95,10 @@ struct StageActions {
     var removePhoto: (ComposerPhoto) -> Void
     /// A dot under the stage: that screen (1 the answer).
     var goScreen: (Int) -> Void = { _ in }
+    /// A drag right on the answer pulls the drawer out with the finger (as on the chat, YUI-54),
+    /// then lets it settle open or shut from where the finger let go and how fast.
+    var drawerDrag: (CGFloat) -> Void = { _ in }
+    var drawerSettle: (CGFloat, CGFloat) -> Void = { _, _ in }
     /// Error's Try again: the person's words go again.
     var retry: (String) -> Void = { _ in }
 }
@@ -182,6 +186,20 @@ struct StageFirstView: View {
                         .accessibilityIdentifier("stage-tap-away")
                 }
             }
+            // Sideways, like before the stage (Chris, TestFlight AC0r0OFGJiJOcbFdbXMgHms: "we lost
+            // the left and right scroll"): a drag left shows the next screen, a drag right the one
+            // before, and on the answer it pulls the drawer out. Only on the middle, so the mic's
+            // slide to the trash and the bars' buttons keep their own drags.
+            .contentShape(Rectangle())
+            .gesture(DrawerPan(direction: .right, enabled: !mic.live) { x in
+                if at == 1 { actions.drawerDrag(max(0, x)) }
+            } ended: { x, v in
+                if at == 1 { actions.drawerSettle(x, v) } else if Self.turns(x, v, by: 1) { go(-1) }
+            })
+            .gesture(DrawerPan(direction: .left, enabled: !mic.live && screens.last.map { $0 > at } == true) { _ in
+            } ended: { x, v in
+                if Self.turns(x, v, by: -1) { go(1) }
+            })
             if screens.count > 1, !mic.live {
                 PageTabs(page: screen, screens: screens, homeIcon: "play.rectangle", homeLabel: "Answer", go: actions.goScreen)
                     .padding(.bottom, theme.spacing.xs)
@@ -222,6 +240,22 @@ struct StageFirstView: View {
         .accessibilityElement(children: .contain)
         .accessibilityAddTraits(.isModal)
         .accessibilityIdentifier("stage-first")
+    }
+
+    // MARK: Sideways between screens
+
+    /// The screen on show as the dots count it: 1 is the answer.
+    private var at: Int { screen > 1 && screens.contains(screen) ? screen : 1 }
+
+    /// A drag far enough (a fifth of a phone) or quick enough turns the screen; `by` is +1 right, -1 left.
+    static func turns(_ x: CGFloat, _ v: CGFloat, by sign: CGFloat) -> Bool {
+        x * sign > 80 || v * sign > Drawer.flick
+    }
+
+    /// The screen before or after the one on show.
+    private func go(_ step: Int) {
+        guard let i = screens.firstIndex(of: at), screens.indices.contains(i + step) else { return }
+        actions.goScreen(screens[i + step])
     }
 
     // MARK: The visual (YUI-124)

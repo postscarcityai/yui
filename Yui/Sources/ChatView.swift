@@ -163,6 +163,15 @@ struct ChatView: View {
                         } ended: { x, v in
                             settleDrawer(open: x > drawerWidth * Drawer.threshold || v > Drawer.flick)
                         })
+                        // Stage first: the screens are on the full screen, so a drag left on the
+                        // chat opens it on the first of them (feedback AC0r0OFGJiJOcbFdbXMgHms).
+                        .gesture(DrawerPan(direction: .left, enabled: !pagedChat && !drawerOpen && store.screens.count > 1) { _ in
+                        } ended: { x, v in
+                            guard StageFirstView.turns(x, v, by: -1), let next = store.screens.first(where: { $0 > 1 }) else { return }
+                            focused = false
+                            store.goToPage(next)
+                            openStageFirst()
+                        })
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -1294,6 +1303,15 @@ struct ChatView: View {
                 send: send,
                 removePhoto: { p in photos.removeAll { $0.id == p.id } },
                 goScreen: { store.goToPage($0) },
+                drawerDrag: { x in
+                    guard !drawerOpen else { return }
+                    stageFocused = false
+                    drawerMotion.drag = x
+                },
+                drawerSettle: { x, v in
+                    guard !drawerOpen else { return }
+                    settleDrawer(open: x > drawerWidth * Drawer.threshold || v > Drawer.flick)
+                },
                 retry: { words in composer.draft = words; send() }))
     }
 
