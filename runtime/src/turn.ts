@@ -217,6 +217,12 @@ async function oneTurn(store: Store, agent: NativeAgent, rows: Row[], opts: Turn
       answer = await ask(opts, provider, provider.reasoning
         ? { ...sent, messages: looked.messages ?? sent.messages, reasoning: { enabled: false } }
         : { ...sent, messages: [...(looked.messages ?? sent.messages), { role: "user", content: RETRY_NOTE }] });
+    } else if (silent(answer.text)) {
+      // Nothing the person would see (empty, or only notes to itself): ask once more, keep the notes.
+      log(`${p.name}: ${model} answered nothing the person sees, asking again`);
+      const again = await ask(opts, provider, { ...sent, messages: [...(looked.messages ?? sent.messages), { role: "user", content: SILENT_NOTE }],
+                                                ...(provider.reasoning ? { reasoning: { enabled: false } } : {}) });
+      answer = { ...again, text: `${answer.text.trim()}\n${again.text}`.trim() };
     }
   } catch (e: any) {
     if (last) await store.doing(last, null);
@@ -246,12 +252,14 @@ async function oneTurn(store: Store, agent: NativeAgent, rows: Row[], opts: Turn
     if (!out.text.trim()) out.text = results.filter((r) => r.ok).map((r) => `Done: ${(r as { did: string }).did}.`).join("\n");
   }
   if (out.schedule.length) notes.push(...await applySchedules(store, agent, out.schedule, schedules, tzRaw ? tz : "UTC", now, log));
-  let body = unbreak(undash(out.text));
+  let body = unend(unbreak(undash(out.text)));
   if (notes.length) body += `\n\n(I couldn't do all of that: ${notes.join("; ")}.)`;
   // Sources the answer didn't link, and the invite to add a Firecrawl key when the free lookups ran out.
   const cards = [...sourceCards(body, looked.sources), ...(looked.capped ? [searchInvite(looked.capped.why, looked.capped.limit)] : [])];
   if (cards.length && body.trim()) body = `${body.trim()}\n\`\`\`yui\n${cards.join("\n")}\n\`\`\``;
   if (!body.trim() && answer.finish === "length") body = `${p.name} ran out of room before it could answer. Try a shorter message.`;
+  // Never close a turn the person started without a word back.
+  else if (real.length && silent(answer.text)) body = `${p.name} couldn't put an answer together. Send that again?`;
 
   if (last) await store.doing(last, null);
   if (body.trim()) {
@@ -319,6 +327,14 @@ export function thoughtOut(a: Completion, maxTokens: number): boolean {
 }
 
 const RETRY_NOTE = "[yui] Your last try ran out of room while thinking. Answer the person now, shorter, with little thinking.";
+const SILENT_NOTE = "[yui] Your last try had nothing the person can see. Answer them now: a line of words and a screen.";
+
+/** An answer with no words or screen for the person and no agent change or handoff. Called after the lookups ran,
+ *  so a search or fetch block still in it answers nothing. */
+export function silent(text: string): boolean {
+  const e = extract(text);
+  return !e.text.trim() && !e.agents.length && !e.handoff.length;
+}
 
 interface Looked {
   answer?: Completion;
@@ -517,6 +533,26 @@ export function unbreak(text: string): string {
   return parts.map((part, i) => {
     if (i % 2 === 0 || !/^```yui\b/.test(part)) return part;
     return part.split("\n").flatMap(breakLine).join("\n");
+  }).join("");
+}
+
+// The presets that open a group an `end` closes (yuilines GROUPS) and `flow`.
+const GROUPS = /^(?:plan|deck|narrate|timeline|sketch|shapes|map|flow)(?:@[A-Za-z0-9_-]+)?(?:\s|$)/;
+
+/** Two slips in a yui block, mended: a line that starts with a quote or a `+flag` (options wrapped onto their own
+ *  line; no YL line can start with either) joins the line above, and a block that opens no group loses its `end` lines. */
+export function unend(text: string): string {
+  const parts = text.split(/(^```[^\n]*\n[\s\S]*?^```[ \t]*$)/m);
+  return parts.map((part, i) => {
+    if (i % 2 === 0 || !/^```yui\b/.test(part)) return part;
+    const lines: string[] = [];
+    for (const l of part.split("\n")) {
+      const t = l.trim();
+      if (/^(?:"|\+[a-z])/.test(t) && lines.length > 1 && lines[lines.length - 1].trim()) lines[lines.length - 1] += " " + t;
+      else lines.push(l);
+    }
+    if (lines.some((l) => GROUPS.test(l.trim()))) return lines.join("\n");
+    return lines.filter((l) => l.trim() !== "end").join("\n");
   }).join("");
 }
 

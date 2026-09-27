@@ -3,7 +3,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { LocalStore } from "../src/store.ts";
-import { openRouter, runAgent } from "../src/turn.ts";
+import { openRouter, runAgent, unend } from "../src/turn.ts";
 import { fakeModel, freshYui, lastUser, provider, system, USER } from "./helpers.ts";
 
 test("a turn answers, keeps what it learned out of sight, and marks the rows", async () => {
@@ -397,4 +397,60 @@ test("a long answer that ran long without much thinking is kept, no retry", asyn
   store.say(yui.id, "explain the rise and fall of Rome");
   await runAgent(store, yui.id, { provider: openRouter("k"), fetch: m.fetch });
   assert.equal(m.calls.length, 1);
+});
+
+// YUI-135: Gouda once answered a beat ask with nothing the person could see, and the turn closed silently.
+test("an answer with nothing to see asks once more and keeps what it noted", async () => {
+  const { store, byHandle } = await freshYui();
+  const yui = await byHandle("yui");
+  const m = thinker([{ content: "```remember\nnote: likes lo-fi\n```", finish: "stop" },
+                     { content: "Here's a chill one.\n```yui\nloop 76 \"Chill\" p=x...x.x.\n```", finish: "stop" }]);
+  store.say(yui.id, "make me a chill lo-fi beat");
+  const r = await runAgent(store, yui.id, { provider: openRouter("k"), fetch: m.fetch });
+  assert.equal(m.calls.length, 2, "one retry, no more");
+  assert.deepEqual(m.calls[1].reasoning, { enabled: false });
+  assert.match(m.calls[1].messages.at(-1).content, /nothing the person can see/);
+  const body = store.data.rows.find((x) => x.id === r.replies[0])!.body;
+  assert.match(body, /^loop 76/m);
+  assert.doesNotMatch(body, /remember/);
+  assert.ok(store.data.memory.some((x: any) => /likes lo-fi/.test(x.body)), "the note from the first try is kept");
+});
+
+test("an empty answer that stopped normally is asked again too", async () => {
+  const { store, byHandle } = await freshYui();
+  const yui = await byHandle("yui");
+  const m = thinker([{ content: "  ", finish: "stop" }, { content: "Sure.\n```yui\nsay \"Hi\"\n```", finish: "stop" }]);
+  store.say(yui.id, "hi");
+  const r = await runAgent(store, yui.id, { provider, fetch: m.fetch });
+  assert.equal(m.calls.length, 2);
+  assert.equal(m.calls[1].reasoning, undefined);
+  assert.match(store.data.rows.find((x) => x.id === r.replies[0])!.body, /^Sure\./);
+});
+
+test("a search block left after the lookups ran out is asked again, and a turn never ends silent", async () => {
+  const { store, byHandle } = await freshYui();
+  const yui = await byHandle("yui");
+  const m = thinker([{ content: "```search\nlo-fi beat bpm\n```", finish: "stop" }]);
+  store.say(yui.id, "make me a chill lo-fi beat");
+  const r = await runAgent(store, yui.id, { provider, fetch: m.fetch });
+  assert.ok(m.calls.length >= 3, "the lookup note, then one retry");
+  assert.match(m.calls.at(-1).messages.at(-1).content, /nothing the person can see/);
+  assert.match(store.data.rows.find((x) => x.id === r.replies[0])!.body, /couldn't put an answer together/);
+});
+
+test("an end with no plan, deck or other group open leaves the answer; a real plan keeps its end", async () => {
+  assert.equal(unend('Sure.\n```yui\nchoose "Next?" A|B\nend\n```'), 'Sure.\n```yui\nchoose "Next?" A|B\n```');
+  const plan = 'Hi.\n```yui\nplan "Week"\nchoose "Days?" 2|3\nend\n```';
+  assert.equal(unend(plan), plan);
+  assert.equal(unend('```js\nend\n```'), '```js\nend\n```');
+});
+
+test("options wrapped onto their own lines join the choose they belong to", () => {
+  assert.equal(unend('Ok.\n```yui\nchoose "How?"\n"Upper body"|"Gentle legs" +other\n```'),
+               'Ok.\n```yui\nchoose "How?" "Upper body"|"Gentle legs" +other\n```');
+  assert.equal(unend('```yui\nchoose "How?"\n"See a pro"\n"Upper body"\n```'), '```yui\nchoose "How?" "See a pro" "Upper body"\n```');
+});
+
+test("a flag wrapped onto its own line joins the list it belongs to", () => {
+  assert.equal(unend('```yui\nlist "This week" "Dentist" "Report"\n+check\n```'), '```yui\nlist "This week" "Dentist" "Report" +check\n```');
 });
