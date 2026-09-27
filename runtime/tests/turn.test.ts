@@ -482,6 +482,11 @@ test("an answer over 4 short pages is merged, never split into 7 (t_a88dc3b5)", 
   assert.equal(unsprawl(says), "```yui\nsay \"a. b. c\"\nsay \"d\"\nsay \"e\"\nsay \"f\"\nlist \"x\"\n```");
   const deck = "```yui\ndeck \"T\"\n" + [1, 2, 3, 4, 5].map((n) => `page "P${n}" body="Body ${n}."`).join("\n") + "\nend\n```";
   assert.match(unsprawl(deck), /page "P1" body="Body 1\. P2\. Body 2\."\npage "P3"/);
+  // Three or more loose stat tiles are one table: the stage plays each tile as a page.
+  assert.equal(unsprawl('Roughly 505 kcal.\n```yui\nstat 505kcal Calories sub="a guess"\nstat 19g Protein\nstat 54g Carbs\nstat 23g Fat\n```'),
+    'Roughly 505 kcal.\n```yui\ntable Macros Item|Amount "Calories|505kcal (a guess)" "Protein|19g" "Carbs|54g" "Fat|23g"\n```');
+  const two = '```yui\nstat 178.9lb Weight delta=-2.3\nstat "24M km2" "A sixth of the land"\n```';
+  assert.equal(unsprawl(two), two);
   // Four or fewer, or pages too long to share, stay as written.
   const four = "```yui\nsay \"a\"\nsay \"b\"\nsay \"c\"\nsay \"d\"\n```";
   assert.equal(unsprawl(four), four);

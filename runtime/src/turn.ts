@@ -685,8 +685,38 @@ function mergeLines(a: string, b: string): string | null {
   return null;
 }
 
+// The stage plays every loose `stat` tile as a page of its own (Chris, t_afb1bf90: "a full breakdown of the calories
+// and macros, I don't need eight screens for that"). Three or more tiles in a row become one table, one page.
+const STAT = /^stat(?:@([\w-]+))?\s+("(?:[^"\\]|\\.)*"|\S+)\s+("(?:[^"\\]|\\.)*"|[^\s=+]+(?:\s+[^\s=+"]+)*?)(?=\s+[\w]+=|\s+\+|\s*$)(.*)$/;
+const bare = (t: string) => t.replace(/^"|"$/g, "").replace(/\|/g, "/");
+
+function tilesToTable(lines: string[]): string[] {
+  const out: string[] = [];
+  for (let i = 0; i < lines.length;) {
+    let j = i;
+    while (j < lines.length && STAT.test(lines[j].trim())) j++;
+    if (j - i < 3) {
+      out.push(...lines.slice(i, Math.max(j, i + 1)));
+      i = Math.max(j, i + 1);
+      continue;
+    }
+    const rows = lines.slice(i, j).map((l) => {
+      const [, , value, label, rest] = l.trim().match(STAT)!;
+      const sub = rest.match(/\bsub="((?:[^"\\]|\\.)*)"/)?.[1];
+      return `"${bare(label)}|${bare(value)}${sub ? ` (${bare(sub)})` : ""}"`;
+    });
+    const id = lines[i].trim().match(STAT)![1];
+    const title = rows.some((r) => /protein|carb|fat|calorie|kcal/i.test(r)) ? "Macros" : "Numbers";
+    out.push(`table${id ? `@${id}` : ""} ${title} Item|Amount ${rows.join(" ")}`);
+    i = j;
+  }
+  return out;
+}
+
 /** The answer on at most MOST_PAGES stage pages where short ones can share a page. */
 export function unsprawl(text: string): string {
+  text = text.split(/(^```[^\n]*\n[\s\S]*?^```[ \t]*$)/m)
+    .map((p, i) => (i % 2 === 1 && /^```yui\b/.test(p) ? tilesToTable(p.split("\n")).join("\n") : p)).join("");
   const parts = text.split(/(^```[^\n]*\n[\s\S]*?^```[ \t]*$)/m);
   const isYui = (i: number) => i % 2 === 1 && /^```yui\b/.test(parts[i]);
   const paras = (p: string) => p.split(/\n\s*\n/).filter((x) => x.trim());

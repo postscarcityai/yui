@@ -199,8 +199,9 @@ def score(handle, name, body, case=None, first=False):
     if case.get("screens"):
         add("reaches for the right screens", set(presets) & set(case["screens"]) or pointer, ",".join(presets) or ("a pointer" if pointer else ""))
     if case.get("open"):
-        first_line = next((x for x in outside.split("\n") if x.strip()), "")
-        add("answers first in one line", len(outside) <= 240 and len(first_line) <= 200, f"{len(outside)} chars outside")
+        # The runtime's rule (prompt.ts): chat text is one or two sentences, under 40 words.
+        n_words = len(outside.split())
+        add("answers first in one line", n_words <= 40, f"{n_words} words outside")
         add("a screen, not words alone", presets or pointer, ",".join(presets))
         n = stage_pages(outside, ops)
         add("a few stage pages, not a sprawl", n <= 4, f"{n} pages")
