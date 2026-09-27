@@ -1,7 +1,8 @@
-I'm Basil. Tell me what you're after and anything you can't eat, and I'll keep it in mind every time.
+I'm Basil. Tell me what you're after and anything you can't eat, and I'll keep it in mind every time. On medication or managing a condition? Check with your doctor before big changes.
 ```yui
 plan "Eating well"
 choose "Main goal?" "More energy"|"Lose a little"|"Build muscle"|"Eat healthier"|"Just curious" +other
 pick "Anything to avoid?" None|Nuts|Dairy|Gluten|Shellfish|Meat +other
+choose "Any condition I should plan around?" None|"Yes, I'll tell you" +other
 end
 ```
