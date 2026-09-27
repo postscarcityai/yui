@@ -50,6 +50,7 @@ export function ownProvider(k: OwnKey): Provider {
 export interface TurnOptions {
   provider: Provider; // Yui's own; a person's own key replaces it
   fetch?: typeof fetch; // the model side only (tests)
+  fetchMedia?: typeof fetch; // fetching a person's photo to inline it (tests)
   maxTokens?: number; // default 2000
   context?: number; // default 32768
   historyRows?: number; // default 60
@@ -176,7 +177,17 @@ async function oneTurn(store: Store, agent: NativeAgent, rows: Row[], opts: Turn
 
   let answer: Completion;
   try {
-    answer = await ask(opts, provider, req);
+    try {
+      answer = await ask(opts, provider, req);
+    } catch (e) {
+      // Some providers can't fetch every photo URL (Z.AI's fetcher gets turned away by some hosts):
+      // fetch it here and send the bytes instead, once.
+      if (!(e instanceof ModelError) || !images.length) throw e;
+      const inlined = await inlineImages(messages, opts.fetchMedia ?? fetch);
+      if (!inlined) throw e;
+      log(`${p.name}: the model couldn't fetch the photo, sending it inline`);
+      answer = await ask(opts, provider, { ...req, messages: inlined });
+    }
     // A search block alone: look it up, then ask again with the results.
     const first = extract(answer.text);
     if (first.search) {
@@ -274,6 +285,35 @@ async function applySchedules(store: Store, agent: NativeAgent, lines: string[],
 }
 
 /** Streams when it can; one retry when the model is busy. */
+const INLINE_MAX = 8 * 1024 * 1024;
+
+/** The same messages with every photo URL swapped for its bytes (data: URL), or null when none could be fetched. */
+export async function inlineImages(messages: any[], fetchImpl: typeof fetch): Promise<any[] | null> {
+  let swapped = 0;
+  const out = await Promise.all(messages.map(async (m) => {
+    if (!Array.isArray(m.content)) return m;
+    const content = await Promise.all(m.content.map(async (part: any) => {
+      const url = part?.type === "image_url" ? part.image_url?.url : null;
+      if (!url || url.startsWith("data:")) return part;
+      try {
+        const r = await fetchImpl(url);
+        const type = (r.headers.get("content-type") ?? "").split(";")[0].trim();
+        if (!r.ok || !type.startsWith("image/")) return part;
+        const bytes = new Uint8Array(await r.arrayBuffer());
+        if (bytes.length > INLINE_MAX) return part;
+        let bin = "";
+        for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+        swapped++;
+        return { type: "image_url", image_url: { url: `data:${type};base64,${btoa(bin)}` } };
+      } catch {
+        return part;
+      }
+    }));
+    return { ...m, content };
+  }));
+  return swapped ? out : null;
+}
+
 async function ask(opts: TurnOptions, pv: Provider, req: Record<string, unknown>): Promise<Completion> {
   const client = new ChatClient(pv.url, { key: pv.key, headers: pv.headers, fetch: opts.fetch, idle: 120 });
   const body = { ...req, ...(pv.extra ?? {}) } as any;

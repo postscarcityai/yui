@@ -138,6 +138,29 @@ test("a photo goes to the model that sees, as an image part", async () => {
   assert.deepEqual(last.content[1], { type: "image_url", image_url: { url: "https://img.test/plate.jpg" } });
 });
 
+test("a photo the model can't fetch goes again as bytes, once", async () => {
+  const { store, byHandle } = await freshYui();
+  const basil = await byHandle("basil");
+  const m = fakeModel((c) => (JSON.stringify(c.messages).includes('"url":"https://img.test/') ? 400 : "A margherita, about 800 kcal."));
+  const fetchMedia = (async () => new Response(new Uint8Array([255, 216, 255]), { headers: { "content-type": "image/jpeg" } })) as unknown as typeof fetch;
+  store.say(basil.id, "[yui] c1 camera photo=https://img.test/pizza.jpg", "event");
+  await runAgent(store, basil.id, { provider, fetch: m.fetch, fetchMedia });
+  assert.equal(m.calls.length, 2);
+  assert.equal(m.calls[1].model, "z-ai/glm-5v-turbo");
+  assert.deepEqual(lastUser(m.calls[1]).content[1], { type: "image_url", image_url: { url: "data:image/jpeg;base64,/9j/" } });
+  assert.match(store.data.rows.at(-1)!.body, /margherita/);
+});
+
+test("a model error with no photo is not retried", async () => {
+  const { store, byHandle } = await freshYui();
+  const basil = await byHandle("basil");
+  const m = fakeModel(() => 400);
+  store.say(basil.id, "hi");
+  await runAgent(store, basil.id, { provider, fetch: m.fetch });
+  assert.equal(m.calls.length, 1);
+  assert.equal(m.calls[0].model, "z-ai/glm-5.2");
+});
+
 test("free turns run out with one card, and no model call", async () => {
   const { store, byHandle } = await freshYui({ freeTurns: 1 });
   const penny = await byHandle("penny");
