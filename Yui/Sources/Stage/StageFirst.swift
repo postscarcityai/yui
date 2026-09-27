@@ -8,7 +8,7 @@ import YuiLines
 // record." Yui lives here: a send puts the stage up at once with the working
 // state, the reply plays as chunks (a line and a picture each), the questions
 // come last on one screen with one Send, and the chat underneath keeps it all.
-// The bottom bar is BarButtons (YUI-121, BottomBar.swift); YUI-122 finishes the top.
+// The bottom bar is BarButtons (YUI-121, BottomBar.swift), the top bar TopBar.swift (YUI-122).
 
 /// Where the stage is: up or in the chat, which turn, which chunk.
 @Observable @MainActor
@@ -75,7 +75,8 @@ final class StageFirstModel {
 
 /// What the stage can ask ChatView to do.
 struct StageActions {
-    var settings: () -> Void
+    /// The hamburger: the drawer, with Settings in it (YUI-122).
+    var menu: () -> Void
     var pick: (String) -> Void
     var manage: () -> Void
     var record: () -> Void
@@ -114,6 +115,8 @@ struct StageFirstView: View {
     let showType: Bool
     let showAttach: Bool
     let unread: Int
+    /// Things waiting on the person: the dot on the menu.
+    var waiting = 0
     let reduceMotion: Bool
     let actions: StageActions
     @Environment(\.yuiTheme) private var theme
@@ -163,38 +166,16 @@ struct StageFirstView: View {
         .accessibilityIdentifier("stage-first")
     }
 
-    // MARK: Top bar: settings and the agent top left, the record top right
+    // MARK: Top bar (YUI-122, TopBar.swift): the menu and the agent top left, the record top right
 
     private func topBar(_ c: Swatch) -> some View {
         HStack(spacing: theme.spacing.s) {
-            circle("line.3.horizontal", c, label: "Settings", id: "stage-settings", action: actions.settings)
-            Menu {
-                ForEach(agents) { a in
-                    Button { actions.pick(a.id) } label: {
-                        if a.id == agent?.id { Label(a.name, systemImage: "checkmark") } else { Text(a.name) }
-                    }
-                }
-                Divider()
-                Button { actions.manage() } label: { Label("Manage agents", systemImage: "person.2") }
-            } label: {
-                HStack(spacing: theme.spacing.s) {
-                    if let agent { AgentBadge(agent: agent, size: 30) }
-                    Text(agent?.name ?? "Yui")
-                        .font(theme.font(theme.type.body, theme.strong))
-                        .foregroundStyle(c.ink)
-                        .lineLimit(1)
-                    Image(systemName: "chevron.down")
-                        .font(.system(size: 12, weight: .heavy))
-                        .foregroundStyle(c.inkSoft)
-                }
-                .padding(.leading, 5)
-                .padding(.trailing, theme.spacing.m)
-                .frame(height: 44)
-                .background(c.surface, in: Capsule())
-                .overlay(Capsule().stroke(c.outline, lineWidth: 1.5))
-            }
-            .accessibilityLabel("Talking to \(agent?.name ?? "Yui"). Switch agent")
-            .accessibilityIdentifier("stage-agents")
+            // The drawer: the war room, the agent's controls and Settings.
+            circle("line.3.horizontal", c, label: "Menu", id: "stage-menu", action: actions.menu)
+                .modifier(WaitingDot(waiting: waiting > 0, reduceMotion: reduceMotion, x: 1, y: 1))
+                .accessibilityValue(waiting > 0 ? "\(waiting) waiting on you" : "")
+            AgentPicker(agent: agent, agents: agents, pick: actions.pick, manage: actions.manage)
+                .accessibilityIdentifier("stage-agents")
             Spacer(minLength: 0)
             circle("bubble.left", c, label: "Chat", id: "stage-record", action: actions.record)
                 .overlay(alignment: .topTrailing) {

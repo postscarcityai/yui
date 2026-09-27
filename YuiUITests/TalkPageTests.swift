@@ -23,7 +23,7 @@ final class TalkPageTests: XCTestCase {
         waitHittable(app.descendants(matching: .any)["page-3"].staticTexts["Sleep more"], "screen 3 never showed")
         waitSelected(app.buttons["page-tab-3"], "the reply did not bring screen 3 forward")
         waitGone(composer, "a composer on a screen the agent did not talk on")
-        XCTAssertFalse(app.buttons["Settings"].isHittable, "the nav bar is on a screen")
+        XCTAssertFalse(app.buttons["Agent menu"].isHittable, "the nav bar is on a screen")
         shot(app, "screen-3-no-composer")
 
         // Screen 2 talks: the composer is there, and it says what it is about.
@@ -31,7 +31,7 @@ final class TalkPageTests: XCTestCase {
         waitSelected(app.buttons["page-tab-2"], "the dot does not go to screen 2")
         waitHittable(composer, "no composer on the talk screen")
         XCTAssertEqual(composer.placeholderValue, "About screen 2")
-        XCTAssertFalse(app.buttons["Settings"].isHittable, "a talk screen is still full screen")
+        XCTAssertFalse(app.buttons["Agent menu"].isHittable, "a talk screen is still full screen")
         shot(app, "screen-2-composer")
 
         composer.tap()

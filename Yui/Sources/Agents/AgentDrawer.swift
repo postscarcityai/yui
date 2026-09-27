@@ -118,6 +118,8 @@ struct AgentDrawer: View {
     let manage: () -> Void
     let add: () -> Void
     let edit: (YuiAgent) -> Void
+    /// The app's Settings: the drawer is the hamburger's, and Settings lives here (YUI-122).
+    var settings: () -> Void = {}
     var reduceMotion = false
     @Environment(AgentStore.self) private var agents
     @Environment(\.yuiTheme) private var theme
@@ -183,6 +185,14 @@ struct AgentDrawer: View {
                 .minimumScaleFactor(0.6)
                 .accessibilityAddTraits(.isHeader)
             Spacer(minLength: theme.spacing.m)
+            Button("Settings", systemImage: "gearshape.fill", action: settings)
+                .labelStyle(.iconOnly)
+                .font(theme.font(theme.type.body, .bold))
+                .foregroundStyle(c.inkSoft)
+                .frame(width: 36, height: 36)
+                .background(c.surface, in: Circle())
+                .overlay(Circle().stroke(c.outline, lineWidth: 1))
+                .accessibilityIdentifier("drawer-settings")
             Button("Close", systemImage: "xmark", action: close)
                 .labelStyle(.iconOnly)
                 .font(theme.font(theme.type.body, .bold))

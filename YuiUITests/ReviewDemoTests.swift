@@ -64,7 +64,11 @@ final class ReviewDemoTests: XCTestCase {
         sleep(2)
         shot("04-next-screen")
 
-        app.buttons["Settings"].firstMatch.tap()
+        // Settings is in the menu's drawer (YUI-122).
+        app.buttons["Agent menu"].tap()
+        let settings = app.buttons["drawer-settings"]
+        XCTAssertTrue(settings.waitForExistence(timeout: 5), "no Settings in the drawer")
+        settings.tap()
         let help = app.staticTexts["Help and feedback"]
         XCTAssertTrue(help.waitForExistence(timeout: 10), "no Help and feedback in Settings")
         for _ in 0..<4 where !help.isHittable { app.scrollViews.firstMatch.swipeUp() }

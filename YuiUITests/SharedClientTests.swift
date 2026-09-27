@@ -69,10 +69,10 @@ final class SharedClientTests: XCTestCase {
         // The line sits over the nav bar for a moment: let it go first.
         let gone = expectation(for: NSPredicate(format: "exists == false"), evaluatedWith: note)
         wait(for: [gone], timeout: 10)
-        // The thread fell back to Penny. Drawer, then its agent bar: the switcher.
+        // The thread fell back to Penny. The menu's drawer, then its agent bar: the switcher.
         let penny = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Talking to Penny")).firstMatch
         XCTAssertTrue(penny.waitForExistence(timeout: 5), "the chat did not fall back to Penny")
-        penny.tap()
+        app.buttons["Agent menu"].tap()
         let bar = app.descendants(matching: .any)["drawer-agent-bar"]
         XCTAssertTrue(bar.waitForExistence(timeout: 5))
         bar.tap()

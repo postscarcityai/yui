@@ -203,26 +203,14 @@ struct ChatView: View {
                 }
             }
             .navigationBarTitleDisplayMode(.inline)
+            // The top bar (YUI-122): the menu and the agent top left, as on the stage.
+            // Settings is in the menu's drawer; top right is the way back to the full screen.
             .toolbar {
                 menuItem(c)
-                ToolbarItem(placement: .principal) {
-                    if let agent = store.agent {
-                        Button { settleDrawer(open: true) } label: {
-                            HStack(spacing: theme.spacing.s) {
-                                AgentBadge(agent: agent, size: 26)
-                                Text(agent.name)
-                                    .font(theme.font(theme.type.body, theme.strong))
-                                    .foregroundStyle(c.ink)
-                                Circle().fill(agent.liveness == .online ? c.mint : agent.liveness == .asleep ? c.lavender
-                                              : agent.liveness == .notListening ? c.butter : c.outline)
-                                    .frame(width: 8, height: 8)
-                            }
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel("Talking to \(agent.name), \(agent.liveness.spoken)")
-                    } else {
-                        Wordmark(height: 26)
-                    }
+                ToolbarItem(placement: .topBarLeading) {
+                    AgentPicker(agent: store.agent, agents: agents.agents, framed: false,
+                                pick: { agents.selectedID = $0 }, manage: { showAgents = true })
+                        .accessibilityIdentifier("record-agents")
                 }
                 if stageFirstOn {
                     // The record's way back to the full screen (YUI-119).
@@ -231,10 +219,6 @@ struct ChatView: View {
                             .tint(c.inkSoft)
                             .accessibilityIdentifier("back-to-stage")
                     }
-                }
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("Settings", systemImage: "gearshape.fill") { showSettings = true }
-                        .tint(c.inkSoft)
                 }
             }
             .toolbarBackground(c.background, for: .navigationBar)
@@ -280,10 +264,6 @@ struct ChatView: View {
                     .presentationCornerRadius(theme.radius.card)
             }
         }
-        .overlay {
-            DrawerLayer(motion: drawerMotion, open: drawerOpen, shows: !firstRun, width: drawerWidth * Drawer.fraction,
-                        reduceMotion: reduceMotion, settle: settleDrawer) { drawerContent }
-        }
         // Belt and braces (YUI-80): while the chat is stepped back, a tap or a swipe on it
         // closes the stage. The stage covers it, so this only answers if the stage never drew.
         .overlay {
@@ -317,6 +297,10 @@ struct ChatView: View {
                 .transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
                 .zIndex(2)
         }
+        // Over the chat and over the full screen: both top bars open it (YUI-54, YUI-122).
+        DrawerLayer(motion: drawerMotion, open: drawerOpen, shows: !firstRun, width: drawerWidth * Drawer.fraction,
+                    reduceMotion: reduceMotion, settle: settleDrawer) { drawerContent }
+            .zIndex(3)
         }
         .environment(\.ylEmit, store.emit)
         .environment(\.ylShow, store.ylShow)
@@ -471,23 +455,15 @@ struct ChatView: View {
 
     // MARK: The agent's drawer (YUI-54)
 
-    /// Top left: the drawer, also a drag right on the chat away. Something waiting
-    /// on you puts a small dot on the button's glass, no number (feedback AI3Pbaid);
-    /// it goes the moment the last one is answered. VoiceOver still hears how many.
+    /// Top left: the drawer (the war room, the agent's controls, Settings), also a drag
+    /// right on the chat away. Something waiting on you puts a dot on it (`WaitingDot`).
+    /// VoiceOver still hears how many.
     private func menuItem(_ c: Swatch) -> some ToolbarContent {
         let n = store.waitingCount
         return ToolbarItem(placement: .topBarLeading) {
             Button { settleDrawer(open: true) } label: {
                 Image(systemName: "line.3.horizontal")
-                    .overlay(alignment: .topTrailing) {
-                        Circle()
-                            .fill(c.accent)
-                            .frame(width: 8, height: 8)
-                            .offset(x: 6, y: -5)
-                            .scaleEffect(n > 0 ? 1 : 0.2)
-                            .opacity(n > 0 ? 1 : 0)
-                            .animation(reduceMotion ? .easeInOut(duration: 0.2) : theme.spring, value: n > 0)
-                    }
+                    .modifier(WaitingDot(waiting: n > 0, reduceMotion: reduceMotion))
             }
             .tint(c.inkSoft)
             .accessibilityLabel("Agent menu")
@@ -506,13 +482,25 @@ struct ChatView: View {
         }
     }
 
+    /// The drawer shuts. Opened over the full screen (YUI-122), a row that went to a
+    /// screen or a pinned full screen takes the person to the record, where those live.
+    private func closeDrawer() {
+        settleDrawer(open: false)
+        guard stageFirstOn, stageFirst.open else { return }
+        Task { @MainActor in
+            await Task.yield()
+            if store.page != 1 || store.stageOpen { closeStageFirst() }
+        }
+    }
+
     /// The drawer itself; `DrawerLayer` slides it and dims the chat.
     private var drawerContent: some View {
-        AgentDrawer(store: store, close: { settleDrawer(open: false) },
-                    compose: { composer.draft = $0; typeHere() },
+        AgentDrawer(store: store, close: closeDrawer,
+                    compose: { composer.draft = $0; stageFirstOn && stageFirst.open ? typeOnStage() : typeHere() },
                     manage: { settleDrawer(open: false); showAgents = true },
                     add: { settleDrawer(open: false); addFirst = true },
                     edit: { editingAgent = $0 },
+                    settings: { settleDrawer(open: false); showSettings = true },
                     reduceMotion: reduceMotion)
     }
 
@@ -1242,9 +1230,9 @@ struct ChatView: View {
             store: store, model: stageFirst, agent: store.agent, agents: agents.agents, composer: composer,
             focus: $stageFocused, photos: photos, sending: sending, mic: stageMicState,
             showMic: stageMic || !stageType, showType: stageType || !stageMic, showAttach: stageAttach,
-            unread: max(0, store.shown.count - stageFirst.seen), reduceMotion: reduceMotion,
+            unread: max(0, store.shown.count - stageFirst.seen), waiting: store.waitingCount, reduceMotion: reduceMotion,
             actions: StageActions(
-                settings: { showSettings = true },
+                menu: { settleDrawer(open: true) },
                 pick: { agents.selectedID = $0 },
                 manage: { showAgents = true },
                 record: closeStageFirst,
@@ -1339,6 +1327,12 @@ struct ChatView: View {
         guard recordBar else { focused = true; return }
         withAnimation(reduceMotion ? .easeInOut(duration: 0.2) : theme.spring) { recordTyping = true }
         DispatchQueue.main.async { focused = true }
+    }
+
+    /// A drawer shortcut opened over the full screen: its words land in the stage's T field.
+    private func typeOnStage() {
+        withAnimation(reduceMotion ? .easeInOut(duration: 0.2) : theme.spring) { stageFirst.typing = true }
+        DispatchQueue.main.async { stageFocused = true }
     }
 
     /// Tap away: the record's field folds back to mic, T and +. The words stay for next
