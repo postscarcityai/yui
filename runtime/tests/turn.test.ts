@@ -526,3 +526,11 @@ test("a person who writes during a hand-off is answered before the lock goes (t_
   assert.ok(row.handled_at, "Basil answered the person's own message too");
   assert.ok(store.data.rows.some((x) => x.sender === "agent" && Array.isArray(x.meta?.turn) && x.meta.turn.includes(mine)));
 });
+
+test("a line that can't sit in a deck moves after it, so the deck still draws (t_a88dc3b5)", async () => {
+  const { undeck } = await import("../src/turn.ts");
+  const gouda = "Hi.\n```yui\ndeck \"About me\"\npage \"Who\" body=\"x\"\nshapes\nshape circle You\npage \"What\" body=\"y\"\nlist \"My jobs\" \"Beats\" \"Theory\"\nend\n```";
+  assert.equal(undeck(gouda), "Hi.\n```yui\ndeck \"About me\"\npage \"Who\" body=\"x\"\nshapes\nshape circle You\npage \"What\" body=\"y\"\nend\nlist \"My jobs\" \"Beats\" \"Theory\"\n```");
+  const fine = "```yui\ndeck \"T\"\npage \"A\"\nsketch frame=bubble\nrow \"x\" +x\nend\nend\nchoose \"Q?\" A|B\n```";
+  assert.equal(undeck(fine), fine);
+});

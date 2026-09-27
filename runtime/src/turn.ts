@@ -261,7 +261,7 @@ async function oneTurn(store: Store, agent: NativeAgent, rows: Row[], opts: Turn
     if (!out.text.trim()) out.text = results.filter((r) => r.ok).map((r) => `Done: ${(r as { did: string }).did}.`).join("\n");
   }
   if (out.schedule.length) notes.push(...await applySchedules(store, agent, out.schedule, schedules, tzRaw ? tz : "UTC", now, log));
-  let body = unsprawl(unmark(unend(unbreak(undash(out.text)))));
+  let body = unsprawl(unmark(undeck(unend(unbreak(undash(out.text))))));
   if (notes.length) body += `\n\n(I couldn't do all of that: ${notes.join("; ")}.)`;
   // Sources the answer didn't link, and the invite to add a Firecrawl key when the free lookups ran out.
   const cards = [...sourceCards(body, looked.sources), ...(looked.capped ? [searchInvite(looked.capped.why, looked.capped.limit)] : [])];
@@ -562,6 +562,34 @@ export function unend(text: string): string {
     }
     if (lines.some((l) => GROUPS.test(l.trim()))) return lines.join("\n");
     return lines.filter((l) => l.trim() !== "end").join("\n");
+  }).join("");
+}
+
+// A deck or plan holds pages and their pictures (and a quiz or questions); any other line inside one closes it early on
+// the phone, and the `end` after it is left with nothing to close, so the answer fails to draw (Gouda put a `list` in
+// a deck, Quill `step` lines). Those lines move to just after the group's last `end`.
+const IN_DECK = /^(?:page|sketch|row|after|shapes|shape|math|chart|stat|calc|map|area|pin|route|image|choose|pick|ask|slide|form|mic|camera|end)(?:[@\s]|$)/;
+const OPENS = /^(?:deck|plan)(?:@[\w-]+)?(?:\s|$)/;
+
+export function undeck(text: string): string {
+  const parts = text.split(/(^```[^\n]*\n[\s\S]*?^```[ \t]*$)/m);
+  return parts.map((part, i) => {
+    if (i % 2 === 0 || !/^```yui\b/.test(part)) return part;
+    const lines = part.split("\n");
+    const start = lines.findIndex((l) => OPENS.test(l.trim()));
+    if (start < 0) return part;
+    let last = -1;
+    for (let j = lines.length - 1; j > start; j--) if (lines[j].trim() === "end") { last = j; break; }
+    if (last < 0) return part;
+    const moved: string[] = [];
+    const kept = lines.filter((l, j) => {
+      if (j <= start || j >= last || !l.trim() || IN_DECK.test(l.trim())) return true;
+      moved.push(l);
+      return false;
+    });
+    if (!moved.length) return part;
+    const at = kept.lastIndexOf(lines[last]) + 1;
+    return [...kept.slice(0, at), ...moved, ...kept.slice(at)].join("\n");
   }).join("");
 }
 
