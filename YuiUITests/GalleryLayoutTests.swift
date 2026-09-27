@@ -60,13 +60,14 @@ final class GalleryLayoutTests: XCTestCase {
         return tiles
     }
 
-    /// The default row, the screen Chris was on: 230x170 tiles side by side.
+    /// The default row, the screen Chris was on: 200pt tall tiles side by side, each
+    /// as wide as its picture's shape (805x1000 here), never cropped (AM6xGDZ3).
     func testRow() throws {
         for n in [1, 2, 3, 4, 7] {
             let tiles = check("row", n)
             for t in tiles {
-                XCTAssertEqual(t.height, 170, accuracy: 1, "row-\(n): a tile is \(t.height)pt tall, not 170")
-                XCTAssertEqual(t.width, 230, accuracy: 1, "row-\(n): a tile is \(t.width)pt wide, not 230")
+                XCTAssertEqual(t.height, 200, accuracy: 1, "row-\(n): a tile is \(t.height)pt tall, not 200")
+                XCTAssertEqual(t.width, 200 * 805 / 1000, accuracy: 2, "row-\(n): a tile is \(t.width)pt wide, not the picture's shape")
             }
             XCTAssertGreaterThanOrEqual(tiles[0].minX, 0, "row-\(n): the first photo starts off screen")
             app.terminate()
@@ -86,12 +87,12 @@ final class GalleryLayoutTests: XCTestCase {
         }
     }
 
-    /// Full-width 4:3 photos, one under the other.
+    /// Full-width photos in their own shape (805x1000), one under the other.
     func testFeed() throws {
         for n in [1, 2, 4] {
             let tiles = check("feed", n)
             for t in tiles {
-                XCTAssertEqual(t.width / t.height, 4 / 3, accuracy: 0.03, "feed-\(n): a tile is not 4:3 \(t)")
+                XCTAssertEqual(t.width / t.height, 805 / 1000, accuracy: 0.03, "feed-\(n): a tile is not the picture's shape \(t)")
                 XCTAssertGreaterThan(t.width, app.frame.width * 0.6, "feed-\(n): a tile shrank to a thumbnail \(t)")
                 XCTAssertTrue(t.minX >= 0 && t.maxX <= app.frame.maxX, "feed-\(n): a tile runs off screen \(t)")
             }

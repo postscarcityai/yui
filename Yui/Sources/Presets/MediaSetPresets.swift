@@ -9,7 +9,8 @@ import YuiLines
 /// One gallery or storyboard item: a picture, or a video shown as a play tile.
 struct MediaTile: View {
     let src: URL
-    var fit: ContentMode = .fill
+    var fit: ContentMode = .fit
+    var onRatio: ((CGFloat) -> Void)? = nil
     @Environment(\.yuiTheme) private var theme
     @Environment(\.colorScheme) private var scheme
 
@@ -24,7 +25,7 @@ struct MediaTile: View {
             }
             .accessibilityLabel("Video")
         } else {
-            RemoteImage(src: src, fit: fit)
+            RemoteImage(src: src, fit: fit, onRatio: onRatio)
         }
     }
 }
@@ -130,10 +131,13 @@ struct GalleryPreset: View {
     @State private var viewing: Int?
     @State private var picked: [Int] = []
     @State private var sent: [Int]?
+    /// Each picture's width over height once loaded: tiles take the picture's shape.
+    @State private var ratios: [Int: CGFloat] = [:]
     @Environment(\.ylScope) private var scope
     @Environment(\.ylAnswers) private var answers
     @Environment(\.agentStyle) private var style
     @Environment(\.ylEmit) private var emit
+    @Environment(\.ylOnStage) private var onStage
     @Environment(\.yuiTheme) private var theme
     @Environment(\.colorScheme) private var scheme
 
@@ -149,7 +153,7 @@ struct GalleryPreset: View {
             case "feed":
                 VStack(spacing: theme.spacing.m) {
                     ForEach(Array(items.enumerated()), id: \.offset) { i, url in
-                        tile(i, url).aspectRatio(4 / 3, contentMode: .fit)
+                        RatioBox(ratio: ratio(i, url), maxHeight: 560) { tile(i, url) }
                     }
                 }
             case "grid":
@@ -160,11 +164,16 @@ struct GalleryPreset: View {
                     }
                 }
             case "row3d":
+                // Big cards, each its picture's shape, the next one peeking (AM6xGDZ3).
+                // Full screen has the height to spare, so a phone screenshot gets it.
+                let tall: CGFloat = onStage ? 600 : 460
                 ScrollView(.horizontal, showsIndicators: false) {
                     LazyHStack(spacing: -20) {
                         ForEach(Array(items.enumerated()), id: \.offset) { i, url in
+                            let r = ratio(i, url, or: 3 / 4)
                             tile(i, url)
-                                .frame(width: 220, height: 290)
+                                .aspectRatio(r, contentMode: .fit)
+                                .containerRelativeFrame(.horizontal) { len, _ in min(len * 0.96, tall * r) }
                                 .scrollTransition(axis: .horizontal) { view, phase in
                                     view.rotation3DEffect(.degrees(phase.value * -38), axis: (0, 1, 0), perspective: 0.6)
                                         .scaleEffect(1 - abs(phase.value) * 0.18)
@@ -175,13 +184,14 @@ struct GalleryPreset: View {
                     .scrollTargetLayout()
                 }
                 .scrollTargetBehavior(.viewAligned)
-                .contentMargins(.horizontal, 60, for: .scrollContent)
-                .frame(height: 310)
+                .contentMargins(.horizontal, 36, for: .scrollContent)
+                .frame(height: tall + 40)
             default:
                 ScrollView(.horizontal, showsIndicators: false) {
                     LazyHStack(spacing: theme.spacing.s) {
                         ForEach(Array(items.enumerated()), id: \.offset) { i, url in
-                            tile(i, url).frame(width: 230, height: 170)
+                            let r = ratio(i, url)
+                            tile(i, url).frame(width: min(max(200 * r, 120), 320), height: 200)
                         }
                     }
                     .scrollTargetLayout()
@@ -203,6 +213,11 @@ struct GalleryPreset: View {
         }
     }
 
+    /// The picture's shape, known once it loads (or from an earlier load).
+    private func ratio(_ i: Int, _ url: URL, or guess: CGFloat = 4 / 3) -> CGFloat {
+        ratios[i] ?? Pictures.ratio(url) ?? guess
+    }
+
     private func tile(_ i: Int, _ url: URL, radius: Double? = nil) -> some View {
         let s = theme.swatch(scheme)
         let r = radius ?? theme.radius.card
@@ -211,7 +226,12 @@ struct GalleryPreset: View {
         // given. `.frame(maxWidth: .infinity, maxHeight: .infinity)` grew to a fill
         // image's own height and spilled over Done, which then took no taps.
         return Color.clear
-            .overlay { MediaTile(src: url) }
+            .overlay {
+                MediaTile(src: url) { r in
+                    if ratios[i] != r { withAnimation(.snappy) { ratios[i] = r } }
+                }
+            }
+            .background(s.surface)
             .overlay(alignment: .bottomLeading) {
                 if !caption.isEmpty {
                     Text(caption)
@@ -282,6 +302,8 @@ struct ComparePreset: View {
     @State private var showAfter = true
     @State private var choice: String?
     @State private var full = false
+    /// The before picture's width over height: the box takes its shape, nothing crops.
+    @State private var ratio: CGFloat?
     @Environment(\.ylOnStage) private var onStage
     @Environment(\.ylEmit) private var emit
     @Environment(\.yuiTheme) private var theme
@@ -371,7 +393,7 @@ struct ComparePreset: View {
     private func pictures(_ mode: String, _ before: URL?, _ after: URL?, _ s: Swatch, full: CGSize?) -> some View {
         switch mode {
         case "side":
-            box(8 / 5, full) {
+            box(shape(before) * 2, full) {
                 let a = labeled(before, labels[0], hl: false), b = labeled(after, labels[1], hl: true)
                 if let full, full.height > full.width {
                     VStack(spacing: theme.spacing.xs) { a; b }
@@ -380,13 +402,13 @@ struct ComparePreset: View {
                 }
             }
         case "toggle":
-            box(4 / 3, full) { labeled(showAfter ? after : before, labels[showAfter ? 1 : 0], hl: showAfter) }
+            box(shape(before), full) { labeled(showAfter ? after : before, labels[showAfter ? 1 : 0], hl: showAfter) }
                 .contentShape(.rect)
                 .onTapGesture { withAnimation(theme.spring) { showAfter.toggle() } }
                 .accessibilityAddTraits(.isButton)
                 .accessibilityHint("Shows the other side")
         default:
-            box(4 / 3, full) { slider(before, after, s) }
+            box(shape(before), full) { slider(before, after, s) }
         }
     }
 
@@ -402,12 +424,21 @@ struct ComparePreset: View {
         }
     }
 
+    private func shape(_ before: URL?) -> CGFloat {
+        ratio ?? before.flatMap(Pictures.ratio) ?? 4 / 3
+    }
+
     private func picture(_ url: URL?) -> some View {
         let s = theme.swatch(scheme)
+        let before = YLMediaURL.url(c.string("before"))
         // Over an empty color, so the picture's own width never skews an HStack split.
         return Color.clear
             .overlay {
-                if let url { RemoteImage(src: url, fit: .fill) } else { s.background }
+                if let url {
+                    RemoteImage(src: url, fit: .fit) { r in
+                        if url == before, r != ratio { withAnimation(.snappy) { ratio = r } }
+                    }
+                } else { s.background }
             }
             .clipped()
     }
@@ -473,13 +504,16 @@ struct ComparePreset: View {
 
 /// The full offered width, `width / ratio` tall; children get exactly that.
 /// `.aspectRatio(.fit)` falls back to the child's ideal size when the height is
-/// open (it is, in a scrolling chat), which left compare a thumbnail.
+/// open (it is, in a scrolling chat), which left compare a thumbnail. Past
+/// `maxHeight` the box keeps its ratio and gets narrower.
 struct RatioBox: Layout {
     let ratio: CGFloat
+    var maxHeight: CGFloat = .infinity
 
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
         let w = proposal.width.flatMap { $0.isFinite ? $0 : nil } ?? 320
-        return CGSize(width: w, height: w / ratio)
+        let r = max(ratio, 0.05)
+        return w / r > maxHeight ? CGSize(width: maxHeight * r, height: maxHeight) : CGSize(width: w, height: w / r)
     }
 
     func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
@@ -583,7 +617,7 @@ struct StoryboardPreset: View {
         return VStack(alignment: .leading, spacing: theme.spacing.s) {
             HStack(alignment: .top, spacing: theme.spacing.m) {
                 ZStack {
-                    if let url { MediaTile(src: url) } else { s.lavender }
+                    if let url { s.surface; MediaTile(src: url) } else { s.lavender }
                     if url == nil {
                         Text("\(i + 1)").font(theme.font(theme.type.display, .black)).foregroundStyle(s.userInk)
                     }

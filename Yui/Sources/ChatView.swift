@@ -377,7 +377,13 @@ struct ChatView: View {
                 let delay = UserDefaults.standard.object(forKey: "yuiDemoDelay") == nil
                     ? 1.5 : UserDefaults.standard.double(forKey: "yuiDemoDelay")
                 try? await Task.sleep(for: .seconds(delay))
-                withAnimation(theme.spring) { store.messages.append(ChatMessage(text: prompt, fromUser: true)) }
+                var ask = ChatMessage(text: prompt, fromUser: true)
+                // -yuiDemoPromptPhotos "URL URL": the person's message carries these photos (AM6xGDZ3 shots).
+                for link in (UserDefaults.standard.string(forKey: "yuiDemoPromptPhotos") ?? "").split(separator: " ") {
+                    if let url = URL(string: String(link)), let (data, _) = try? await URLSession.shared.data(from: url),
+                       let image = UIImage(data: data) { ask.photos.append(.local(image)) }
+                }
+                withAnimation(theme.spring) { store.messages.append(ask) }
                 try? await Task.sleep(for: .seconds(1.2))
                 store.stream(text.replacingOccurrences(of: "\\n", with: "\n"))
                 return

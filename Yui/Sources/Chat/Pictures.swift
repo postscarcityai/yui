@@ -76,6 +76,22 @@ enum Pictures {
     }()
     static func empty() { entries.removeAllObjects() }
 
+    /// The id a picture is cached under: a re-signed link is the same picture.
+    static func id(_ src: URL) -> String { YuiMedia.bucketPath(src) ?? src.absoluteString }
+
+    /// Width over height of pictures already seen, so a box made again (a row scrolled
+    /// back, a thread reopened) starts at the right shape instead of jumping.
+    @MainActor private static var ratios: [String: CGFloat] = [:]
+    @MainActor static func ratio(_ src: URL) -> CGFloat? { ratios[id(src)] }
+    @discardableResult
+    @MainActor static func remember(_ src: URL, _ image: UIImage) -> CGFloat? {
+        guard image.size.width > 0, image.size.height > 0 else { return nil }
+        let r = image.size.width / image.size.height
+        if ratios.count > 2000 { ratios.removeAll() }
+        ratios[id(src)] = r
+        return r
+    }
+
     /// Fetches, downsamples off the main thread and caches. `id` stays the same when
     /// a signed link is signed again, so a new link is not a new picture.
     static func load(_ url: URL, id: String, points: CGSize, scale: CGFloat) async -> (image: UIImage, whole: Bool)? {

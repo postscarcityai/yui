@@ -741,7 +741,7 @@ struct ProjectPreset: View {
         let s = theme.swatch(scheme)
         PresetCard {
             if let img = YLMediaURL.url(c.string("img")) {
-                RemoteImage(src: img).frame(height: 150).frame(maxWidth: .infinity)
+                WholeImage(src: img, maxHeight: 260).frame(maxWidth: .infinity)
                     .clipShape(.rect(cornerRadius: theme.radius.bubble))
             }
             HStack(alignment: .firstTextBaseline) {
