@@ -129,7 +129,10 @@ struct ChatView: View {
     var body: some View {
         let c = theme.swatch(scheme)
         let _ = BodyLog.hit("ChatView")
-        ZStack {
+        // The layers and the thread are erased (AnyView): as one type, the body nested
+        // 129 deep and the runtime ran the phone's 1 MB main stack out building it
+        // (build 229, feedback AGjOqLXN). ViewTypeDepthTests keeps it shallow.
+        AnyView(ZStack {
         NavigationStack {
             Group {
                 if firstRun {
@@ -140,7 +143,7 @@ struct ChatView: View {
                     }
                 } else {
                     // The chat, then each screen the agent put something on, a swipe apart (YUI-31).
-                    PagedThread(store: store, screens: store.screens, page: $page, fade: pageFade, agent: store.agent, style: agentStyle) { thread }
+                    PagedThread(store: store, screens: store.screens, page: $page, fade: pageFade, agent: store.agent, style: agentStyle) { AnyView(thread) }
                         // Drag right on the chat: the drawer follows the finger (YUI-54). On a
                         // screen the pager is scrolled along, so the drag pages back instead.
                         // The record's field is out: a tap on the thread lets the keyboard go and folds it (YUI-121).
@@ -169,7 +172,9 @@ struct ChatView: View {
                         // Screens are for reading: the composer stays with the chat,
                         // unless the agent keeps it on this screen (`>2 talk`).
                         if composing {
-                            inputBar(c)
+                            // Erased: its type nested under the body's ran the phone's
+                            // main stack out when the runtime built it (feedback AGjOqLXN).
+                            AnyView(inputBar(c))
                                 .transition(.move(edge: .bottom).combined(with: .opacity))
                         }
                     }
@@ -307,7 +312,7 @@ struct ChatView: View {
         DrawerLayer(motion: drawerMotion, open: drawerOpen, shows: !firstRun, width: drawerWidth * Drawer.fraction,
                     reduceMotion: reduceMotion, settle: settleDrawer) { drawerContent }
             .zIndex(3)
-        }
+        })
         .environment(\.ylEmit, store.emit)
         .environment(\.ylShow, store.ylShow)
         .environment(\.ylPage, store.ylPage)
@@ -802,7 +807,8 @@ struct ChatView: View {
         #endif
     }
 
-    /// The field and its buttons, or with stage first the bar (YUI-121).
+    /// The field and its buttons, or with stage first the bar (YUI-121). The fields and
+    /// buttons it picks from return AnyView: build 229 crashed building this row's type.
     private func inputRow(_ c: Swatch) -> some View {
         HStack(alignment: .bottom, spacing: theme.spacing.s) {
             if recordBar {
@@ -854,9 +860,9 @@ struct ChatView: View {
 
     /// Held down: what it hears, live, where the words would be, with the trash on the
     /// left, a clock and the waveform. Slide the finger left to the trash to cancel.
-    private func listeningField(_ c: Swatch) -> some View {
+    private func listeningField(_ c: Swatch) -> AnyView {
         let armed = cancelArmed
-        return VStack(alignment: .leading, spacing: theme.spacing.xs) {
+        return AnyView(VStack(alignment: .leading, spacing: theme.spacing.xs) {
             Text(armed ? "Let go to cancel"
                  : talk.transcript.isEmpty ? "Let go to send. Slide left to cancel." : talk.transcript)
                 .font(theme.font(theme.type.body, armed || talk.transcript.isEmpty ? .semibold : .regular))
@@ -893,12 +899,12 @@ struct ChatView: View {
         .animation(reduceMotion ? nil : theme.spring, value: armed)
         .sensoryFeedback(.impact(weight: .medium), trigger: armed)
         .accessibilityElement(children: .combine)
-        .accessibilityIdentifier("listening")
+        .accessibilityIdentifier("listening"))
     }
 
     /// One + for everything that isn't words. Room for files and more later, no new buttons.
-    private func attachMenu(_ c: Swatch) -> some View {
-        Menu {
+    private func attachMenu(_ c: Swatch) -> AnyView {
+        AnyView(Menu {
             Button { pickingPhotos = true } label: { Label("Photo library", systemImage: "photo.on.rectangle") }
             if UIImagePickerController.isSourceTypeAvailable(.camera) {
                 Button { shooting = true } label: { Label("Camera", systemImage: "camera") }
@@ -914,7 +920,7 @@ struct ChatView: View {
         }
         .disabled(sending || photos.count >= Attachments.maxPhotos)
         .accessibilityLabel("Attach")
-        .accessibilityIdentifier("attach")
+        .accessibilityIdentifier("attach"))
     }
 
     private func attachmentStrip(_ c: Swatch) -> some View {
@@ -945,8 +951,8 @@ struct ChatView: View {
     }
 
     /// Send when there is something to send; otherwise the mic: hold to talk.
-    private func sendButton(_ c: Swatch) -> some View {
-        SendOrMic(composer: composer, send: !photos.isEmpty || sending) {
+    private func sendButton(_ c: Swatch) -> AnyView {
+        AnyView(SendOrMic(composer: composer, send: !photos.isEmpty || sending) {
             Button(action: send) {
                 Image(systemName: "arrow.up")
                     .font(theme.font(theme.type.title, .black))
@@ -980,7 +986,7 @@ struct ChatView: View {
                 .sensoryFeedback(.impact(weight: .light), trigger: talk.listening) { _, now in now }
                 .accessibilityLabel(talk.listening ? "Listening" : "Hold to talk")
                 .accessibilityIdentifier("talk")
-        }
+        })
     }
 
     /// Finger on the mic: after a short hold it starts listening. A quick tap only explains.
@@ -1075,7 +1081,7 @@ struct ChatView: View {
     }
 
     /// Where the words go, hands-free: what it hears, what it sent, and what's next, in plain words.
-    private func handsFreeField(_ c: Swatch) -> some View {
+    private func handsFreeField(_ c: Swatch) -> AnyView {
         let name = store.agent?.name ?? "Your agent"
         let (status, icon, words): (String, String, String) = switch handsFree.state {
         case .off, .starting: ("Opening the mic", "mic.fill", "One sec.")
@@ -1090,7 +1096,7 @@ struct ChatView: View {
         }
         let paused = if case .paused = handsFree.state { true } else { false }
         let live = handsFree.state == .listening
-        return Button { if paused { handsFreeDo(.tap) } } label: {
+        return AnyView(Button { if paused { handsFreeDo(.tap) } } label: {
             VStack(alignment: .leading, spacing: theme.spacing.xs) {
                 Label(status, systemImage: icon)
                     .font(theme.font(theme.type.caption, .bold))
@@ -1123,12 +1129,12 @@ struct ChatView: View {
         .accessibilityElement(children: .combine)
         .accessibilityHint(paused ? "Double tap to keep talking." : "")
         .accessibilityIdentifier("hands-free")
-        .accessibilityValue(handsFree.accessibilityState)
+        .accessibilityValue(handsFree.accessibilityState))
     }
 
     /// Ends hands-free and goes back to typing.
-    private func stopTalkingButton(_ c: Swatch) -> some View {
-        Button { handsFreeDo(.stop) } label: {
+    private func stopTalkingButton(_ c: Swatch) -> AnyView {
+        AnyView(Button { handsFreeDo(.stop) } label: {
             Image(systemName: "xmark")
                 .font(theme.font(theme.type.title, .black))
                 .foregroundStyle(c.ink)
@@ -1138,7 +1144,7 @@ struct ChatView: View {
         }
         .buttonStyle(BounceButtonStyle())
         .accessibilityLabel("Stop talking")
-        .accessibilityIdentifier("hands-free-stop")
+        .accessibilityIdentifier("hands-free-stop"))
     }
 
     private func note(for phase: PushToTalk.Phase) {
