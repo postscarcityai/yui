@@ -21,6 +21,12 @@ struct AgentLook: Codable, Equatable, Sendable {
     var weight: String?
     /// "bouncy" | "calm" | "snappy"
     var motion: String?
+    /// A motion look in words (YUI-123), each on top of `motion`: pace slow|even|quick,
+    /// ease float|spring|sharp|heavy, enter rise|pop|slide|drop|fade, pulse soft|beat|tick|still.
+    var pace: String?
+    var ease: String?
+    var enter: String?
+    var pulse: String?
     /// Preferred screens: screen=chat|full, gallery=row|feed|row3d|grid,
     /// chart=line|bar|area|scatter|pie|donut, buttons=row|stack.
     var style: [String: String]?
@@ -30,14 +36,16 @@ struct AgentLook: Codable, Equatable, Sendable {
     var by: String?
 
     enum CodingKeys: String, CodingKey {
-        case preset, accent, bg, radius, font, weight, motion, style, at, by
+        case preset, accent, bg, radius, font, weight, motion, pace, ease, enter, pulse, style, at, by
     }
 
     init(preset: String? = nil, accent: String? = nil, bg: String? = nil, radius: String? = nil,
-         font: String? = nil, weight: String? = nil, motion: String? = nil, style: [String: String]? = nil,
+         font: String? = nil, weight: String? = nil, motion: String? = nil, pace: String? = nil,
+         ease: String? = nil, enter: String? = nil, pulse: String? = nil, style: [String: String]? = nil,
          at: String? = nil, by: String? = nil) {
         self.preset = preset; self.accent = accent; self.bg = bg; self.radius = radius; self.font = font
         self.weight = weight; self.motion = motion; self.style = style; self.at = at; self.by = by
+        self.pace = pace; self.ease = ease; self.enter = enter; self.pulse = pulse
     }
 
     /// Forgiving: the column is plain jsonb, so a field of the wrong type is
@@ -52,11 +60,13 @@ struct AgentLook: Codable, Equatable, Sendable {
         }
         preset = str(.preset); accent = str(.accent); bg = str(.bg); radius = str(.radius); font = str(.font)
         weight = str(.weight); motion = str(.motion); at = str(.at); by = str(.by)
+        pace = str(.pace); ease = str(.ease); enter = str(.enter); pulse = str(.pulse)
         style = try? c.decode([String: String].self, forKey: .style)
     }
 
     var isEmpty: Bool {
         preset == nil && accent == nil && bg == nil && radius == nil && font == nil && weight == nil && motion == nil
+            && pace == nil && ease == nil && enter == nil && pulse == nil
     }
 }
 
@@ -114,6 +124,13 @@ extension AgentLook {
     static let fonts = ["rounded", "default", "serif", "mono"]
     static let weights = ["regular", "bold", "heavy"]
     static let motions = ["bouncy", "calm", "snappy"]
+    /// The motion look's keys and words (YUI-123; motion.mjs LOOK_KEYS).
+    nonisolated(unsafe) static let lookWords: [(key: WritableKeyPath<AgentLook, String?>, name: String, words: [String])] = [
+        (\.pace, "pace", ["slow", "even", "quick"]),
+        (\.ease, "ease", ["float", "spring", "sharp", "heavy"]),
+        (\.enter, "enter", ["rise", "pop", "slide", "drop", "fade"]),
+        (\.pulse, "pulse", ["soft", "beat", "tick", "still"]),
+    ]
     static let styleKeys: [String: [String]] = [
         "screen": ["chat", "full"],
         "gallery": ["row", "feed", "row3d", "grid"],
@@ -166,6 +183,14 @@ extension AgentLook {
         }
         if let v = props["weight"]?.lowercased(), Self.weights.contains(v) { o.weight = v }
         if let v = props["motion"]?.lowercased(), Self.motions.contains(v) { o.motion = v }
+        // `motion=` alone starts the four look keys fresh from that character
+        // (mergeTheme in look.mjs); each key said overrides it.
+        if props["motion"] != nil, !Self.lookWords.contains(where: { props[$0.name] != nil }) {
+            for w in Self.lookWords { o[keyPath: w.key] = nil }
+        }
+        for w in Self.lookWords {
+            if let v = props[w.name]?.lowercased(), w.words.contains(v) { o[keyPath: w.key] = v }
+        }
         for (k, allowed) in Self.styleKeys {
             if let v = props[k]?.lowercased(), allowed.contains(v) {
                 var s = o.style ?? [:]

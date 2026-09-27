@@ -43,6 +43,8 @@ struct StageTurn: Equatable {
     var plan: StageQuestion?
     /// Replies landed for this turn so far (text or screens).
     var replies = 0
+    /// A reply came back as nothing but error lines: the turn failed (Stage motion's error).
+    var failed = false
 
     /// The questions screen follows the last chunk.
     var pages: Int { chunks.count + (questions.isEmpty ? 0 : 1) }
@@ -130,6 +132,7 @@ enum StageChunks {
         for m in messages[(i + 1)...] {
             if m.fromUser { break }
             if let yl = m.yl {
+                if StageMotion.failed(yl) { t.failed = true }
                 let r = of(yl, scope: m.id)
                 guard !r.chunks.isEmpty || !r.questions.isEmpty else { continue }
                 t.replies += 1

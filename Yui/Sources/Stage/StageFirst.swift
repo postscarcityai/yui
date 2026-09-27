@@ -39,14 +39,23 @@ final class StageFirstModel {
     var sent: Set<String> = []
     /// Rows in the record when it was last looked at: the count on its button is the rest.
     var seen = 0
+    /// The last move went back a chunk: the next one comes on from the other side (YUI-120).
+    var back = false
+    /// Counts the times the stage opened on something said: the wash from the mic.
+    var opened = 0
+    /// The reply just came in: the found beat plays until then, before the first chunk.
+    var foundUntil: Date?
 
     /// The person said something: the stage comes up on it, working.
     func follow(_ ask: String?) {
         guard let ask else { return }
         self.ask = ask
         at = 0
+        back = false
+        foundUntil = nil
         typing = false
         open = true
+        opened += 1
     }
 
     /// A new thread: the greeting.
@@ -84,6 +93,8 @@ struct StageActions {
     var bar: BarActions
     var send: () -> Void
     var removePhoto: (ComposerPhoto) -> Void
+    /// Error's Try again: the person's words go again.
+    var retry: (String) -> Void = { _ in }
 }
 
 /// The mic as the stage shows it.
@@ -118,15 +129,22 @@ struct StageFirstView: View {
     /// Things waiting on the person: the dot on the menu.
     var waiting = 0
     let reduceMotion: Bool
+    /// How this agent moves (YUI-120): its character and the look said in words. Reduce Motion gives the still look.
+    let look: MotionLook
     let actions: StageActions
     @Environment(\.yuiTheme) private var theme
     @Environment(\.colorScheme) private var scheme
+    /// When the mood on show began: the burst and the shake count from here.
+    @State private var moodSince = Date()
+    /// Heard words so far: the mic ring beats on each change.
+    @State private var voice = 0
 
     static let small = BarButtons.small, touch = BarButtons.touch
 
     var body: some View {
         let c = theme.swatch(scheme)
         let turn = model.ask.map { StageChunks.turn(store.messages, ask: $0) }
+        let (mood, _) = StageMotion.mood(facts(turn))
         VStack(spacing: 0) {
             topBar(c)
             Group {
@@ -160,7 +178,21 @@ struct StageFirstView: View {
             }
             .ignoresSafeArea()
         }
+        // The stage opens from the mic: a wash of the agent's color out of the bottom right.
+        .overlay { StageWash(color: c.accent, look: look, trigger: model.opened).ignoresSafeArea() }
         .environment(\.ylOnStage, true)
+        .onChange(of: mood) { moodSince = .now }
+        .onChange(of: mic.words) { voice &+= 1 }
+        // The reply came in: one beat of found, then the first chunk (Stage motion).
+        .onChange(of: turn?.pages ?? 0) { old, new in
+            guard old == 0, new > 0, !look.reduced, model.at == 0 else { return }
+            let beat = look.timings.beat
+            model.foundUntil = .now.addingTimeInterval(beat)
+            Task { @MainActor in
+                try? await Task.sleep(for: .seconds(beat))
+                withAnimation(look.handoffAnimation) { model.foundUntil = nil }
+            }
+        }
         .accessibilityElement(children: .contain)
         .accessibilityAddTraits(.isModal)
         .accessibilityIdentifier("stage-first")
@@ -238,6 +270,11 @@ struct StageFirstView: View {
     /// Hands-free is open: what it hears, big, as it hears it.
     private func listening(_ c: Swatch) -> some View {
         VStack(spacing: theme.spacing.m) {
+            // listen: the mark shrinks toward the mic, bottom right.
+            StageMark(color: c.accent, mood: .listen, flavor: nil, look: look, since: moodSince)
+                .frame(width: 64, height: 64)
+                .frame(maxWidth: .infinity, alignment: .trailing)
+                .transition(look.reduced ? .opacity : .scale(scale: 2.4, anchor: .bottomTrailing).combined(with: .opacity))
             Label("Listening", systemImage: "waveform")
                 .font(theme.font(theme.type.caption, .heavy))
                 .foregroundStyle(c.accent)
@@ -271,19 +308,21 @@ struct StageFirstView: View {
                     .accessibilityIdentifier("stage-you")
             }
             Group {
-                if pages == 0 {
-                    if store.waiting { working(c) } else {
+                if t.failed, pages == 0, !store.waiting {
+                    failed(t, c)
+                } else if pages == 0 || model.foundUntil != nil {
+                    if store.waiting || model.foundUntil != nil { working(c) } else {
                         greeting(c, title: "Anything else?", sub: "Everything so far is in the chat, top right.")
                     }
                 } else if at < t.chunks.count {
+                    // done: the stage hands over to the chunk, in the look's enter.
                     chunk(t.chunks[at], c)
                         .id(t.chunks[at].id)
-                        .transition(reduceMotion ? .opacity
-                                    : .asymmetric(insertion: .move(edge: .trailing).combined(with: .opacity), removal: .opacity))
+                        .transition(look.transition(back: model.back))
                 } else {
                     questions(t, c)
                         .id("questions")
-                        .transition(reduceMotion ? .opacity : .move(edge: .trailing).combined(with: .opacity))
+                        .transition(look.transition(back: model.back))
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -301,7 +340,7 @@ struct StageFirstView: View {
                 Capsule().fill(i <= at ? c.accent : c.outline).frame(height: 4)
             }
         }
-        .animation(reduceMotion ? nil : theme.spring, value: at)
+        .animation(look.reduced ? nil : look.enterAnimation, value: at)
         .accessibilityElement()
         .accessibilityLabel("Part \(at + 1) of \(n)")
         .accessibilityIdentifier("stage-segments")
@@ -350,18 +389,59 @@ struct StageFirstView: View {
         let t = model.ask.map { StageChunks.turn(store.messages, ask: $0) } ?? StageTurn()
         let to = min(max(0, model.at + by), max(0, t.pages - 1))
         guard to != model.at else { return }
-        withAnimation(reduceMotion ? .easeInOut(duration: 0.2) : theme.spring) { model.at = to }
+        model.back = to < model.at
+        withAnimation(look.enterAnimation) { model.at = to }
     }
 
     /// The agent is on it: their words up top, a mark in its color breathing, and what it is doing.
     private func working(_ c: Swatch) -> some View {
-        VStack(spacing: theme.spacing.xl) {
-            Breathing(color: c.accent, still: reduceMotion)
+        let (mood, flavor) = StageMotion.mood(facts(model.ask.map { StageChunks.turn(store.messages, ask: $0) }))
+        return VStack(spacing: theme.spacing.xl) {
+            StageMark(color: c.accent, mood: mood, flavor: flavor, look: look, since: moodSince)
                 .frame(width: 170, height: 170)
             workingLine(c, big: true)
         }
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier("stage-working")
+    }
+
+    /// error: a small shake, grey, and Try again. The words still say what happened.
+    private func failed(_ t: StageTurn, _ c: Swatch) -> some View {
+        VStack(spacing: theme.spacing.l) {
+            StageMark(color: c.accent, mood: .error, flavor: nil, look: look, since: moodSince)
+                .frame(width: 120, height: 120)
+            Text("That didn't go through.")
+                .font(theme.font(theme.type.title, .bold))
+                .foregroundStyle(c.ink)
+            if let ask = t.ask?.text, !ask.isEmpty {
+                Button { actions.retry(ask) } label: {
+                    Text("Try again")
+                        .font(theme.font(theme.type.body, .heavy))
+                        .foregroundStyle(c.onAccent)
+                        .padding(.horizontal, theme.spacing.xl)
+                        .frame(minHeight: 48)
+                        .background(c.accent, in: Capsule())
+                }
+                .buttonStyle(BounceButtonStyle())
+                .accessibilityIdentifier("stage-try-again")
+            }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("stage-error")
+    }
+
+    /// The turn as Stage motion reads it (StageMotion.mood).
+    private func facts(_ t: StageTurn?) -> StageFacts {
+        let pages = t?.pages ?? 0
+        var f = StageFacts()
+        f.failed = t?.failed == true && pages == 0 && !store.waiting
+        f.listening = mic.live
+        f.asking = t != nil && pages > 0 && model.foundUntil == nil && model.at >= (t?.chunks.count ?? 0)
+        if pages > 0, model.foundUntil == nil, !f.asking { f.chunk = model.at }
+        f.arrived = model.foundUntil != nil
+        if store.waiting, let d = store.doing { f.doing = d.text ?? "" }
+        f.sent = t?.ask != nil
+        return f
     }
 
     private func workingLine(_ c: Swatch, big: Bool = false) -> some View {
@@ -378,6 +458,7 @@ struct StageFirstView: View {
                 ProgressView(value: Double(min(step, of)), total: Double(of))
                     .tint(c.accent)
                     .frame(width: big ? 160 : 100)
+                    .animation(look.reduced ? nil : look.enterAnimation, value: step)
             }
         }
         .accessibilityIdentifier("stage-working-line")
@@ -396,13 +477,15 @@ struct StageFirstView: View {
                 Text(sent ? "Sent. It's in the chat." : n == 1 ? "One quick question." : "\(n) quick questions, one Send.")
                     .font(theme.font(theme.type.body))
                     .foregroundStyle(c.inkSoft)
-                ForEach(t.questions) { q in
+                ForEach(Array(t.questions.enumerated()), id: \.element.id) { i, q in
                     PresetView(component: q.c)
                         .environment(\.ylComponents, q.all)
                         .environment(\.ylScope, q.scope)
                         .environment(\.ylOnStage, false)
                         .environment(\.ylEmit, YLEmit { e in model.answers[q.id] = e })
                         .disabled(sent)
+                        // ask: the questions come on one by one.
+                        .modifier(StaggerIn(index: i, look: look))
                 }
                 if !sent {
                     let ready = t.questions.contains { model.answers[$0.id] != nil }
@@ -477,7 +560,7 @@ struct StageFirstView: View {
                     BarButtons(prefix: "stage", showMic: showMic, showType: showType, showAttach: showAttach,
                                micOn: mic.on, micLive: mic.live, armed: mic.armed,
                                attachDisabled: sending || photos.count >= Attachments.maxPhotos,
-                               reduceMotion: reduceMotion, actions: barActions)
+                               reduceMotion: reduceMotion, actions: barActions, look: look, voice: voice)
                 }
             }
         }
@@ -607,30 +690,5 @@ struct StageFirstView: View {
         }
         // The field grows out of T, bottom right, and folds back into it.
         .transition(reduceMotion ? .opacity : .scale(scale: 0.2, anchor: .bottomTrailing).combined(with: .opacity))
-    }
-}
-
-/// The working mark: three rings of the agent's color breathing out of step.
-/// The motion proper is YUI-120; Reduce Motion keeps it still.
-private struct Breathing: View {
-    let color: Color
-    let still: Bool
-
-    var body: some View {
-        ZStack {
-            ring(1.0, 0.30, delay: 0.0)
-            ring(0.78, 0.45, delay: 0.25)
-            ring(0.5, 1.0, delay: 0.5)
-        }
-        .accessibilityHidden(true)
-    }
-
-    private func ring(_ size: CGFloat, _ opacity: Double, delay: Double) -> some View {
-        Circle()
-            .fill(color.opacity(opacity))
-            .scaleEffect(size)
-            .phaseAnimator(still ? [1.0] : [0.92, 1.06]) { v, s in v.scaleEffect(s) } animation: { _ in
-                .easeInOut(duration: 1.4).delay(delay)
-            }
     }
 }

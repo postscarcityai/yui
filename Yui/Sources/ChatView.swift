@@ -1231,6 +1231,7 @@ struct ChatView: View {
             focus: $stageFocused, photos: photos, sending: sending, mic: stageMicState,
             showMic: stageMic || !stageType, showType: stageType || !stageMic, showAttach: stageAttach,
             unread: max(0, store.shown.count - stageFirst.seen), waiting: store.waitingCount, reduceMotion: reduceMotion,
+            look: store.agent?.motionLook(reduced: reduceMotion) ?? MotionLook(character: "bouncy", reduced: reduceMotion),
             actions: StageActions(
                 menu: { settleDrawer(open: true) },
                 pick: { agents.selectedID = $0 },
@@ -1238,7 +1239,8 @@ struct ChatView: View {
                 record: closeStageFirst,
                 bar: barActions(tap: stageMicTap, type: {}) { withAnimation(theme.spring) { stageFirst.typing = true } },
                 send: send,
-                removePhoto: { p in photos.removeAll { $0.id == p.id } }))
+                removePhoto: { p in photos.removeAll { $0.id == p.id } },
+                retry: { words in composer.draft = words; send() }))
     }
 
     /// The mic as the stage draws it: hands-free's state and what it hears.

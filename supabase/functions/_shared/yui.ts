@@ -198,6 +198,11 @@ const LOOK_WORDS: Record<string, RegExp> = {
   font: /^(rounded|default|serif|mono)$/,
   weight: /^(regular|bold|heavy)$/,
   motion: /^(bouncy|calm|snappy)$/,
+  // A motion look in words (YUI-123), each on top of the motion character.
+  pace: /^(slow|even|quick)$/,
+  ease: /^(float|spring|sharp|heavy)$/,
+  enter: /^(rise|pop|slide|drop|fade)$/,
+  pulse: /^(soft|beat|tick|still)$/,
   at: /^[0-9T:.+\-Z ]{10,40}$/,
   by: /^(agent|user)$/,
 };

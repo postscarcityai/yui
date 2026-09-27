@@ -245,7 +245,7 @@ func conformance(_ v: Vector) {
 
 /// Hub areas this parser has not taken on yet. Keep in step with
 /// `scripts/sync-vectors.sh`; drop a name here once the parser passes that file.
-let notYetInApp: Set<String> = ["26-flow.json", "30-tables.json", "36-flow-variant.json"]  // FLOW-1 (flows, variants) and YUI-89 (app halves)
+let notYetInApp: Set<String> = ["26-flow.json", "30-tables.json", "36-flow-variant.json", "38-visual.json"]  // FLOW-1 (flows, variants), YUI-89 (app halves) and YUI-124 step 2 (the visualizer)
 
 /// When the hub repo sits next to this one, the copied vectors must match it.
 @Test(.enabled(if: FileManager.default.fileExists(atPath: hubVectors.path)))

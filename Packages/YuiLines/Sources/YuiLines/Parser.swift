@@ -63,6 +63,11 @@ extension YuiLines {
         case "font": return ["rounded", "default", "serif", "mono"].contains(v)
         case "weight": return ["regular", "bold", "heavy"].contains(v)
         case "motion": return ["bouncy", "calm", "snappy"].contains(v)
+        // A motion look in words (YUI-123), spec YL.md section 5, Stage motion.
+        case "pace": return ["slow", "even", "quick"].contains(v)
+        case "ease": return ["float", "spring", "sharp", "heavy"].contains(v)
+        case "enter": return ["rise", "pop", "slide", "drop", "fade"].contains(v)
+        case "pulse": return ["soft", "beat", "tick", "still"].contains(v)
         default: return nil
         }
     }

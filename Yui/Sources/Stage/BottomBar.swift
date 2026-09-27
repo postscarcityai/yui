@@ -37,6 +37,10 @@ struct BarButtons: View {
     let attachDisabled: Bool
     let reduceMotion: Bool
     let actions: BarActions
+    /// The agent's motion look (YUI-120): the mic's ring beats in its pulse while it listens.
+    var look: MotionLook? = nil
+    /// Changes each time the mic hears more words: the ring beats with the voice.
+    var voice = 0
     @Environment(\.yuiTheme) private var theme
     @Environment(\.colorScheme) private var scheme
     @GestureState private var press: CGFloat?
@@ -102,6 +106,9 @@ struct BarButtons: View {
             .symbolEffect(.variableColor.iterative, isActive: micLive && !armed && !reduceMotion)
             .contentTransition(.symbolEffect(.replace))
             .frame(width: Self.micSize, height: Self.micSize)
+            .background {
+                if let look, micLive, !armed, !look.reduced { MicRing(color: c.accent, look: look, voice: voice) }
+            }
             .background(armed ? c.inkSoft : c.accent, in: Circle())
             .shadow(color: c.accent.opacity(armed ? 0 : 0.45), radius: 9, y: 6)
             .scaleEffect(press != nil && !reduceMotion ? 0.94 : micLive && !reduceMotion ? 1.08 : 1)
@@ -123,6 +130,39 @@ struct BarButtons: View {
             .accessibilityHint(micOn ? "" : "Tap to talk. Hold to talk until you let go.")
             .accessibilityAction { actions.micTap() }
             .accessibilityIdentifier("\(prefix)-mic")
+    }
+}
+
+/// The mic's ring while it listens (YUI-120, Stage motion): it breathes in the look's pulse
+/// and beats once more each time the mic hears words.
+private struct MicRing: View {
+    let color: Color
+    let look: MotionLook
+    let voice: Int
+
+    var body: some View {
+        let t = look.timings
+        let period = t.breath > 0 ? t.breath : 2.4
+        ZStack {
+            TimelineView(.animation(minimumInterval: nil, paused: look.pulse == .still)) { ctx in
+                let x = (ctx.date.timeIntervalSinceReferenceDate / period).truncatingRemainder(dividingBy: 1)
+                Circle()
+                    .stroke(color.opacity(0.45 * (1 - x)), lineWidth: 3)
+                    .scaleEffect(look.pulse == .still ? 1 : 1 + 0.45 * x)
+            }
+            Circle()
+                .fill(color.opacity(0.35))
+                .keyframeAnimator(initialValue: 0.0, trigger: voice) { v, x in
+                    v.scaleEffect(1 + 0.3 * x).opacity(x)
+                } keyframes: { _ in
+                    KeyframeTrack {
+                        CubicKeyframe(1, duration: max(0.08, t.beat * 0.25))
+                        CubicKeyframe(0, duration: max(0.15, t.beat * 0.6))
+                    }
+                }
+        }
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
     }
 }
 
