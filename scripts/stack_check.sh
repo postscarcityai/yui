@@ -27,15 +27,18 @@ otool -l "$APP/Yui" | grep -q "stacksize $((STACK))" || { echo "FAIL: stack size
 xcrun simctl install "$SIM" "$APP"
 
 fail=0
-run() {  # a launch that must stay up for 12 s
+run() {  # a launch that must stay up for 12 s: its process still there, no new crash report
   local name=$1; shift
   xcrun simctl terminate "$SIM" com.yuigui.app 2>/dev/null || true
-  xcrun simctl launch "$SIM" com.yuigui.app -yuiDemoAccount "$@" > /dev/null
+  sleep 1
+  local mark; mark=$(ls -t ~/Library/Logs/DiagnosticReports/Yui-*.ips 2>/dev/null | head -1 || true)
+  local pid; pid=$(xcrun simctl launch "$SIM" com.yuigui.app -yuiDemoAccount "$@" | awk '{print $NF}')
   sleep 12
-  if xcrun simctl spawn "$SIM" launchctl list 2>/dev/null | grep -q "UIKitApplication:com.yuigui.app"; then
+  local newest; newest=$(ls -t ~/Library/Logs/DiagnosticReports/Yui-*.ips 2>/dev/null | head -1 || true)
+  if [ -n "$pid" ] && ps -p "$pid" > /dev/null && [ "$newest" = "$mark" ]; then
     echo "PASS  $name"
   else
-    echo "FAIL  $name (crashed: newest report in ~/Library/Logs/DiagnosticReports/Yui-*.ips)"; fail=1
+    echo "FAIL  $name (pid ${pid:-none} gone or crashed: ${newest:-no report})"; fail=1
   fi
 }
 run "first launch: Yui's thread with the composer" -yuiDemoFirstLaunch
