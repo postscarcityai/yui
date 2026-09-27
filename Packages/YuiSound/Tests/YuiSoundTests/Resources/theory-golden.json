@@ -11582,5 +11582,632 @@
    "name": "c",
    "notes": null
   }
+ ],
+ "sounds": [
+  {
+   "word": "kick",
+   "drum": "kick",
+   "pitched": "keys"
+  },
+  {
+   "word": "snare",
+   "drum": "snare",
+   "pitched": "keys"
+  },
+  {
+   "word": "clap",
+   "drum": "clap",
+   "pitched": "keys"
+  },
+  {
+   "word": "hat",
+   "drum": "hat",
+   "pitched": "keys"
+  },
+  {
+   "word": "open",
+   "drum": "open",
+   "pitched": "keys"
+  },
+  {
+   "word": "rim",
+   "drum": "rim",
+   "pitched": "keys"
+  },
+  {
+   "word": "tom",
+   "drum": "tom",
+   "pitched": "keys"
+  },
+  {
+   "word": "shaker",
+   "drum": "shaker",
+   "pitched": "keys"
+  },
+  {
+   "word": "crash",
+   "drum": "crash",
+   "pitched": "keys"
+  },
+  {
+   "word": "cow",
+   "drum": "cow",
+   "pitched": "keys"
+  },
+  {
+   "word": "snap",
+   "drum": "snap",
+   "pitched": "keys"
+  },
+  {
+   "word": "conga",
+   "drum": "conga",
+   "pitched": "keys"
+  },
+  {
+   "word": "pop",
+   "drum": "pop",
+   "pitched": "keys"
+  },
+  {
+   "word": "sweep",
+   "drum": "sweep",
+   "pitched": "keys"
+  },
+  {
+   "word": "tick",
+   "drum": "tick",
+   "pitched": "keys"
+  },
+  {
+   "word": "keys",
+   "drum": "keys",
+   "pitched": "keys"
+  },
+  {
+   "word": "pluck",
+   "drum": "pluck",
+   "pitched": "pluck"
+  },
+  {
+   "word": "bell",
+   "drum": "bell",
+   "pitched": "bell"
+  },
+  {
+   "word": "pad",
+   "drum": "pad",
+   "pitched": "pad"
+  },
+  {
+   "word": "bass",
+   "drum": "bass",
+   "pitched": "bass"
+  },
+  {
+   "word": "lead",
+   "drum": "lead",
+   "pitched": "lead"
+  },
+  {
+   "word": "808",
+   "drum": "bass",
+   "pitched": "bass"
+  },
+  {
+   "word": "bd",
+   "drum": "kick",
+   "pitched": "keys"
+  },
+  {
+   "word": "bassdrum",
+   "drum": "kick",
+   "pitched": "keys"
+  },
+  {
+   "word": "kickdrum",
+   "drum": "kick",
+   "pitched": "keys"
+  },
+  {
+   "word": "sd",
+   "drum": "snare",
+   "pitched": "keys"
+  },
+  {
+   "word": "snaredrum",
+   "drum": "snare",
+   "pitched": "keys"
+  },
+  {
+   "word": "hh",
+   "drum": "hat",
+   "pitched": "keys"
+  },
+  {
+   "word": "hihat",
+   "drum": "hat",
+   "pitched": "keys"
+  },
+  {
+   "word": "hihats",
+   "drum": "hat",
+   "pitched": "keys"
+  },
+  {
+   "word": "closedhat",
+   "drum": "hat",
+   "pitched": "keys"
+  },
+  {
+   "word": "openhat",
+   "drum": "open",
+   "pitched": "keys"
+  },
+  {
+   "word": "oh",
+   "drum": "open",
+   "pitched": "keys"
+  },
+  {
+   "word": "ride",
+   "drum": "crash",
+   "pitched": "keys"
+  },
+  {
+   "word": "cymbal",
+   "drum": "crash",
+   "pitched": "keys"
+  },
+  {
+   "word": "cowbell",
+   "drum": "cow",
+   "pitched": "keys"
+  },
+  {
+   "word": "clave",
+   "drum": "rim",
+   "pitched": "keys"
+  },
+  {
+   "word": "rimshot",
+   "drum": "rim",
+   "pitched": "keys"
+  },
+  {
+   "word": "shake",
+   "drum": "shaker",
+   "pitched": "keys"
+  },
+  {
+   "word": "maraca",
+   "drum": "shaker",
+   "pitched": "keys"
+  },
+  {
+   "word": "tambourine",
+   "drum": "shaker",
+   "pitched": "keys"
+  },
+  {
+   "word": "finger",
+   "drum": "snap",
+   "pitched": "keys"
+  },
+  {
+   "word": "click",
+   "drum": "tick",
+   "pitched": "keys"
+  },
+  {
+   "word": "bongo",
+   "drum": "conga",
+   "pitched": "keys"
+  },
+  {
+   "word": "piano",
+   "drum": "keys",
+   "pitched": "keys"
+  },
+  {
+   "word": "ep",
+   "drum": "keys",
+   "pitched": "keys"
+  },
+  {
+   "word": "organ",
+   "drum": "keys",
+   "pitched": "keys"
+  },
+  {
+   "word": "rhodes",
+   "drum": "keys",
+   "pitched": "keys"
+  },
+  {
+   "word": "guitar",
+   "drum": "pluck",
+   "pitched": "pluck"
+  },
+  {
+   "word": "harp",
+   "drum": "pluck",
+   "pitched": "pluck"
+  },
+  {
+   "word": "synth",
+   "drum": "lead",
+   "pitched": "lead"
+  },
+  {
+   "word": "saw",
+   "drum": "lead",
+   "pitched": "lead"
+  },
+  {
+   "word": "strings",
+   "drum": "pad",
+   "pitched": "pad"
+  },
+  {
+   "word": "choir",
+   "drum": "pad",
+   "pitched": "pad"
+  },
+  {
+   "word": "sub",
+   "drum": "bass",
+   "pitched": "bass"
+  },
+  {
+   "word": "chime",
+   "drum": "bell",
+   "pitched": "bell"
+  },
+  {
+   "word": "glock",
+   "drum": "bell",
+   "pitched": "bell"
+  },
+  {
+   "word": "marimba",
+   "drum": "bell",
+   "pitched": "bell"
+  },
+  {
+   "word": "surdo",
+   "drum": "tom",
+   "pitched": "keys"
+  },
+  {
+   "word": "repinique",
+   "drum": "tom",
+   "pitched": "keys"
+  },
+  {
+   "word": "repique",
+   "drum": "tom",
+   "pitched": "keys"
+  },
+  {
+   "word": "floortom",
+   "drum": "tom",
+   "pitched": "keys"
+  },
+  {
+   "word": "taiko",
+   "drum": "tom",
+   "pitched": "keys"
+  },
+  {
+   "word": "dhol",
+   "drum": "tom",
+   "pitched": "keys"
+  },
+  {
+   "word": "tabla",
+   "drum": "conga",
+   "pitched": "keys"
+  },
+  {
+   "word": "caixa",
+   "drum": "snare",
+   "pitched": "keys"
+  },
+  {
+   "word": "tarol",
+   "drum": "snare",
+   "pitched": "keys"
+  },
+  {
+   "word": "tamborim",
+   "drum": "rim",
+   "pitched": "keys"
+  },
+  {
+   "word": "woodblock",
+   "drum": "rim",
+   "pitched": "keys"
+  },
+  {
+   "word": "sidestick",
+   "drum": "rim",
+   "pitched": "keys"
+  },
+  {
+   "word": "claves",
+   "drum": "rim",
+   "pitched": "keys"
+  },
+  {
+   "word": "ganza",
+   "drum": "shaker",
+   "pitched": "keys"
+  },
+  {
+   "word": "chocalho",
+   "drum": "shaker",
+   "pitched": "keys"
+  },
+  {
+   "word": "guiro",
+   "drum": "shaker",
+   "pitched": "keys"
+  },
+  {
+   "word": "cabasa",
+   "drum": "shaker",
+   "pitched": "keys"
+  },
+  {
+   "word": "afuche",
+   "drum": "shaker",
+   "pitched": "keys"
+  },
+  {
+   "word": "maracas",
+   "drum": "shaker",
+   "pitched": "keys"
+  },
+  {
+   "word": "egg",
+   "drum": "shaker",
+   "pitched": "keys"
+  },
+  {
+   "word": "agogo",
+   "drum": "cow",
+   "pitched": "keys"
+  },
+  {
+   "word": "gankogui",
+   "drum": "cow",
+   "pitched": "keys"
+  },
+  {
+   "word": "triangle",
+   "drum": "bell",
+   "pitched": "bell"
+  },
+  {
+   "word": "cuica",
+   "drum": "conga",
+   "pitched": "keys"
+  },
+  {
+   "word": "timbal",
+   "drum": "conga",
+   "pitched": "keys"
+  },
+  {
+   "word": "timbale",
+   "drum": "conga",
+   "pitched": "keys"
+  },
+  {
+   "word": "timbales",
+   "drum": "conga",
+   "pitched": "keys"
+  },
+  {
+   "word": "djembe",
+   "drum": "conga",
+   "pitched": "keys"
+  },
+  {
+   "word": "tumba",
+   "drum": "conga",
+   "pitched": "keys"
+  },
+  {
+   "word": "quinto",
+   "drum": "conga",
+   "pitched": "keys"
+  },
+  {
+   "word": "bongos",
+   "drum": "conga",
+   "pitched": "keys"
+  },
+  {
+   "word": "darbuka",
+   "drum": "conga",
+   "pitched": "keys"
+  },
+  {
+   "word": "cajon",
+   "drum": "kick",
+   "pitched": "keys"
+  },
+  {
+   "word": "pandeiro",
+   "drum": "shaker",
+   "pitched": "keys"
+  },
+  {
+   "word": "splash",
+   "drum": "crash",
+   "pitched": "keys"
+  },
+  {
+   "word": "china",
+   "drum": "crash",
+   "pitched": "keys"
+  },
+  {
+   "word": "clapping",
+   "drum": "clap",
+   "pitched": "keys"
+  },
+  {
+   "word": "handclap",
+   "drum": "clap",
+   "pitched": "keys"
+  },
+  {
+   "word": "palmas",
+   "drum": "clap",
+   "pitched": "keys"
+  },
+  {
+   "word": "Ganzá",
+   "drum": "shaker",
+   "pitched": "keys"
+  },
+  {
+   "word": "Agogô",
+   "drum": "cow",
+   "pitched": "keys"
+  },
+  {
+   "word": "Cuíca",
+   "drum": "conga",
+   "pitched": "keys"
+  },
+  {
+   "word": "Cajón",
+   "drum": "kick",
+   "pitched": "keys"
+  },
+  {
+   "word": "Güiro",
+   "drum": "shaker",
+   "pitched": "keys"
+  },
+  {
+   "word": "Hi-Hat",
+   "drum": "hat",
+   "pitched": "keys"
+  },
+  {
+   "word": "open_hat",
+   "drum": "open",
+   "pitched": "keys"
+  },
+  {
+   "word": "Floor Tom",
+   "drum": "tom",
+   "pitched": "keys"
+  },
+  {
+   "word": "theremin",
+   "drum": "tick",
+   "pitched": "keys"
+  },
+  {
+   "word": "constructor",
+   "drum": "tick",
+   "pitched": "keys"
+  }
+ ],
+ "loops": [
+  {
+   "rows": [
+    "Surdo",
+    "Caixa",
+    "Tamborim",
+    "Ganzá",
+    "Agogô"
+   ],
+   "sound": "bell",
+   "voices": [
+    "tom",
+    "snare",
+    "rim",
+    "shaker",
+    "cow"
+   ]
+  },
+  {
+   "rows": [
+    "kick",
+    "zap",
+    "zing",
+    "C4"
+   ],
+   "sound": "bell",
+   "voices": [
+    "kick",
+    "snare",
+    "clap",
+    "bell"
+   ]
+  },
+  {
+   "rows": [
+    "surdo",
+    "repinique",
+    "caixa",
+    "agogo",
+    "cuica",
+    "whistle",
+    "apito"
+   ],
+   "sound": "bell",
+   "voices": [
+    "tom",
+    "tom",
+    "snare",
+    "cow",
+    "conga",
+    "kick",
+    "clap"
+   ]
+  },
+  {
+   "rows": [
+    "kick",
+    "snare",
+    "clap",
+    "hat",
+    "open",
+    "rim",
+    "tom",
+    "shaker",
+    "crash",
+    "cow",
+    "snap",
+    "conga",
+    "one",
+    "two"
+   ],
+   "sound": "bell",
+   "voices": [
+    "kick",
+    "snare",
+    "clap",
+    "hat",
+    "open",
+    "rim",
+    "tom",
+    "shaker",
+    "crash",
+    "cow",
+    "snap",
+    "conga",
+    "tick",
+    "tick"
+   ]
+  }
  ]
 }

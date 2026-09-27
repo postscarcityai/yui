@@ -268,7 +268,7 @@ public final class YuiSound: @unchecked Sendable {
     /// The looper. rows: words (kit words or note names); pattern: one [Bool]
     /// per row (missing rows empty). Applies on the next step while playing.
     public func setLoop(rows: [String], sound: String, steps: Int, bpm: Double, swing: Double, pattern: [[Bool]]) {
-        let resolved = rows.map { Words.resolve($0, sound: sound) }
+        let resolved = Words.loop(rows, sound: sound)
         let masks: [UInt32] = rows.indices.map { r in
             guard r < pattern.count else { return 0 }
             var m: UInt32 = 0

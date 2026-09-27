@@ -28,6 +28,7 @@ struct SettingsView: View {
                 .padding(theme.spacing.l)
                 .background(c.surface, in: .rect(cornerRadius: theme.radius.card))
                 .overlay(RoundedRectangle(cornerRadius: theme.radius.card).stroke(c.outline, lineWidth: 1.5))
+                StageFirstSection()
                 LookSection()
                 AgentAccessSection()
                 ModelKeySection()
@@ -41,6 +42,51 @@ struct SettingsView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(c.background)
+    }
+}
+
+/// Settings > Full screen (YUI-119): Yui lives on the full screen, the chat is
+/// the record. Each of the mic, T and + can go; one of the mic and T always stays.
+private struct StageFirstSection: View {
+    @AppStorage(StageFirstModel.key) private var on = true
+    @AppStorage(StageFirstModel.micKey) private var mic = true
+    @AppStorage(StageFirstModel.typeKey) private var type = true
+    @AppStorage(StageFirstModel.attachKey) private var attach = true
+    @Environment(\.yuiTheme) private var theme
+    @Environment(\.colorScheme) private var scheme
+
+    var body: some View {
+        let c = theme.swatch(scheme)
+        VStack(alignment: .leading, spacing: theme.spacing.m) {
+            Text("Full screen").font(theme.font(theme.type.caption, .bold)).foregroundStyle(c.inkSoft)
+            row("Answers on the full screen", on ? "The chat is the record, top right." : "Answers land in the chat.",
+                $on, id: "stage-first-on", c)
+            if on {
+                row("Mic", "Tap and talk. A short pause sends it.", Binding(get: { mic }, set: { mic = $0 || !type }),
+                    id: "stage-mic-on", c)
+                    .disabled(mic && !type)
+                row("T for typing", "Opens the text field.", Binding(get: { type }, set: { type = $0 || !mic }),
+                    id: "stage-type-on", c)
+                    .disabled(type && !mic)
+                row("+ to attach", "Photos go in with your words.", $attach, id: "stage-attach-on", c)
+            }
+        }
+        .padding(theme.spacing.l)
+        .background(c.surface, in: .rect(cornerRadius: theme.radius.card))
+        .overlay(RoundedRectangle(cornerRadius: theme.radius.card).stroke(c.outline, lineWidth: 1.5))
+        .animation(theme.spring, value: on)
+    }
+
+    private func row(_ title: String, _ sub: String, _ value: Binding<Bool>, id: String, _ c: Swatch) -> some View {
+        Toggle(isOn: value) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title).font(theme.font(theme.type.body, .semibold)).foregroundStyle(c.ink)
+                Text(sub).font(theme.font(theme.type.caption)).foregroundStyle(c.inkSoft)
+            }
+        }
+        .tint(c.accent)
+        .frame(minHeight: 44)
+        .accessibilityIdentifier(id)
     }
 }
 

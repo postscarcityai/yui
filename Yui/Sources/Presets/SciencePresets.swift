@@ -247,7 +247,7 @@ struct CardPreset: View {
         let s = theme.swatch(scheme)
         PresetCard {
             if !folded, let img = YLMediaURL.url(c.string("img")) {
-                RemoteImage(src: img).frame(height: 170).frame(maxWidth: .infinity)
+                WholeImage(src: img, maxHeight: 280).frame(maxWidth: .infinity)
                     .clipShape(.rect(cornerRadius: theme.radius.bubble))
                     .transition(.opacity)
             }
@@ -902,7 +902,7 @@ struct StepperPreset: View {
                 if open || all {
                     if let tex = step.string("tex") { TeXView(tex: tex, size: theme.type.title) }
                     if let img = YLMediaURL.url(step.string("img")) {
-                        RemoteImage(src: img).frame(height: 160).frame(maxWidth: .infinity)
+                        WholeImage(src: img, maxHeight: 260).frame(maxWidth: .infinity)
                             .clipShape(.rect(cornerRadius: theme.radius.bubble / 2))
                     }
                     if let secs = step.number("time"), secs > 0 { StepTimer(seconds: secs) }

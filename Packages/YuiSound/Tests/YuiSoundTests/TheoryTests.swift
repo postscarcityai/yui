@@ -13,9 +13,13 @@ struct Golden: Decodable {
     struct Row: Decodable { let key: String; let numeral: String; let name: String; let notes: [Int]? }
     struct Named: Decodable { let name: String; let notes: [Int]? }
     struct KeyRow: Decodable { let key: String; let root: Int; let minor: Bool; let name: String; let flats: Bool }
+    struct Sound: Decodable { let word: String; let drum: String; let pitched: String }
+    struct Loop: Decodable { let rows: [String]; let sound: String; let voices: [String] }
     let keys: [KeyRow]
     let rows: [Row]
     let chords: [Named]
+    let sounds: [Sound]
+    let loops: [Loop]
 
     static let shared: Golden = {
         let url = Bundle.module.url(forResource: "theory-golden", withExtension: "json")!
@@ -24,6 +28,25 @@ struct Golden: Decodable {
 }
 
 @Suite struct TheoryTests {
+    /// Every kit word and alias, with accents and spaces, plays what theory.mjs plays.
+    @Test func soundWordsMatchTheReference() {
+        #expect(Golden.shared.sounds.count > 100)
+        var wrong: [String] = []
+        for s in Golden.shared.sounds {
+            if Words.sound(s.word, pitched: false) != Words.recipes[s.drum] { wrong.append("\(s.word) on a pad: want \(s.drum)") }
+            if Words.sound(s.word, pitched: true) != Words.recipes[s.pitched] { wrong.append("\(s.word) pitched: want \(s.pitched)") }
+        }
+        #expect(wrong.isEmpty, "\(wrong.prefix(10))")
+    }
+
+    /// A loop's rows get the same voices as loopVoices gives them.
+    @Test func loopVoicesMatchTheReference() {
+        for l in Golden.shared.loops {
+            let got = Words.loop(l.rows, sound: l.sound).map(\.0)
+            #expect(got == l.voices.map { Words.recipes[$0]! }, "\(l.rows)")
+        }
+    }
+
     @Test func keysReadLikeTheReference() {
         #expect(Golden.shared.keys.count == 24)
         for k in Golden.shared.keys {

@@ -32,6 +32,17 @@ After an answer the war room redraws (feedback ANP2Pn6z: "I respond to cards and
 they don't go away"): the adapter runs the war room generator with --refresh,
 so the answered card leaves the page at once instead of at the next board sync.
 refresh_cmd() finds it; no script, no redraw.
+
+The war room lives in the drawer now (YUI-126): each ask is a Review row,
+`menu review@need-<task id>`. A tap on the row comes back as
+
+    meta = {"id": "need-t_049464c4", "preset": "menu",
+            "value": {"bucket": "review", "tapped": True}}
+
+opened() spots it (invite rows too), and the adapter answers with the ask's own
+screen, printed by `yui_war_room.py --ask <id>` (ask_cmd), again with no agent
+turn. Nothing printed means the ask no longer waits: one line says so and the
+drawer redraws.
 """
 
 import os
@@ -41,6 +52,7 @@ from pathlib import Path
 from typing import List, Optional
 
 ID = re.compile(r"^need-(t_[0-9a-f]{4,})$")
+ROW = re.compile(r"^(need-t_[0-9a-f]{4,}|invite-[\w-]+)$")
 AUTHOR = "chris (yui-app)"
 YOU_DECIDE = "You decide"
 NOT_YET = "Not yet"
@@ -67,11 +79,34 @@ def answer_of(row: dict) -> Optional[dict]:
             "typed": form or bool(v.get("other")), "changed": bool(v.get("changed"))}
 
 
+def opened(row: dict) -> Optional[str]:
+    """The ask id (need-<task id> or invite-<id>) when the row is a tap on a war room Review row, else None."""
+    if row.get("kind") != "event":
+        return None
+    meta = row.get("meta") or {}
+    v = meta.get("value") or {}
+    rid = str(meta.get("id") or "")
+    if meta.get("preset") != "menu" or not isinstance(v, dict) or v.get("bucket") != "review" or not ROW.match(rid):
+        return None
+    return rid
+
+
+def script(board: str) -> Optional[str]:
+    path = os.environ.get("YUI_WAR_ROOM") or str(Path.home() / ".hermes/profiles" / board / "scripts/yui_war_room.py")
+    return path if board and Path(path).is_file() else None
+
+
+def ask_cmd(board: str, ask_id: str) -> Optional[List[str]]:
+    """The command that prints one ask's screen, or None without a war room."""
+    path = script(board)
+    return [sys.executable, path, "--ask", ask_id] if path else None
+
+
 def refresh_cmd(board: str) -> Optional[List[str]]:
     """The war room redraw for this board: $YUI_WAR_ROOM, else the profile's own
     scripts/yui_war_room.py. None when there is none (a host without a war room)."""
-    path = os.environ.get("YUI_WAR_ROOM") or str(Path.home() / ".hermes/profiles" / board / "scripts/yui_war_room.py")
-    return [sys.executable, path, "--refresh"] if board and Path(path).is_file() else None
+    path = script(board)
+    return [sys.executable, path, "--refresh"] if path else None
 
 
 def card_name(title: str) -> str:
@@ -129,3 +164,6 @@ def note(r: dict) -> str:
     """What the agent reads on its next turn."""
     return (f"[yui] Chris answered {r['card']} ({r['task']}) in the war room: {r['choice']!r} "
             f"(already on the card as a comment{', card unblocked' if r.get('unblocked') else ''}; no reply needed)")
+
+
+GONE = "That one's already handled. Your drawer is catching up."

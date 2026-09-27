@@ -75,20 +75,24 @@ struct BubblePhoto: View {
 
     var body: some View {
         let s = theme.swatch(scheme)
+        // The photo's own shape, 220 wide, never cropped (AM6xGDZ3).
         Group {
             switch photo {
             case .local(let image):
-                Image(uiImage: image).resizable().aspectRatio(contentMode: .fill)
+                RatioBox(ratio: image.size.height > 0 ? image.size.width / image.size.height : 1, maxHeight: 320) {
+                    Image(uiImage: image).resizable().aspectRatio(contentMode: .fit)
+                }
             case .stored(let path):
                 if let url {
-                    RemoteImage(src: url)
+                    WholeImage(src: url, maxHeight: 320)
                 } else {
                     s.surface.overlay(ProgressView().tint(s.accent))
+                        .frame(height: 220)
                         .task(id: path) { url = await media?.link(path: path) }
                 }
             }
         }
-        .frame(width: 200, height: 200)
+        .frame(width: 220)
         .clipShape(.rect(cornerRadius: theme.radius.bubble))
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Photo")

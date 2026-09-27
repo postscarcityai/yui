@@ -11,6 +11,8 @@ import YuiLines
 struct RemoteImage: View {
     let src: URL
     var fit: ContentMode = .fill
+    /// Width over height of the picture, once it has loaded.
+    var onRatio: ((CGFloat) -> Void)? = nil
     @State private var image: UIImage?
     @State private var failed = false
     @State private var size: CGSize = .zero
@@ -45,14 +47,32 @@ struct RemoteImage: View {
             if let image, whole || Pictures.sharp(image, size, scale: scale, fill: fit == .fill) { return }
             let points = size
             let url = await media?.fresh(src) ?? src
-            let id = YuiMedia.bucketPath(src) ?? src.absoluteString
+            let id = Pictures.id(src)
             guard let made = await Pictures.load(url, id: id, points: points, scale: scale) else {
                 if image == nil { failed = true }
                 return
             }
             withAnimation(image == nil ? theme.spring : nil) { image = made.image }
+            if let r = Pictures.remember(src, made.image) { onRatio?(r) }
             whole = made.whole
             failed = false
+        }
+    }
+}
+
+/// A picture in a box its own shape (TestFlight AM6xGDZ3: "look at the size of the
+/// actual image and then create a box that big"). The offered width, the height from
+/// the picture's ratio; past `maxHeight` the box narrows instead, so it never crops.
+struct WholeImage: View {
+    let src: URL
+    var maxHeight: CGFloat = 560
+    @State private var ratio: CGFloat?
+
+    var body: some View {
+        RatioBox(ratio: ratio ?? Pictures.ratio(src) ?? 4 / 3, maxHeight: maxHeight) {
+            RemoteImage(src: src, fit: .fit) { r in
+                if r != ratio { withAnimation(.snappy) { ratio = r } }
+            }
         }
     }
 }
@@ -71,9 +91,14 @@ struct ImagePreset: View {
             ImageEditPreset(c: c)
         } else if let src = YLMediaURL.url(c.string("src")) {
             VStack(alignment: .leading, spacing: theme.spacing.s) {
-                RemoteImage(src: src, fit: c.string("fit") == "contain" ? .fit : .fill)
-                    .frame(maxWidth: .infinity)
-                    .frame(maxHeight: 420)
+                Group {
+                    // Whole by default; `fit=cover` still fills a wide box and crops.
+                    if c.string("fit") == "cover" {
+                        RemoteImage(src: src, fit: .fill).frame(maxWidth: .infinity).frame(maxHeight: 420)
+                    } else {
+                        WholeImage(src: src)
+                    }
+                }
                     .clipShape(.rect(cornerRadius: theme.radius.card))
                     .overlay(RoundedRectangle(cornerRadius: theme.radius.card).stroke(s.outline, lineWidth: 1.5))
                     .contentShape(.rect)

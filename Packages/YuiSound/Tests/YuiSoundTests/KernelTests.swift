@@ -188,6 +188,35 @@ struct KernelTests {
         #expect((x.map(abs).max() ?? 0) > 0.01)
     }
 
+    @Test("world percussion names play real drums, accents or not (YUI-127)")
+    func worldPercussion() {
+        let want: [String: Recipe] = [
+            "surdo": .tom, "Caixa": .snare, "tamborim": .rim, "Ganzá": .shaker, "ganza": .shaker, "Agogô": .cow,
+            "repinique": .tom, "Cuíca": .conga, "timbal": .conga, "djembe": .conga, "Cajón": .kick, "Güiro": .shaker,
+            "cabasa": .shaker, "triangle": .bell, "woodblock": .rim, "Floor Tom": .tom,
+        ]
+        for (word, recipe) in want { #expect(Words.sound(word, pitched: false) == recipe, "\(word)") }
+    }
+
+    @Test("a samba loop's rows all sound different, and unknown rows never share a voice")
+    func sambaRowsSoundApart() {
+        let samba = Words.loop(["Surdo", "Caixa", "Tamborim", "Ganzá", "Agogô"], sound: "pluck").map(\.0)
+        #expect(samba == [.tom, .snare, .rim, .shaker, .cow])
+        let unknown = Words.loop(["kick", "zap", "zing", "C4"], sound: "bell")
+        #expect(unknown.map(\.0) == [.kick, .snare, .clap, .bell])
+        #expect(unknown[3].1 == 60)
+        // Each samba voice, rendered alone, is a different sound.
+        let takes = samba.map { r -> [Float] in
+            let k = SynthKernel(sampleRate: rate)
+            k.noteOn(r, midi: -1, velocity: 1)
+            return renderAll(k, seconds: 0.1)
+        }
+        for i in takes.indices { for j in takes.indices where j > i { #expect(takes[i] != takes[j], "\(samba[i]) and \(samba[j])") } }
+        // Past the twelve drums, the rest fall back to tick.
+        let full = Words.loop(Words.kit.prefix(12) + ["one", "two"], sound: "pluck").map(\.0)
+        #expect(Set(full.prefix(12)).count == 12 && full.suffix(2) == [.tick, .tick])
+    }
+
     @Test("tempo change lands the next step on time and keeps going")
     func tempoChange() {
         let k = SynthKernel(sampleRate: rate)

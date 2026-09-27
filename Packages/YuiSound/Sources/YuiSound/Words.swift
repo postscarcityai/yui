@@ -70,15 +70,46 @@ enum Words {
         "shake": "shaker", "maraca": "shaker", "tambourine": "shaker", "finger": "snap", "click": "tick", "bongo": "conga",
         "piano": "keys", "ep": "keys", "organ": "keys", "rhodes": "keys", "guitar": "pluck", "harp": "pluck", "synth": "lead", "saw": "lead",
         "strings": "pad", "choir": "pad", "sub": "bass", "808": "bass", "chime": "bell", "glock": "bell", "marimba": "bell",
+        // World percussion, by the kit voice closest to it.
+        "surdo": "tom", "repinique": "tom", "repique": "tom", "floortom": "tom", "taiko": "tom", "dhol": "tom", "tabla": "conga",
+        "caixa": "snare", "tarol": "snare", "tamborim": "rim", "woodblock": "rim", "sidestick": "rim", "claves": "rim",
+        "ganza": "shaker", "chocalho": "shaker", "guiro": "shaker", "cabasa": "shaker", "afuche": "shaker", "maracas": "shaker", "egg": "shaker",
+        "agogo": "cow", "gankogui": "cow", "triangle": "bell", "cuica": "conga", "timbal": "conga", "timbale": "conga",
+        "timbales": "conga", "djembe": "conga", "tumba": "conga", "quinto": "conga", "bongos": "conga", "darbuka": "conga", "cajon": "kick",
+        "pandeiro": "shaker", "splash": "crash", "china": "crash", "clapping": "clap", "handclap": "clap", "palmas": "clap",
     ]
+
+    /// A word as the lookup reads it: lower case, no accents, no spaces, _ or -.
+    static func bare(_ word: String) -> String {
+        word.folding(options: [.diacriticInsensitive, .caseInsensitive], locale: nil).lowercased()
+            .filter { $0 != " " && $0 != "_" && $0 != "-" }
+    }
+
+    static func known(_ word: String) -> Recipe? {
+        let w = bare(word)
+        return recipes[w] ?? alias[w].flatMap { recipes[$0] }
+    }
 
     /// The voice for a word. In a pitched slot an unknown word plays keys; on
     /// a pad it plays tick.
     static func sound(_ word: String, pitched: Bool) -> Recipe {
-        let w = word.lowercased().filter { $0 != " " && $0 != "_" && $0 != "-" }
-        let r = recipes[w] ?? alias[w].flatMap { recipes[$0] }
+        let r = known(word)
         if let r, !pitched || r.isPitched { return r }
         return pitched ? .keys : (r ?? .tick)
+    }
+
+    /// A loop's rows to voices (loopVoices in theory.mjs). A note row plays
+    /// `sound`; a known drum word its voice; an unknown one the next kit drum no
+    /// other row plays, so two unknown rows never sound the same (tick once all
+    /// twelve are taken).
+    static func loop(_ rows: [String], sound: String) -> [(Recipe, Int)] {
+        let taken = Set(rows.compactMap { Note.midi($0) == nil ? known($0) : nil })
+        var free = kit.prefix(12).compactMap { recipes[$0] }.filter { !taken.contains($0) }
+        return rows.map { row in
+            if Note.midi(row) != nil { return resolve(row, sound: sound) }
+            if let r = known(row) { return (r, -1) }
+            return (free.isEmpty ? .tick : free.removeFirst(), -1)
+        }
     }
 
     /// A word or note name to a recipe and MIDI note (-1: the voice's own pitch).

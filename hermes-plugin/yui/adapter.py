@@ -60,11 +60,13 @@ Transport: the gateway dials OUT to Supabase (PROOF). No inbound ports.
      confirmation (no push); the agent reads a note on its next turn.
 
  10. One-tap answers (YUI-73, needs.py): a `choose@need-<task id>` answer
-     from the war room's Needs you panel is commented on that kanban card
+     from the war room's Needs you ask is commented on that kanban card
      and unblocks it, with no agent turn, only for the paired owner. Same
      confirmation and note as a board order. After either, the war room
      redraws (needs.refresh_cmd, --refresh) so an answered ask leaves the
-     page at once; taps close together share one redraw.
+     page at once; taps close together share one redraw. The war room is
+     the drawer now (YUI-126): a tap on its Review row (`menu review@need-...`)
+     is answered here with that ask's screen (yui_war_room.py --ask), no turn.
 
  11. Mentions (YUI-44, mentions.py): Yui routes @mentions in the database. A
      reply to the person's turn that @s another of their agents carries
@@ -600,6 +602,7 @@ class YuiAdapter(BasePlatformAdapter):
                     if (await self._control(aid, row) or await self._owner_only(aid, row)
                             or await self._board_order(aid, row)
                             or await self._need_answer(aid, row)
+                            or await self._need_open(aid, row)
                             or await self._talk_tap(aid, row)):
                         continue
                     self._queue.setdefault(self._key(row), []).append(row)
@@ -690,6 +693,32 @@ class YuiAdapter(BasePlatformAdapter):
             except Exception as e:
                 logger.warning("[yui] needs-you answer %s: %s", row["id"][:8], e)
                 text = "Couldn't reach the board to send that answer. Try again in a minute."
+        await self._confirm(aid, row, text)
+        return True
+
+    async def _need_open(self, aid: str, row: dict) -> bool:
+        """A tap on a war room Review row in the drawer (YUI-126): the ask's screen, no turn.
+        The owner-only check ran before this (OWNER_ONLY)."""
+        ask = needs.opened(row)
+        cmd = needs.ask_cmd(self._remote_ref or "", ask) if ask else None
+        if not cmd:
+            return False
+        await self._mark([row["id"]], "delivered_at")
+        text = ""
+        try:
+            proc = await asyncio.create_subprocess_exec(*cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+            out, err = await asyncio.wait_for(proc.communicate(), WAR_REDRAW_TIMEOUT)
+            if proc.returncode:
+                logger.warning("[yui] war room ask %s exited %s: %s", ask, proc.returncode, err.decode()[-200:])
+            text = out.decode().strip()
+            if text:  # mock boards in the ask: hosted like any reply's media
+                text = await asyncio.to_thread(
+                    media.rewrite, text, lambda src: self._host(aid, row.get("user_id"), src), logger)
+        except Exception as e:
+            logger.warning("[yui] war room ask %s: %s", ask, e)
+        if not text:
+            text = needs.GONE
+            self._war_refresh()
         await self._confirm(aid, row, text)
         return True
 
