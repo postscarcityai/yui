@@ -61,6 +61,7 @@ final class MapSceneTests: XCTestCase {
                 XCTAssertEqual(it.i, j["i"] as? Int, w)
                 XCTAssertEqual(it.kind, j["kind"] as? String, w)
                 XCTAssertEqual(it.label, j["label"] as? String, w)
+                XCTAssertEqual(it.text, j["text"] as? String, "\(w) text")
                 XCTAssertEqual(it.tone, j["tone"] as? String, w)
                 XCTAssertEqual(it.dash, j["dash"] as? Bool, w)
                 XCTAssertEqual(it.pulse, j["pulse"] as? Bool, w)

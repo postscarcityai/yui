@@ -62,6 +62,8 @@ enum MapModel {
         var grow = false
         var pts: [[Double]] = []
         var arrow = false
+        /// The label as drawn: the label, its short form, or "" when it found no room.
+        var text = ""
         /// Where the label goes, and which side of that point it hangs from.
         var lx: Double? = nil
         var ly: Double? = nil
@@ -363,50 +365,116 @@ enum MapModel {
     /// JS string length (UTF-16 units), which the label sizes count in.
     private static func len(_ s: String) -> Int { s.utf16.count }
 
-    /// Where each label goes: the first of a few spots that clears the labels
-    /// and pins already placed and stays on the drawing. A pin's label sits
-    /// beside it, a route's past its last stop (an arrow's tip) or over its
-    /// middle, an area's on its biggest piece.
+    /// Where each label goes. Pins claim first, then areas, then routes, and
+    /// no label ever lands on a pin or on another label. A pin's label sits
+    /// beside it, an area's on its biggest piece, a route's beside the middle
+    /// of its line (never at its ends, where the pins are). Each label tries
+    /// its spots clear of the route lines first, then over them; a label that
+    /// finds no room at full length tries its short form (the words before a
+    /// comma or a bracket), and one that still finds none is dropped. Sets
+    /// text ("" when dropped), lx, ly and anchor. Same as map.mjs place().
+    private static let rank: [String: Int] = ["pin": 0, "area": 1, "route": 2]
     private static func place(_ items: inout [Item], fs: Double, w: Double, h: Double) {
         var taken = items.filter { $0.kind == "pin" }.map { box($0.c[0], $0.c[1], fs * 0.9, fs * 0.9, "middle") }
-        for n in items.indices {
+        let lines = items.filter { $0.kind == "route" }.map(\.pts)
+        let order = items.indices.sorted { p, q in
+            let a = rank[items[p].kind] ?? 3, b = rank[items[q].kind] ?? 3
+            return a != b ? a < b : p < q
+        }
+        for n in order {
+            items[n].text = ""
             let it = items[n]
             guard !it.label.isEmpty else { continue }
-            let tw = Double(min(len(it.label), 18)) * fs * 0.56
-            let lines = len(it.label) > 18 ? 2.0 : 1.0
-            let th = fs * 1.2 * lines
-            var spots: [(Double, Double, String)] = []
-            let cx = it.c[0], cy = it.c[1]
-            if it.kind == "pin" {
-                let g = fs * 0.8
-                spots += [(cx + g, cy, "start"), (cx - g, cy, "end"), (cx, cy - fs * 1.1, "middle"), (cx, cy + fs * 1.2, "middle")]
-            } else if it.kind == "route" {
-                let a = it.pts[it.pts.count - 2], b = it.pts[it.pts.count - 1]
-                let hy = hypot(b[0] - a[0], b[1] - a[1])
-                let l = hy == 0 ? 1 : hy
-                let ux = (b[0] - a[0]) / l, uy = (b[1] - a[1]) / l
-                let tip = [b[0] + ux * fs * 0.9, b[1] + uy * fs * 0.9 + (abs(ux) < 0.4 ? uy * fs * 0.4 : 0)]
-                spots.append((tip[0], tip[1], ux > 0.4 ? "start" : ux < -0.4 ? "end" : "middle"))
-                spots += [(cx, cy - fs * 0.9, "middle"), (cx, cy + fs * 1.1, "middle")]
-            } else {
-                spots += [(cx, cy, "middle"), (cx, cy + fs * 1.6, "middle"), (cx, cy - fs * 1.6, "middle")]
+            let f = it.kind == "route" ? fs * 0.92 : fs
+            var pick: (String, Double, Double, String, [Double])? = nil
+            search: for text in short(it.label) {
+                let ls = wrap(text, width: 30, fs: f)
+                let tw = Double(ls.map(len).max() ?? 0) * f * 0.58
+                let th = f * 1.15 * Double(ls.count)
+                let spots = spotsFor(it, f: f, fs: fs, tw: tw, th: th)
+                for clear in [true, false] {
+                    for (x0, y0, a) in spots {
+                        guard let at = onto(x0, y0, tw, th, a, w, h) else { continue }
+                        let x = at.0, y = at.1
+                        let bx = box(x, y, tw, th, a)
+                        if taken.contains(where: { hits($0, bx) }) { continue }
+                        if clear && lines.contains(where: { crosses($0, bx) }) { continue }
+                        pick = (text, x, y, a, bx)
+                        break search
+                    }
+                }
             }
-            var pick: (Double, Double, String, [Double])? = nil
-            for (x, y, a) in spots {
-                let bx = box(x, y, tw, th, a)
-                let inside = bx[0] >= 0 && bx[2] <= w && bx[1] >= 0 && bx[3] <= h
-                if inside && !taken.contains(where: { hits($0, bx) }) { pick = (x, y, a, bx); break }
-            }
-            if pick == nil { let (x, y, a) = spots[0]; pick = (x, y, a, box(x, y, tw, th, a)) }
-            // Nudge back onto the drawing when it runs off an edge.
-            var (x, y, a, bx) = pick!
-            if bx[0] < 0 { x -= bx[0] }
-            if bx[2] > w { x -= bx[2] - w }
-            if bx[1] < 0 { y -= bx[1] }
-            if bx[3] > h { y -= bx[3] - h }
-            items[n].lx = r3(x); items[n].ly = r3(y); items[n].anchor = a
-            taken.append(box(x, y, tw, th, a))
+            guard let p = pick else { continue }
+            items[n].text = p.0; items[n].lx = r3(p.1); items[n].ly = r3(p.2); items[n].anchor = p.3
+            taken.append(p.4)
         }
+    }
+
+    /// A label, then its short form when it has one.
+    private static func short(_ label: String) -> [String] {
+        let u = Array(label.utf16)
+        let stops: Set<UInt16> = [0x2C, 0x28, 0x2013, 0x2014]
+        // Lazy `^(.+?)\s*[,(–—]`: the first stop after at least one unit.
+        guard u.count > 1, let k = u.indices.dropFirst().first(where: { stops.contains(u[$0]) }) else { return [label] }
+        let s = (String(utf16CodeUnits: Array(u[..<k]), count: k)).trimmingCharacters(in: .whitespacesAndNewlines)
+        return !s.isEmpty && s != label ? [label, s] : [label]
+    }
+
+    /// The spots a label may take, best first.
+    private static func spotsFor(_ it: Item, f: Double, fs: Double, tw: Double, th: Double) -> [(Double, Double, String)] {
+        let cx = it.c[0], cy = it.c[1]
+        if it.kind == "pin" {
+            let g = fs * 0.8, v = fs * 1.1
+            return [(cx + g, cy, "start"), (cx - g, cy, "end"), (cx, cy - v, "middle"), (cx, cy + v, "middle"),
+                    (cx + g, cy - v, "start"), (cx + g, cy + v, "start"), (cx - g, cy - v, "end"), (cx - g, cy + v, "end")]
+        }
+        if it.kind == "area" {
+            let v = fs * 1.6
+            return [(cx, cy, "middle"), (cx, cy + v, "middle"), (cx, cy - v, "middle"), (cx, cy + v * 2, "middle"), (cx, cy - v * 2, "middle"),
+                    (cx + tw * 0.6, cy, "middle"), (cx - tw * 0.6, cy, "middle")]
+        }
+        // A route: points along its line from the middle out, a label's width
+        // off the line on either side.
+        var out: [(Double, Double, String)] = []
+        for t in [0.5, 0.4, 0.6, 0.3, 0.7] {
+            let (px, py, ux, uy) = along(it.pts, t)
+            var nx = -uy, ny = ux
+            if ny > 0 || (ny == 0 && nx < 0) { nx = -nx; ny = -ny }
+            let d = abs(nx) * tw / 2 + abs(ny) * th / 2 + f * 0.4
+            out += [(px + nx * d, py + ny * d, "middle"), (px - nx * d, py - ny * d, "middle")]
+        }
+        return out
+    }
+
+    /// The point a share t of the way along a line, and the line's direction there.
+    private static func along(_ pts: [[Double]], _ t: Double) -> (Double, Double, Double, Double) {
+        var segs: [Double] = []
+        var total = 0.0
+        for j in 1..<max(pts.count, 1) {
+            let l = hypot(pts[j][0] - pts[j - 1][0], pts[j][1] - pts[j - 1][1])
+            segs.append(l); total += l
+        }
+        var at = total * t
+        for j in segs.indices {
+            if at <= segs[j] || j == segs.count - 1 {
+                let a = pts[j], b = pts[j + 1]
+                let l = segs[j] == 0 ? 1 : segs[j]
+                let k = clamp(at / l, 0, 1)
+                return (a[0] + (b[0] - a[0]) * k, a[1] + (b[1] - a[1]) * k, (b[0] - a[0]) / l, (b[1] - a[1]) / l)
+            }
+            at -= segs[j]
+        }
+        return (pts.first?[0] ?? 0, pts.first?[1] ?? 0, 1, 0)
+    }
+
+    /// Moves a label back onto the drawing; nil when it cannot fit at all.
+    private static func onto(_ x0: Double, _ y0: Double, _ tw: Double, _ th: Double, _ a: String, _ w: Double, _ h: Double) -> (Double, Double)? {
+        if tw > w || th > h { return nil }
+        var x = x0, y = y0
+        let bx = box(x, y, tw, th, a)
+        if bx[0] < 0 { x -= bx[0] } else if bx[2] > w { x -= bx[2] - w }
+        if bx[1] < 0 { y -= bx[1] } else if bx[3] > h { y -= bx[3] - h }
+        return (x, y)
     }
 
     private static func box(_ x: Double, _ y: Double, _ tw: Double, _ th: Double, _ a: String) -> [Double] {
@@ -415,6 +483,24 @@ enum MapModel {
     }
 
     private static func hits(_ p: [Double], _ q: [Double]) -> Bool { p[0] < q[2] && q[0] < p[2] && p[1] < q[3] && q[1] < p[3] }
+
+    /// Whether a line (a list of points) passes through a box.
+    private static func crosses(_ pts: [[Double]], _ b: [Double]) -> Bool {
+        guard pts.count > 1 else { return false }
+        return (1..<pts.count).contains { cut(pts[$0 - 1], pts[$0], b) }
+    }
+
+    /// Liang-Barsky: whether the segment p-q enters the box.
+    private static func cut(_ p: [Double], _ q: [Double], _ b: [Double]) -> Bool {
+        let dx = q[0] - p[0], dy = q[1] - p[1]
+        var t0 = 0.0, t1 = 1.0
+        for (pp, qq) in [(-dx, p[0] - b[0]), (dx, b[2] - p[0]), (-dy, p[1] - b[1]), (dy, b[3] - p[1])] {
+            if pp == 0 { if qq < 0 { return false }; continue }
+            let r = qq / pp
+            if pp < 0 { if r > t1 { return false }; if r > t0 { t0 = r } } else { if r < t0 { return false }; if r < t1 { t1 = r } }
+        }
+        return true
+    }
 
     private static func ease(_ x: Double) -> Double { 1 - pow(1 - x, 3) }
     /// A spring for pins: up past full size, then settles.

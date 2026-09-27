@@ -180,7 +180,7 @@ struct MapDrawing: View {
                 c.fill(shape, with: .color(color.opacity(it.dash ? 0.12 : 0.32)))
                 c.stroke(shape, with: .color(color), style: StrokeStyle(lineWidth: sw * 1.2, lineJoin: .round,
                                                                         dash: it.dash ? [sw * 3, sw * 2.5] : []))
-                if !it.label.isEmpty { label(c, it, fs: fs, u: u0, at: P, s: s) }
+                if !it.text.isEmpty { label(c, it, fs: fs, u: u0, at: P, s: s) }
             case "pin":
                 let r = fs * 0.42 * u0
                 let at = P(it.c)
@@ -193,7 +193,7 @@ struct MapDrawing: View {
                 let dot = Path(ellipseIn: CGRect(x: at.x - rs, y: at.y - rs, width: rs * 2, height: rs * 2))
                 c.fill(dot, with: .color(color))
                 c.stroke(dot, with: .color(s.background), lineWidth: sw)
-                if !it.label.isEmpty { var tc = c; tc.opacity = f.o * f.d; label(tc, it, fs: fs, u: u0, at: P, s: s) }
+                if !it.text.isEmpty { var tc = c; tc.opacity = f.o * f.d; label(tc, it, fs: fs, u: u0, at: P, s: s) }
             default:
                 // A route traces itself on along a smooth curve through its stops.
                 var path = Path()
@@ -215,7 +215,7 @@ struct MapDrawing: View {
                     head.addLine(to: P([end[0] - k * (ux * cs + uy * sn), end[1] - k * (uy * cs - ux * sn)]))
                     c.stroke(head, with: .color(color), style: StrokeStyle(lineWidth: sw * 1.6, lineCap: .round, lineJoin: .round))
                 }
-                if !it.label.isEmpty { var tc = c; tc.opacity = f.d; label(tc, it, fs: fs * 0.92, u: u0, at: P, s: s) }
+                if !it.text.isEmpty { var tc = c; tc.opacity = f.d; label(tc, it, fs: fs * 0.92, u: u0, at: P, s: s) }
             }
         }
     }
@@ -224,7 +224,7 @@ struct MapDrawing: View {
     /// `u` sizes the text (full-size points per unit); `at` places it, zoom and pan included.
     private func label(_ ctx: GraphicsContext, _ it: MapModel.Item, fs: Double, u: CGFloat, at P: ([Double]) -> CGPoint, s: Swatch) {
         guard let x = it.lx, let y = it.ly else { return }
-        let lines = MapModel.wrap(it.label, width: 30, fs: fs)
+        let lines = MapModel.wrap(it.text, width: 30, fs: fs)
         let lh = fs * 1.15
         let y0 = y - Double(lines.count - 1) * lh / 2
         let anchor: UnitPoint = it.anchor == "start" ? .leading : it.anchor == "end" ? .trailing : .center

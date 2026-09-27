@@ -14,6 +14,24 @@ final class MapTests: XCTestCase {
     func testReduceMotion() throws { try chat(appearance: "light", reduce: true, tag: "reduce") }
     func testStageLight() throws { try stage(appearance: "light") }
     func testStageDark() throws { try stage(appearance: "dark") }
+    func testTripLabelsLight() throws { try tripLabels(appearance: "light") }
+    func testTripLabelsDark() throws { try tripLabels(appearance: "dark") }
+
+    /// A real v37 reply whose leg labels used to sit on the city names
+    /// ("BaAVE, ~2.5-3h"): pins claim first, each leg's label sits beside
+    /// the middle of its line.
+    static let trip = """
+    map "Lisbon to Barcelona by rail" caption="North to Porto, over the border at Vigo, high-speed to Madrid, then east to Barcelona."
+    pin@li Lisbon 38.72,-9.14
+    pin@po Porto 41.15,-8.61 +pulse
+    pin@vi Vigo 42.24,-8.72
+    pin@ma Madrid 40.42,-3.70 +pulse
+    pin@ba Barcelona 41.39,2.17
+    route "Alfa Pendular, ~3h" li|po
+    route "Celta, ~2.5h" po|vi tone=butter +arrow
+    route "Alvia via Ourense, ~4.5h" vi|ma
+    route "AVE, ~2.5–3h" ma|ba
+    """
 
     static let deck = """
     >full
@@ -94,6 +112,25 @@ final class MapTests: XCTestCase {
         XCTAssertFalse(app.staticTexts.containing(NSPredicate(format: "label BEGINSWITH 'area ' OR label BEGINSWITH 'route '")).firstMatch.exists,
                        "raw Yui Lines in the chat")
         XCTAssertFalse(app.buttons.matching(NSPredicate(format: "label CONTAINS[c] 'update'")).firstMatch.exists, "an Update chip for maps")
+    }
+
+    private func tripLabels(appearance: String) throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["-yuiDemoAccount", "-yuiDemo", "-appearance", appearance, "-yuiReduceMotion", "-yuiDemoReply",
+                               Self.trip.replacingOccurrences(of: "\n", with: "\\n")]
+        app.launch()
+        let field = app.descendants(matching: .any)["composer"].firstMatch
+        XCTAssertTrue(field.waitForExistence(timeout: 20), "no composer")
+        field.tap()
+        field.typeText("Lisbon to Barcelona by train?")
+        app.buttons["Send"].tap()
+        // The reply streams in: wait for its last leg.
+        let map = app.descendants(matching: .any).matching(NSPredicate(
+            format: "identifier == 'map-drawing' AND label BEGINSWITH 'Lisbon to Barcelona by rail' AND label CONTAINS 'Madrid to Barcelona'")).firstMatch
+        XCTAssertTrue(map.waitForExistence(timeout: 25), "the whole trip map never reached the chat")
+        XCTAssertEqual(map.label, "Lisbon to Barcelona by rail. Map: Lisbon; Porto; Vigo; Madrid; Barcelona; Alfa Pendular, ~3h, Lisbon to Porto; Celta, ~2.5h, Porto to Vigo; Alvia via Ourense, ~4.5h, Vigo to Madrid; AVE, ~2.5–3h, Madrid to Barcelona. North to Porto, over the border at Vigo, high-speed to Madrid, then east to Barcelona.")
+        sleep(2)
+        shot("trip-labels", appearance)
     }
 
     private func stage(appearance: String) throws {
