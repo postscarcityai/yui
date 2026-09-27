@@ -255,3 +255,30 @@ test("a model set on the agent is used for text turns", async () => {
   await runAgent(store, gouda.id, { provider, fetch: m.fetch });
   assert.equal(m.calls[0].model, "some/other-model");
 });
+
+test("answers lose their em and en dashes where the person reads them (YUI-163)", async () => {
+  const { undash } = await import("../src/turn.ts");
+  assert.equal(undash("Arnold's your trainer — tap Arnold and tell him your goals."),
+    "Arnold's your trainer. Tap Arnold and tell him your goals.");
+  assert.equal(undash("Those questions on screen will get us started — tap through them."),
+    "Those questions on screen will get us started. Tap through them.");
+  assert.equal(undash("Squats, lunges – and a plank."), "Squats, lunges, and a plank.");
+  assert.equal(undash("Rest 3–5 minutes"), "Rest 3-5 minutes");
+  assert.equal(undash("Ready when you are —\n— one\n— two"), "Ready when you are.\n- one\n- two");
+  assert.equal(undash("No dashes here."), "No dashes here.");
+  const yl = "Pick one — quick.\n```yui\ncard \"Leg day\" body=\"Squats — then lunges\" url=https://ex.com/a—b\nchoose \"Split?\" Push|Pull\n```";
+  assert.equal(undash(yl),
+    "Pick one, quick.\n```yui\ncard \"Leg day\" body=\"Squats, then lunges\" url=https://ex.com/a—b\nchoose \"Split?\" Push|Pull\n```");
+  const code = "```python\nx = 'a — b'\n```";
+  assert.equal(undash(code), code, "code fences are left alone");
+});
+
+test("a turn's written answer has no dashes", async () => {
+  const { store, byHandle } = await freshYui();
+  const yui = await byHandle("yui");
+  const m = fakeModel(() => "Arnold's your trainer — tap Arnold.");
+  store.say(yui.id, "Get fit");
+  const r = await runAgent(store, yui.id, { provider, fetch: m.fetch });
+  assert.equal(store.data.rows.find((x) => x.id === r.replies[0])!.body, "Arnold's your trainer. Tap Arnold.");
+  assert.match(system(m.calls[0]), /Never use an em dash/);
+});

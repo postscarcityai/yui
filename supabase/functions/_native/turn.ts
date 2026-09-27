@@ -232,7 +232,7 @@ async function oneTurn(store: Store, agent: NativeAgent, rows: Row[], opts: Turn
     if (!out.text.trim()) out.text = results.filter((r) => r.ok).map((r) => `Done: ${(r as { did: string }).did}.`).join("\n");
   }
   if (out.schedule.length) notes.push(...await applySchedules(store, agent, out.schedule, schedules, tzRaw ? tz : "UTC", now, log));
-  let body = out.text;
+  let body = undash(out.text);
   if (notes.length) body += `\n\n(I couldn't do all of that: ${notes.join("; ")}.)`;
   // Sources the answer didn't link, and the invite to add a Firecrawl key when the free lookups ran out.
   const cards = [...sourceCards(body, looked.sources), ...(looked.capped ? [searchInvite(looked.capped.why, looked.capped.limit)] : [])];
@@ -369,6 +369,43 @@ function hostName(u: string): string {
   } catch {
     return "a page";
   }
+}
+
+// The house voice has no em or en dashes (YUI-163). The prompt says so; models
+// still write them, so the answer is swept once more before it is written.
+const OPENERS = new Set(["i", "i'm", "i'll", "you", "you're", "you'll", "we", "we'll", "let's", "they", "he", "she", "it", "it's",
+  "that", "that's", "this", "here", "here's", "there", "there's", "tap", "try", "pick", "send", "tell", "say", "ask", "give",
+  "just", "open", "start", "go"]);
+
+/** One piece of prose without dashes: a spaced one becomes a comma, or a period when a new sentence follows. */
+function undashProse(t: string): string {
+  return t
+    .replace(/(\d)\s?[\u2013\u2014]\s?(\d)/g, "$1-$2") // 3–5, 9:00—10:00
+    .replace(/^([ \t]*)[\u2013\u2014][ \t]+/gm, "$1- ") // a dash used as a bullet
+    .replace(/[ \t]*[\u2013\u2014]+[ \t]*(?=\n|$)/g, ".") // a dash that ends a line
+    .replace(/[ \t]*[\u2013\u2014]+[ \t]*(\S+)/g, (_m, word: string, at: number, all: string) => {
+      const before = all.slice(0, at).trimEnd();
+      if (/[.!?:,;]$/.test(before) || !before) return ` ${word}`;
+      const bare = word.replace(/^["'(\u201c\u2018]+/, "").replace(/[^A-Za-z']+$/, "").toLowerCase();
+      if (OPENERS.has(bare)) return `. ${word.replace(/[A-Za-z]/, (c) => c.toUpperCase())}`;
+      return `, ${word}`;
+    })
+    .replace(/[\u2013\u2014]/g, ", ");
+}
+
+/**
+ * The answer without em or en dashes, where the person reads them: the chat text
+ * and the quoted strings in a yui block. Everything else in a fence (tokens,
+ * links, code) is left as the model wrote it.
+ */
+export function undash(text: string): string {
+  if (!/[\u2013\u2014]/.test(text)) return text;
+  const parts = text.split(/(^```[^\n]*\n[\s\S]*?^```[ \t]*$)/m);
+  return parts.map((part, i) => {
+    if (i % 2 === 0) return undashProse(part);
+    if (!/^```yui\b/.test(part)) return part;
+    return part.replace(/"((?:[^"\\\n]|\\.)*)"/g, (_m, inner: string) => `"${undashProse(inner)}"`);
+  }).join("");
 }
 
 /** Streams when it can; one retry when the model is busy. */
