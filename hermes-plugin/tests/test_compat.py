@@ -118,11 +118,11 @@ class Downgrade(unittest.TestCase):
         self.assertDrawable(out, 96)
 
     def test_note_names_what_to_skip(self):
-        self.assertIn("cannot draw drums, loop, shapes, sketch yet", compat.note(96))
+        self.assertIn("cannot draw chords, drums, keys, loop, shapes, sketch yet", compat.note(96))
         self.assertNotIn("timeline", compat.note(96))
-        self.assertEqual(compat.note(compat.SHAPES_BUILD), f"[yui] This person's Yui app (build {compat.SHAPES_BUILD}) cannot draw drums, loop yet: don't send those. Say it in words or use another preset.")
-        self.assertEqual(compat.note(compat.MUSIC_BUILD), "")
-        self.assertIn("cannot draw drums, loop, shapes", compat.note(122))
+        self.assertEqual(compat.note(compat.SHAPES_BUILD), f"[yui] This person's Yui app (build {compat.SHAPES_BUILD}) cannot draw chords, drums, keys, loop yet: don't send those. Say it in words or use another preset.")
+        self.assertEqual(compat.note(compat.KEYS_BUILD), "")
+        self.assertIn("cannot draw chords, drums, keys, loop, shapes", compat.note(122))
         self.assertIn("an older build", compat.note(None))
 
     def test_menu_lines_go_quietly_before_the_drawer(self):
@@ -154,6 +154,18 @@ class Downgrade(unittest.TestCase):
         self.assertDrawable(out, 174)
         self.assertEqual(compat.downgrade(fence("~loop p=x.x.x.x. bpm=94"), 174).strip(), "")
         self.assertEqual(compat.downgrade(body, compat.MUSIC_BUILD), body)
+
+    def test_keys_and_chords_before_build_177(self):
+        body = ("Play along.\n\n"
+                + fence("keys Am pentatonic +send", "chords G I-V-vi-IV +send", "chords C|G|Am|F"))
+        out = compat.downgrade(body, 176)
+        self.assertIn("There's a keyboard here in Am pentatonic. Update Yui to play it.", out)
+        self.assertIn("There are chord buttons here: G I-V-vi-IV. Update Yui to play them.", out)
+        self.assertIn("There are chord buttons here: C G Am F. Update Yui to play them.", out)
+        self.assertDrawable(out, 176)
+        self.assertIn("cannot draw chords, keys yet", compat.note(176))
+        self.assertEqual(compat.note(compat.KEYS_BUILD), "")
+        self.assertEqual(compat.downgrade(body, compat.KEYS_BUILD), body)
 
     def test_placed_shapes_and_a_lone_shape(self):
         body = fence("shapes Parts", "shape box A at=2,2", "shape box B at=8,2", "shape arrow from=a to=b")

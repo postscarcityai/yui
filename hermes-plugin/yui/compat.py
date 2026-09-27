@@ -22,6 +22,7 @@ SHAPES_BUILD = 131  # the YUI-104 app commit (git rev-list --count)
 # parsers end the deck at the first of those, so `lift` moves them out of it.
 DECK_PICTURES_BUILD = 158
 MUSIC_BUILD = 175  # YUI-116 step 2: loop and drums drawn and played (56b38a3)
+KEYS_BUILD = 177  # YUI-116 step 3: keys and chords drawn and played (2b26871)
 
 # First app build whose parser knows each preset (git rev-list --count of the
 # commit that added it to Packages/YuiLines/Sources/YuiLines/Presets.swift).
@@ -32,6 +33,7 @@ MIN_BUILD: Dict[str, int] = {
     "menu": 115,                                         # YUI-86: the drawer's lists; dropped before
     "shapes": SHAPES_BUILD, "shape": SHAPES_BUILD,       # YUI-104: shapes that move
     "loop": MUSIC_BUILD, "drums": MUSIC_BUILD,           # YUI-116 step 2: a beat and pads
+    "keys": KEYS_BUILD, "chords": KEYS_BUILD,            # YUI-116 step 3: a keyboard and chord buttons
 }
 GROUPS = {"sketch": {"row", "after"}, "timeline": {"done", "now", "next"}, "shapes": {"shape"}}
 MEMBER_OF = {m: head for head, ms in GROUPS.items() for m in ms}
@@ -157,6 +159,10 @@ def _group_text(lines: List[str]) -> str:
             out.append(f"There's a beat here{': ' + name if name else ''}. Update Yui to play it.")
         elif preset == "drums":
             out.append("There are drum pads here. Update Yui to play them.")
+        elif preset == "keys":
+            out.append(f"There's a keyboard here{' in ' + title if title else ''}. Update Yui to play it.")
+        elif preset == "chords":
+            out.append(f"There are chord buttons here{': ' + title.replace('|', ' ') if title else ''}. Update Yui to play them.")
         elif preset == "shapes":
             if title:
                 out.append(f"**{title}**")
