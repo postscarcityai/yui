@@ -1,54 +1,72 @@
 // Copied from runtime/src/turn.ts by runtime/scripts/build.mjs. Do not edit here.
 // One native turn, the same on a laptop and in the edge function (YUI-130):
 // take the person's new rows, build the prompt, ask the model, keep what the
-// agent chose to remember, apply any agent changes, write the answer.
+// agent chose to remember, apply its agent changes, check-ins, search and
+// hand-offs, write the answer.
 // Relay rules as every host (yuigui spec/RELAY.md): delivered when the turn
 // starts, `doing` while it works, handled once the answer is written, and the
 // answer names its rows in meta.turn.
+//
+// A turn can also start with no row from the person (a "synthetic" turn): a
+// check-in firing (runScheduled) or another agent handing the person over.
+// Those answer in the thread and are never marked on any row.
 import { ChatClient, ModelError, ModelUnavailable, type Completion } from "./openai.ts";
 import { extract } from "./directives.ts";
 import { applyMemory } from "./memory.ts";
 import { applyAgentOps } from "./agents.ts";
 import { buildTurn, photoPaths, type CrewEntry } from "./prompt.ts";
+import { next, parseLine, validZone } from "./schedule.ts";
 import type { Store } from "./store.ts";
-import type { NativeAgent, Row } from "./types.ts";
+import type { NativeAgent, OwnKey, Row, ScheduleItem } from "./types.ts";
 
 export interface Provider {
   url: string; // an OpenAI-compatible base URL
   key?: string;
   headers?: Record<string, string>;
   extra?: Record<string, unknown>; // sent with every request (OpenRouter's provider rules)
+  model?: string; // this provider's own model, when it is not OpenRouter's ids (a person's Groq key)
+  web?: boolean; // can search the web in a call (OpenRouter's web plugin)
 }
+
+const OPENROUTER = "https://openrouter.ai/api/v1";
 
 /** OpenRouter, on Yui's key for now (spec/NATIVE.md section 7). */
 export function openRouter(key: string): Provider {
   return {
-    url: "https://openrouter.ai/api/v1",
+    url: OPENROUTER,
     key,
     headers: { "HTTP-Referer": "https://www.yuigui.com", "X-Title": "Yui" },
     extra: { provider: { data_collection: "deny" } },
+    web: true,
   };
 }
 
+/** A person's own key: OpenRouter keeps Yui's routes; any other server runs the model they named. */
+export function ownProvider(k: OwnKey): Provider {
+  if (k.provider === "openrouter") return { ...openRouter(k.key), ...(k.model ? { model: k.model } : {}) };
+  return { url: k.baseUrl, key: k.key, ...(k.model ? { model: k.model } : {}) };
+}
+
 export interface TurnOptions {
-  provider: Provider;
+  provider: Provider; // Yui's own; a person's own key replaces it
   fetch?: typeof fetch; // the model side only (tests)
   maxTokens?: number; // default 2000
   context?: number; // default 32768
   historyRows?: number; // default 60
   maxTurns?: number; // turns in one wake, default 3
   log?: (msg: string) => void;
-  now?: () => string;
+  now?: () => number;
   newId?: () => string;
 }
 
 export interface TurnResult {
   turns: number;
-  replies: string[]; // row ids written
+  replies: string[]; // row ids written, in any thread (hand-offs write in another)
   busy?: boolean;
 }
 
 const HISTORY_ROWS = 60;
+const SYNTHETIC = "synthetic:";
 
 /** Runs every turn waiting for this agent, one at a time. Safe to call twice: the second sees the lock. */
 export async function runAgent(store: Store, agentId: string, opts: TurnOptions): Promise<TurnResult> {
@@ -61,9 +79,8 @@ export async function runAgent(store: Store, agentId: string, opts: TurnOptions)
       if (!agent) break;
       const rows = await store.pending(agentId);
       if (!rows.length) break;
-      const done = await oneTurn(store, agent, rows, opts, log);
+      const done = await oneTurn(store, agent, rows, opts, log, result, 0);
       result.turns++;
-      if (done.reply) result.replies.push(done.reply);
       if (!done.handled) break; // the model is away: the rows wait for the next message
     }
   } finally {
@@ -72,88 +89,192 @@ export async function runAgent(store: Store, agentId: string, opts: TurnOptions)
   return result;
 }
 
-async function oneTurn(store: Store, agent: NativeAgent, rows: Row[], opts: TurnOptions, log: (m: string) => void): Promise<{ handled: boolean; reply?: string }> {
-  const ids = rows.map((r) => r.id);
-  const last = ids[ids.length - 1];
-  const p = agent.profile;
-  await store.markDelivered(ids);
+/** A check-in fires: set its next time first, then the agent opens with it. */
+export async function runScheduled(store: Store, scheduleId: string, opts: TurnOptions): Promise<TurnResult> {
+  const log = opts.log ?? (() => {});
+  const result: TurnResult = { turns: 0, replies: [] };
+  const s = await store.schedule(scheduleId);
+  if (!s) return result;
+  const agent = await store.agent(s.agentId);
+  const now = (opts.now ?? Date.now)();
+  const at = next(s.rule, s.tz, now + 60_000);
+  if (at) await store.setScheduleNext(s.id, new Date(at).toISOString());
+  else await store.dropSchedule(s.id); // a one-time check-in is done once it fires
+  if (!agent) return result;
+  const n = (await store.schedules(agent.id)).findIndex((x) => x.id === s.id) + 1 || "x";
+  await synthetic(store, agent, `[yui] check-in s${n} "${s.note.replace(/"/g, "'")}"`, opts, log, result, 0);
+  return result;
+}
 
-  const budget = await store.takeTurn(agent.userId);
+/** A turn with no row from the person, under the agent's lock (waits a little for it). */
+async function synthetic(store: Store, agent: NativeAgent, line: string, opts: TurnOptions, log: (m: string) => void,
+                         result: TurnResult, depth: number): Promise<void> {
+  let locked = false;
+  for (let i = 0; i < 20 && !(locked = await store.lock(agent.id, 300)); i++) await new Promise((r) => setTimeout(r, 1500));
+  if (!locked) {
+    log(`${agent.profile.name}: busy, skipped "${line.slice(0, 60)}"`);
+    return;
+  }
+  try {
+    const row: Row = { id: `${SYNTHETIC}${uuid()}`, sender: "user", kind: "event", body: line, meta: {},
+                       created_at: new Date((opts.now ?? Date.now)()).toISOString() };
+    await oneTurn(store, agent, [row], opts, log, result, depth);
+    result.turns++;
+  } finally {
+    await store.unlock(agent.id);
+  }
+}
+
+async function oneTurn(store: Store, agent: NativeAgent, rows: Row[], opts: TurnOptions, log: (m: string) => void,
+                       result: TurnResult, depth: number): Promise<{ handled: boolean }> {
+  const real = rows.filter((r) => !r.id.startsWith(SYNTHETIC)).map((r) => r.id);
+  const last = real[real.length - 1];
+  const p = agent.profile;
+  const now = (opts.now ?? Date.now)();
+  const say = async (body: string, meta: Record<string, unknown>) => {
+    const id = await store.reply(agent, body, meta);
+    result.replies.push(id);
+    return id;
+  };
+  if (real.length) await store.markDelivered(real);
+
+  // A person's own key: their model, no monthly cap. Otherwise Yui's key and free turns.
+  const own = await store.ownKey(agent.userId);
+  const provider = own ? ownProvider(own) : opts.provider;
+  const budget = own ? { ok: true, left: Infinity, limit: 0 } : await store.takeTurn(agent.userId);
   if (!budget.ok) {
-    const reply = await store.reply(agent, outOfTurns(budget.limit), { turn: ids, native: { limit: true } });
-    await store.markHandled(ids);
+    if (real.length) {
+      await say(outOfTurns(budget.limit), { turn: real, native: { limit: true } });
+      await store.markHandled(real);
+    }
     log(`${p.name}: free turns used up`);
-    return { handled: true, reply };
+    return { handled: true };
   }
 
-  await store.doing(last, "Thinking");
-  const [history, memory, guide, routes] = await Promise.all([
+  if (last) await store.doing(last, "Thinking");
+  const [history, memory, guide, routes, tzRaw, schedules, mine] = await Promise.all([
     store.history(agent.id, rows[0].created_at, opts.historyRows ?? HISTORY_ROWS),
     store.memory(agent.userId, agent.id),
     store.guide(),
     store.routes(),
+    store.timezone(agent.userId),
+    store.schedules(agent.id),
+    store.agents(agent.userId),
   ]);
-  let crew: CrewEntry[] | undefined;
-  if (p.maker) crew = (await store.agents(agent.userId)).map((a) => ({ handle: a.profile.handle, name: a.profile.name, role: a.profile.role }));
+  const tz = validZone(tzRaw);
+  const crew: CrewEntry[] = mine.map((a) => ({ handle: a.profile.handle, name: a.profile.name, role: a.profile.role }));
 
   const photos = photoPaths(rows);
   const images = (await Promise.all(photos.map((x) => store.signMedia(x)))).filter((u): u is string => !!u);
   // A turn with a picture goes to the model that sees (spec/NATIVE.md section 6).
-  const model = images.length ? routes.vision : p.model && p.model !== "default" ? p.model : routes.text;
-  const { messages, dropped } = buildTurn({
-    guide, agent, memory, crew, history: history.filter((h) => !ids.includes(h.id)), turn: rows, images,
-    context: opts.context, reserve: opts.maxTokens ?? 2000,
+  const model = provider.model ?? (images.length ? routes.vision : p.model && p.model !== "default" ? p.model : routes.text);
+  const { messages } = buildTurn({
+    guide, agent, memory, crew, history: history.filter((h) => !real.includes(h.id)), turn: rows, images,
+    context: opts.context, reserve: opts.maxTokens ?? 2000, now, tz: tzRaw ? tz : undefined, schedules,
   });
-  if (dropped) log(`${p.name}: ${dropped} older row(s) left out`);
+  const req = { model, messages, max_tokens: opts.maxTokens ?? 2000 };
 
   let answer: Completion;
   try {
-    answer = await ask(opts, { model, messages, max_tokens: opts.maxTokens ?? 2000 });
+    answer = await ask(opts, provider, req);
+    // A search block alone: look it up, then ask again with the results.
+    const first = extract(answer.text);
+    if (first.search) {
+      const allowed = provider.web && await store.takeSearch(agent.userId);
+      if (last) await store.doing(last, `Looking up ${first.search.slice(0, 40)}`);
+      log(`${p.name}: search "${first.search}"${allowed ? "" : " (not allowed)"}`);
+      const followUp = allowed
+        ? { ...req, messages: [...messages, { role: "user" as const, content: `Search the web for: ${first.search}\n\n[yui] The results are attached. Answer the person now, with no search block.` }],
+            plugins: [{ id: "web", max_results: 5 }] }
+        : { ...req, messages: [...messages, { role: "user" as const, content: "[yui] Search isn't available right now. Answer from what you know, and say briefly that you couldn't look it up." }] };
+      answer = await ask(opts, provider, followUp);
+    }
   } catch (e: any) {
-    await store.doing(last, null);
+    if (last) await store.doing(last, null);
     if (e instanceof ModelUnavailable) {
-      // Nothing to retry the turn later on a serverless host: say so, keep the rows for the next message.
-      await store.reply(agent, `${p.name} can't reach its model right now. Send that again in a minute.`, { bridge: "status" });
+      // Nothing retries the turn later on a serverless host: say so, keep the rows for the next message.
+      if (real.length) await store.reply(agent, `${p.name} can't reach its model right now. Send that again in a minute.`, { bridge: "status" });
       log(`${p.name}: ${e.message}`);
       return { handled: false };
     }
     if (!(e instanceof ModelError)) throw e;
-    const reply = await store.reply(agent, `${p.name} couldn't answer that: ${e.message}`, { turn: ids });
-    await store.markHandled(ids);
-    return { handled: true, reply };
+    const why = own ? `${e.message} (this is your own ${own.provider} key)` : e.message;
+    await say(`${p.name} couldn't answer that: ${why}`, { turn: real });
+    if (real.length) await store.markHandled(real);
+    return { handled: true };
   }
 
-  const { text, memory: memOps, agents: agentOps } = extract(answer.text);
-  if (memOps.length) {
-    const change = applyMemory(memory, agent.id, memOps, (opts.now ?? (() => new Date().toISOString()))(), opts.newId ?? uuid);
+  const out = extract(answer.text);
+  const notes: string[] = [];
+  if (out.memory.length) {
+    const change = applyMemory(memory, agent.id, out.memory, new Date(now).toISOString(), opts.newId ?? uuid);
     if (change.put.length || change.drop.length) await store.saveMemory(agent.userId, change.put, change.drop);
   }
-  let body = text;
-  if (agentOps.length) {
-    const results = await applyAgentOps(store, agent, agentOps);
+  if (out.agents.length) {
+    const results = await applyAgentOps(store, agent, out.agents);
     for (const r of results) log(`${p.name}: ${r.ok ? r.did : r.why}`);
-    const failed = results.filter((r) => !r.ok);
-    if (failed.length) body += `\n\n(I couldn't do all of that: ${failed.map((f) => (f as { why: string }).why).join("; ")}.)`;
-    if (!body.trim()) body = results.filter((r) => r.ok).map((r) => `Done: ${(r as { did: string }).did}.`).join("\n");
+    for (const r of results) if (!r.ok) notes.push(r.why);
+    if (!out.text.trim()) out.text = results.filter((r) => r.ok).map((r) => `Done: ${(r as { did: string }).did}.`).join("\n");
   }
+  if (out.schedule.length) notes.push(...await applySchedules(store, agent, out.schedule, schedules, tzRaw ? tz : "UTC", now, log));
+  let body = out.text;
+  if (notes.length) body += `\n\n(I couldn't do all of that: ${notes.join("; ")}.)`;
   if (!body.trim() && answer.finish === "length") body = `${p.name} ran out of room before it could answer. Try a shorter message.`;
 
-  await store.doing(last, null);
-  let reply: string | undefined;
+  if (last) await store.doing(last, null);
   if (body.trim()) {
-    reply = await store.reply(agent, body.trim(), {
-      turn: ids,
+    await say(body.trim(), {
+      ...(real.length ? { turn: real } : {}),
       native: { model, ...(answer.usage ? { usage: answer.usage } : {}), ...(budget.left <= 10 ? { left: budget.left } : {}) },
+      ...(depth === 0 && !real.length && rows[0]?.body.startsWith("[yui] check-in") ? { checkin: true } : {}),
     });
   }
-  await store.markHandled(ids);
-  log(`${p.name}: ${model} answered, ${body.length} chars${memOps.length ? `, ${memOps.length} memory` : ""}${agentOps.length ? `, ${agentOps.length} agent change(s)` : ""}`);
-  return { handled: true, reply };
+  if (real.length) await store.markHandled(real);
+  log(`${p.name}: ${model} answered, ${body.length} chars`);
+
+  // Hand-offs last, so the person reads this answer first. One level only: a handed-off agent can't hand on.
+  if (depth === 0) {
+    for (const h of out.handoff.slice(0, 1)) {
+      const target = mine.find((a) => a.profile.handle === h.target);
+      if (!target || target.id === agent.id) {
+        log(`${p.name}: no agent @${h.target} to hand off to`);
+        continue;
+      }
+      await synthetic(store, target, `[yui] handoff from=${p.handle} note="${h.note.replace(/"/g, "'")}"`, opts, log, result, 1);
+    }
+  }
+  return { handled: true };
+}
+
+async function applySchedules(store: Store, agent: NativeAgent, lines: string[], current: ScheduleItem[], tz: string, now: number,
+                              log: (m: string) => void): Promise<string[]> {
+  const problems: string[] = [];
+  for (const line of lines.slice(0, 5)) {
+    const parsed = parseLine(line, tz, now);
+    if (!parsed) {
+      problems.push(`I couldn't read the check-in "${line.slice(0, 60)}"`);
+      continue;
+    }
+    if ("cancel" in parsed) {
+      const hit = current[Number(parsed.cancel.slice(1)) - 1];
+      if (hit) await store.dropSchedule(hit.id);
+      continue;
+    }
+    const at = next(parsed.rule, tz, now);
+    if (!at) {
+      problems.push(`that check-in time has passed`);
+      continue;
+    }
+    const id = await store.addSchedule({ userId: agent.userId, agentId: agent.id, note: parsed.note.slice(0, 300), rule: parsed.rule, tz,
+                                         nextAt: new Date(at).toISOString() });
+    if (!id) problems.push("you're at the most check-ins for now");
+    else log(`${agent.profile.name}: check-in set for ${new Date(at).toISOString()}`);
+  }
+  return problems;
 }
 
 /** Streams when it can; one retry when the model is busy. */
-async function ask(opts: TurnOptions, req: { model: string; messages: any[]; max_tokens: number }): Promise<Completion> {
-  const pv = opts.provider;
+async function ask(opts: TurnOptions, pv: Provider, req: Record<string, unknown>): Promise<Completion> {
   const client = new ChatClient(pv.url, { key: pv.key, headers: pv.headers, fetch: opts.fetch, idle: 120 });
   const body = { ...req, ...(pv.extra ?? {}) } as any;
   try {
@@ -169,7 +290,7 @@ export function outOfTurns(limit: number): string {
   const next = new Date();
   next.setUTCMonth(next.getUTCMonth() + 1, 1);
   const when = next.toLocaleDateString("en-US", { month: "long", day: "numeric", timeZone: "UTC" });
-  return `That's your ${limit} free turns for this month. They come back on ${when}.\n\`\`\`yui\ncard "Free turns used" body="${limit} a month on Yui. Soon you can add your own model key to keep going."\n\`\`\``;
+  return `That's your ${limit} free turns for this month. They come back on ${when}, or add your own model key in Settings to keep going now.\n\`\`\`yui\ncard "Free turns used" body="${limit} a month on Yui. Your own OpenRouter, TrustedRouter or Groq key has no limit."\n\`\`\``;
 }
 
 export function uuid(): string {

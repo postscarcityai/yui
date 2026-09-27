@@ -1,19 +1,35 @@
 // yui-native: the native Yui runtime (NATIVE-1, yuigui spec/NATIVE.md).
 //
-// Called by the database, not by people: a person's new row in a hosted
-// agent's thread fires the yui_native_wake trigger (migration
-// 20260927000000_yui_native.sql), which POSTs {agent_id, message_id} here with
-// the x-yui-native secret. The turn runs after the answer (202), so pg_net's
-// short timeout never cuts it off.
+// Two kinds of caller:
 //
-// Secrets: YUI_NATIVE_SECRET (the same string as the vault's yui_native_secret),
-// YUI_OPENROUTER_KEY (Yui's own key, with a spend ceiling set on OpenRouter).
-// The runtime itself lives in runtime/ and is copied to ../_native by
-// runtime/scripts/build.mjs.
-import { runAgent, openRouter } from "../_native/turn.ts";
+// The database, with the x-yui-native secret header:
+//   {agent_id, message_id}  a person's new row in a hosted agent's thread
+//                           (trigger yui_native_wake): run that agent's turns.
+//   {schedule_id}           a check-in is due (pg_cron, yui_native_tick).
+// The work runs after the answer (202), so pg_net's short timeout never cuts it.
+//
+// The app, with the person's Yui access token:
+//   {action: "status"}                         their key (provider, last four), models, time zone
+//   {action: "key_set", provider, key, model?, base_url?}
+//                                              checks the key with the provider, then keeps it in Vault
+//   {action: "key_remove"}
+//   {action: "timezone", tz}                   "America/New_York"
+//   {action: "agent_model", agent_id, model}   a model from the list, or "default"
+// What agents remember and their check-ins the app reads, fixes and deletes
+// through PostgREST (row level security on yui_native_memory and
+// yui_native_schedules).
+//
+// Secrets: YUI_NATIVE_SECRET (same string as the vault's yui_native_secret),
+// YUI_OPENROUTER_KEY (Yui's own key, with a spend ceiling on OpenRouter).
+// The runtime lives in runtime/ and is copied to ../_native by runtime/scripts/build.mjs.
+import { openRouter, runAgent, runScheduled, type TurnResult } from "../_native/turn.ts";
 import { SupabaseStore } from "../_native/supabase.ts";
+import { MODELS, PROVIDERS } from "../_native/models.ts";
+import { validZone } from "../_native/schedule.ts";
+import { admin, assertActive, failure, json, take, verifyAccessToken } from "../_shared/yui.ts";
 
 const env = (n: string) => Deno.env.get(n) ?? "";
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function same(a: string, b: string): boolean {
   if (!a || a.length !== b.length) return false;
@@ -37,30 +53,126 @@ async function push(messageId: string) {
   }
 }
 
-Deno.serve(async (req) => {
-  if (req.method !== "POST") return new Response("method not allowed", { status: 405 });
-  if (!same(req.headers.get("x-yui-native") ?? "", env("YUI_NATIVE_SECRET"))) return new Response("unauthorized", { status: 401 });
-  let body: { agent_id?: string };
-  try {
-    body = await req.json();
-  } catch {
-    return new Response("invalid request", { status: 400 });
-  }
-  const agentId = body.agent_id;
-  if (typeof agentId !== "string" || !/^[0-9a-f-]{36}$/i.test(agentId)) return new Response("invalid agent", { status: 400 });
-  const key = env("YUI_OPENROUTER_KEY");
-  if (!key) return new Response("no model key", { status: 503 });
-
-  const store = new SupabaseStore(env("SUPABASE_URL"), env("SUPABASE_SERVICE_ROLE_KEY"));
-  const work = runAgent(store, agentId, {
-    provider: openRouter(key),
-    log: (m) => console.log(`yui-native ${agentId.slice(0, 8)}: ${m}`),
-  }).then(async (r) => {
-    for (const id of r.replies) await push(id);
-  }).catch((e) => console.error("yui-native", agentId.slice(0, 8), e));
+function later(work: Promise<unknown>) {
   // deno-lint-ignore no-explicit-any
   const rt = (globalThis as any).EdgeRuntime;
   if (rt?.waitUntil) rt.waitUntil(work);
-  else await work;
-  return new Response(JSON.stringify({ ok: true }), { status: 202, headers: { "content-type": "application/json" } });
+  return rt?.waitUntil ? Promise.resolve() : work;
+}
+
+async function fromDatabase(body: { agent_id?: string; schedule_id?: string }): Promise<Response> {
+  const key = env("YUI_OPENROUTER_KEY");
+  const store = new SupabaseStore(env("SUPABASE_URL"), env("SUPABASE_SERVICE_ROLE_KEY"));
+  const id = body.schedule_id ?? body.agent_id ?? "";
+  if (!UUID.test(id)) return new Response("invalid request", { status: 400 });
+  const opts = { provider: openRouter(key), log: (m: string) => console.log(`yui-native ${id.slice(0, 8)}: ${m}`) };
+  const run: Promise<TurnResult> = body.schedule_id ? runScheduled(store, id, opts) : runAgent(store, id, opts);
+  await later(run.then(async (r) => {
+    for (const m of r.replies) await push(m);
+  }).catch((e) => console.error("yui-native", id.slice(0, 8), e)));
+  return json({ ok: true }, 202);
+}
+
+// deno-lint-ignore no-explicit-any
+type Body = Record<string, any>;
+
+/** Asks the provider for its models with the key: a bad key or a wrong address says so before it is kept. */
+async function checkKey(baseUrl: string, key: string, model?: string): Promise<string | null> {
+  try {
+    const r = await fetch(`${baseUrl}/models`, { headers: { authorization: `Bearer ${key}` }, signal: AbortSignal.timeout(10_000) });
+    if (r.status === 401 || r.status === 403) return "the provider turned this key down";
+    if (!r.ok) return `the provider answered ${r.status}`;
+    // deno-lint-ignore no-explicit-any
+    const d: any = await r.json().catch(() => null);
+    const ids: string[] = (d?.data ?? []).map((m: { id?: string }) => String(m.id ?? ""));
+    if (model && ids.length && !ids.includes(model)) return `this provider has no model called ${model}`;
+    return null;
+  } catch {
+    return "couldn't reach the provider";
+  }
+}
+
+async function fromApp(req: Request, b: Body): Promise<Response> {
+  let userId: string;
+  try {
+    userId = await verifyAccessToken(req);
+  } catch {
+    return json({ error: "unauthorized" }, 401);
+  }
+  const db = admin();
+  await assertActive(db, userId);
+  await take(db, `agents:u:${userId}`, "agents_api");
+  switch (b.action) {
+    case "status": {
+      const [{ data: key }, { data: user }, { data: usage }] = await Promise.all([
+        db.from("yui_native_keys").select("provider, model, hint, base_url").eq("user_id", userId).maybeSingle(),
+        db.from("yui_users").select("timezone").eq("id", userId).maybeSingle(),
+        db.from("yui_native_usage").select("turns").eq("user_id", userId).eq("month", new Date().toISOString().slice(0, 7) + "-01").maybeSingle(),
+      ]);
+      const { data: lim } = await db.from("yui_limits").select("value").eq("name", "native_free_turns").maybeSingle();
+      return json({ key: key ?? null, providers: PROVIDERS, models: MODELS, timezone: user?.timezone ?? null,
+                    turns: { used: usage?.turns ?? 0, limit: Number(lim?.value ?? 100) } });
+    }
+    case "key_set": {
+      const p = PROVIDERS.find((x) => x.id === b.provider);
+      if (!p) return json({ error: "unknown_provider" }, 400);
+      const key = typeof b.key === "string" ? b.key.trim() : "";
+      if (key.length < 8 || key.length > 400 || /\s/.test(key)) return json({ error: "invalid_key" }, 400);
+      const baseUrl = p.id === "custom" ? String(b.base_url ?? "").trim().replace(/\/+$/, "").replace(/\/chat\/completions$/, "") : p.url;
+      if (!/^https:\/\/[A-Za-z0-9.-]+(:\d+)?(\/[A-Za-z0-9._\/-]*)?$/.test(baseUrl) || /^https:\/\/(localhost|[\d.]+|\[)/i.test(baseUrl)) {
+        return json({ error: "invalid_base_url" }, 400);
+      }
+      const model = typeof b.model === "string" && b.model.trim() ? b.model.trim().slice(0, 120) : null;
+      if (p.needsModel && !model) return json({ error: "model_required" }, 400);
+      const problem = await checkKey(baseUrl, key, model ?? undefined);
+      if (problem) return json({ error: "key_check_failed", message: problem }, 400);
+      const { error } = await db.rpc("yui_native_key_set", { uid: userId, prov: p.id, url: baseUrl, mdl: model, secret: key });
+      if (error) throw error;
+      return json({ ok: true, key: { provider: p.id, model, hint: key.slice(-4), base_url: baseUrl } });
+    }
+    case "key_remove": {
+      const { error } = await db.rpc("yui_native_key_remove", { uid: userId });
+      if (error) throw error;
+      return json({ ok: true });
+    }
+    case "timezone": {
+      const tz = typeof b.tz === "string" ? b.tz : "";
+      if (!tz || tz.length > 64 || validZone(tz) !== tz) return json({ error: "invalid_timezone" }, 400);
+      const { error } = await db.from("yui_users").update({ timezone: tz }).eq("id", userId);
+      if (error) throw error;
+      return json({ ok: true });
+    }
+    case "agent_model": {
+      if (typeof b.agent_id !== "string" || !UUID.test(b.agent_id)) return json({ error: "invalid_agent" }, 400);
+      if (!MODELS.some((m) => m.id === b.model)) return json({ error: "unknown_model" }, 400);
+      const { data: row } = await db.from("yui_native_profiles").select("profile").eq("agent_id", b.agent_id).eq("user_id", userId).maybeSingle();
+      if (!row) return json({ error: "not_found" }, 404);
+      const { error } = await db.from("yui_native_profiles").update({ profile: { ...row.profile, model: b.model }, updated_at: new Date().toISOString() })
+        .eq("agent_id", b.agent_id).eq("user_id", userId);
+      if (error) throw error;
+      return json({ ok: true, model: b.model });
+    }
+    default:
+      return json({ error: "unknown_action" }, 400);
+  }
+}
+
+Deno.serve(async (req) => {
+  if (req.method !== "POST") return json({ error: "method_not_allowed" }, 405);
+  let body: Body;
+  try {
+    body = await req.json();
+  } catch {
+    return json({ error: "invalid_request" }, 400);
+  }
+  try {
+    const secret = req.headers.get("x-yui-native");
+    if (secret !== null) {
+      if (!same(secret, env("YUI_NATIVE_SECRET"))) return json({ error: "unauthorized" }, 401);
+      return await fromDatabase(body);
+    }
+    return await fromApp(req, body);
+  } catch (e) {
+    return failure(`yui-native ${body.action ?? "wake"}`, e);
+  }
 });

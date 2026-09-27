@@ -7,11 +7,12 @@ import { alternate, toMessage, tokens } from "./thread.ts";
 import type { ChatMessage } from "./openai.ts";
 import { memoryPrompt } from "./memory.ts";
 import { shelf } from "./profiles.ts";
-import type { MemoryItem, NativeAgent, Profile, Row } from "./types.ts";
+import { describe, nowLine } from "./schedule.ts";
+import type { MemoryItem, NativeAgent, Profile, Row, ScheduleItem } from "./types.ts";
 
 export const RULES = `## You are a native Yui agent
 
-You live inside the person's Yui. Nothing is installed anywhere; you have no shell, no files, no email and no web access yet. You can draw every Yui screen, and you remember.
+You live inside the person's Yui. Nothing is installed anywhere; you have no shell, no files and no email. You can draw every Yui screen, remember, check in later, look things up, and pass the person to another agent on their Yui.
 
 ### Remembering
 When you learn something worth keeping, add a \`remember\` block at the end of your reply. The person never sees it.
@@ -26,6 +27,29 @@ forget me allergies
 - \`note:\` is yours alone: what you are working on together, what worked, what to do next time.
 - \`forget n2\` drops your note [n2]; \`forget me key\` drops a fact. Forget at once when they ask you to.
 - Keep each line short. Never store passwords, card numbers, keys or anything they asked you not to keep.`;
+
+export const TOOL_RULES = `### Checking in later
+To come back at a time (a workout check-in, a lunch question, a practice reminder), add a \`schedule\` block. Times are the person's local time; only set one when they want it.
+\`\`\`schedule
+every mon,wed,fri 07:00 "Check in about today's workout"
+every day 12:30 "Ask what they're having for lunch"
+once 2026-09-28 18:00 "Remind them to prep tomorrow's meals"
+in 2h "Ask how the run went"
+cancel s1
+\`\`\`
+\`every\` takes day, weekday, weekend or days like mon,thu. When it fires you get a line \`[yui] check-in s1 "note"\`: open with the check-in itself, short, a screen if it helps.
+
+### Looking things up
+When you need something current or a fact you are not sure of, write only a \`search\` block with one query, and nothing else; you get the results and answer then. At most one search a turn.
+\`\`\`search
+lo-fi hip hop drum pattern 80 bpm
+\`\`\`
+
+### Handing off
+When another agent on their Yui fits the job better, say so in one line and hand it over with what they need to know. That agent opens its own thread with it.
+\`\`\`handoff
+gouda "Wants a lo-fi beat at 80 bpm to practice bass over"
+\`\`\``;
 
 export const MAKER_RULES = `### Making agents
 You can make, change and remove the agents on this person's Yui with an \`agents\` block at the end of your reply. The person never sees it; tell them in words what you did.
@@ -59,31 +83,43 @@ export interface PromptInput {
   history: Row[];
   turn: Row[];
   images?: string[]; // signed URLs of photos in this turn
+  now?: number; // ms; the prompt says the time in the person's zone
+  tz?: string;
+  schedules?: ScheduleItem[];
   context?: number; // tokens the model takes (default 32768)
   reserve?: number; // tokens kept for the answer (default 2048)
 }
 
-export function systemPrompt(p: Profile, memory: MemoryItem[], agentId: string, crew?: CrewEntry[]): string {
-  const parts = [RULES];
+export function systemPrompt(p: Profile, memory: MemoryItem[], agentId: string, crew?: CrewEntry[],
+                             extra: { now?: number; tz?: string; schedules?: ScheduleItem[] } = {}): string {
+  const parts = [RULES, TOOL_RULES];
   if (p.maker) parts.push(MAKER_RULES);
   if (p.blank) parts.push(SELF_RULES);
   if (p.careful) parts.push(CAREFUL_RULES);
   parts.push(`## Who you are: ${p.name}${p.role ? `, ${p.role.toLowerCase()}` : ""}\n\n${p.soul}`);
   if (p.favorites.length) parts.push(`Screens you reach for first: ${p.favorites.map((f) => `\`${f}\``).join(", ")}. Use any other screen when it fits better.`);
-  if (p.maker && crew) {
-    const lines = ["## This person's crew", ...crew.map((c) => `- ${c.name} (@${c.handle}): ${c.role}`)];
-    const have = new Set(crew.map((c) => c.handle));
-    const extra = shelf().filter((s) => !have.has(s.handle));
-    if (extra.length) lines.push("On the shelf, not added yet: " + extra.map((s) => `${s.handle} (${s.role.toLowerCase()})`).join(", "));
+  if (crew) {
+    const lines = ["## This person's crew", ...crew.map((c) => `- ${c.name} (@${c.handle}): ${c.role || "custom"}`)];
+    if (p.maker) {
+      const have = new Set(crew.map((c) => c.handle));
+      const more = shelf().filter((s) => !have.has(s.handle));
+      if (more.length) lines.push("On the shelf, not added yet: " + more.map((s) => `${s.handle} (${s.role.toLowerCase()})`).join(", "));
+    }
     parts.push(lines.join("\n"));
   }
   parts.push(memoryPrompt(memory, agentId));
+  const tz = extra.tz ?? "UTC";
+  const when = [`## Now\n${nowLine(extra.now ?? Date.now(), tz)}${extra.tz ? "" : ". Their time zone is not known yet; UTC until the phone says."}`];
+  const sch = extra.schedules ?? [];
+  when.push(sch.length ? "Your check-ins:\n" + sch.map((x, i) => `- [s${i + 1}] ${describe(x.rule, x.tz)}: ${x.note}`).join("\n") : "Your check-ins: none.");
+  parts.push(when.join("\n"));
   return parts.join("\n\n");
 }
 
 /** The guide, then everything above, then the thread. */
 export function buildTurn(input: PromptInput): { messages: ChatMessage[]; dropped: number } {
-  const system = `${input.guide.trim()}\n\n${systemPrompt(input.agent.profile, input.memory, input.agent.id, input.crew)}`;
+  const system = `${input.guide.trim()}\n\n${systemPrompt(input.agent.profile, input.memory, input.agent.id, input.crew,
+                                                           { now: input.now, tz: input.tz, schedules: input.schedules })}`;
   const now = alternate(input.turn.map(toMessage).filter((m): m is ChatMessage => !!m));
   let budget = (input.context ?? 32768) - (input.reserve ?? 2048) - tokens(system)
     - now.reduce((n, m) => n + tokens(String(m.content)), 0) - (input.images?.length ?? 0) * 1200;

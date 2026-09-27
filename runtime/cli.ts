@@ -18,7 +18,7 @@ import { parseArgs } from "node:util";
 import { fileURLToPath } from "node:url";
 import { LocalStore, type LocalData } from "./src/store.ts";
 import { crew, starters, checkProfile } from "./src/profiles.ts";
-import { runAgent, openRouter, type Provider } from "./src/turn.ts";
+import { runAgent, runScheduled, openRouter, type Provider } from "./src/turn.ts";
 import { aboutOf, notesOf } from "./src/memory.ts";
 import { extract } from "./src/directives.ts";
 import type { NativeAgent } from "./src/types.ts";
@@ -70,6 +70,8 @@ function open(): LocalStore {
     writeFileSync(tmp, JSON.stringify(store.data, null, 1), { mode: 0o600 });
     renameSync(tmp, opt.state!);
   };
+  // Check-ins run in your own time zone.
+  store.data.timezones = { ...(store.data.timezones ?? {}), [USER]: Intl.DateTimeFormat().resolvedOptions().timeZone };
   if (opt.model || opt["vision-model"]) {
     store.data.routes = { text: opt.model ?? "z-ai/glm-5.2", vision: opt["vision-model"] ?? opt.model ?? "z-ai/glm-5v-turbo" };
   }
@@ -94,6 +96,17 @@ async function pick(store: LocalStore, handle: string): Promise<NativeAgent> {
     process.exit(2);
   }
   return a;
+}
+
+/** Check-ins that came due while you were away or typing. */
+async function dueCheckins(store: LocalStore, pv: Provider) {
+  for (const s of store.due(Date.now())) {
+    const before = new Set(store.data.rows.map((r) => r.id));
+    await runScheduled(store, s.id, { provider: pv, log: opt.verbose ? (m) => console.error(`  · ${m}`) : undefined });
+    for (const row of store.data.rows.filter((r) => !before.has(r.id) && r.sender === "agent")) {
+      console.log(`\n${(await store.agent(row.agent_id))?.profile.name ?? "Agent"} (check-in): ${row.body}\n`);
+    }
+  }
 }
 
 /** Runs one message through the agent and prints what came back. */
@@ -144,6 +157,8 @@ async function main() {
   if (first.length === 1) console.log(`\n${agent.profile.name}: ${first[0].body}\n`);
   console.log(`Talking to ${agent.profile.name}. /agents, /use <handle>, /memory, /quit`);
   const rl = createInterface({ input: process.stdin, output: process.stdout });
+  const clock = setInterval(() => dueCheckins(store, pv).catch((e) => console.error(e.message)), 30_000);
+  await dueCheckins(store, pv);
   for (;;) {
     const line = (await rl.question("you> ")).trim();
     if (!line) continue;
@@ -162,6 +177,7 @@ async function main() {
     await turn(store, agent, line, pv);
     agent = (await store.agent(agent.id)) ?? agent; // a blank agent may have become someone
   }
+  clearInterval(clock);
   rl.close();
 }
 

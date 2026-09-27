@@ -49,6 +49,25 @@ export interface MemoryItem {
   updatedAt: string;
 }
 
+/** A check-in an agent set (yui_native_schedules). `rule` is schedule.ts's Rule. */
+export interface ScheduleItem {
+  id: string;
+  userId: string;
+  agentId: string;
+  note: string;
+  rule: { every: string; at: string } | { once: string };
+  tz: string;
+  nextAt: string | null;
+}
+
+/** A person's own model key (yui_native_keys), when they added one. */
+export interface OwnKey {
+  provider: "openrouter" | "trustedrouter" | "groq" | "custom";
+  baseUrl: string;
+  model: string | null;
+  key: string;
+}
+
 /** Which model serves which kind of turn (yui_native_models). */
 export interface Routes {
   text: string;

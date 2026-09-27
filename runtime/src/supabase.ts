@@ -3,7 +3,7 @@
 // PostgREST and Storage with the service key, so it runs in the edge function
 // and, for a check, from a laptop. Never ship the service key to a client.
 import type { Store } from "./store.ts";
-import { DEFAULT_ROUTES, type MemoryItem, type NativeAgent, type Profile, type Routes, type Row } from "./types.ts";
+import { DEFAULT_ROUTES, type MemoryItem, type NativeAgent, type OwnKey, type Profile, type Routes, type Row, type ScheduleItem } from "./types.ts";
 
 export class SupabaseStore implements Store {
   private url: string;
@@ -167,5 +167,55 @@ export class SupabaseStore implements Store {
 
   async unlock(agentId: string) {
     await this.rest("DELETE", `yui_native_locks?agent_id=eq.${agentId}`, undefined, "return=minimal");
+  }
+
+  async timezone(userId: string) {
+    const [u] = await this.rest("GET", `yui_users?select=timezone&id=eq.${userId}`);
+    return u?.timezone ?? null;
+  }
+
+  private toSchedule(x: any): ScheduleItem {
+    return { id: x.id, userId: x.user_id, agentId: x.agent_id, note: x.note, rule: x.rule, tz: x.tz, nextAt: x.next_at };
+  }
+
+  async schedules(agentId: string) {
+    const rows = await this.rest("GET", `yui_native_schedules?select=*&agent_id=eq.${agentId}&order=created_at,id`);
+    return rows.map((x: any) => this.toSchedule(x));
+  }
+
+  async schedule(id: string) {
+    const [x] = await this.rest("GET", `yui_native_schedules?select=*&id=eq.${id}`);
+    return x ? this.toSchedule(x) : null;
+  }
+
+  async addSchedule(item: Omit<ScheduleItem, "id">) {
+    const r = await this.fetch(`${this.url}/rest/v1/yui_native_schedules?select=id&user_id=eq.${item.userId}`, {
+      method: "HEAD", headers: { apikey: this.key, authorization: `Bearer ${this.key}`, prefer: "count=exact" },
+    });
+    const count = Number((r.headers.get("content-range") ?? "*/0").split("/")[1]);
+    const [cap] = await this.rest("GET", "yui_limits?select=value&name=eq.native_schedules_per_user");
+    if (count >= Number(cap?.value ?? 30)) return null;
+    const [x] = await this.rest("POST", "yui_native_schedules", {
+      user_id: item.userId, agent_id: item.agentId, note: item.note, rule: item.rule, tz: item.tz, next_at: item.nextAt,
+    }, "return=representation");
+    return x?.id ?? null;
+  }
+
+  async setScheduleNext(id: string, nextAt: string | null) {
+    await this.rest("PATCH", `yui_native_schedules?id=eq.${id}`, { next_at: nextAt }, "return=minimal");
+  }
+
+  async dropSchedule(id: string) {
+    await this.rest("DELETE", `yui_native_schedules?id=eq.${id}`, undefined, "return=minimal");
+  }
+
+  async takeSearch(userId: string) {
+    return (await this.rpc("yui_native_take_search", { uid: userId })) === true;
+  }
+
+  async ownKey(userId: string): Promise<OwnKey | null> {
+    const r = await this.rpc("yui_native_key_get", { uid: userId });
+    const k = Array.isArray(r) ? r[0] : r;
+    return k?.secret ? { provider: k.provider, baseUrl: k.base_url, model: k.model ?? null, key: k.secret } : null;
   }
 }

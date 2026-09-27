@@ -4,7 +4,7 @@
 //   - LocalStore (below): one JSON object, for `node runtime/cli.ts` and tests.
 // Everything a turn needs goes through here, so the turn itself never knows
 // where it runs.
-import type { MemoryItem, NativeAgent, Profile, Routes, Row } from "./types.ts";
+import type { MemoryItem, NativeAgent, OwnKey, Profile, Routes, Row, ScheduleItem } from "./types.ts";
 import { DEFAULT_ROUTES } from "./types.ts";
 
 export interface Store {
@@ -32,6 +32,19 @@ export interface Store {
   /** One turn at a time per agent. */
   lock(agentId: string, seconds: number): Promise<boolean>;
   unlock(agentId: string): Promise<void>;
+  /** The person's time zone (IANA), or null when the phone has not said. */
+  timezone(userId: string): Promise<string | null>;
+  /** This agent's check-ins, oldest first (the prompt numbers them s1, s2...). */
+  schedules(agentId: string): Promise<ScheduleItem[]>;
+  schedule(id: string): Promise<ScheduleItem | null>;
+  /** A new check-in; null when the person is at the cap. */
+  addSchedule(item: Omit<ScheduleItem, "id">): Promise<string | null>;
+  setScheduleNext(id: string, nextAt: string | null): Promise<void>;
+  dropSchedule(id: string): Promise<void>;
+  /** Takes one web search from today's allowance. */
+  takeSearch(userId: string): Promise<boolean>;
+  /** The person's own model key, when they added one. */
+  ownKey(userId: string): Promise<OwnKey | null>;
 }
 
 /** Everything in one plain object: `JSON.stringify(store.data)` saves it. */
@@ -41,12 +54,18 @@ export interface LocalData {
   memory: MemoryItem[];
   rows: (Row & { agent_id: string; delivered_at?: string | null; handled_at?: string | null; doing?: any })[];
   routes?: Routes;
+  schedules?: ScheduleItem[];
+  timezones?: Record<string, string>;
+  keys?: Record<string, OwnKey>;
+  searches?: Record<string, number>; // "<user>:<day>" -> count
 }
 
 export class LocalStore implements Store {
   data: LocalData;
   guideText: string;
   freeTurns: number;
+  maxSchedules = 30;
+  maxSearches = 20;
   onChange?: () => void;
   private locks = new Set<string>();
   private n = 0;
@@ -153,6 +172,47 @@ export class LocalStore implements Store {
   }
   async unlock(agentId: string) {
     this.locks.delete(agentId);
+  }
+
+  async timezone(userId: string) {
+    return this.data.timezones?.[userId] ?? null;
+  }
+  async schedules(agentId: string) {
+    return (this.data.schedules ?? []).filter((x) => x.agentId === agentId);
+  }
+  async schedule(id: string) {
+    return (this.data.schedules ?? []).find((x) => x.id === id) ?? null;
+  }
+  async addSchedule(item: Omit<ScheduleItem, "id">) {
+    const all = (this.data.schedules ??= []);
+    if (all.filter((x) => x.userId === item.userId).length >= this.maxSchedules) return null;
+    const id = this.id("sched");
+    all.push({ id, ...item });
+    this.changed();
+    return id;
+  }
+  async setScheduleNext(id: string, nextAt: string | null) {
+    const x = (this.data.schedules ?? []).find((s) => s.id === id);
+    if (x) x.nextAt = nextAt;
+    this.changed();
+  }
+  async dropSchedule(id: string) {
+    this.data.schedules = (this.data.schedules ?? []).filter((x) => x.id !== id);
+    this.changed();
+  }
+  async takeSearch(userId: string) {
+    const k = `${userId}:${new Date().toISOString().slice(0, 10)}`;
+    const s = (this.data.searches ??= {});
+    if ((s[k] ?? 0) >= this.maxSearches) return false;
+    s[k] = (s[k] ?? 0) + 1;
+    return true;
+  }
+  async ownKey(userId: string) {
+    return this.data.keys?.[userId] ?? null;
+  }
+  /** Due check-ins, for the CLI's clock. */
+  due(now: number): ScheduleItem[] {
+    return (this.data.schedules ?? []).filter((x) => x.nextAt && Date.parse(x.nextAt) <= now);
   }
 
   /** A person's message into an agent's thread (the CLI and the tests). */

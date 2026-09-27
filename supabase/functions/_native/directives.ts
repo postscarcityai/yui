@@ -18,6 +18,11 @@
 //   remove penny
 //   self name="Luna" color=butter favorites=list,card soul="You are Luna..."
 //   ```
+//
+//   ```schedule                ```search                   ```handoff
+//   every mon,wed 07:00 "..."   lo-fi drum patterns 80 bpm  gouda "Wants a lo-fi beat, plays bass"
+//   cancel s1                   ```                         ```
+//   ```
 
 export type MemoryOp =
   | { op: "note"; body: string }
@@ -32,27 +37,44 @@ export interface AgentOp {
   args: Record<string, string>;
 }
 
-const FENCE = /```(remember|agents)[ \t]*\n([\s\S]*?)(?:\n```|$)/g;
+export interface Handoff { target: string; note: string }
+
+export interface Extracted {
+  text: string;
+  memory: MemoryOp[];
+  agents: AgentOp[];
+  schedule: string[]; // raw lines, parsed with the person's time zone (schedule.ts)
+  search: string | null; // one query per turn
+  handoff: Handoff[];
+}
+
+const FENCE = /```(remember|agents|schedule|search|handoff)[ \t]*\n([\s\S]*?)(?:\n```|$)/g;
 
 /** Splits a reply into what the person sees and what the runtime does. */
-export function extract(reply: string): { text: string; memory: MemoryOp[]; agents: AgentOp[] } {
-  const memory: MemoryOp[] = [];
-  const agents: AgentOp[] = [];
-  const text = reply.replace(FENCE, (_m, kind: string, body: string) => {
+export function extract(reply: string): Extracted {
+  const out: Extracted = { text: "", memory: [], agents: [], schedule: [], search: null, handoff: [] };
+  out.text = reply.replace(FENCE, (_m, kind: string, body: string) => {
     for (const line of body.split("\n")) {
       const l = line.trim();
       if (!l || l.startsWith("#")) continue;
       if (kind === "remember") {
         const op = memoryLine(l);
-        if (op) memory.push(op);
-      } else {
+        if (op) out.memory.push(op);
+      } else if (kind === "agents") {
         const op = agentLine(l);
-        if (op) agents.push(op);
+        if (op) out.agents.push(op);
+      } else if (kind === "schedule") {
+        out.schedule.push(l);
+      } else if (kind === "search") {
+        out.search ??= l.slice(0, 200);
+      } else {
+        const h = l.match(/^@?([a-z0-9-]+)\s+"((?:[^"\\]|\\.)*)"$/i);
+        if (h) out.handoff.push({ target: h[1].toLowerCase(), note: h[2].replace(/\\(.)/g, "$1").slice(0, 500) });
       }
     }
     return "";
-  });
-  return { text: text.replace(/\n{3,}/g, "\n\n").trim(), memory, agents };
+  }).replace(/\n{3,}/g, "\n\n").trim();
+  return out;
 }
 
 export function memoryLine(l: string): MemoryOp | null {

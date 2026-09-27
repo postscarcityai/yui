@@ -1,0 +1,133 @@
+// Check-ins, search, hand-offs and a person's own key.
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { next, parseLine, zoned } from "../src/schedule.ts";
+import { runAgent, runScheduled } from "../src/turn.ts";
+import { fakeModel, freshYui, lastUser, provider, system, USER } from "./helpers.ts";
+
+const NY = "America/New_York";
+
+test("wall-clock times in a zone, across a daylight-saving change", () => {
+  assert.equal(new Date(zoned(2026, 6, 1, 7, 0, NY)).toISOString(), "2026-07-01T11:00:00.000Z"); // EDT
+  assert.equal(new Date(zoned(2026, 11, 1, 7, 0, NY)).toISOString(), "2026-12-01T12:00:00.000Z"); // EST
+  // Friday Oct 30 2026, 23:00 NY; next "every mon 07:00" is Mon Nov 2, after the clocks go back.
+  const after = zoned(2026, 9, 30, 23, 0, NY);
+  assert.equal(new Date(next({ every: "mon", at: "07:00" }, NY, after)!).toISOString(), "2026-11-02T12:00:00.000Z");
+});
+
+test("check-in lines", () => {
+  const now = Date.parse("2026-09-27T13:00:00Z"); // 9:00 in New York, a Sunday
+  const a = parseLine('every weekday 07:30 "Workout check-in"', NY, now)!;
+  assert.deepEqual(a, { rule: { every: "mon,tue,wed,thu,fri", at: "07:30" }, note: "Workout check-in" });
+  assert.equal(new Date(next((a as any).rule, NY, now)!).toISOString(), "2026-09-28T11:30:00.000Z");
+  assert.deepEqual(parseLine('in 2h "How was the run?"', NY, now), { rule: { once: "2026-09-27T15:00:00.000Z" }, note: "How was the run?" });
+  assert.deepEqual(parseLine('once 2026-09-28 18:00 "Prep meals"', NY, now), { rule: { once: "2026-09-28T22:00:00.000Z" }, note: "Prep meals" });
+  assert.equal(parseLine('once 2026-09-01 18:00 "past"', NY, now), null);
+  assert.equal(parseLine('every day 25:00 "bad"', NY, now), null);
+  assert.equal(parseLine('in 400d "too far"', NY, now), null);
+  assert.deepEqual(parseLine("cancel s2", NY, now), { cancel: "s2" });
+});
+
+test("an agent sets a check-in in the person's zone; it fires and opens the thread", async () => {
+  const { store, byHandle } = await freshYui();
+  store.data.timezones = { [USER]: NY };
+  const arnold = await byHandle("arnold");
+  const now = Date.parse("2026-09-27T13:00:00Z");
+  const set = fakeModel(() => 'Locked in.\n```schedule\nevery mon,wed,fri 07:00 "Check in about today\'s workout"\n```');
+  store.say(arnold.id, "check in with me mon wed fri at 7");
+  await runAgent(store, arnold.id, { provider, fetch: set.fetch, now: () => now });
+  assert.match(system(set.calls[0]), /Sunday, September 27, 2026[\s\S]*America\/New_York/);
+  const [s] = await store.schedules(arnold.id);
+  assert.equal(s.nextAt, "2026-09-28T11:00:00.000Z");
+  assert.equal(s.tz, NY);
+
+  const fire = fakeModel(() => "Morning! Legs today.\n```yui\ntimer 40/20x8 Tabata\n```");
+  const at = Date.parse(s.nextAt!) + 1000;
+  const r = await runScheduled(store, s.id, { provider, fetch: fire.fetch, now: () => at });
+  assert.equal(r.replies.length, 1);
+  assert.match(String(lastUser(fire.calls[0]).content), /\[yui\] check-in s1 "Check in about today's workout"/);
+  assert.match(system(fire.calls[0]), /\[s1\] every mon,wed,fri 07:00/);
+  const reply = store.data.rows.find((x) => x.id === r.replies[0])!;
+  assert.equal(reply.meta.checkin, true);
+  assert.equal((await store.schedule(s.id))!.nextAt, "2026-09-30T11:00:00.000Z", "the next one is Wednesday");
+  assert.ok(!store.data.rows.some((x) => x.sender === "user" && x.body.includes("check-in")), "nothing is written as the person");
+});
+
+test("a one-time check-in is gone once it fires; cancel removes one", async () => {
+  const { store, byHandle } = await freshYui();
+  const basil = await byHandle("basil");
+  const now = Date.parse("2026-09-27T13:00:00Z");
+  store.say(basil.id, "remind me in an hour, and every day at noon");
+  await runAgent(store, basil.id, { provider, now: () => now,
+    fetch: fakeModel(() => 'Sure.\n```schedule\nin 1h "Drink water"\nevery day 12:00 "Lunch?"\n```').fetch });
+  const [once, daily] = await store.schedules(basil.id);
+  await runScheduled(store, once.id, { provider, fetch: fakeModel(() => "Water time.").fetch, now: () => now + 3_700_000 });
+  assert.equal(await store.schedule(once.id), null);
+  store.say(basil.id, "stop the lunch one");
+  await runAgent(store, basil.id, { provider, now: () => now, fetch: fakeModel(() => "Done.\n```schedule\ncancel s1\n```").fetch });
+  assert.equal(await store.schedule(daily.id), null);
+});
+
+test("search: one query, then the answer with results, within the daily allowance", async () => {
+  const { store, byHandle } = await freshYui();
+  store.maxSearches = 1;
+  const gouda = await byHandle("gouda");
+  const m = fakeModel((c) => c.body.plugins ? "Here's a classic boom bap pattern." : "```search\nboom bap drum pattern\n```");
+  store.say(gouda.id, "what's a boom bap pattern?");
+  await runAgent(store, gouda.id, { provider: { ...provider, web: true }, fetch: m.fetch });
+  assert.equal(m.calls.length, 2);
+  assert.deepEqual(m.calls[1].body.plugins, [{ id: "web", max_results: 5 }]);
+  assert.match(String(lastUser(m.calls[1]).content), /^Search the web for: boom bap drum pattern/);
+  assert.equal(store.data.rows.filter((r) => r.agent_id === gouda.id).pop()!.body, "Here's a classic boom bap pattern.");
+  // Out of searches today: answered from what it knows.
+  store.say(gouda.id, "and trap?");
+  const m2 = fakeModel((c) => /isn't available/.test(String(lastUser(c).content)) ? "From memory: trap hats roll." : "```search\ntrap drums\n```");
+  await runAgent(store, gouda.id, { provider: { ...provider, web: true }, fetch: m2.fetch });
+  assert.equal(m2.calls[1].body.plugins, undefined);
+  assert.match(store.data.rows.filter((r) => r.agent_id === gouda.id).pop()!.body, /From memory/);
+});
+
+test("hand-off: Yui passes the person to Gouda, who opens its own thread with the context", async () => {
+  const { store, byHandle } = await freshYui();
+  const yui = await byHandle("yui");
+  const gouda = await byHandle("gouda");
+  const m = fakeModel((c) => /Who you are: Yui/.test(system(c))
+    ? 'Gouda is your musician; I passed it on.\n```handoff\ngouda "Wants a lo-fi beat at 80 bpm, plays bass"\n```'
+    : 'Yui says lo-fi at 80. Here you go.\n```yui\nloop 80 "Lo-fi" p=x...x.x.|....|...\n```\n```handoff\nyui "loop back"\n```');
+  store.say(yui.id, "I want to make a beat");
+  const r = await runAgent(store, yui.id, { provider, fetch: m.fetch });
+  assert.equal(r.replies.length, 2);
+  assert.match(String(lastUser(m.calls[1]).content), /\[yui\] handoff from=yui note="Wants a lo-fi beat at 80 bpm, plays bass"/);
+  const g = store.data.rows.filter((x) => x.agent_id === gouda.id && x.sender === "agent").pop()!;
+  assert.match(g.body, /Yui says lo-fi at 80/);
+  assert.equal(m.calls.length, 2, "a handed-off agent can't hand on");
+});
+
+test("a person's own key: their provider, their model, no monthly cap", async () => {
+  const { store, byHandle } = await freshYui({ freeTurns: 0 });
+  store.data.keys = { [USER]: { provider: "groq", baseUrl: "https://api.groq.test/openai/v1", model: "qwen/qwen3.8-27b", key: "gsk-own" } };
+  const penny = await byHandle("penny");
+  const seen: string[] = [];
+  const m = fakeModel(() => "Your week, sorted.");
+  const spy = (async (url: string, init: any) => {
+    seen.push(`${url} ${init.headers.authorization}`);
+    return m.fetch(url, init);
+  }) as unknown as typeof fetch;
+  store.say(penny.id, "plan my week");
+  await runAgent(store, penny.id, { provider, fetch: spy });
+  assert.equal(m.calls[0].model, "qwen/qwen3.8-27b");
+  assert.deepEqual(seen, ["https://api.groq.test/openai/v1/chat/completions Bearer gsk-own"]);
+  assert.equal(m.calls[0].body.provider, undefined, "OpenRouter's rules only go to OpenRouter");
+  assert.equal(store.data.rows.filter((r) => r.agent_id === penny.id).pop()!.body, "Your week, sorted.");
+});
+
+test("an own OpenRouter key keeps Yui's routes", async () => {
+  const { store, byHandle } = await freshYui();
+  store.data.keys = { [USER]: { provider: "openrouter", baseUrl: "https://openrouter.ai/api/v1", model: null, key: "sk-own" } };
+  const basil = await byHandle("basil");
+  const m = fakeModel(() => "ok");
+  store.say(basil.id, "[yui] c1 camera photo=https://img.test/p.jpg", "event");
+  await runAgent(store, basil.id, { provider, fetch: m.fetch });
+  assert.equal(m.calls[0].model, "z-ai/glm-5v-turbo");
+  assert.equal(m.calls[0].body.provider.data_collection, "deny");
+});
