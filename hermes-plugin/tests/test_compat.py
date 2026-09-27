@@ -118,11 +118,11 @@ class Downgrade(unittest.TestCase):
         self.assertDrawable(out, 96)
 
     def test_note_names_what_to_skip(self):
-        self.assertIn("cannot draw chords, drums, keys, loop, metronome, shapes, sketch, tuner yet", compat.note(96))
+        self.assertIn("cannot draw chords, drums, keys, loop, map, metronome, shapes, sketch, tuner yet", compat.note(96))
         self.assertNotIn("timeline", compat.note(96))
-        self.assertEqual(compat.note(compat.SHAPES_BUILD), f"[yui] This person's Yui app (build {compat.SHAPES_BUILD}) cannot draw chords, drums, keys, loop, metronome, tuner yet: don't send those. Say it in words or use another preset.")
-        self.assertEqual(compat.note(compat.TUNER_BUILD), "")
-        self.assertIn("cannot draw chords, drums, keys, loop, metronome, shapes", compat.note(122))
+        self.assertEqual(compat.note(compat.SHAPES_BUILD), f"[yui] This person's Yui app (build {compat.SHAPES_BUILD}) cannot draw chords, drums, keys, loop, map, metronome, tuner yet: don't send those. Say it in words or use another preset.")
+        self.assertEqual(compat.note(compat.MAP_BUILD), "")
+        self.assertIn("cannot draw chords, drums, keys, loop, map, metronome, shapes", compat.note(122))
         self.assertIn("an older build", compat.note(None))
 
     def test_menu_lines_go_quietly_before_the_drawer(self):
@@ -163,8 +163,8 @@ class Downgrade(unittest.TestCase):
         self.assertIn("There are chord buttons here: G I-V-vi-IV. Update Yui to play them.", out)
         self.assertIn("There are chord buttons here: C G Am F. Update Yui to play them.", out)
         self.assertDrawable(out, 176)
-        self.assertIn("cannot draw chords, keys, metronome, tuner yet", compat.note(176))
-        self.assertIn("cannot draw metronome, tuner yet", compat.note(compat.KEYS_BUILD))
+        self.assertIn("cannot draw chords, keys, map, metronome, tuner yet", compat.note(176))
+        self.assertIn("cannot draw map, metronome, tuner yet", compat.note(compat.KEYS_BUILD))
         self.assertEqual(compat.downgrade(body, compat.KEYS_BUILD), body)
 
     def test_tuner_and_metronome_before_build_205(self):
@@ -176,8 +176,8 @@ class Downgrade(unittest.TestCase):
         self.assertIn("There's a tuner here. Update Yui to use it.", out)
         self.assertIn("There's a metronome here at 72 bpm. Update Yui to use it.", out)
         self.assertDrawable(out, 204)
-        self.assertIn("cannot draw metronome, tuner yet", compat.note(204))
-        self.assertEqual(compat.note(compat.TUNER_BUILD), "")
+        self.assertIn("cannot draw map, metronome, tuner yet", compat.note(204))
+        self.assertEqual(compat.note(compat.MAP_BUILD), "")
         self.assertEqual(compat.downgrade(body, compat.TUNER_BUILD), body)
 
     def test_placed_shapes_and_a_lone_shape(self):
@@ -296,8 +296,35 @@ class Flows(unittest.TestCase):
         plain = "Here is the brief.\n\n" + fence('card "Your brand site"')
         self.assertEqual(compat.downgrade(plain, 205), plain)
 
+    def test_a_map_before_its_build_is_its_place_names(self):
+        # YUI-158: the title, the places in line order (an area with its codes, a
+        # pin, a route with the pins it stops at) and the caption, in words.
+        body = "Here.\n\n" + fence(
+            'say "At its peak, 1279."',
+            'map "The Mongol Empire, 1279" caption="24M km2."',
+            'area "Mongol Empire" 53,140|43,131|34.7,126.5 tone=butter',
+            'area Raided PL|HU +dash',
+            'pin@ka Karakorum 47.2,102.8 +pulse',
+            'pin@se Seoul 37.6,127',
+            'route East ka|se +arrow')
+        self.assertEqual(compat.downgrade(body, compat.TUNER_BUILD),
+                         "Here.\n\n" + fence('say "At its peak, 1279."') + "\n\n**The Mongol Empire, 1279**\n"
+                         "Mongol Empire; Raided (PL, HU); Karakorum; Seoul; East, Karakorum to Seoul\n24M km2.")
+        self.assertEqual(compat.downgrade(body, compat.MAP_BUILD), body)
+        self.assertEqual(compat.downgrade(fence("pin Paris 48.85,2.35"), compat.TUNER_BUILD), "Paris")
+        self.assertIn("map", compat.note(compat.TUNER_BUILD))
+
+    def test_a_map_in_a_deck_before_its_build_is_a_page_of_places(self):
+        body = fence('>full', 'deck "The Mongols"', 'page "Where" body="Here."', 'map caption="Karakorum sat in the middle."',
+                     'area Empire MN|CN|KR tone=butter', 'pin@ka Karakorum 47.2,102.8 +pulse', 'page "Big" body="24M."', 'end')
+        self.assertEqual(compat.downgrade(body, compat.TUNER_BUILD), fence(
+            '>full', 'deck "The Mongols"', 'page "Where" body="Here."',
+            'page "The map" body="Karakorum sat in the middle." points="Empire (MN, CN, KR)"|"Karakorum"',
+            'page "Big" body="24M."', 'end'))
+        self.assertEqual(compat.downgrade(body, compat.MAP_BUILD), body)
+
     def test_the_turn_note_never_tells_agents_to_skip_flows(self):
-        self.assertEqual(compat.note(compat.TUNER_BUILD), "")
+        self.assertEqual(compat.note(compat.MAP_BUILD), "")
         self.assertNotIn("flow", compat.note(100))
 
     def test_the_saved_flows_match_yuigui(self):

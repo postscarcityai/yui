@@ -37,6 +37,7 @@ DECK_PICTURES_BUILD = 158
 MUSIC_BUILD = 175  # YUI-116 step 2: loop and drums drawn and played (56b38a3)
 KEYS_BUILD = 177  # YUI-116 step 3: keys and chords drawn and played (2b26871)
 TUNER_BUILD = 205  # YUI-116 step 4: tuner and metronome drawn and played (7b18b14)
+MAP_BUILD = 219  # YUI-158 step 2: maps drawn and pinched (the app commit's count)
 # YUI-115: no build runs flows yet. Set this to that app commit's count when it lands.
 FLOW_BUILD = 1_000_000
 
@@ -51,9 +52,11 @@ MIN_BUILD: Dict[str, int] = {
     "loop": MUSIC_BUILD, "drums": MUSIC_BUILD,           # YUI-116 step 2: a beat and pads
     "keys": KEYS_BUILD, "chords": KEYS_BUILD,            # YUI-116 step 3: a keyboard and chord buttons
     "tuner": TUNER_BUILD, "metronome": TUNER_BUILD,      # YUI-116 step 4: a tuner and a click
+    "map": MAP_BUILD, "area": MAP_BUILD, "pin": MAP_BUILD, "route": MAP_BUILD,  # YUI-158: places on a map
     "flow": FLOW_BUILD,                                  # YUI-115: runs as a plan until then
 }
-GROUPS = {"sketch": {"row", "after"}, "timeline": {"done", "now", "next"}, "shapes": {"shape"}}
+GROUPS = {"sketch": {"row", "after"}, "timeline": {"done", "now", "next"}, "shapes": {"shape"},
+          "map": {"area", "pin", "route"}}
 MEMBER_OF = {m: head for head, ms in GROUPS.items() for m in ms}
 STORY = {"deck", "plan"}  # a sketch in these is the picture of a page
 QUIET = {"menu"}  # draws nothing in the chat: dropped on old builds, never named in the note
@@ -197,6 +200,19 @@ def _group_text(lines: List[str]) -> str:
             cap = _unquote(props.get("caption", ""))
             if cap:
                 out.append(cap)
+        elif preset == "map":
+            if title:
+                out.append(f"**{title}**")
+            places = _map_places(lines[i + 1:])
+            if places:
+                out.append("; ".join(places))
+            cap = _unquote(props.get("caption", ""))
+            if cap:
+                out.append(cap)
+        elif preset in ("area", "pin", "route") and i == 0:
+            places = _map_places(lines)
+            if places:
+                out.append("; ".join(places))
         elif preset == "shape" and i == 0:
             chain = _shapes_chain(lines)
             if chain:
@@ -227,6 +243,59 @@ def _shapes_chain(lines: List[str]) -> str:
         out += (" → " if joined else ", ") + label if out else label
         joined = False
     return out
+
+
+LATLON = re.compile(r"-?\d+(\.\d+)?,-?\d+(\.\d+)?")
+
+
+def _map_places(lines: List[str]) -> List[str]:
+    """A map's place names in line order (spec: the Telegram fallback): an area's
+    label with its country codes, a pin's label, a route's label with the pins
+    it stops at. Bare lat,lon places are left out."""
+    pins, out = {}, []
+    for line in lines:
+        head, preset, words = _split(line)[1:4]
+        if preset == "pin" and "@" in head:
+            pins[head.split("@", 1)[1]] = " ".join(w for w in words if not LATLON.fullmatch(w))
+    for line in lines:
+        preset, words, props = _split(line)[2:5]
+        if preset == "area":
+            codes = [c for w in words for c in w.split("|") if re.fullmatch(r"[A-Z]{2,3}", c)]
+            codes += [c for c in _unquote(props.get("codes", "")).split("|") if c]
+            label = " ".join(w for w in words if "|" not in w and not re.fullmatch(r"[A-Z]{2,3}", w)
+                             and not LATLON.fullmatch(w)).strip()
+            if label and codes:
+                out.append(f"{label} ({', '.join(codes)})")
+            elif label or codes:
+                out.append(label or ", ".join(codes))
+        elif preset == "pin":
+            label = " ".join(w for w in words if not LATLON.fullmatch(w)).strip() or _unquote(props.get("label", ""))
+            if label:
+                out.append(label)
+        elif preset == "route":
+            stops = next((w.split("|") for w in words if "|" in w), _unquote(props.get("pts", "")).split("|"))
+            label = " ".join(w for w in words if "|" not in w).strip() or _unquote(props.get("label", ""))
+            via = [pins[x] for x in stops if pins.get(x)]
+            text = label + (f", {' to '.join(via)}" if len(via) >= 2 else "")
+            if text:
+                out.append(text)
+    return out
+
+
+def _map_page(lines: List[str]) -> str:
+    """A map inside a deck or plan, as a page with its places as points."""
+    _, _, preset, words, props, _ = _split(lines[0])
+    title = " ".join(words).strip() if preset == "map" else ""
+    points = _map_places(lines if preset != "map" else lines[1:])
+    cap = _unquote(props.get("caption", "")) if preset == "map" else ""
+    if not points and not cap:
+        return ""
+    page = f'page "{(title or "The map").replace(chr(34), chr(39))}"'
+    if cap:
+        page += ' body="' + cap.replace('"', "'") + '"'
+    if points:
+        page += " points=" + "|".join('"' + p.replace('"', "'") + '"' for p in points)
+    return page
 
 
 def _group_page(lines: List[str]) -> str:
@@ -440,8 +509,8 @@ def _fence(block: str, gated: set) -> List[tuple]:
         while members and i < len(lines) and _split(lines[i])[2] in members:
             group.append(lines[i])
             i += 1
-        if story and preset in ("sketch", "row", "after"):
-            page = _group_page(group)
+        if story and preset in ("sketch", "row", "after", "map", "area", "pin", "route"):
+            page = _map_page(group) if preset in GROUPS["map"] | {"map"} else _group_page(group)
             if page:
                 cur.append(SCREEN.match(line).group(1) + page if SCREEN.match(line) else page)
             continue

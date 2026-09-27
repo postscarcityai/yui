@@ -90,6 +90,7 @@ struct PresetView: View {
         case "timeline", "done", "now", "next": TimelinePreset(c: component)
         case "sketch", "row", "after": SketchPreset(c: component)
         case "shapes", "shape": ShapesPreset(c: component)
+        case "map", "area", "pin", "route": MapPreset(c: component)
         case "game": GamePreset(c: component)
         case "loop": LoopPreset(c: component)
         case "drums": DrumsPreset(c: component)

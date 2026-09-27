@@ -1657,6 +1657,38 @@ struct ChatView: View {
         """,
     ]
 
+    /// Places on a map (YUI-158; Chris on the Mongol Empire answer: "this should be a Map"):
+    /// a drawn empire with a pin and four ways out, a trip with a route through pins,
+    /// and countries by code across the date line.
+    static let mapDemo = [
+        """
+        say "At its peak, 1279, it ran from Korea to Hungary's edge."
+        map "The Mongol Empire, 1279" caption="24M km². The biggest land empire there has been."
+        area "Mongol Empire" 53,140|43,131|38.5,128.5|34.7,126.5|37.5,122.5|31,121.8|25,119.5|22.3,114|20.5,110.2|21.8,108|22.5,103|24,98|28,97|28,86|30,80|34,74|34,70|30,66|26,62|25.5,57|28,51|30,48|33,44|36,38.5|37,36|36.5,32|41,31|41.5,41.5|45,37|46,30.5|48,27|50.5,24|54,23|57,28|60,31|62,40|60,56|58,65|56,80|55,95|53,108|55,120 tone=butter
+        area Raided PL|HU +dash
+        pin@ka Karakorum 47.2,102.8 +pulse
+        route East ka|37.6,127 +arrow
+        route West ka|50.4,30.5 +arrow
+        route South ka|33.3,44.4 +arrow
+        route North ka|60,100 +arrow
+        """,
+        """
+        map "Lisbon to Rome by train" caption="Three nights, four trains."
+        area Iberia PT|ES tone=mint
+        pin@li Lisbon 38.7,-9.1
+        pin@ma Madrid 40.4,-3.7
+        pin@ba Barcelona 41.4,2.2
+        pin@ro Rome 41.9,12.5 +pulse
+        route li|ma|ba|ro +arrow
+        """,
+        """
+        map "Bering Strait" caption="Russia and Alaska are 82 km apart."
+        area RU|US tone=lavender
+        pin Anchorage 61.2,-149.9
+        pin Magadan 59.6,150.8
+        """,
+    ]
+
     /// `-yuiDemo` seeds a chat; `-yuiYL <sample>` seeds one YL reply (see `YLSamples`).
     static var seed: [ChatMessage] {
         if UserDefaults.standard.string(forKey: "yuiReactDemo") != nil {
@@ -1735,6 +1767,14 @@ struct ChatView: View {
             let asks = ["How does an ask reach my phone?", "How does a heat pump work?",
                         "Why shapes and not pictures?", "Where's my shapes idea?"]
             return zip(asks, shapesDemo).flatMap { ask, yl in
+                [ChatMessage(text: ask, fromUser: true), ChatMessage(text: "", fromUser: false, yl: YLScreen(yl))]
+            }
+        }
+        // -yuiDemoMap: places on a map (YUI-158).
+        if ProcessInfo.processInfo.arguments.contains("-yuiDemoMap") {
+            let asks = ["Give me a brief geographic explanation of the Mongol Empire", "Plan me a train trip, Lisbon to Rome",
+                        "How close are Russia and Alaska?"]
+            return zip(asks, mapDemo).flatMap { ask, yl in
                 [ChatMessage(text: ask, fromUser: true), ChatMessage(text: "", fromUser: false, yl: YLScreen(yl))]
             }
         }

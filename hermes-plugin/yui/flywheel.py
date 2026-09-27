@@ -38,6 +38,7 @@ PRESETS = {
     "game", "flow",
     "sketch", "row", "after",
     "shapes", "shape",
+    "map", "area", "pin", "route",
     "query",
     "loop", "drums", "keys", "chords", "tuner", "metronome",
 }

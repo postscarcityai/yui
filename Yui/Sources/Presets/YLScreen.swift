@@ -188,10 +188,10 @@ extension YLComponent {
             && ylID.range(of: #"^[nc]\d+$"#, options: .regularExpression) == nil
     }
 
-    static let groupHeads: Set<String> = ["deck", "plan", "narrate", "timeline", "sketch", "shapes"]
+    static let groupHeads: Set<String> = ["deck", "plan", "narrate", "timeline", "sketch", "shapes", "map"]
 
     /// What can be a page's picture in a deck (spec: On a page; YUI-113).
-    static let pictures: Set<String> = ["sketch", "shapes", "math", "chart", "stat", "calc"]
+    static let pictures: Set<String> = ["sketch", "shapes", "map", "math", "chart", "stat", "calc"]
 }
 
 extension Array where Element == YLComponent {

@@ -14,6 +14,7 @@ let presets: Set<String> = [
     "timeline", "done", "now", "next",
     "sketch", "row", "after",
     "shapes", "shape",
+    "map", "area", "pin", "route",
     "game",
     "loop", "drums", "keys", "chords", "tuner", "metronome",
 ]
@@ -22,12 +23,13 @@ let presets: Set<String> = [
 /// the same screen. A narrate can hold another group (a deck), a deck or plan
 /// a sketch (the picture of the page before it).
 let groups: [String: Set<String>] = [
-    "deck": ["page", "ask", "choose", "pick", "sketch", "shapes", "math", "chart", "stat", "calc"],
-    "plan": ["page", "ask", "choose", "pick", "slide", "form", "mic", "camera", "sketch"],
+    "deck": ["page", "ask", "choose", "pick", "sketch", "shapes", "map", "math", "chart", "stat", "calc"],
+    "plan": ["page", "ask", "choose", "pick", "slide", "form", "mic", "camera", "sketch", "map"],
     "narrate": ["page", "compare", "image", "video", "card", "stat", "chart", "math", "storyboard", "gallery", "deck"],
     "timeline": ["done", "now", "next"],
     "sketch": ["row", "after"],
     "shapes": ["shape"],
+    "map": ["area", "pin", "route"],
 ]
 
 /// A timeline's rows. A patch's `kind=` moves one to another of these (YUI-111).
@@ -97,6 +99,8 @@ private let listProps: [String: [String]] = [
     "pick": ["answer"],
     "game": ["items"],
     "shape": ["pts"],
+    "area": ["codes", "pts"],
+    "route": ["pts"],
     "loop": ["rows", "p"],
     "drums": ["pads"],
     "chords": ["chords"],
@@ -165,6 +169,9 @@ private func boxes(_ v: YLValue) -> YLValue {
 
 /// A y value with an error: 12.5±0.4 or 12.5+-0.4.
 private let gameWordRE = JSRegex(#"^[A-Za-z][A-Za-z0-9_-]*\z"#)
+/// A country code (ISO 3166 alpha-2 or alpha-3) and a lat,lon place.
+private let isoRE = JSRegex(#"^[A-Z]{2,3}\z"#)
+private let latLonRE = JSRegex(#"^-?\d+(\.\d+)?,-?\d+(\.\d+)?\z"#)
 private let pmRE = JSRegex(#"^(-?[0-9]+(?:\.[0-9]+)?)(?:±|\+-)([0-9]+(?:\.[0-9]+)?)\z"#)
 private let seriesKeyRE = JSRegex(#"^(y|err)([0-9]*)\z"#)
 
@@ -418,7 +425,7 @@ private func positional(_ preset: String, _ pos: [Token]) -> Props {
             if text.count > 1 { o["body"] = .string(joinText(Array(text.dropFirst()))) }
         }
 
-    case "calc", "deck", "plan", "narrate", "timeline", "sketch", "shapes":
+    case "calc", "deck", "plan", "narrate", "timeline", "sketch", "shapes", "map":
         if !pos.isEmpty { o["title"] = .string(joinText(pos)) }
 
     case "row":
@@ -444,6 +451,35 @@ private func positional(_ preset: String, _ pos: [Token]) -> Props {
             if o["kind"] == nil, t.parts == nil, !t.quoted, gameWordRE.match(t.text) != nil { o["kind"] = .string(t.text) } else { text.append(t) }
         }
         if !text.isEmpty { o[preset == "game" ? "title" : "label"] = .string(joinText(text)) }
+
+    // Maps (YUI-158). Places stay as written ("47.9,106.9"); the renderer
+    // reads them. area: bare two or three capital letters, or options that
+    // all are, are country codes; options that are all lat,lon points are a
+    // drawn outline. pin: the first bare lat,lon is where it goes. route: the
+    // first options are its stops. The rest is the label.
+    case "area":
+        var text: [Token] = []
+        var codes: [String] = []
+        for t in pos {
+            if !t.quoted, t.parts == nil, isoRE.match(t.text) != nil { codes.append(t.text) }
+            else if !t.quoted, let parts = t.parts, parts.allSatisfy({ isoRE.match($0) != nil }) { codes += parts }
+            else if o["pts"] == nil, !t.quoted, let parts = t.parts, parts.allSatisfy({ latLonRE.match($0) != nil }) { o["pts"] = strings(parts) }
+            else { text.append(t) }
+        }
+        if !codes.isEmpty { o["codes"] = strings(codes) }
+        if !text.isEmpty { o["label"] = .string(joinText(text)) }
+    case "pin":
+        var text: [Token] = []
+        for t in pos {
+            if o["at"] == nil, !t.quoted, t.parts == nil, latLonRE.match(t.text) != nil { o["at"] = .string(t.text) } else { text.append(t) }
+        }
+        if !text.isEmpty { o["label"] = .string(joinText(text)) }
+    case "route":
+        var text: [Token] = []
+        for t in pos {
+            if o["pts"] == nil, !t.quoted, let parts = t.parts { o["pts"] = strings(parts) } else { text.append(t) }
+        }
+        if !text.isEmpty { o["label"] = .string(joinText(text)) }
 
     // Music (spec/MUSIC.md). Each takes its one special positional, wherever
     // it sits, and the rest of the positional text is the title.
