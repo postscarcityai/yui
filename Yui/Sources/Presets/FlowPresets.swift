@@ -583,8 +583,9 @@ struct PlanPreset: View {
     }
 
     private func record(_ e: YLEvent, step: YLComponent, i: Int, steps: [YLComponent], review: Bool) {
-        // A form hands over every edit: all fields cleared takes its answer back.
-        if step.preset == "form" {
+        // A form and a pick hand over every edit: all fields cleared, or every
+        // pick taken off, takes the answer back.
+        if step.preset == "form" || step.preset == "pick" {
             if e.value["missing"] != nil { missing.insert(step.ylID) } else { missing.remove(step.ylID) }
             if YLComponent.answerValue(e) == nil { answers[step.ylID] = nil }
         }

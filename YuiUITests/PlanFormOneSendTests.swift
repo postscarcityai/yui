@@ -3,8 +3,9 @@ import XCTest
 /// A form inside a plan is just fields: one Send for the whole screen (YUI-156,
 /// TestFlight feedback AOTM4UtV, 2026-09-27: "I don't see a reason to have a send
 /// button on about you section"). The stage drew the form's own Submit next to
-/// its one Send; tapping it read "Sent" and sent nothing. Demo account, no
-/// network. `YUI_SHOTS=<dir>` saves screenshots.
+/// its one Send; tapping it read "Sent" and sent nothing. A pick drew its own
+/// Done the same way (YUI-159). Demo account, no network. `YUI_SHOTS=<dir>`
+/// saves screenshots.
 final class PlanFormOneSendTests: XCTestCase {
     /// The plan from the feedback, as the website-intake flow goes out to a phone.
     /// No apostrophes: a launch argument is read as a plist, and `'` quotes in one.
@@ -51,8 +52,8 @@ final class PlanFormOneSendTests: XCTestCase {
         let send = app.buttons["stage-send"]
         XCTAssertTrue(send.exists)
         XCTAssertEqual(send.label, "Build my brief")
-        for label in ["Submit", "Sent"] {
-            XCTAssertFalse(app.buttons[label].exists, "the form still draws its own \(label)")
+        for label in ["Submit", "Sent", "Done"] {
+            XCTAssertFalse(app.buttons[label].exists, "a question still draws its own \(label)")
         }
         XCTAssertFalse(send.isEnabled, "Send before any answer")
         shot("1-questions")
@@ -63,6 +64,10 @@ final class PlanFormOneSendTests: XCTestCase {
         app.textFields["Role"].tap(); app.textFields["Role"].typeText("Founder")
         app.textFields["Oneliner"].tap(); app.textFields["Oneliner"].typeText("I build agents")
         app.buttons["Clients"].tap()
+        // The pick hands over its picks on every tap; taking one off takes it back.
+        for page in ["About", "Work", "Contact"] { app.buttons[page].tap() }
+        app.buttons["Contact"].tap()
+        XCTAssertFalse(app.buttons["Done"].exists, "the pick still draws its own Done")
         shot("2-answered")
         send.tap()
         XCTAssertTrue(app.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH 'Sent. It'"))
@@ -80,7 +85,9 @@ final class PlanFormOneSendTests: XCTestCase {
         XCTAssertEqual(form["role"] as? String, "Founder")
         XCTAssertEqual(form["oneliner"] as? String, "I build agents")
         XCTAssertTrue(answers.values.contains { $0 as? String == "Clients" }, "the choose answer is missing: \(answers)")
+        XCTAssertTrue(answers.values.contains { $0 as? [String] == ["About", "Work"] }, "the picked pages are missing: \(answers)")
         XCTAssertFalse(events.contains("\"preset\":\"form\""), "the form sent an event of its own: \(events)")
+        XCTAssertFalse(events.contains("\"preset\":\"pick\""), "the pick sent an event of its own: \(events)")
         shot("3-sent")
     }
 
@@ -108,6 +115,45 @@ final class PlanFormOneSendTests: XCTestCase {
         shot("4-pager-form")
         app.buttons["Next"].tap()
         XCTAssertTrue(app.staticTexts["Step 2 of 2"].waitForExistence(timeout: 5), "Next did not move past the form")
+    }
+
+    /// The paged plan: a pick step has no Done, and Next carries its picks to the review.
+    func testPagerPickMovesOnWithNext() throws {
+        let reply = [
+            "plan \"Your site\"",
+            "pick \"Pages you want\" About|Work|Contact",
+            "choose \"Who is it for?\" Clients|Investors",
+            "end",
+        ].joined(separator: "\\n")
+        let app = XCUIApplication()
+        app.launchArguments = ["-yuiDemoAccount", "-appearance", "light", "-yuiThemeDemo", reply]
+        app.launch()
+        let close = app.buttons["Close full screen"]
+        if !close.waitForExistence(timeout: 12) {
+            let open = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Open' AND label ENDSWITH 'full screen'")).firstMatch
+            XCTAssertTrue(open.waitForExistence(timeout: 5), "the plan never showed")
+            open.tap()
+        }
+        XCTAssertTrue(app.staticTexts["Step 1 of 2"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["About"].waitForExistence(timeout: 5), "no pick step")
+        XCTAssertFalse(app.buttons["Done"].exists, "the pick step still has its own Done")
+        app.buttons["About"].tap(); app.buttons["Contact"].tap()
+        shot("6-pager-pick")
+        app.buttons["Next"].tap()
+        XCTAssertTrue(app.staticTexts["Step 2 of 2"].waitForExistence(timeout: 5), "Next did not move past the pick")
+        app.buttons["Clients"].tap()
+        XCTAssertTrue(app.staticTexts["About, Contact"].waitForExistence(timeout: 5), "the review lost the picks")
+        shot("7-pager-review")
+    }
+
+    /// On its own in the chat, a pick keeps its Done.
+    func testStandalonePickKeepsDone() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["-yuiDemoAccount", "-appearance", "light", "-yuiThemeDemo", "pick \"Pages you want\" About|Work|Contact"]
+        app.launch()
+        XCTAssertTrue(app.buttons["About"].waitForExistence(timeout: 12), "no pick")
+        XCTAssertTrue(app.buttons["Done"].exists, "a pick on its own lost its Done")
+        shot("8-standalone-pick")
     }
 
     /// On its own in the chat, a form keeps its Submit.

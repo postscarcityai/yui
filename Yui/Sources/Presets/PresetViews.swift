@@ -246,6 +246,9 @@ struct AskPreset: View {
 /// `choose` (one answer, sent on tap) and `pick` (many, sent with the submit button).
 /// Answers stay open: a new tap (or a new submit) sends the new answer with
 /// `changed: true`, until the agent locks the component with `+lock`.
+/// Hosted by a plan or the stage (YUI-159) a pick draws no Done: every tap hands
+/// the host `{picked: [...]}`, or nothing once all picks are cleared, and the
+/// host's one Send carries it.
 struct ChoosePreset: View {
     let c: YLComponent
     let multi: Bool
@@ -261,6 +264,7 @@ struct ChoosePreset: View {
     @Environment(\.yuiTheme) private var theme
     @Environment(\.colorScheme) private var scheme
     @Environment(\.ylEmit) private var emit
+    @Environment(\.ylHostedSubmit) private var hosted
 
     var body: some View {
         let s = theme.swatch(scheme)
@@ -308,7 +312,7 @@ struct ChoosePreset: View {
             if let sent, let right = c.quizAnswer {
                 QuizMark(right: multi ? Set(right) == Set(sent) : right == sent, answer: right, why: c.string("why"))
             }
-            if multi, !c.locked {
+            if multi, !c.locked, !hosted {
                 // Done always answers, none included. After a send it reads "Sent"
                 // until the picks change again.
                 let fresh = sent == nil || picked != sent
@@ -316,9 +320,7 @@ struct ChoosePreset: View {
                            on: fresh, grow: true) {
                     let changed = sent != nil
                     sent = picked
-                    var v: [String: YLValue] = ["picked": .array(picked.map(YLValue.string))]
-                    if let right = c.quizAnswer { v["correct"] = .bool(Set(right) == Set(picked)) }
-                    emit(c.answer(v, echo: picked.isEmpty ? "None of these" : picked.joined(separator: ", "), changed: changed))
+                    emit(pickedEvent(changed: changed))
                 }
                 .disabled(!fresh)
             }
@@ -330,6 +332,24 @@ struct ChoosePreset: View {
             let back = multi ? v["picked"]?.array?.compactMap(\.string) : v["choice"]?.string.map { [$0] }
             if let back { picked = back; sent = back }
         }
+        // Hosted in a plan, its answer is inside the plan's.
+        .onAppear {
+            guard hosted, multi, picked.isEmpty, let g = c.inGroup,
+                  let back = answers(scope, g)?["plan"]?[c.ylID]?.array?.compactMap(\.string) else { return }
+            picked = back
+        }
+        // Hosted: every change goes to the host, which sends it with its one Send.
+        .onChange(of: picked) {
+            guard hosted, multi else { return }
+            emit(picked.isEmpty ? c.event([:]) : pickedEvent(changed: false))
+        }
+    }
+
+    /// The picks as an answer, `{picked: [...]}`, echoed as a list.
+    private func pickedEvent(changed: Bool) -> YLEvent {
+        var v: [String: YLValue] = ["picked": .array(picked.map(YLValue.string))]
+        if let right = c.quizAnswer { v["correct"] = .bool(Set(right) == Set(picked)) }
+        return c.answer(v, echo: picked.isEmpty ? "None of these" : picked.joined(separator: ", "), changed: changed)
     }
 
     private func otherField(_ s: Swatch) -> some View {
