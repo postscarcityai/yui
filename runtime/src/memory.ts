@@ -31,11 +31,15 @@ export function applyMemory(items: MemoryItem[], agentId: string, ops: MemoryOp[
   const notes = notesOf(items, agentId);
   const about = new Map(aboutOf(items).map((i) => [i.key!, i]));
   const clip = (s: string) => s.replace(/\s+/g, " ").trim().slice(0, MAX_BODY);
+  // Notes written together keep the order they were written (ids are random,
+  // so a shared timestamp would number them by chance): a millisecond apart.
+  let written = 0;
+  const stamp = () => new Date(Date.parse(now) + written++).toISOString();
   for (const op of ops) {
     if (op.op === "note") {
       const body = clip(op.body);
       if (!body || notes.some((n) => n.body.toLowerCase() === body.toLowerCase())) continue;
-      const item: MemoryItem = { id: newId(), agentId, kind: "note", body, updatedAt: now };
+      const item: MemoryItem = { id: newId(), agentId, kind: "note", body, updatedAt: stamp() };
       notes.push(item);
       put.set(item.id, item);
     } else if (op.op === "about") {
