@@ -3,6 +3,16 @@
 // Each is cheap on purpose: 4-octave noise at most, no loops over the screen,
 // drawn at half resolution (grain three quarters) by StageVisual.swift.
 //
+// The sound (YUI-125): `level` is the whole of it, `bands` its lows, mids and highs,
+// each 0..1 after the look's envelope. Each look says what it does with them, on
+// top of what the level already does (VisualPlan.listens has the same words):
+//   orb     pulses with the lows, ripples with the mids, glows with the highs
+//   aurora  widens with the lows, shimmers with the mids, glows with the highs
+//   waves   swell with the lows, ripple with the mids, glow with the highs
+//   grain   spreads with the lows, sparkles with the highs
+//   bloom   opens with the lows, flutters with the mids, its heart glows with the highs
+// With the bands at 0 every look is the same picture as the web's.
+//
 // `frag` is in drawable pixels with y up from the bottom, like gl_FragCoord.
 // Each look returns its color and writes a mask `m` (0..1): how much of the
 // colors shows at that pixel. `finish` does the rest: dim, ground, scrim.
@@ -18,6 +28,7 @@ struct VisualUniforms {
     float scrim;  // the ground laid over the words' zone
     float2 zone;  // the zone's bottom and top edge, fractions of the height from the bottom
     float3 a, b, c, ground;
+    float3 bands; // lows, mids, highs
 };
 
 struct VisualVertex {
@@ -69,10 +80,11 @@ fragment float4 visualOrb(VisualVertex in [[stage_in]], constant VisualUniforms 
     float2 p = centered(frag, u) - float2(0.0, 0.06);
     float r = length(p);
     float2 dir = p / max(r, 0.0001);
-    float R = 0.2 + 0.09 * u.level + 0.012 * sin(u.time * 1.3);
+    float R = 0.2 + 0.09 * u.level + 0.035 * u.bands.x + 0.012 * sin(u.time * 1.3);
     R += (0.035 + 0.05 * u.level) * (noise(dir * 1.7 + float2(7.0 + u.time * 0.45, 3.0 - u.time * 0.3)) - 0.5) * 2.0;
+    R += 0.03 * u.bands.y * (noise(dir * 5.0 + float2(u.time * 1.6, -u.time * 1.1)) - 0.5) * 2.0;
     float body = sstep(R, R - 0.1, r);
-    float glow = exp(-max(r - R, 0.0) * (9.0 - 3.0 * u.level)) * (0.35 + 0.45 * u.level);
+    float glow = exp(-max(r - R, 0.0) * (9.0 - 3.0 * u.level)) * (0.35 + 0.45 * u.level + 0.3 * u.bands.z);
     float swirl = fbm(p * 3.2 + float2(u.time * 0.18, -u.time * 0.12));
     float3 inside = mix(u.b, u.a, sstep(0.0, R, r));
     inside = mix(inside, u.c, sstep(0.45, 0.8, swirl) * 0.6);
@@ -90,11 +102,12 @@ fragment float4 visualAurora(VisualVertex in [[stage_in]], constant VisualUnifor
         float fi = float(i);
         float yc = 0.74 - fi * 0.11 + 0.06 * sin(uv.x * 2.6 + u.time * 0.25 + fi * 1.7)
                  + 0.12 * (fbm(float2(uv.x * 1.8 + u.time * 0.07, fi * 3.1)) - 0.5);
-        float w = 0.05 + 0.025 * u.level + 0.02 * fi;
+        float w = 0.05 + 0.025 * u.level + 0.02 * u.bands.x + 0.02 * fi;
         float q = (uv.y - yc) / w;
         float band = exp(-q * q);  // pow() of a negative base is NaN in Metal
         float curtain = 0.55 + 0.45 * noise(float2(uv.x * 38.0 + fi * 11.0, u.time * 0.35));
-        float k = band * curtain * (0.55 + 0.6 * u.level);
+        curtain = mix(curtain, noise(float2(uv.x * 90.0 + fi * 7.0, u.time * 1.4)), 0.5 * u.bands.y);
+        float k = band * curtain * (0.55 + 0.6 * u.level + 0.3 * u.bands.z);
         float3 tint = i == 0 ? u.a : (i == 1 ? u.b : u.c);
         col += tint * k;
         m += k;
@@ -111,10 +124,11 @@ fragment float4 visualWaves(VisualVertex in [[stage_in]], constant VisualUniform
     float m = 0.0;
     for (int i = 0; i < 5; i++) {
         float fi = float(i);
-        float amp = (0.018 + 0.075 * u.level) * (1.0 - fi * 0.13);
+        float amp = (0.018 + 0.075 * u.level + 0.03 * u.bands.x) * (1.0 - fi * 0.13);
         float y = 0.2 + fi * 0.075 + amp * sin(uv.x * (5.0 + fi * 1.7) + u.time * (0.9 + fi * 0.25)) * sin(uv.x * 2.3 - u.time * 0.6 + fi);
+        y += 0.012 * u.bands.y * sin(uv.x * (21.0 + fi * 4.0) - u.time * 2.2 + fi);
         float d = abs(uv.y - y) * u.res.y;
-        float line = sstep(2.4, 0.4, d) + exp(-d * 0.09) * 0.28;
+        float line = sstep(2.4, 0.4, d) + exp(-d * 0.09) * (0.28 + 0.3 * u.bands.z);
         float3 tint = mix(u.a, u.c, fi / 4.0);
         tint = mix(tint, u.b, 0.35 * sin(uv.x * 3.0 + fi + u.time * 0.3) + 0.2);
         float k = line * (1.0 - fi * 0.12);
@@ -132,12 +146,13 @@ fragment float4 visualGrain(VisualVertex in [[stage_in]], constant VisualUniform
     float2 p1 = float2(0.28 * sin(t * 1.1), 0.25 + 0.12 * cos(t * 0.9));
     float2 p2 = float2(-0.3 + 0.1 * cos(t * 0.7), -0.2 + 0.1 * sin(t * 1.3));
     float2 p3 = float2(0.25 * cos(t * 0.5 + 2.0), -0.05 + 0.2 * sin(t * 0.8));
-    float w1 = 1.0 / (dot(p - p1, p - p1) + 0.04);
-    float w2 = 1.0 / (dot(p - p2, p - p2) + 0.04);
-    float w3 = 1.0 / (dot(p - p3, p - p3) + 0.04);
+    float spread = 0.04 + 0.05 * u.bands.x;
+    float w1 = 1.0 / (dot(p - p1, p - p1) + spread);
+    float w2 = 1.0 / (dot(p - p2, p - p2) + spread);
+    float w3 = 1.0 / (dot(p - p3, p - p3) + spread);
     float3 col = (u.a * w1 + u.b * w2 + u.c * w3) / (w1 + w2 + w3);
     float g = hash(floor(frag) + fract(u.time * 7.0) * 97.0) - 0.5;
-    col += g * 0.07;
+    col += g * (0.07 + 0.07 * u.bands.z);
     return finish(col, 0.78 + 0.12 * u.level, frag, u);
 }
 
@@ -146,13 +161,14 @@ fragment float4 visualBloom(VisualVertex in [[stage_in]], constant VisualUniform
     float2 frag = fragOf(in.position, u);
     float2 p = centered(frag, u) - float2(0.0, 0.04);
     float r = length(p), a = atan2(p.y, p.x);
-    float open = 0.17 + 0.17 * u.level + 0.015 * sin(u.time * 0.9);
-    float petal = open * pow(0.5 + 0.5 * cos(6.0 * a + u.time * 0.22), 1.4);
+    float open = 0.17 + 0.17 * u.level + 0.06 * u.bands.x + 0.015 * sin(u.time * 0.9);
+    float flutter = 0.35 * u.bands.y * sin(r * 40.0 - u.time * 3.0);
+    float petal = open * pow(0.5 + 0.5 * cos(6.0 * a + u.time * 0.22 + flutter), 1.4);
     float inner = open * 0.62 * pow(0.5 + 0.5 * cos(6.0 * a - u.time * 0.3 + 0.52), 1.6);
     float outer = sstep(petal + 0.02, petal - 0.03, r);
     float mid = sstep(inner + 0.02, inner - 0.03, r);
     float heart = sstep(0.05 + 0.02 * u.level, 0.0, r);
-    float glow = exp(-r * 6.0) * (0.25 + 0.5 * u.level);
+    float glow = exp(-r * 6.0) * (0.25 + 0.5 * u.level + 0.35 * u.bands.z);
     float3 col = mix(u.a, u.c, mid);
     col = mix(col, u.b, heart);
     float m = max(max(outer, mid), max(heart, glow));

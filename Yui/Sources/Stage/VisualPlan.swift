@@ -14,6 +14,12 @@ struct VisualPlan: Equatable, Sendable {
     static let names = ["orb": "Orb", "aurora": "Aurora", "waves": "Waves", "grain": "Grain", "bloom": "Bloom"]
     static let hears = ["voice": "listening to your voice", "music": "moving with the music",
                         "mic": "listening to the room", "off": "moving on its own"]
+    /// What each look does with the sound's lows, mids and highs (YUI-125; Visual.metal does it).
+    static let listens: [String: (low: String, mid: String?, high: String)] = [
+        "orb": ("pulses", "ripples", "glows"), "aurora": ("widens", "shimmers", "glows"),
+        "waves": ("swell", "ripple", "glow"), "grain": ("spreads", nil, "sparkles"),
+        "bloom": ("opens", "flutters", "glows"),
+    ]
 
     /// The frame budget (VISUAL.md section 5). fps 0 is one still frame.
     enum Budget {
@@ -58,14 +64,19 @@ struct VisualPlan: Equatable, Sendable {
         }
 
         /// One step of the follower: `input` the raw level 0...1, `prev` the last output,
-        /// `dt` ms since. Up at the attack, down at the release; tick rounds to quarters.
+        /// `dt` ms since. Up at the attack, down at the release. It stays smooth: tick's
+        /// quarters are `shown`, never fed back (rounded, it stuck at 0.25 once the sound stopped).
         func follow(_ prev: Double, _ input: Double, dt: Double) -> Double {
             guard gain > 0 else { return 0 }
             let x = min(1, max(0, input.isFinite ? input : 0)) * gain
             let t = x > prev ? attack : release
             let k = t <= 0 ? 1 : 1 - exp(-max(0, dt) / t)
-            let y = prev + (x - prev) * k
-            return steps > 0 ? (y * Double(steps)).rounded() / Double(steps) : y
+            return prev + (x - prev) * k
+        }
+
+        /// What the shader gets: tick moves in quarters, the rest as is.
+        func shown(_ level: Double) -> Double {
+            steps > 0 ? (level * Double(steps)).rounded() / Double(steps) : level
         }
     }
 
@@ -98,6 +109,12 @@ struct VisualPlan: Equatable, Sendable {
     var why: Why?
     var still: Bool { why != nil }
     var label: String { "\(Self.names[look] ?? "Orb"), \(Self.hears[react] ?? Self.hears["voice"]!)" }
+    /// What it does with the sound, for VoiceOver: "Orb pulses with the lows, ripples with the mids and glows with the highs."
+    var hint: String? {
+        guard react != "off", !still, let l = Self.listens[look] else { return nil }
+        let parts = ["\(l.low) with the lows", l.mid.map { "\($0) with the mids" }, "\(l.high) with the highs"].compactMap { $0 }
+        return "\(Self.names[look] ?? "Orb") " + parts.dropLast().joined(separator: ", ") + " and " + parts.last! + "."
+    }
 
     /// Everything the stage draws for one visual, or nil for none.
     ///   accent, ground, ink  the agent's color and the stage's paper and ink in this appearance

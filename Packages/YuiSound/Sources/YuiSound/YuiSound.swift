@@ -20,14 +20,17 @@ private let hostTicksToSeconds: Double = {
 final class SoundGraph {
     let engine = AVAudioEngine()
     let kernel: SynthKernel
+    /// What the engine plays, for the visual (YUI-125): measured on the render thread.
+    let meter: LevelMeter
     private(set) var source: AVAudioSourceNode?
     let reverb = AVAudioUnitReverb()
     /// Mono scratch the kernel renders into, sized for the largest buffer.
     private let scratch: UnsafeMutablePointer<Float>
     static let maxFrames = 4096
 
-    init(kernel: SynthKernel) {
+    init(kernel: SynthKernel, meter: LevelMeter = LevelMeter()) {
         self.kernel = kernel
+        self.meter = meter
         scratch = .allocate(capacity: Self.maxFrames)
         scratch.initialize(repeating: 0, count: Self.maxFrames)
         reverb.loadFactoryPreset(.smallRoom)
@@ -38,7 +41,8 @@ final class SoundGraph {
     deinit { scratch.deallocate() }
 
     /// The render block, made outside any actor so Swift 6 adds no isolation check.
-    nonisolated static func renderBlock(kernel: SynthKernel, scratch: UnsafeMutablePointer<Float>) -> AVAudioSourceNodeRenderBlock {
+    nonisolated static func renderBlock(kernel: SynthKernel, scratch: UnsafeMutablePointer<Float>,
+                                        meter: LevelMeter? = nil) -> AVAudioSourceNodeRenderBlock {
         { _, timestamp, frameCount, bufferList in
             let abl = UnsafeMutableAudioBufferListPointer(bufferList)
             var done = 0
@@ -47,6 +51,7 @@ final class SoundGraph {
             while done < total {
                 let n = min(total - done, SoundGraph.maxFrames)
                 kernel.render(frames: n, into: scratch, hostTime: done == 0 ? host : 0)
+                meter?.measure(scratch, count: n, sampleRate: kernel.sampleRate)
                 var b = 0
                 while b < abl.count {
                     if let data = abl[b].mData?.assumingMemoryBound(to: Float.self) {
@@ -68,7 +73,7 @@ final class SoundGraph {
         if sr <= 0 { sr = 48000 }
         kernel.reset(sampleRate: sr)
         let format = AVAudioFormat(standardFormatWithSampleRate: sr, channels: 2)!
-        let node = AVAudioSourceNode(format: format, renderBlock: Self.renderBlock(kernel: kernel, scratch: scratch))
+        let node = AVAudioSourceNode(format: format, renderBlock: Self.renderBlock(kernel: kernel, scratch: scratch, meter: meter))
         engine.attach(node)
         engine.connect(node, to: reverb, format: format)
         engine.connect(reverb, to: engine.mainMixerNode, format: format)
@@ -94,7 +99,10 @@ public final class YuiSound: @unchecked Sendable {
     public static let pitched: [String] = Words.pitched
 
     let kernel = SynthKernel()
-    @MainActor private lazy var graph = SoundGraph(kernel: kernel)
+    /// How loud the engine plays and where (lows, mids, highs), for the visual (YUI-125).
+    /// Reads as silence a moment after the engine stops.
+    public let meter = LevelMeter()
+    @MainActor private lazy var graph = SoundGraph(kernel: kernel, meter: meter)
     @MainActor private var users = 0
     @MainActor private var running = false
     @MainActor private var grace: Task<Void, Never>?
@@ -155,6 +163,7 @@ public final class YuiSound: @unchecked Sendable {
     @MainActor private func shutDown() {
         stopLoop()
         graph.stop()
+        meter.clear()
         running = false
         for o in observers { NotificationCenter.default.removeObserver(o) }
         observers = []

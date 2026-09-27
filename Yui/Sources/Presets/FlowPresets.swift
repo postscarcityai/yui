@@ -831,12 +831,19 @@ final class Narrator: NSObject, AVSpeechSynthesizerDelegate {
                            Double(AVSpeechUtteranceMaximumSpeechRate)))
         word = nil
         speaking = true
+        // The visual moves with the agent's voice (YUI-125): the same line, measured offline.
+        VisualSound.shared.voice.willSpeak(u)
         synth.speak(u)
     }
 
     func stop() {
         speaking = false
         synth.stopSpeaking(at: .immediate)
+        VisualSound.shared.voice.stop()
+    }
+
+    nonisolated func speechSynthesizer(_ s: AVSpeechSynthesizer, didStart utterance: AVSpeechUtterance) {
+        Task { @MainActor in VisualSound.shared.voice.began() }
     }
 
     nonisolated func speechSynthesizer(_ s: AVSpeechSynthesizer, willSpeakRangeOfSpeechString range: NSRange, utterance: AVSpeechUtterance) {
@@ -845,6 +852,7 @@ final class Narrator: NSObject, AVSpeechSynthesizerDelegate {
 
     nonisolated func speechSynthesizer(_ s: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
         Task { @MainActor in
+            VisualSound.shared.voice.stop()
             guard self.speaking else { return }
             self.speaking = false
             self.word = nil

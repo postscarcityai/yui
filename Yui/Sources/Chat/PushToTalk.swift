@@ -96,6 +96,10 @@ final class PushToTalk {
     /// A new loudness from the mic. Keeps the loudest since the last bar and adds a bar every `barEvery`.
     func take(level l: Double, at now: Date = .now) {
         level = l
+        #if DEBUG
+        // The fake voice has no samples: the visual hears its loudness, shaped like a voice (YUI-125).
+        if fake { VisualSound.mic.publish(.init(level: l, low: l * 0.8, mid: l, high: l * 0.55)) }
+        #endif
         peak = max(peak, l)
         if l >= Self.speaking { lastSound = now }
         guard now.timeIntervalSince(lastBar) >= Self.barEvery else { return }
@@ -146,6 +150,8 @@ final class PushToTalk {
                 }
                 startClassic(recognizer, input: input, format: format)
             }
+            // The room visual (react=mic) lets go of the mic while you talk; this tap feeds it.
+            VisualSound.shared.micTaken(true)
             engine.prepare()
             try engine.start()
             startedAt = .now
@@ -155,6 +161,7 @@ final class PushToTalk {
         } catch {
             stopEngine()
             teardown()
+            VisualSound.shared.micTaken(false)
             phase = .failed
         }
     }
@@ -223,6 +230,7 @@ final class PushToTalk {
         phase = .idle
         resetMeters()
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        VisualSound.shared.micTaken(false)
         return transcript.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
@@ -240,6 +248,7 @@ final class PushToTalk {
             teardown()
             finish?.resume(); finish = nil
             try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+            VisualSound.shared.micTaken(false)
         }
         transcript = ""
         resetMeters()
@@ -333,6 +342,7 @@ final class PushToTalk {
                                 level: @escaping @MainActor @Sendable (Double) -> Void) -> AVAudioNodeTapBlock {
         { buffer, _ in
             req.append(buffer)
+            VisualSound.measure(buffer, into: VisualSound.mic)
             let l = Self.level(buffer)
             Task { @MainActor in level(l) }
         }
@@ -345,6 +355,7 @@ final class PushToTalk {
         nonisolated(unsafe) let converter = from == to ? nil : AVAudioConverter(from: from, to: to)
         return { buffer, _ in
             if let out = Self.convert(buffer, with: converter, to: to) { feed.yield(AnalyzerInput(buffer: out)) }
+            VisualSound.measure(buffer, into: VisualSound.mic)
             let l = Self.level(buffer)
             Task { @MainActor in level(l) }
         }

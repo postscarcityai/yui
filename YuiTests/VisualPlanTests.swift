@@ -69,8 +69,14 @@ final class VisualPlanTests: XCTestCase {
             for (i, (x, dt)) in steps.enumerated() {
                 y = env.follow(y, x, dt: dt)
                 XCTAssertEqual(y, (r["out"] as! [Double])[i], accuracy: 1e-12, "step \(i)")
+                XCTAssertEqual(env.shown(y), (r["shown"] as! [Double])[i], accuracy: 1e-12, "shown \(i)")
             }
         }
+        // Tick's quarters are only shown, never fed back: it falls all the way when the sound stops (YUI-125).
+        let tick = VisualPlan.Envelope.tick
+        var t = 1.0
+        for _ in 0..<60 { t = tick.follow(t, 0, dt: 33) }
+        XCTAssertEqual(tick.shown(t), 0)
         XCTAssertEqual(VisualPlan.Envelope.still.follow(0.4, 1, dt: 16), 0, "still never reacts")
     }
 

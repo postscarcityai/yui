@@ -3,7 +3,7 @@
 import { pathToFileURL } from "node:url";
 import { resolve } from "node:path";
 const hub = resolve(process.argv[2] || "../yuigui", "site/lib/yl");
-const { visualColors, scrimFor, envelope, visualPlan, follow, levelOf, BUDGET } = await import(pathToFileURL(`${hub}/visual.mjs`));
+const { visualColors, scrimFor, envelope, visualPlan, follow, shown, levelOf, BUDGET } = await import(pathToFileURL(`${hub}/visual.mjs`));
 const { SETS } = await import(pathToFileURL(`${hub}/look.mjs`));
 const tones = [...Object.values(SETS).map(s => s.accent), "#FF6B3D", "#000000", "#FFFFFF", "#808080", "#4DA8FF"];
 const colors = [];
@@ -15,9 +15,9 @@ const envs = [];
 for (const pace of ["slow", "even", "quick", undefined]) for (const pulse of ["soft", "beat", "tick", "still", undefined]) envs.push({ pace: pace ?? null, pulse: pulse ?? null, env: envelope({ pace, pulse }) });
 const follows = [];
 for (const env of [envelope({pulse:"soft"}), envelope({pulse:"beat"}), envelope({pulse:"tick", pace:"quick"})]) {
-  let y = 0; const out = [];
-  for (const [x, dt] of [[0.8, 33], [0.8, 33], [0.2, 33], [0.0, 100], [1.5, 16], [0.5, 0]]) { y = follow(y, x, dt, env); out.push(y); }
-  follows.push({ env, out });
+  let y = 0; const out = [], seen = [];
+  for (const [x, dt] of [[0.8, 33], [0.8, 33], [0.2, 33], [0.0, 100], [1.5, 16], [0.5, 0]]) { y = follow(y, x, dt, env); out.push(y); seen.push(shown(y, env)); }
+  follows.push({ env, out, shown: seen });
 }
 const plans = [];
 const cases = [
