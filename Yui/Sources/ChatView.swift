@@ -1,6 +1,7 @@
 import PhotosUI
 import QuartzCore
 import SwiftUI
+import UniformTypeIdentifiers
 import YuiLines
 
 /// The chat with the selected agent (one thread per agent, over the relay).
@@ -43,6 +44,8 @@ struct ChatView: View {
     @State private var picked: [PhotosPickerItem] = []
     @State private var pickingPhotos = false
     @State private var shooting = false
+    /// + > Files: pictures from Files join the message like photos (YUI-121).
+    @State private var importingFiles = false
     @State private var sending = false
     @State private var talk = PushToTalk()
     /// Hands-free (YUI-14): tap the mic once and it stays open between turns.
@@ -59,6 +62,8 @@ struct ChatView: View {
     /// start() is still asking for the mic or warming up.
     @State private var micStarting = false
     @State private var holdStart: Task<Void, Never>?
+    /// The bar's mic went down while hands-free was on: its let-go is a tap, never a hold.
+    @State private var micTapOnly = false
     private static let cancelDistance: CGFloat = 110
     private var cancelArmed: Bool { talk.listening && micDragX <= -Self.cancelDistance }
     @State private var composerNote: String?
@@ -70,6 +75,10 @@ struct ChatView: View {
     @AppStorage(StageFirstModel.attachKey) private var stageAttach = true
     /// The stage's own T field: the chat's composer keeps `focused`.
     @FocusState private var stageFocused: Bool
+    /// The record's T is out (YUI-121): the whole field, until a tap away folds it.
+    @State private var recordTyping = false
+    /// The record shows the bar (mic, T, +) in place of the field.
+    private var recordBar: Bool { stageFirstOn && talkPage == nil && !recordTyping }
     private var stageFirstOn: Bool { StageFirstModel.enabled(stored: stageFirstStored) }
     /// The thread's scroll, and whether it is far enough up to offer the way back down (YUI-50).
     @State private var position = ScrollPosition(edge: .bottom)
@@ -128,6 +137,9 @@ struct ChatView: View {
                     PagedThread(store: store, screens: store.screens, page: $page, fade: pageFade, agent: store.agent, style: agentStyle) { thread }
                         // Drag right on the chat: the drawer follows the finger (YUI-54). On a
                         // screen the pager is scrolled along, so the drag pages back instead.
+                        // The record's field is out: a tap on the thread lets the keyboard go and folds it (YUI-121).
+                        .simultaneousGesture(TapGesture().onEnded { focused = false },
+                                             including: stageFirstOn && recordTyping ? .all : .subviews)
                         .gesture(DrawerPan(direction: .right, enabled: !drawerOpen && !store.stageShowing) { x in
                             focused = false
                             drawerMotion.drag = max(0, x)
@@ -345,7 +357,7 @@ struct ChatView: View {
         }
         .onChange(of: store.agent?.id, initial: true) { turnPage(to: store.page) }
         // Talk about this (YUI-69): the item lands on the composer with the keyboard up.
-        .onChange(of: store.about?.id) { _, new in if new != nil { focused = true } }
+        .onChange(of: store.about?.id) { _, new in if new != nil { typeHere() } }
         // Screens come and go: a page emptied by `>N clear` is gone, so back to the
         // chat; a page remembered for this agent shows once its history loads.
         // (A reply that adds a page turns to it through `pageTurns` above, after layout.)
@@ -497,7 +509,7 @@ struct ChatView: View {
     /// The drawer itself; `DrawerLayer` slides it and dims the chat.
     private var drawerContent: some View {
         AgentDrawer(store: store, close: { settleDrawer(open: false) },
-                    compose: { composer.draft = $0; focused = true },
+                    compose: { composer.draft = $0; typeHere() },
                     manage: { settleDrawer(open: false); showAgents = true },
                     add: { settleDrawer(open: false); addFirst = true },
                     edit: { editingAgent = $0 },
@@ -701,22 +713,14 @@ struct ChatView: View {
                     .transition(.opacity)
                     .accessibilityIdentifier("composer-note")
             }
-            HStack(alignment: .bottom, spacing: theme.spacing.s) {
-                if handsFree.on {
-                    handsFreeField(c)
-                    stopTalkingButton(c)
-                } else {
-                    if !talk.listening { attachMenu(c) }
-                    if talk.listening { listeningField(c) } else { field(c) }
-                    sendButton(c)
-                }
-            }
+            inputRow(c)
         }
         .padding(.horizontal, theme.spacing.l)
         .padding(.vertical, theme.spacing.s)
         .background(c.background)
         .animation(theme.spring, value: talk.listening)
         .animation(reduceMotion ? .easeInOut(duration: 0.2) : theme.spring, value: handsFree.on)
+        .background(recordBarHooks)
         .sensoryFeedback(.impact(weight: .light), trigger: handsFree.state) { _, now in now == .listening }
         // The reply landing is what reopens the mic: a new agent bubble, or the turn ending.
         .onChange(of: store.messages.last?.id) {
@@ -764,8 +768,10 @@ struct ChatView: View {
         // -yuiComposerPhoto <path>: a photo already in the composer (UI tests, screenshots).
         // -yuiPTTDemo "words": the hold-to-talk listening state.
         .task {
-            if let path = UserDefaults.standard.string(forKey: "yuiComposerPhoto"),
-               let data = FileManager.default.contents(atPath: path) { add([data]) }
+            // Several paths split by `|` put several in (YUI-121's two-picture send).
+            if let paths = UserDefaults.standard.string(forKey: "yuiComposerPhoto") {
+                add(paths.split(separator: "|").compactMap { FileManager.default.contents(atPath: String($0)) })
+            }
             if let words = UserDefaults.standard.string(forKey: "yuiPTTDemo") { talk.demo(words) }
             // -yuiPTTDemoCancel: the demo, slid to the trash.
             if ProcessInfo.processInfo.arguments.contains("-yuiPTTDemoCancel") { micDragX = -Self.cancelDistance - 30 }
@@ -779,6 +785,50 @@ struct ChatView: View {
             }
         }
         #endif
+    }
+
+    /// The field and its buttons, or with stage first the bar (YUI-121).
+    private func inputRow(_ c: Swatch) -> some View {
+        HStack(alignment: .bottom, spacing: theme.spacing.s) {
+            if recordBar {
+                // Stage first (YUI-121): the record has the stage's bar, mic bottom right.
+                if handsFree.on { handsFreeField(c) } else if talk.listening { listeningField(c) } else { Spacer(minLength: 0) }
+                BarButtons(prefix: "record", showMic: stageMic || !stageType, showType: stageType || !stageMic,
+                           showAttach: stageAttach, micOn: handsFree.on || talk.listening, micLive: talk.listening,
+                           armed: cancelArmed, attachDisabled: sending || photos.count >= Attachments.maxPhotos,
+                           reduceMotion: reduceMotion, actions: barActions(tap: stageMicTap, type: typeHere))
+            } else if handsFree.on {
+                handsFreeField(c)
+                stopTalkingButton(c)
+            } else {
+                if !talk.listening { attachMenu(c) }
+                if talk.listening { listeningField(c) } else { field(c) }
+                sendButton(c)
+            }
+        }
+        // The field grows out of T and folds back into it.
+        .transition(reduceMotion ? .opacity : .scale(scale: 0.2, anchor: .bottomTrailing).combined(with: .opacity))
+        .id(recordBar)
+    }
+
+    /// The record bar's own hooks and the Files picker, apart so the input bar's
+    /// chain stays type-checkable.
+    private var recordBarHooks: some View {
+        Color.clear
+            .accessibilityHidden(true)
+            .onChange(of: focused) { was, now in if was, !now { foldRecordField() } }
+            .onChange(of: photos.isEmpty) { _, empty in
+                if !empty, stageFirstOn, talkPage == nil { withAnimation(theme.spring) { recordTyping = true } }
+            }
+            .onChange(of: store.replying) { _, q in if q != nil, recordBar { typeHere() } }
+            .fileImporter(isPresented: $importingFiles, allowedContentTypes: [.image], allowsMultipleSelection: true) { result in
+                guard case .success(let urls) = result else { return }
+                add(urls.compactMap { url in
+                    let open = url.startAccessingSecurityScopedResource()
+                    defer { if open { url.stopAccessingSecurityScopedResource() } }
+                    return try? Data(contentsOf: url)
+                })
+            }
     }
 
     private func field(_ c: Swatch) -> some View {
@@ -838,6 +888,7 @@ struct ChatView: View {
             if UIImagePickerController.isSourceTypeAvailable(.camera) {
                 Button { shooting = true } label: { Label("Camera", systemImage: "camera") }
             }
+            Button { importingFiles = true } label: { Label("Files", systemImage: "folder") }
         } label: {
             Image(systemName: "plus")
                 .font(theme.font(theme.type.title, .black))
@@ -939,7 +990,7 @@ struct ChatView: View {
     }
 
     /// Finger up: send what it heard, or throw it away if it was slid to the trash.
-    private func micUp() {
+    private func micUp(quick: (() -> Void)? = nil) {
         micHeld = false
         let cancel = cancelArmed
         micDragX = 0
@@ -952,7 +1003,7 @@ struct ChatView: View {
         } else if !micStarting {
             // A quick tap: hands-free (YUI-14). Holding still talks once and sends on let go.
             holdStart?.cancel()
-            if talk.phase == .idle { handsFreeDo(.tap) }
+            if let quick { quick() } else if talk.phase == .idle { handsFreeDo(.tap) }
         }
     }
 
@@ -1197,15 +1248,7 @@ struct ChatView: View {
                 pick: { agents.selectedID = $0 },
                 manage: { showAgents = true },
                 record: closeStageFirst,
-                mic: stageMicTap,
-                photos: {
-                    withAnimation(theme.spring) { stageFirst.typing = true }
-                    pickingPhotos = true
-                },
-                camera: UIImagePickerController.isSourceTypeAvailable(.camera) ? {
-                    withAnimation(theme.spring) { stageFirst.typing = true }
-                    shooting = true
-                } : nil,
+                bar: barActions(tap: stageMicTap, type: {}) { withAnimation(theme.spring) { stageFirst.typing = true } },
                 send: send,
                 removePhoto: { p in photos.removeAll { $0.id == p.id } }))
     }
@@ -1219,8 +1262,31 @@ struct ChatView: View {
         case .paused(.interrupted): "Paused for the call or alarm."
         default: nil
         }
-        let live = handsFree.micOpen || handsFree.state == .finishing || handsFree.state == .sending
-        return StageMic(on: handsFree.on && note == nil, live: live, words: talk.transcript, note: note)
+        let held = talk.listening && !handsFree.on
+        let live = handsFree.micOpen || handsFree.state == .finishing || handsFree.state == .sending || held
+        return StageMic(on: handsFree.on && note == nil || held, live: live, held: held, armed: cancelArmed,
+                        words: talk.transcript, note: note)
+    }
+
+    /// The bar's buttons (YUI-121), on the stage and in the record. `tap` is the mic's
+    /// tap; a hold talks until the finger lets go. `attaching` runs before a picker opens.
+    private func barActions(tap: @escaping () -> Void, type: @escaping () -> Void,
+                            attaching: @escaping () -> Void = {}) -> BarActions {
+        BarActions(
+            type: type,
+            photos: { attaching(); pickingPhotos = true },
+            camera: UIImagePickerController.isSourceTypeAvailable(.camera) ? { attaching(); shooting = true } : nil,
+            files: { attaching(); importingFiles = true },
+            micDown: {
+                if handsFree.on { micTapOnly = true; return }
+                micDown()
+            },
+            micDrag: { x in if !micTapOnly { micDragX = x } },
+            micUp: {
+                if micTapOnly { micTapOnly = false; micDragX = 0; tap(); return }
+                micUp(quick: tap)
+            },
+            micTap: tap)
     }
 
     /// Tap: talk, hands-free. Tap while it hears words: send them now. Tap otherwise: stop.
@@ -1264,7 +1330,22 @@ struct ChatView: View {
     /// Reply (hold menu): the quote goes above the composer and the keyboard comes up.
     private func startReply(_ id: String) {
         store.startReply(id)
-        focused = true
+        typeHere()
+    }
+
+    /// The keyboard up on the field. With the bar in the record, T comes out first
+    /// and the field takes the focus once it is there.
+    private func typeHere() {
+        guard recordBar else { focused = true; return }
+        withAnimation(reduceMotion ? .easeInOut(duration: 0.2) : theme.spring) { recordTyping = true }
+        DispatchQueue.main.async { focused = true }
+    }
+
+    /// Tap away: the record's field folds back to mic, T and +. The words stay for next
+    /// time. A picker on its way up takes the focus too, so that doesn't count.
+    private func foldRecordField() {
+        guard stageFirstOn, recordTyping, photos.isEmpty, !pickingPhotos, !shooting, !importingFiles else { return }
+        withAnimation(reduceMotion ? .easeInOut(duration: 0.2) : theme.spring) { recordTyping = false }
     }
 
     /// A reply's chip: scroll back to the message it quotes, when it is still in the thread.

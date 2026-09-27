@@ -8,7 +8,7 @@ import YuiLines
 // record." Yui lives here: a send puts the stage up at once with the working
 // state, the reply plays as chunks (a line and a picture each), the questions
 // come last on one screen with one Send, and the chat underneath keeps it all.
-// The bars are the first cut; YUI-121 (bottom) and YUI-122 (top) finish them.
+// The bottom bar is BarButtons (YUI-121, BottomBar.swift); YUI-122 finishes the top.
 
 /// Where the stage is: up or in the chat, which turn, which chunk.
 @Observable @MainActor
@@ -79,9 +79,8 @@ struct StageActions {
     var pick: (String) -> Void
     var manage: () -> Void
     var record: () -> Void
-    var mic: () -> Void
-    var photos: () -> Void
-    var camera: (() -> Void)?
+    /// + T and the mic (YUI-121). Its `type` is the stage's own; the view opens the field.
+    var bar: BarActions
     var send: () -> Void
     var removePhoto: (ComposerPhoto) -> Void
 }
@@ -92,6 +91,10 @@ struct StageMic: Equatable {
     var on = false
     /// The mic is open or its words are settling.
     var live = false
+    /// Talking while the finger holds the mic: let go sends.
+    var held = false
+    /// Held and slid to the trash: let go throws the words away.
+    var armed = false
     var words = ""
     /// Why it stopped, in plain words.
     var note: String?
@@ -116,11 +119,7 @@ struct StageFirstView: View {
     @Environment(\.yuiTheme) private var theme
     @Environment(\.colorScheme) private var scheme
 
-    /// The sizes Chris picked on the mock (a notch under its first cut): mic 58,
-    /// T and + 40 with a 48 point touch, 8 apart.
-    static let micSize: CGFloat = 58
-    static let small: CGFloat = 40
-    static let touch: CGFloat = 48
+    static let small = BarButtons.small, touch = BarButtons.touch
 
     var body: some View {
         let c = theme.swatch(scheme)
@@ -138,6 +137,15 @@ struct StageFirstView: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            // T is out: a tap anywhere above folds it back to mic, T and + (YUI-121).
+            .overlay {
+                if model.typing {
+                    Color.clear.contentShape(Rectangle())
+                        .onTapGesture { fold() }
+                        .accessibilityHidden(true)
+                        .accessibilityIdentifier("stage-tap-away")
+                }
+            }
             bottom(turn, c)
         }
         .background {
@@ -253,9 +261,12 @@ struct StageFirstView: View {
                 .font(theme.font(theme.type.caption, .heavy))
                 .foregroundStyle(c.accent)
                 .symbolEffect(.variableColor.iterative, isActive: !reduceMotion)
-            Text(mic.words.isEmpty ? "Just talk. A short pause sends it." : mic.words)
-                .font(theme.font(mic.words.isEmpty ? theme.type.body : theme.type.display, mic.words.isEmpty ? .semibold : .bold))
-                .foregroundStyle(mic.words.isEmpty ? c.inkSoft : c.ink)
+            let hint = mic.armed ? "Let go to cancel"
+                : mic.held ? "Let go to send. Slide left to cancel." : "Just talk. A short pause sends it."
+            Text(mic.words.isEmpty || mic.armed ? hint : mic.words)
+                .font(theme.font(mic.words.isEmpty || mic.armed ? theme.type.body : theme.type.display,
+                                 mic.words.isEmpty || mic.armed ? .semibold : .bold))
+                .foregroundStyle(mic.armed ? c.accent : mic.words.isEmpty ? c.inkSoft : c.ink)
                 .multilineTextAlignment(.center)
                 .contentTransition(.opacity)
                 .animation(reduceMotion ? nil : .easeOut(duration: 0.15), value: mic.words)
@@ -482,26 +493,10 @@ struct StageFirstView: View {
                             .disabled(at == pages - 1)
                     }
                     Spacer(minLength: 0)
-                    if showAttach, !mic.on { attach(c) }
-                    if showType || !showMic, !mic.on {
-                        Button {
-                            withAnimation(theme.spring) { model.typing = true }
-                            focus.wrappedValue = true
-                        } label: {
-                            Text("T")
-                                .font(.system(size: 18, weight: .bold, design: .serif))
-                                .foregroundStyle(c.ink)
-                                .frame(width: Self.small, height: Self.small)
-                                .background(c.surface, in: Circle())
-                                .overlay(Circle().stroke(c.outline, lineWidth: 1.5))
-                                .frame(width: Self.touch, height: Self.touch)
-                                .contentShape(Circle())
-                        }
-                        .buttonStyle(BounceButtonStyle())
-                        .accessibilityLabel("Type")
-                        .accessibilityIdentifier("stage-type")
-                    }
-                    if showMic { micButton(c) }
+                    BarButtons(prefix: "stage", showMic: showMic, showType: showType, showAttach: showAttach,
+                               micOn: mic.on, micLive: mic.live, armed: mic.armed,
+                               attachDisabled: sending || photos.count >= Attachments.maxPhotos,
+                               reduceMotion: reduceMotion, actions: barActions)
                 }
             }
         }
@@ -528,39 +523,20 @@ struct StageFirstView: View {
         .accessibilityIdentifier(id)
     }
 
-    private func attach(_ c: Swatch) -> some View {
-        Menu {
-            Button { actions.photos() } label: { Label("Photo library", systemImage: "photo.on.rectangle") }
-            if let camera = actions.camera { Button(action: camera) { Label("Camera", systemImage: "camera") } }
-        } label: {
-            Image(systemName: "plus")
-                .font(.system(size: 19, weight: .bold))
-                .foregroundStyle(c.ink)
-                .frame(width: Self.small, height: Self.small)
-                .background(c.surface, in: Circle())
-                .overlay(Circle().stroke(c.outline, lineWidth: 1.5))
-                .frame(width: Self.touch, height: Self.touch)
-                .contentShape(Circle())
+    /// The bar's actions with T opening the stage's own field.
+    private var barActions: BarActions {
+        var a = actions.bar
+        a.type = {
+            withAnimation(reduceMotion ? .easeInOut(duration: 0.2) : theme.spring) { model.typing = true }
+            focus.wrappedValue = true
         }
-        .disabled(sending || photos.count >= Attachments.maxPhotos)
-        .accessibilityLabel("Attach")
-        .accessibilityIdentifier("stage-attach")
+        return a
     }
 
-    private func micButton(_ c: Swatch) -> some View {
-        Button(action: actions.mic) {
-            Image(systemName: mic.on ? "waveform" : "mic.fill")
-                .font(.system(size: Self.micSize * 0.42 * 0.8, weight: .bold))
-                .foregroundStyle(c.onAccent)
-                .symbolEffect(.variableColor.iterative, isActive: mic.live && !reduceMotion)
-                .frame(width: Self.micSize, height: Self.micSize)
-                .background(c.accent, in: Circle())
-                .shadow(color: c.accent.opacity(0.45), radius: 9, y: 6)
-                .contentShape(Circle())
-        }
-        .buttonStyle(BounceButtonStyle())
-        .accessibilityLabel(mic.on ? "Stop talking" : "Talk")
-        .accessibilityIdentifier("stage-mic")
+    /// Back to mic, T and +. The words stay for next time.
+    private func fold() {
+        focus.wrappedValue = false
+        withAnimation(reduceMotion ? .easeInOut(duration: 0.2) : theme.spring) { model.typing = false }
     }
 
     /// T: the whole field, photos in it while typing, and the way back to the mic.
@@ -592,7 +568,21 @@ struct StageFirstView: View {
                     }
                 }
                 HStack(alignment: .bottom, spacing: theme.spacing.s) {
-                    if showAttach { attach(c) }
+                    if showAttach {
+                        AttachMenu(actions: actions.bar) {
+                            Image(systemName: "plus")
+                                .font(.system(size: 19, weight: .bold))
+                                .foregroundStyle(c.ink)
+                                .frame(width: Self.small, height: Self.small)
+                                .background(c.surface, in: Circle())
+                                .overlay(Circle().stroke(c.outline, lineWidth: 1.5))
+                                .frame(width: Self.touch, height: Self.touch)
+                                .contentShape(Circle())
+                        }
+                        .disabled(sending || photos.count >= Attachments.maxPhotos)
+                        .accessibilityLabel("Attach")
+                        .accessibilityIdentifier("stage-attach")
+                    }
                     TextField(photos.isEmpty ? "Say something nice" : "Add a caption",
                               text: Binding(get: { composer.draft }, set: { if $0 != composer.draft { composer.draft = $0 } }),
                               axis: .vertical)
@@ -625,10 +615,7 @@ struct StageFirstView: View {
             .overlay(RoundedRectangle(cornerRadius: theme.radius.card).stroke(c.accent.opacity(0.5), lineWidth: 1.5))
             .shadow(color: .black.opacity(0.08), radius: 14, y: 6)
             if showMic {
-                Button {
-                    focus.wrappedValue = false
-                    withAnimation(theme.spring) { model.typing = false }
-                } label: {
+                Button(action: fold) {
                     Text("Back to the mic")
                         .font(theme.font(theme.type.body, .bold))
                         .foregroundStyle(c.accent)
@@ -637,7 +624,8 @@ struct StageFirstView: View {
                 .accessibilityIdentifier("stage-back-to-mic")
             }
         }
-        .transition(.move(edge: .bottom).combined(with: .opacity))
+        // The field grows out of T, bottom right, and folds back into it.
+        .transition(reduceMotion ? .opacity : .scale(scale: 0.2, anchor: .bottomTrailing).combined(with: .opacity))
     }
 }
 
