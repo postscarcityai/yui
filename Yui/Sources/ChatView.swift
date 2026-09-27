@@ -2259,11 +2259,27 @@ private struct FirstRun: View {
     let retry: () -> Void
     @Environment(\.yuiTheme) private var theme
     @Environment(\.colorScheme) private var scheme
+    /// A new person's crew can land a few seconds after their first list (the list asks
+    /// again every 3 s while empty). Until then they wait for Yui, not the pairing pitch
+    /// (Chris saw that pitch on build 229 while native Yui was switched off).
+    @State private var waited = false
 
     var body: some View {
         let c = theme.swatch(scheme)
         if !loaded, error == nil {
             ProgressView().tint(c.inkSoft)
+        } else if loaded, crew == nil, !waited {
+            VStack(spacing: theme.spacing.l) {
+                Wordmark(height: 72)
+                ProgressView().tint(c.inkSoft)
+                Text("Getting Yui ready")
+                    .font(theme.font(theme.type.body, .semibold)).foregroundStyle(c.inkSoft)
+            }
+            .accessibilityIdentifier("first-run-waiting")
+            .task {
+                try? await Task.sleep(for: .seconds(ProcessInfo.processInfo.arguments.contains("-yuiNoAgents") ? 0 : 12))
+                waited = true
+            }
         } else if !loaded {
             VStack(spacing: theme.spacing.m) {
                 Image(systemName: "wifi.exclamationmark")
