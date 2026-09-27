@@ -1,0 +1,1236 @@
+{
+ "colors": [
+  {
+   "tone": "#FF7E8A",
+   "dark": true,
+   "a": "#F65A69",
+   "b": "#F5C2A3",
+   "c": "#F811C1",
+   "ground": "#231D33",
+   "ink": "#F6EEF7",
+   "scrim": 0.38
+  },
+  {
+   "tone": "#FF7E8A",
+   "dark": false,
+   "a": "#F54757",
+   "b": "#F3B590",
+   "c": "#EE07B6",
+   "ground": "#FFF9F0",
+   "ink": "#3A3340",
+   "scrim": 0.18
+  },
+  {
+   "tone": "#FF5FAE",
+   "dark": true,
+   "a": "#F65AA7",
+   "b": "#F5A3A5",
+   "c": "#D311F8",
+   "ground": "#231D33",
+   "ink": "#F6EEF7",
+   "scrim": 0.3
+  },
+  {
+   "tone": "#FF5FAE",
+   "dark": false,
+   "a": "#F5479D",
+   "b": "#F39093",
+   "c": "#C907EE",
+   "ground": "#FFF9F0",
+   "ink": "#3A3340",
+   "scrim": 0.22
+  },
+  {
+   "tone": "#B8336A",
+   "dark": true,
+   "a": "#C83773",
+   "b": "#D27974",
+   "c": "#8A2592",
+   "ground": "#231D33",
+   "ink": "#F6EEF7",
+   "scrim": 0.04
+  },
+  {
+   "tone": "#B8336A",
+   "dark": false,
+   "a": "#B8336A",
+   "b": "#CD6B65",
+   "c": "#7B2182",
+   "ground": "#FFF9F0",
+   "ink": "#3A3340",
+   "scrim": 0.32
+  },
+  {
+   "tone": "#D7263D",
+   "dark": true,
+   "a": "#D9263D",
+   "b": "#DD9069",
+   "c": "#9F1884",
+   "ground": "#231D33",
+   "ink": "#F6EEF7",
+   "scrim": 0.16
+  },
+  {
+   "tone": "#D7263D",
+   "dark": false,
+   "a": "#D7263D",
+   "b": "#DD8F68",
+   "c": "#9E1882",
+   "ground": "#FFF9F0",
+   "ink": "#3A3340",
+   "scrim": 0.3
+  },
+  {
+   "tone": "#FF6F7D",
+   "dark": true,
+   "a": "#F65A69",
+   "b": "#F5C1A3",
+   "c": "#F811C2",
+   "ground": "#231D33",
+   "ink": "#F6EEF7",
+   "scrim": 0.38
+  },
+  {
+   "tone": "#FF6F7D",
+   "dark": false,
+   "a": "#F54758",
+   "b": "#F3B590",
+   "c": "#EE07B7",
+   "ground": "#FFF9F0",
+   "ink": "#3A3340",
+   "scrim": 0.18
+  },
+  {
+   "tone": "#F2663A",
+   "dark": true,
+   "a": "#F2663A",
+   "b": "#F0D083",
+   "c": "#DB0963",
+   "ground": "#231D33",
+   "ink": "#F6EEF7",
+   "scrim": 0.4
+  },
+  {
+   "tone": "#F2663A",
+   "dark": false,
+   "a": "#F2663A",
+   "b": "#F0D083",
+   "c": "#DB0963",
+   "ground": "#FFF9F0",
+   "ink": "#3A3340",
+   "scrim": 0.26
+  },
+  {
+   "tone": "#FF9466",
+   "dark": true,
+   "a": "#F6895A",
+   "b": "#F5E2A3",
+   "c": "#F81166",
+   "ground": "#231D33",
+   "ink": "#F6EEF7",
+   "scrim": 0.44
+  },
+  {
+   "tone": "#FF9466",
+   "dark": false,
+   "a": "#F57B47",
+   "b": "#F3DC90",
+   "c": "#EE075B",
+   "ground": "#FFF9F0",
+   "ink": "#3A3340",
+   "scrim": 0.24
+  },
+  {
+   "tone": "#C8642B",
+   "dark": true,
+   "a": "#D2692D",
+   "b": "#D9C66E",
+   "c": "#9A1E43",
+   "ground": "#231D33",
+   "ink": "#F6EEF7",
+   "scrim": 0.34
+  },
+  {
+   "tone": "#C8642B",
+   "dark": false,
+   "a": "#C8642B",
+   "b": "#D6C364",
+   "c": "#901C3F",
+   "ground": "#FFF9F0",
+   "ink": "#3A3340",
+   "scrim": 0.32
+  },
+  {
+   "tone": "#D98E04",
+   "dark": true,
+   "a": "#F2A10D",
+   "b": "#DDEE59",
+   "c": "#B30508",
+   "ground": "#231D33",
+   "ink": "#F6EEF7",
+   "scrim": 0.44
+  },
+  {
+   "tone": "#D98E04",
+   "dark": false,
+   "a": "#DF950C",
+   "b": "#D9EC46",
+   "c": "#9F0407",
+   "ground": "#FFF9F0",
+   "ink": "#3A3340",
+   "scrim": 0.38
+  },
+  {
+   "tone": "#E5B800",
+   "dark": true,
+   "a": "#F2C50D",
+   "b": "#C5EE59",
+   "c": "#B31D05",
+   "ground": "#231D33",
+   "ink": "#F6EEF7",
+   "scrim": 0.44
+  },
+  {
+   "tone": "#E5B800",
+   "dark": false,
+   "a": "#DFB50C",
+   "b": "#BFEC46",
+   "c": "#9F1A04",
+   "ground": "#FFF9F0",
+   "ink": "#3A3340",
+   "scrim": 0.32
+  },
+  {
+   "tone": "#8CC63F",
+   "dark": true,
+   "a": "#8CC63F",
+   "b": "#84D27B",
+   "c": "#957B29",
+   "ground": "#231D33",
+   "ink": "#F6EEF7",
+   "scrim": 0.32
+  },
+  {
+   "tone": "#8CC63F",
+   "dark": false,
+   "a": "#8CC63F",
+   "b": "#84D27B",
+   "c": "#957B29",
+   "ground": "#FFF9F0",
+   "ink": "#3A3340",
+   "scrim": 0
+  },
+  {
+   "tone": "#7FA650",
+   "dark": true,
+   "a": "#84AC53",
+   "b": "#8BC086",
+   "c": "#7E6F3A",
+   "ground": "#231D33",
+   "ink": "#F6EEF7",
+   "scrim": 0.26
+  },
+  {
+   "tone": "#7FA650",
+   "dark": false,
+   "a": "#7FA650",
+   "b": "#85BD80",
+   "c": "#776A37",
+   "ground": "#FFF9F0",
+   "ink": "#3A3340",
+   "scrim": 0.12
+  },
+  {
+   "tone": "#2F7D4F",
+   "dark": true,
+   "a": "#46B975",
+   "b": "#7EC9BF",
+   "c": "#478830",
+   "ground": "#231D33",
+   "ink": "#F6EEF7",
+   "scrim": 0.3
+  },
+  {
+   "tone": "#2F7D4F",
+   "dark": false,
+   "a": "#40AA6C",
+   "b": "#6FC3B8",
+   "c": "#3F782B",
+   "ground": "#FFF9F0",
+   "ink": "#3A3340",
+   "scrim": 0.12
+  },
+  {
+   "tone": "#2FB58C",
+   "dark": true,
+   "a": "#35CA9D",
+   "b": "#73C4D4",
+   "c": "#239426",
+   "ground": "#231D33",
+   "ink": "#F6EEF7",
+   "scrim": 0.28
+  },
+  {
+   "tone": "#2FB58C",
+   "dark": false,
+   "a": "#30BA90",
+   "b": "#63BECF",
+   "c": "#1F8422",
+   "ground": "#FFF9F0",
+   "ink": "#3A3340",
+   "scrim": 0.1
+  },
+  {
+   "tone": "#0E9AA7",
+   "dark": true,
+   "a": "#14D9EB",
+   "b": "#5D9CE9",
+   "c": "#0AAD4E",
+   "ground": "#231D33",
+   "ink": "#F6EEF7",
+   "scrim": 0.34
+  },
+  {
+   "tone": "#0E9AA7",
+   "dark": false,
+   "a": "#12C8D8",
+   "b": "#4B91E7",
+   "c": "#099A46",
+   "ground": "#FFF9F0",
+   "ink": "#3A3340",
+   "scrim": 0
+  },
+  {
+   "tone": "#4AA8F0",
+   "dark": true,
+   "a": "#4AA8F0",
+   "b": "#919BF0",
+   "c": "#0DE5B3",
+   "ground": "#231D33",
+   "ink": "#F6EEF7",
+   "scrim": 0.36
+  },
+  {
+   "tone": "#4AA8F0",
+   "dark": false,
+   "a": "#4AA8F0",
+   "b": "#919BF0",
+   "c": "#0DE5B3",
+   "ground": "#FFF9F0",
+   "ink": "#3A3340",
+   "scrim": 0
+  },
+  {
+   "tone": "#1E86C8",
+   "dark": true,
+   "a": "#2195DE",
+   "b": "#6678E0",
+   "c": "#15A37B",
+   "ground": "#231D33",
+   "ink": "#F6EEF7",
+   "scrim": 0.02
+  },
+  {
+   "tone": "#1E86C8",
+   "dark": false,
+   "a": "#1F89CC",
+   "b": "#5569DD",
+   "c": "#12916E",
+   "ground": "#FFF9F0",
+   "ink": "#3A3340",
+   "scrim": 0.08
+  },
+  {
+   "tone": "#5B6CFF",
+   "dark": true,
+   "a": "#5A6AF6",
+   "b": "#C1A3F5",
+   "c": "#11C3F8",
+   "ground": "#231D33",
+   "ink": "#F6EEF7",
+   "scrim": 0.26
+  },
+  {
+   "tone": "#5B6CFF",
+   "dark": false,
+   "a": "#4759F5",
+   "b": "#B490F3",
+   "c": "#07B9EE",
+   "ground": "#FFF9F0",
+   "ink": "#3A3340",
+   "scrim": 0.14
+  },
+  {
+   "tone": "#9B87F5",
+   "dark": true,
+   "a": "#7A5FF2",
+   "b": "#D8A5F3",
+   "c": "#1881F1",
+   "ground": "#231D33",
+   "ink": "#F6EEF7",
+   "scrim": 0.3
+  },
+  {
+   "tone": "#9B87F5",
+   "dark": false,
+   "a": "#6A4CF0",
+   "b": "#D093F0",
+   "c": "#0E77E7",
+   "ground": "#FFF9F0",
+   "ink": "#3A3340",
+   "scrim": 0.16
+  },
+  {
+   "tone": "#8E44C8",
+   "dark": true,
+   "a": "#8E44C8",
+   "b": "#D480D1",
+   "c": "#2A369B",
+   "ground": "#231D33",
+   "ink": "#F6EEF7",
+   "scrim": 0.14
+  },
+  {
+   "tone": "#8E44C8",
+   "dark": false,
+   "a": "#8E44C8",
+   "b": "#D480D1",
+   "c": "#2A369B",
+   "ground": "#FFF9F0",
+   "ink": "#3A3340",
+   "scrim": 0.32
+  },
+  {
+   "tone": "#56657F",
+   "dark": true,
+   "a": "#5374AC",
+   "b": "#8C86C0",
+   "c": "#3A7E7B",
+   "ground": "#231D33",
+   "ink": "#F6EEF7",
+   "scrim": 0
+  },
+  {
+   "tone": "#56657F",
+   "dark": false,
+   "a": "#4C6A9E",
+   "b": "#7F79B9",
+   "c": "#34706E",
+   "ground": "#FFF9F0",
+   "ink": "#3A3340",
+   "scrim": 0.14
+  },
+  {
+   "tone": "#4A4A4A",
+   "dark": true,
+   "a": "#AC5353",
+   "b": "#C0A186",
+   "c": "#7E3A67",
+   "ground": "#231D33",
+   "ink": "#F6EEF7",
+   "scrim": 0.2
+  },
+  {
+   "tone": "#4A4A4A",
+   "dark": false,
+   "a": "#9E4C4C",
+   "b": "#B99779",
+   "c": "#70345C",
+   "ground": "#FFF9F0",
+   "ink": "#3A3340",
+   "scrim": 0.3
+  },
+  {
+   "tone": "#7B5CFF",
+   "dark": true,
+   "a": "#785AF6",
+   "b": "#D9A3F5",
+   "c": "#117FF8",
+   "ground": "#231D33",
+   "ink": "#F6EEF7",
+   "scrim": 0.3
+  },
+  {
+   "tone": "#7B5CFF",
+   "dark": false,
+   "a": "#6847F5",
+   "b": "#D190F3",
+   "c": "#0775EE",
+   "ground": "#FFF9F0",
+   "ink": "#3A3340",
+   "scrim": 0.18
+  },
+  {
+   "tone": "#FF5A36",
+   "dark": true,
+   "a": "#F56040",
+   "b": "#F3CE8A",
+   "c": "#E70774",
+   "ground": "#231D33",
+   "ink": "#F6EEF7",
+   "scrim": 0.4
+  },
+  {
+   "tone": "#FF5A36",
+   "dark": false,
+   "a": "#F56040",
+   "b": "#F3CE8A",
+   "c": "#E70774",
+   "ground": "#FFF9F0",
+   "ink": "#3A3340",
+   "scrim": 0.24
+  },
+  {
+   "tone": "#4E9A6B",
+   "dark": true,
+   "a": "#53AC75",
+   "b": "#86C0B7",
+   "c": "#4D7E3A",
+   "ground": "#231D33",
+   "ink": "#F6EEF7",
+   "scrim": 0.28
+  },
+  {
+   "tone": "#4E9A6B",
+   "dark": false,
+   "a": "#4C9E6C",
+   "b": "#79B9AF",
+   "c": "#457034",
+   "ground": "#FFF9F0",
+   "ink": "#3A3340",
+   "scrim": 0.14
+  },
+  {
+   "tone": "#2F7BFF",
+   "dark": true,
+   "a": "#397EF5",
+   "b": "#8F83F2",
+   "c": "#06E0D9",
+   "ground": "#231D33",
+   "ink": "#F6EEF7",
+   "scrim": 0.34
+  },
+  {
+   "tone": "#2F7BFF",
+   "dark": false,
+   "a": "#397EF5",
+   "b": "#8F83F2",
+   "c": "#06E0D9",
+   "ground": "#FFF9F0",
+   "ink": "#3A3340",
+   "scrim": 0
+  },
+  {
+   "tone": "#8A7CF0",
+   "dark": true,
+   "a": "#7463ED",
+   "b": "#D2A8F0",
+   "c": "#1E8EEB",
+   "ground": "#231D33",
+   "ink": "#F6EEF7",
+   "scrim": 0.3
+  },
+  {
+   "tone": "#8A7CF0",
+   "dark": false,
+   "a": "#6451EB",
+   "b": "#C996EE",
+   "c": "#1484E1",
+   "ground": "#FFF9F0",
+   "ink": "#3A3340",
+   "scrim": 0.14
+  },
+  {
+   "tone": "#1F3A68",
+   "dark": true,
+   "a": "#3B6EC4",
+   "b": "#7F77D0",
+   "c": "#28908C",
+   "ground": "#231D33",
+   "ink": "#F6EEF7",
+   "scrim": 0
+  },
+  {
+   "tone": "#1F3A68",
+   "dark": false,
+   "a": "#3665B5",
+   "b": "#7167CB",
+   "c": "#23807D",
+   "ground": "#FFF9F0",
+   "ink": "#3A3340",
+   "scrim": 0.16
+  },
+  {
+   "tone": "#FF6B3D",
+   "dark": true,
+   "a": "#F57047",
+   "b": "#F3D690",
+   "c": "#EE076A",
+   "ground": "#231D33",
+   "ink": "#F6EEF7",
+   "scrim": 0.42
+  },
+  {
+   "tone": "#FF6B3D",
+   "dark": false,
+   "a": "#F57047",
+   "b": "#F3D690",
+   "c": "#EE076A",
+   "ground": "#FFF9F0",
+   "ink": "#3A3340",
+   "scrim": 0.22
+  },
+  {
+   "tone": "#000000",
+   "dark": true,
+   "a": "#AC5353",
+   "b": "#C0A186",
+   "c": "#7E3A67",
+   "ground": "#231D33",
+   "ink": "#F6EEF7",
+   "scrim": 0.2
+  },
+  {
+   "tone": "#000000",
+   "dark": false,
+   "a": "#9E4C4C",
+   "b": "#B99779",
+   "c": "#70345C",
+   "ground": "#FFF9F0",
+   "ink": "#3A3340",
+   "scrim": 0.3
+  },
+  {
+   "tone": "#FFFFFF",
+   "dark": true,
+   "a": "#C78A8A",
+   "b": "#DCCBBC",
+   "c": "#B25894",
+   "ground": "#231D33",
+   "ink": "#F6EEF7",
+   "scrim": 0.38
+  },
+  {
+   "tone": "#FFFFFF",
+   "dark": false,
+   "a": "#C07C7C",
+   "b": "#D5C1AF",
+   "c": "#A74D89",
+   "ground": "#FFF9F0",
+   "ink": "#3A3340",
+   "scrim": 0.12
+  },
+  {
+   "tone": "#808080",
+   "dark": true,
+   "a": "#AC5454",
+   "b": "#C0A287",
+   "c": "#7E3A68",
+   "ground": "#231D33",
+   "ink": "#F6EEF7",
+   "scrim": 0.2
+  },
+  {
+   "tone": "#808080",
+   "dark": false,
+   "a": "#AC5454",
+   "b": "#C0A287",
+   "c": "#7E3A68",
+   "ground": "#FFF9F0",
+   "ink": "#3A3340",
+   "scrim": 0.26
+  },
+  {
+   "tone": "#4DA8FF",
+   "dark": true,
+   "a": "#56A8F6",
+   "b": "#9FA2F5",
+   "c": "#0CF8CE",
+   "ground": "#231D33",
+   "ink": "#F6EEF7",
+   "scrim": 0.42
+  },
+  {
+   "tone": "#4DA8FF",
+   "dark": false,
+   "a": "#47A0F5",
+   "b": "#9095F3",
+   "c": "#07EEC5",
+   "ground": "#FFF9F0",
+   "ink": "#3A3340",
+   "scrim": 0
+  }
+ ],
+ "envs": [
+  {
+   "pace": "slow",
+   "pulse": "soft",
+   "env": {
+    "attack": 252,
+    "release": 1260,
+    "steps": 0,
+    "gain": 0.75
+   }
+  },
+  {
+   "pace": "slow",
+   "pulse": "beat",
+   "env": {
+    "attack": 35,
+    "release": 364,
+    "steps": 0,
+    "gain": 1
+   }
+  },
+  {
+   "pace": "slow",
+   "pulse": "tick",
+   "env": {
+    "attack": 14,
+    "release": 224,
+    "steps": 4,
+    "gain": 0.9
+   }
+  },
+  {
+   "pace": "slow",
+   "pulse": "still",
+   "env": {
+    "attack": 0,
+    "release": 0,
+    "steps": 0,
+    "gain": 0
+   }
+  },
+  {
+   "pace": "slow",
+   "pulse": null,
+   "env": {
+    "attack": 35,
+    "release": 364,
+    "steps": 0,
+    "gain": 1
+   }
+  },
+  {
+   "pace": "even",
+   "pulse": "soft",
+   "env": {
+    "attack": 180,
+    "release": 900,
+    "steps": 0,
+    "gain": 0.75
+   }
+  },
+  {
+   "pace": "even",
+   "pulse": "beat",
+   "env": {
+    "attack": 25,
+    "release": 260,
+    "steps": 0,
+    "gain": 1
+   }
+  },
+  {
+   "pace": "even",
+   "pulse": "tick",
+   "env": {
+    "attack": 10,
+    "release": 160,
+    "steps": 4,
+    "gain": 0.9
+   }
+  },
+  {
+   "pace": "even",
+   "pulse": "still",
+   "env": {
+    "attack": 0,
+    "release": 0,
+    "steps": 0,
+    "gain": 0
+   }
+  },
+  {
+   "pace": "even",
+   "pulse": null,
+   "env": {
+    "attack": 25,
+    "release": 260,
+    "steps": 0,
+    "gain": 1
+   }
+  },
+  {
+   "pace": "quick",
+   "pulse": "soft",
+   "env": {
+    "attack": 122,
+    "release": 612,
+    "steps": 0,
+    "gain": 0.75
+   }
+  },
+  {
+   "pace": "quick",
+   "pulse": "beat",
+   "env": {
+    "attack": 17,
+    "release": 177,
+    "steps": 0,
+    "gain": 1
+   }
+  },
+  {
+   "pace": "quick",
+   "pulse": "tick",
+   "env": {
+    "attack": 7,
+    "release": 109,
+    "steps": 4,
+    "gain": 0.9
+   }
+  },
+  {
+   "pace": "quick",
+   "pulse": "still",
+   "env": {
+    "attack": 0,
+    "release": 0,
+    "steps": 0,
+    "gain": 0
+   }
+  },
+  {
+   "pace": "quick",
+   "pulse": null,
+   "env": {
+    "attack": 17,
+    "release": 177,
+    "steps": 0,
+    "gain": 1
+   }
+  },
+  {
+   "pace": null,
+   "pulse": "soft",
+   "env": {
+    "attack": 180,
+    "release": 900,
+    "steps": 0,
+    "gain": 0.75
+   }
+  },
+  {
+   "pace": null,
+   "pulse": "beat",
+   "env": {
+    "attack": 25,
+    "release": 260,
+    "steps": 0,
+    "gain": 1
+   }
+  },
+  {
+   "pace": null,
+   "pulse": "tick",
+   "env": {
+    "attack": 10,
+    "release": 160,
+    "steps": 4,
+    "gain": 0.9
+   }
+  },
+  {
+   "pace": null,
+   "pulse": "still",
+   "env": {
+    "attack": 0,
+    "release": 0,
+    "steps": 0,
+    "gain": 0
+   }
+  },
+  {
+   "pace": null,
+   "pulse": null,
+   "env": {
+    "attack": 25,
+    "release": 260,
+    "steps": 0,
+    "gain": 1
+   }
+  }
+ ],
+ "follows": [
+  {
+   "env": {
+    "attack": 180,
+    "release": 900,
+    "steps": 0,
+    "gain": 0.75
+   },
+   "out": [
+    0.10050563243303838,
+    0.18417562794813508,
+    0.18294521697309046,
+    0.1637065729706569,
+    0.2135724537168699,
+    0.2135724537168699
+   ]
+  },
+  {
+   "env": {
+    "attack": 25,
+    "release": 260,
+    "steps": 0,
+    "gain": 1
+   },
+   "out": [
+    0.5862917584273197,
+    0.7429109843548912,
+    0.6781967680962505,
+    0.4616569485459675,
+    0.7161357874320715,
+    0.7161357874320715
+   ]
+  },
+  {
+   "env": {
+    "attack": 7,
+    "release": 109,
+    "steps": 4,
+    "gain": 0.9
+   },
+   "out": [
+    0.75,
+    0.75,
+    0.5,
+    0.25,
+    0.75,
+    0.75
+   ]
+  }
+ ],
+ "plans": [
+  {
+   "props": {
+    "look": "aurora"
+   },
+   "opts": {
+    "theme": {
+     "preset": "mint",
+     "accent": "#2FB58C",
+     "motion": "calm"
+    },
+    "dark": true
+   },
+   "plan": {
+    "look": "aurora",
+    "react": "voice",
+    "tone": "#2FB58C",
+    "env": {
+     "attack": 252,
+     "release": 1260,
+     "steps": 0,
+     "gain": 0.75
+    },
+    "speed": 0.7142857142857143,
+    "dim": 1,
+    "scrim": 0,
+    "fps": 60,
+    "scale": 0.5,
+    "still": false,
+    "why": null,
+    "label": "Aurora, listening to your voice",
+    "colors": {
+     "a": "#35CA9D",
+     "b": "#73C4D4",
+     "c": "#239426",
+     "ground": "#231D33",
+     "ink": "#F6EEF7"
+    }
+   }
+  },
+  {
+   "props": {
+    "look": "grain",
+    "tone": "sky",
+    "react": "music"
+   },
+   "opts": {
+    "words": true,
+    "dark": false
+   },
+   "plan": {
+    "look": "grain",
+    "react": "music",
+    "tone": "#4AA8F0",
+    "env": {
+     "attack": 25,
+     "release": 260,
+     "steps": 0,
+     "gain": 1
+    },
+    "speed": 1,
+    "dim": 0.7,
+    "scrim": 0,
+    "fps": 30,
+    "scale": 0.75,
+    "still": false,
+    "why": null,
+    "label": "Grain, moving with the music",
+    "colors": {
+     "a": "#4AA8F0",
+     "b": "#919BF0",
+     "c": "#0DE5B3",
+     "ground": "#FFF9F0",
+     "ink": "#3A3340"
+    }
+   }
+  },
+  {
+   "props": {},
+   "opts": {
+    "reduced": true
+   },
+   "plan": {
+    "look": "orb",
+    "react": "voice",
+    "tone": "#FF7E8A",
+    "env": {
+     "attack": 0,
+     "release": 0,
+     "steps": 0,
+     "gain": 0
+    },
+    "speed": 0,
+    "dim": 1,
+    "scrim": 0,
+    "fps": 0,
+    "scale": 0.5,
+    "still": true,
+    "why": "reduce-motion",
+    "label": "Orb, listening to your voice",
+    "colors": {
+     "a": "#F65A69",
+     "b": "#F5C2A3",
+     "c": "#F811C1",
+     "ground": "#231D33",
+     "ink": "#F6EEF7"
+    }
+   }
+  },
+  {
+   "props": {
+    "look": "bloom"
+   },
+   "opts": {
+    "lowPower": true
+   },
+   "plan": {
+    "look": "bloom",
+    "react": "voice",
+    "tone": "#FF7E8A",
+    "env": {
+     "attack": 0,
+     "release": 0,
+     "steps": 0,
+     "gain": 0
+    },
+    "speed": 0,
+    "dim": 1,
+    "scrim": 0,
+    "fps": 0,
+    "scale": 0.5,
+    "still": true,
+    "why": "low-power",
+    "label": "Bloom, listening to your voice",
+    "colors": {
+     "a": "#F65A69",
+     "b": "#F5C2A3",
+     "c": "#F811C1",
+     "ground": "#231D33",
+     "ink": "#F6EEF7"
+    }
+   }
+  },
+  {
+   "props": {
+    "look": "waves"
+   },
+   "opts": {
+    "thermal": "fair"
+   },
+   "plan": {
+    "look": "waves",
+    "react": "voice",
+    "tone": "#FF7E8A",
+    "env": {
+     "attack": 25,
+     "release": 260,
+     "steps": 0,
+     "gain": 1
+    },
+    "speed": 1,
+    "dim": 1,
+    "scrim": 0,
+    "fps": 30,
+    "scale": 0.5,
+    "still": false,
+    "why": null,
+    "label": "Waves, listening to your voice",
+    "colors": {
+     "a": "#F65A69",
+     "b": "#F5C2A3",
+     "c": "#F811C1",
+     "ground": "#231D33",
+     "ink": "#F6EEF7"
+    }
+   }
+  },
+  {
+   "props": {
+    "look": "orb",
+    "react": "off"
+   },
+   "opts": {
+    "theme": {
+     "pace": "quick",
+     "pulse": "tick"
+    }
+   },
+   "plan": {
+    "look": "orb",
+    "react": "off",
+    "tone": "#FF7E8A",
+    "env": {
+     "attack": 0,
+     "release": 0,
+     "steps": 0,
+     "gain": 0
+    },
+    "speed": 1.4705882352941175,
+    "dim": 1,
+    "scrim": 0,
+    "fps": 60,
+    "scale": 0.5,
+    "still": false,
+    "why": null,
+    "label": "Orb, moving on its own",
+    "colors": {
+     "a": "#F65A69",
+     "b": "#F5C2A3",
+     "c": "#F811C1",
+     "ground": "#231D33",
+     "ink": "#F6EEF7"
+    }
+   }
+  },
+  {
+   "props": {
+    "look": "orb"
+   },
+   "opts": {
+    "thermal": "critical"
+   },
+   "plan": {
+    "look": "orb",
+    "react": "voice",
+    "tone": "#FF7E8A",
+    "env": {
+     "attack": 0,
+     "release": 0,
+     "steps": 0,
+     "gain": 0
+    },
+    "speed": 0,
+    "dim": 1,
+    "scrim": 0,
+    "fps": 0,
+    "scale": 0.5,
+    "still": true,
+    "why": "hot",
+    "label": "Orb, listening to your voice",
+    "colors": {
+     "a": "#F65A69",
+     "b": "#F5C2A3",
+     "c": "#F811C1",
+     "ground": "#231D33",
+     "ink": "#F6EEF7"
+    }
+   }
+  },
+  {
+   "props": {
+    "look": "stars",
+    "react": "loud"
+   },
+   "opts": {
+    "hidden": true
+   },
+   "plan": {
+    "look": "orb",
+    "react": "voice",
+    "tone": "#FF7E8A",
+    "env": {
+     "attack": 0,
+     "release": 0,
+     "steps": 0,
+     "gain": 0
+    },
+    "speed": 0,
+    "dim": 1,
+    "scrim": 0,
+    "fps": 0,
+    "scale": 0.5,
+    "still": true,
+    "why": "hidden",
+    "label": "Orb, listening to your voice",
+    "colors": {
+     "a": "#F65A69",
+     "b": "#F5C2A3",
+     "c": "#F811C1",
+     "ground": "#231D33",
+     "ink": "#F6EEF7"
+    }
+   }
+  }
+ ],
+ "levels": [
+  {
+   "samples": [],
+   "level": 0
+  },
+  {
+   "samples": [
+    0.5,
+    -0.5,
+    0.5,
+    -0.5
+   ],
+   "level": 1
+  },
+  {
+   "samples": [
+    0.03,
+    -0.03
+   ],
+   "level": 0.590848507678458
+  },
+  {
+   "samples": [
+    0.001
+   ],
+   "level": 1.7371770582030878e-7
+  },
+  {
+   "samples": [
+    1,
+    1
+   ],
+   "level": 1
+  }
+ ]
+}

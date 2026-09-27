@@ -49,6 +49,7 @@ final class ChatStore {
         var screens: [Int]
         var talking: Set<Int>
         var restyleNewest: String?
+        var visual: YLVisual?
     }
     @ObservationIgnored private var derived: Derived?
 
@@ -74,13 +75,17 @@ final class ChatStore {
                         wearers: Set(lastInRow.values.map { $0.text ?? $0.any }),
                         screens: [1] + on.sorted(),
                         talking: Set(YuiLines.talking(messages.flatMap { $0.yl?.talkLines ?? [] })),
-                        restyleNewest: restyle)
+                        restyleNewest: restyle,
+                        visual: YuiLines.visual(of: messages.flatMap { $0.yl?.visualLines ?? [] }))
         derived = d
         return d
     }
 
     /// The rows the thread draws: a reply with nothing left to draw gets none (YUI-80).
     var shown: [ChatMessage] { derive.shown }
+
+    /// The visual behind the stage (YUI-124): the thread's newest `visual` line, until `visual off`.
+    var visual: YLVisual? { derive.visual }
 
     /// The newest reply offering Yui a new look (RESTYLE.md).
     var restyleNewest: String? { derive.restyleNewest }

@@ -32,6 +32,9 @@ struct Vector: Sendable, CustomTestStringConvertible {
     /// The working row after the input (spec section 5, The working row): an
     /// object, or .null when there is none. Nil when the vector leaves it out.
     let doing: YLValue?
+    /// The visual after the input (spec section 5, The visual): an object, or
+    /// .null when there is none. Nil when the vector leaves it out.
+    let visual: YLValue?
     let style: [String: String]
     /// Ids that last from earlier replies, id -> preset (spec section 5).
     let known: [String: String]
@@ -65,6 +68,7 @@ enum Vectors {
                 menu: v["menu"],
                 rows: v["rows"],
                 doing: v["doing"],
+                visual: v["visual"],
                 style: v["style"]?.object?.compactMapValues { $0.string } ?? [:],
                 known: v["known"]?.object?.compactMapValues { $0.string } ?? [:]
             )
@@ -177,6 +181,19 @@ func conformance(_ v: Vector) {
         #expect(got == want, "doing: \(json(got))")
     }
 
+    if let want = v.visual {
+        let x = YuiLines.visual(of: YuiLines.parse(v.input, known: v.known))
+        var got = YLValue.null
+        if let x {
+            var o: [String: YLValue] = [:]
+            if let l = x.look { o["look"] = .string(l) }
+            if let t = x.tone { o["tone"] = .string(t) }
+            if let r = x.react { o["react"] = .string(r) }
+            got = .object(o)
+        }
+        #expect(got == want, "visual: \(json(got))")
+    }
+
     if let want = v.rows {
         // Timeline rows after the input is applied to an empty screen: adds in
         // line order, a patch lands on the newest id or preset match, and
@@ -245,7 +262,7 @@ func conformance(_ v: Vector) {
 
 /// Hub areas this parser has not taken on yet. Keep in step with
 /// `scripts/sync-vectors.sh`; drop a name here once the parser passes that file.
-let notYetInApp: Set<String> = ["26-flow.json", "30-tables.json", "36-flow-variant.json", "38-visual.json"]  // FLOW-1 (flows, variants), YUI-89 (app halves) and YUI-124 step 2 (the visualizer)
+let notYetInApp: Set<String> = ["26-flow.json", "30-tables.json", "36-flow-variant.json"]  // FLOW-1 (flows, variants) and YUI-89 (app halves)
 
 /// When the hub repo sits next to this one, the copied vectors must match it.
 @Test(.enabled(if: FileManager.default.fileExists(atPath: hubVectors.path)))

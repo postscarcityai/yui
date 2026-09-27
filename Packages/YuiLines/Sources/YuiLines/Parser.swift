@@ -123,9 +123,10 @@ public struct YLParser: Sendable {
 
     /// Group bookkeeping for one parsed node. Errors (and nil) leave groups open.
     private mutating func group(_ node: YLNode?) -> YLNode? {
-        // A theme line restyles the app, a menu line fills the drawer and a doing
-        // line sits in the working row, not on the screen: they leave groups alone.
-        guard var node, node.op != .error, node.op != .theme, node.op != .menu, node.op != .doing else { return node }
+        // A theme line restyles the app, a menu line fills the drawer, a doing
+        // line sits in the working row and a visual behind the stage, not on the
+        // screen: they leave groups alone.
+        guard var node, node.op != .error, node.op != .theme, node.op != .menu, node.op != .doing, node.op != .visual else { return node }
         // Closing the stage ends whatever group was open on it, like `>2` would.
         if node.op == .close { open = []; return node }
         if node.op == .end {
@@ -229,6 +230,7 @@ public struct YLParser: Sendable {
         }
         if head == "menu" { return YuiLines.menuLine(screen: screen, tokens: tokens, line: line) }
         if head == "doing" { return YuiLines.doingLine(screen: screen, tokens: tokens, line: line) }
+        if head == "visual" { return YuiLines.visualLine(screen: screen, tokens: tokens, line: line) }
         if head == "clear" { return YLNode(op: .clear, screen: screen, line: line) }
         if head == "end" { return YLNode(op: .end, screen: screen, line: line) }
         if head == "close" {

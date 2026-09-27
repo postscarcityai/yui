@@ -31,6 +31,9 @@ public struct YLNode: Codable, Equatable, Sendable {
         /// `doing "Reading your calendar" 2/5`: what the agent is doing, for the working
         /// row, not a screen. `props` {text?, step?, of?}; `doing off` gives props {off: true}.
         case doing
+        /// `visual aurora tone=mint react=voice`: a live shader behind the stage, not a screen.
+        /// `props` {look?, tone?, react?}; `visual off` gives props {off: true}.
+        case visual
         /// The line was rejected: `message`. Every other line still renders.
         case error
     }

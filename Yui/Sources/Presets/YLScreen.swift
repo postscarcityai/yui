@@ -48,6 +48,8 @@ struct YLScreen: Equatable, Sendable {
     private(set) var shelfOps: [ShelfOp] = []
     /// This reply's `menu` lines, in order, for the agent's drawer (YUI-86). They draw nothing here.
     private(set) var menuLines: [YLNode] = []
+    /// This reply's `visual` lines, in order: the shader behind the stage (YUI-124). They draw nothing here.
+    private(set) var visualLines: [YLNode] = []
     /// This reply's `talk` and `clear` lines, in order: which pages keep the composer (YUI-62).
     private(set) var talkLines: [YLNode] = []
     private var serial = 0
@@ -105,6 +107,9 @@ struct YLScreen: Equatable, Sendable {
             closedAt = serial
         case .menu:
             menuLines.append(node)
+        case .visual:
+            // The backdrop behind the stage (YUI-124), never a screen: the thread's newest wins.
+            visualLines.append(node)
         case .doing:
             // The working row (YUI-63), never a screen: the host sends it mid-turn on
             // the person's row, and a reply ends the working row anyway.

@@ -134,8 +134,13 @@ struct StageFirstView: View {
     let actions: StageActions
     @Environment(\.yuiTheme) private var theme
     @Environment(\.colorScheme) private var scheme
+    @Environment(\.scenePhase) private var phase
     /// When the mood on show began: the burst and the shake count from here.
     @State private var moodSince = Date()
+    /// The visual's scrim follows the words (YUI-124): the top of the chunk's words and the
+    /// stage's height, both in global points.
+    @State private var wordsTop: CGFloat?
+    @State private var stageHeight: CGFloat = 0
     /// Heard words so far: the mic ring beats on each change.
     @State private var voice = 0
 
@@ -172,9 +177,15 @@ struct StageFirstView: View {
         .background {
             ZStack {
                 c.background
-                // A soft wash of the agent's color from the top, like the mock.
-                RadialGradient(colors: [c.accent.opacity(scheme == .dark ? 0.16 : 0.10), .clear],
-                               center: .top, startRadius: 0, endRadius: 520)
+                if let plan = visualPlan(turn) {
+                    // The agent's visual (YUI-124): a shader behind the chunks, or alone on the stage.
+                    StageVisual(plan: plan)
+                        .onGeometryChange(for: CGFloat.self, of: { $0.frame(in: .global).maxY }) { stageHeight = $0 }
+                } else {
+                    // A soft wash of the agent's color from the top, like the mock.
+                    RadialGradient(colors: [c.accent.opacity(scheme == .dark ? 0.16 : 0.10), .clear],
+                                   center: .top, startRadius: 0, endRadius: 520)
+                }
             }
             .ignoresSafeArea()
         }
@@ -196,6 +207,44 @@ struct StageFirstView: View {
         .accessibilityElement(children: .contain)
         .accessibilityAddTraits(.isModal)
         .accessibilityIdentifier("stage-first")
+    }
+
+    // MARK: The visual (YUI-124)
+
+    /// The thread's visual, or nil. DEBUG `-yuiDemoVisual "aurora tone=mint"` puts one up with no reply.
+    private var visual: YLVisual? {
+        #if DEBUG
+        if let s = UserDefaults.standard.string(forKey: "yuiDemoVisual") {
+            return YuiLines.visual(of: YuiLines.parse("visual " + s)) ?? store.visual
+        }
+        #endif
+        return store.visual
+    }
+
+    /// What the visual draws now: dimmed with a scrim behind words, full strength alone
+    /// (the agent working, nothing to read yet), still when the app is not on screen.
+    private func visualPlan(_ turn: StageTurn?) -> VisualPlan? {
+        guard let v = visual else { return nil }
+        let p = theme.palette(for: scheme)
+        let conditions = VisualConditions.shared
+        return VisualPlan(v, accent: p.accent, ground: p.background, ink: p.ink, motion: look,
+                          words: !working(turn), zone: wordsZone(turn), lowPower: conditions.lowPower, thermal: conditions.thermal,
+                          hidden: phase != .active)
+    }
+
+    /// Where the scrim lies: under the chunk's words, over the whole stage for the questions
+    /// (words everywhere), the spec's zone until the words have been laid out.
+    private func wordsZone(_ turn: StageTurn?) -> VisualPlan.Zone {
+        if let t = turn, t.pages > 0, model.at >= t.chunks.count { return .under(top: 1) }
+        guard let top = wordsTop, stageHeight > 0 else { return .spec }
+        return .under(top: 1 - Double(top / stageHeight))
+    }
+
+    /// The agent is on it and nothing is up to read: the mark and its doing words only.
+    private func working(_ turn: StageTurn?) -> Bool {
+        guard !mic.live, let t = turn, t.ask != nil else { return false }
+        if model.foundUntil != nil { return true }
+        return t.pages == 0 && store.waiting
     }
 
     // MARK: Top bar (YUI-122, TopBar.swift): the menu and the agent top left, the record top right
@@ -362,11 +411,15 @@ struct StageFirstView: View {
                             .foregroundStyle(c.ink)
                             .fixedSize(horizontal: false, vertical: true)
                             .accessibilityIdentifier("stage-line")
+                            .onGeometryChange(for: CGFloat.self, of: { $0.frame(in: .global).minY }) { wordsTop = $0 }
                     }
                     if let page = k.page {
                         if let body = page.string("body") {
                             Text(body).font(theme.font(theme.type.body)).foregroundStyle(c.inkSoft)
                                 .fixedSize(horizontal: false, vertical: true)
+                                .onGeometryChange(for: CGFloat.self, of: { $0.frame(in: .global).minY }) { top in
+                                    if k.line?.isEmpty != false { wordsTop = top }
+                                }
                         }
                         ForEach(Array((page.strings("points") ?? []).enumerated()), id: \.offset) { _, p in
                             Label { Text(p) } icon: { Circle().fill(c.accent).frame(width: 7, height: 7) }
@@ -397,7 +450,9 @@ struct StageFirstView: View {
     private func working(_ c: Swatch) -> some View {
         let (mood, flavor) = StageMotion.mood(facts(model.ask.map { StageChunks.turn(store.messages, ask: $0) }))
         return VStack(spacing: theme.spacing.xl) {
+            // The orb visual sits where the mark lives: it is the mark then.
             StageMark(color: c.accent, mood: mood, flavor: flavor, look: look, since: moodSince)
+                .opacity(visual != nil && (visual?.look ?? "orb") == "orb" ? 0 : 1)
                 .frame(width: 170, height: 170)
             workingLine(c, big: true)
         }
