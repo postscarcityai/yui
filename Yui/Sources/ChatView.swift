@@ -7,6 +7,10 @@ import YuiLines
 /// The chat with the selected agent (one thread per agent, over the relay).
 /// Agent replies in Yui Lines render inline as presets.
 struct ChatView: View {
+    #if DEBUG
+    /// -yuiComposerPhoto has placed its photo (once per launch).
+    @MainActor static var composerPhotoPlaced = false
+    #endif
     @Environment(\.yuiTheme) private var theme
     @Environment(\.colorScheme) private var scheme
     @Environment(Account.self) private var account
@@ -778,7 +782,9 @@ struct ChatView: View {
         // -yuiPTTDemo "words": the hold-to-talk listening state.
         .task {
             // Several paths split by `|` put several in (YUI-121's two-picture send).
-            if let paths = UserDefaults.standard.string(forKey: "yuiComposerPhoto") {
+            // Once per launch: the task runs again when the thread changes, and a second copy went out.
+            if !Self.composerPhotoPlaced, let paths = UserDefaults.standard.string(forKey: "yuiComposerPhoto") {
+                Self.composerPhotoPlaced = true
                 add(paths.split(separator: "|").compactMap { FileManager.default.contents(atPath: String($0)) })
             }
             if let words = UserDefaults.standard.string(forKey: "yuiPTTDemo") { talk.demo(words) }

@@ -152,6 +152,17 @@ test("one photo per turn: the newest goes, and the model hears it missed the res
   assert.match(parts[0].text, /2 more photos came with this turn/);
 });
 
+test("a composer photo (meta.photos, as the app sends it) reaches the model that sees", async () => {
+  const { store, byHandle } = await freshYui();
+  const basil = await byHandle("basil");
+  const m = fakeModel(() => "Salmon and greens, about 550 kcal.");
+  store.say(basil.id, "Lunch", "text");
+  store.data.rows.at(-1)!.meta = { photos: ["https://img.test/salmon.jpg"] };
+  await runAgent(store, basil.id, { provider, fetch: m.fetch });
+  const parts = lastUser(m.calls[0]).content;
+  assert.deepEqual(parts.filter((p: any) => p.type === "image_url"), [{ type: "image_url", image_url: { url: "https://img.test/salmon.jpg" } }]);
+});
+
 test("a photo the model can't fetch goes again as bytes, once", async () => {
   const { store, byHandle } = await freshYui();
   const basil = await byHandle("basil");

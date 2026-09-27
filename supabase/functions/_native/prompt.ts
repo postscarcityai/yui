@@ -152,14 +152,15 @@ export function buildTurn(input: PromptInput): { messages: ChatMessage[]; droppe
   return { messages, dropped: past.length - kept.length };
 }
 
-/** Storage paths of the person's photos in these rows, oldest first: `[yui] c1 camera photo=<path>`. */
+/** Storage paths of the person's photos in these rows, oldest first: `[yui] c1 camera photo=<path>` or the composer's `meta.photos`. */
 export function photoPaths(rows: Row[]): string[] {
   const out: string[] = [];
   for (const r of rows) {
     for (const m of (r.body ?? "").matchAll(/\bphotos?=("([^"]+)"|(\S+))/g)) {
       for (const p of (m[2] ?? m[3]).split("|")) if (p && !out.includes(p)) out.push(p);
     }
-    for (const p of r.meta?.media ?? []) if (typeof p === "string" && !out.includes(p)) out.push(p);
+    // The app sends `meta.photos` (spec/RELAY.md); `media` is the older name.
+    for (const p of [...(r.meta?.photos ?? []), ...(r.meta?.media ?? [])]) if (typeof p === "string" && !out.includes(p)) out.push(p);
   }
   return out;
 }
