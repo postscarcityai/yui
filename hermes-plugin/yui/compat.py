@@ -23,6 +23,7 @@ SHAPES_BUILD = 131  # the YUI-104 app commit (git rev-list --count)
 DECK_PICTURES_BUILD = 158
 MUSIC_BUILD = 175  # YUI-116 step 2: loop and drums drawn and played (56b38a3)
 KEYS_BUILD = 177  # YUI-116 step 3: keys and chords drawn and played (2b26871)
+TUNER_BUILD = 205  # YUI-116 step 4: tuner and metronome drawn and played (7b18b14)
 
 # First app build whose parser knows each preset (git rev-list --count of the
 # commit that added it to Packages/YuiLines/Sources/YuiLines/Presets.swift).
@@ -34,6 +35,7 @@ MIN_BUILD: Dict[str, int] = {
     "shapes": SHAPES_BUILD, "shape": SHAPES_BUILD,       # YUI-104: shapes that move
     "loop": MUSIC_BUILD, "drums": MUSIC_BUILD,           # YUI-116 step 2: a beat and pads
     "keys": KEYS_BUILD, "chords": KEYS_BUILD,            # YUI-116 step 3: a keyboard and chord buttons
+    "tuner": TUNER_BUILD, "metronome": TUNER_BUILD,      # YUI-116 step 4: a tuner and a click
 }
 GROUPS = {"sketch": {"row", "after"}, "timeline": {"done", "now", "next"}, "shapes": {"shape"}}
 MEMBER_OF = {m: head for head, ms in GROUPS.items() for m in ms}
@@ -163,6 +165,12 @@ def _group_text(lines: List[str]) -> str:
             out.append(f"There's a keyboard here{' in ' + title if title else ''}. Update Yui to play it.")
         elif preset == "chords":
             out.append(f"There are chord buttons here{': ' + title.replace('|', ' ') if title else ''}. Update Yui to play them.")
+        elif preset == "tuner":
+            inst = next((w.lower() for w in words[:1] if w.lower() in ("guitar", "ukulele", "bass")), "")
+            out.append(f"There's a tuner here{' for ' + inst if inst else ''}. Update Yui to use it.")
+        elif preset == "metronome":
+            bpm = next((w for w in words if re.fullmatch(r"\d+", w)), _unquote(props.get("bpm", "")))
+            out.append(f"There's a metronome here{' at ' + bpm + ' bpm' if bpm else ''}. Update Yui to use it.")
         elif preset == "shapes":
             if title:
                 out.append(f"**{title}**")

@@ -118,11 +118,11 @@ class Downgrade(unittest.TestCase):
         self.assertDrawable(out, 96)
 
     def test_note_names_what_to_skip(self):
-        self.assertIn("cannot draw chords, drums, keys, loop, shapes, sketch yet", compat.note(96))
+        self.assertIn("cannot draw chords, drums, keys, loop, metronome, shapes, sketch, tuner yet", compat.note(96))
         self.assertNotIn("timeline", compat.note(96))
-        self.assertEqual(compat.note(compat.SHAPES_BUILD), f"[yui] This person's Yui app (build {compat.SHAPES_BUILD}) cannot draw chords, drums, keys, loop yet: don't send those. Say it in words or use another preset.")
-        self.assertEqual(compat.note(compat.KEYS_BUILD), "")
-        self.assertIn("cannot draw chords, drums, keys, loop, shapes", compat.note(122))
+        self.assertEqual(compat.note(compat.SHAPES_BUILD), f"[yui] This person's Yui app (build {compat.SHAPES_BUILD}) cannot draw chords, drums, keys, loop, metronome, tuner yet: don't send those. Say it in words or use another preset.")
+        self.assertEqual(compat.note(compat.TUNER_BUILD), "")
+        self.assertIn("cannot draw chords, drums, keys, loop, metronome, shapes", compat.note(122))
         self.assertIn("an older build", compat.note(None))
 
     def test_menu_lines_go_quietly_before_the_drawer(self):
@@ -163,9 +163,22 @@ class Downgrade(unittest.TestCase):
         self.assertIn("There are chord buttons here: G I-V-vi-IV. Update Yui to play them.", out)
         self.assertIn("There are chord buttons here: C G Am F. Update Yui to play them.", out)
         self.assertDrawable(out, 176)
-        self.assertIn("cannot draw chords, keys yet", compat.note(176))
-        self.assertEqual(compat.note(compat.KEYS_BUILD), "")
+        self.assertIn("cannot draw chords, keys, metronome, tuner yet", compat.note(176))
+        self.assertIn("cannot draw metronome, tuner yet", compat.note(compat.KEYS_BUILD))
         self.assertEqual(compat.downgrade(body, compat.KEYS_BUILD), body)
+
+    def test_tuner_and_metronome_before_build_205(self):
+        body = ("Tune up, then play.\n\n"
+                + fence("tuner guitar +inline", "metronome 80 beats=4", "tuner", "metronome bpm=72"))
+        out = compat.downgrade(body, 204)
+        self.assertIn("There's a tuner here for guitar. Update Yui to use it.", out)
+        self.assertIn("There's a metronome here at 80 bpm. Update Yui to use it.", out)
+        self.assertIn("There's a tuner here. Update Yui to use it.", out)
+        self.assertIn("There's a metronome here at 72 bpm. Update Yui to use it.", out)
+        self.assertDrawable(out, 204)
+        self.assertIn("cannot draw metronome, tuner yet", compat.note(204))
+        self.assertEqual(compat.note(compat.TUNER_BUILD), "")
+        self.assertEqual(compat.downgrade(body, compat.TUNER_BUILD), body)
 
     def test_placed_shapes_and_a_lone_shape(self):
         body = fence("shapes Parts", "shape box A at=2,2", "shape box B at=8,2", "shape arrow from=a to=b")
