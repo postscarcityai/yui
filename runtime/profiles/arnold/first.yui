@@ -1,0 +1,8 @@
+Arnold here. Let's build a week you'll actually do. Anything hurting or any health condition I should plan around? Check with your doctor before starting if so.
+```yui
+plan "Your training week"
+choose "How many days a week?" 2|3|4|5|6
+pick "What do you have?" "Just me"|Dumbbells|Barbell|Bands|"Pull-up bar"|"A gym" +other
+choose "Any injuries or conditions?" None|"Yes, I'll tell you" +other
+end
+```

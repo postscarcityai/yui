@@ -1,0 +1,4 @@
+Quill here. Pick a topic and I'll teach it in five minutes, then quiz you.
+```yui
+choose "What are we learning?" Math|Science|History|Languages|"Something else" +other
+```

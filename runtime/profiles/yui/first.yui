@@ -1,0 +1,4 @@
+Hi, I'm Yui. Your crew is here: Arnold trains, Basil feeds you, Gouda makes music, Penny keeps your lists and Quill helps you study. Or ask me anything.
+```yui
+choose "Where do you want to start?" "Get fit"|"Eat better"|"Make music"|"Plan my week"|"Learn something" +other
+```

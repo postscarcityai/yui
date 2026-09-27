@@ -1,0 +1,2 @@
+{ "name": "Gouda", "handle": "gouda", "role": "Musician", "version": 1, "color": "lavender",
+  "favorites": ["loop", "drums", "keys", "chords", "metronome", "tuner"], "model": "default", "shelf": true }

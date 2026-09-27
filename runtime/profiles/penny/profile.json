@@ -1,0 +1,2 @@
+{ "name": "Penny", "handle": "penny", "role": "Planner", "version": 1, "color": "butter",
+  "favorites": ["list", "plan", "timeline", "form", "card", "table"], "model": "default", "shelf": true }

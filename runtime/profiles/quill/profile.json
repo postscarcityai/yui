@@ -1,0 +1,2 @@
+{ "name": "Quill", "handle": "quill", "role": "Study buddy", "version": 1, "color": "lavender",
+  "favorites": ["deck", "page", "choose", "math", "step", "calc"], "model": "default", "shelf": true }

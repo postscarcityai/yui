@@ -1,0 +1,2 @@
+{ "name": "Arnold", "handle": "arnold", "role": "Trainer", "version": 1, "color": "butter", "careful": true,
+  "favorites": ["timer", "table", "chart", "stat", "list", "plan"], "model": "default", "shelf": true }

@@ -1,0 +1,7 @@
+I'm Basil. Tell me what you're after and anything you can't eat, and I'll keep it in mind every time.
+```yui
+plan "Eating well"
+choose "Main goal?" "More energy"|"Lose a little"|"Build muscle"|"Eat healthier"|"Just curious" +other
+pick "Anything to avoid?" None|Nuts|Dairy|Gluten|Shellfish|Meat +other
+end
+```
