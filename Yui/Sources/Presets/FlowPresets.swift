@@ -502,6 +502,9 @@ struct PlanPreset: View {
     @State private var answers: [String: YLValue] = [:]
     @State private var reviewing = false
     @State private var submitted = false
+    /// Steps holding Next: a form with a required field still empty.
+    @State private var missing: Set<String> = []
+    @State private var restored = false
     @Environment(\.ylComponents) private var all
     @Environment(\.ylAnswers) private var sent
     @Environment(\.ylScope) private var scope
@@ -541,6 +544,7 @@ struct PlanPreset: View {
                             else { PresetView(component: step) }
                         }
                         .environment(\.ylBare, true)
+                        .environment(\.ylHostedSubmit, true)
                         .environment(\.ylEmit, relay(emit, pass: false) { e in record(e, step: step, i: i, steps: steps, review: review) })
                         .frame(height: i == cur ? nil : 0, alignment: .top)
                         .clipped()
@@ -556,11 +560,13 @@ struct PlanPreset: View {
                     }
                     .disabled(cur == 0)
                     let last = cur == steps.count - 1
+                    let held = missing.contains(steps[cur].ylID)
                     OptionPill(text: last ? (review ? "Review" : c.string("submit") ?? "Send") : "Next",
-                               fill: s.accent, ink: s.onAccent, grow: true) {
+                               fill: s.accent, ink: s.onAccent, on: !held, grow: true) {
                         if last { review ? withAnimation(theme.spring) { reviewing = true } : submit(steps) }
                         else { withAnimation(theme.spring) { at = cur + 1 } }
                     }
+                    .disabled(held)
                 }
             }
         }
@@ -569,12 +575,19 @@ struct PlanPreset: View {
 
     /// Reopened after a send (a relaunch, a scroll back): come back sent, answers filled in.
     private func restore() {
-        guard answers.isEmpty, let plan = sent(scope, c.ylID)?["plan"]?.object else { return }
+        // Once: a hosted form hands over its fields on appear, so `answers` may not be empty here.
+        guard !restored, let plan = sent(scope, c.ylID)?["plan"]?.object else { return }
+        restored = true
         answers = plan
         submitted = true
     }
 
     private func record(_ e: YLEvent, step: YLComponent, i: Int, steps: [YLComponent], review: Bool) {
+        // A form hands over every edit: all fields cleared takes its answer back.
+        if step.preset == "form" {
+            if e.value["missing"] != nil { missing.insert(step.ylID) } else { missing.remove(step.ylID) }
+            if YLComponent.answerValue(e) == nil { answers[step.ylID] = nil }
+        }
         guard let v = YLComponent.answerValue(e) else { return }
         answers[step.ylID] = v
         // ask and choose move on by themselves after a tap.

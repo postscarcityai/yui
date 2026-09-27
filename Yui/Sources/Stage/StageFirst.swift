@@ -537,13 +537,16 @@ struct StageFirstView: View {
                         .environment(\.ylComponents, q.all)
                         .environment(\.ylScope, q.scope)
                         .environment(\.ylOnStage, false)
+                        .environment(\.ylHostedSubmit, true)
                         .environment(\.ylEmit, YLEmit { e in model.answers[q.id] = e })
                         .disabled(sent)
                         // ask: the questions come on one by one.
                         .modifier(StaggerIn(index: i, look: look))
                 }
                 if !sent {
-                    let ready = t.questions.contains { model.answers[$0.id] != nil }
+                    // A form counts once a field has a value; one missing a required field holds Send.
+                    let ready = t.questions.contains { model.answers[$0.id].flatMap(YLComponent.answerValue) != nil }
+                        && !t.questions.contains { model.answers[$0.id]?.value["missing"] != nil }
                     Button { submit(t) } label: {
                         Text(t.plan?.c.string("submit") ?? "Send")
                             .font(theme.font(theme.type.title, .heavy))
@@ -582,7 +585,9 @@ struct StageFirstView: View {
             store.emit(p.c.event(["plan": .object(plan)], echo: YLComponent.foldText(inPlan.map(\.c), plan)))
         }
         let planned = Set(inPlan.map(\.id))
-        for q in t.questions where !planned.contains(q.id) { if let e = model.answers[q.id] { store.emit(e) } }
+        for q in t.questions where !planned.contains(q.id) {
+            if let e = model.answers[q.id], YLComponent.answerValue(e) != nil { store.emit(e) }
+        }
         if let id = t.ask?.id { withAnimation(theme.spring) { _ = model.sent.insert(id) } }
     }
 
