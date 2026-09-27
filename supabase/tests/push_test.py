@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""YUI-8 / YUI-24 push tests against PROOF (live).
+"""YUI-8 / YUI-24 push tests against yuigui (live).
 
 yui-push registers a phone's APNs token for the signed-in user (app token)
 and lets a host notify that user about an agent message it just wrote

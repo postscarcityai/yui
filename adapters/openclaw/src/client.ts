@@ -11,12 +11,12 @@ import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { hostname } from "node:os";
 import { dirname } from "node:path";
 
-const SUPABASE_URL = process.env.YUI_SUPABASE_URL ?? "https://ewzzaoperdpxqxkshynx.supabase.co";
+const SUPABASE_URL = process.env.YUI_SUPABASE_URL ?? "https://txuibjxyfpalzvpneqgp.supabase.co";
 const CONNECT = `${SUPABASE_URL}/functions/v1/yui-connect`;
 const PUSH = `${SUPABASE_URL}/functions/v1/yui-push`;
 const REST = `${SUPABASE_URL}/rest/v1`;
 // Public client key (anon role only; it cannot read any yui_ table).
-const PUBLISHABLE = "sb_publishable_OhqLI7p27yiELT4tn8i7JA_TnnwPYsS";
+const PUBLISHABLE = "sb_publishable_9DhcBgazmSHaoOJChYtqwA_qyHvI_zc";
 const UA = "yui-openclaw/1";
 export const HEARTBEAT_SECONDS = 45;
 const REFRESH_MARGIN_SECONDS = 600; // the 60-minute session is renewed 10 minutes early

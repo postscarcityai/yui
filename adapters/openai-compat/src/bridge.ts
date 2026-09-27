@@ -27,12 +27,12 @@ import { dirname } from "node:path";
 import { ChatClient, ModelError, ModelUnavailable, StreamRefused, type Completion } from "./openai.ts";
 import { buildMessages, type ThreadRow } from "./thread.ts";
 
-export const SUPABASE_URL = process.env.YUI_SUPABASE_URL ?? "https://ewzzaoperdpxqxkshynx.supabase.co";
+export const SUPABASE_URL = process.env.YUI_SUPABASE_URL ?? "https://txuibjxyfpalzvpneqgp.supabase.co";
 const CONNECT = `${SUPABASE_URL}/functions/v1/yui-connect`;
 const PUSH = `${SUPABASE_URL}/functions/v1/yui-push`;
 const REST = `${SUPABASE_URL}/rest/v1`;
 // Public client key (anon role only; it cannot read any yui_ table).
-const PUBLISHABLE = "sb_publishable_OhqLI7p27yiELT4tn8i7JA_TnnwPYsS";
+const PUBLISHABLE = "sb_publishable_9DhcBgazmSHaoOJChYtqwA_qyHvI_zc";
 const UA = "yui-openai/1";
 const HEARTBEAT_SECONDS = 45;
 const REFRESH_MARGIN_SECONDS = 600;

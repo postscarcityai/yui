@@ -24,12 +24,12 @@ import argparse, hashlib, hmac, json, os, random, signal, socket, sys, threading
 from datetime import datetime, timezone
 from pathlib import Path
 
-SUPABASE_URL = os.environ.get("YUI_SUPABASE_URL", "https://ewzzaoperdpxqxkshynx.supabase.co")
+SUPABASE_URL = os.environ.get("YUI_SUPABASE_URL", "https://txuibjxyfpalzvpneqgp.supabase.co")
 CONNECT = f"{SUPABASE_URL}/functions/v1/yui-connect"
 PUSH = f"{SUPABASE_URL}/functions/v1/yui-push"
 REST = f"{SUPABASE_URL}/rest/v1"
 # Public client key (anon role only; it cannot read any yui_ table).
-PUBLISHABLE = "sb_publishable_OhqLI7p27yiELT4tn8i7JA_TnnwPYsS"
+PUBLISHABLE = "sb_publishable_9DhcBgazmSHaoOJChYtqwA_qyHvI_zc"
 UA = "yui-webhook-py/1"
 HEARTBEAT_SECONDS = 45
 REFRESH_MARGIN_SECONDS = 600   # the 60-minute session is renewed 10 minutes early

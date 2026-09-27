@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""YUI-26: safe for strangers. Live against PROOF, on two throwaway accounts.
+"""YUI-26: safe for strangers. Live against yuigui, on two throwaway accounts.
 
 Two unrelated strangers, A and B, each with an agent paired to their own host.
 Every check runs in both directions (A against B, then B against A):
 
   1. Isolation. Neither the app token (yui_user) nor the host token
      (yui_connector) of one stranger can read, write, ack, edit or delete the
-     other's rows or media, or reach any non-yui table or function in PROOF.
+     other's rows or media, or reach any non-yui table or function in yuigui.
   2. Limits (migration 20260924070000_yui_limits.sql, README "Limits"): size
      caps, per-account and per-host rate buckets, account caps, the media
      quota. A backlog flush after a long quiet spell goes through in one go;
@@ -16,7 +16,7 @@ Every check runs in both directions (A against B, then B against A):
      and restoring it brings everything back.
   4. Retention: messages past message_retention_days go, fresh ones stay.
 
-Rate checks drain or age a bucket directly instead of flooding PROOF. Both
+Rate checks drain or age a bucket directly instead of flooding yuigui. Both
 accounts are deleted at the end. Needs a Supabase access token, like
 accounts_test.py.
 """
@@ -173,7 +173,7 @@ try:
     st, r = rest("POST", "rpc/set_updated_at", tok[A], {})
     check("live: a portal function is not callable as yui_user", st >= 400, f"{st}")
     auth = mgmt("config/auth")
-    check("PROOF Auth still has signups disabled", auth["disable_signup"] is True and not auth.get("external_apple_enabled"))
+    check("yuigui Auth still has signups disabled", auth["disable_signup"] is True and not auth.get("external_apple_enabled"))
 
     print("== Size caps")
     st, r = rest("POST", "yui_messages", tok[A], msg(A, s[A]["agent"], body="x" * 32001))

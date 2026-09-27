@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""YUI-27: the App Review demo account, live against PROOF.
+"""YUI-27: the App Review demo account, live against yuigui.
 
 The review grant in yui-auth (right code in, wrong code out, forgiving about
 case and dashes), a yui_user session for the one demo account, the demo agent

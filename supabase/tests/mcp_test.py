@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""INT-3 Yui MCP server (functions/yui-mcp) against PROOF (live).
+"""INT-3 Yui MCP server (functions/yui-mcp) against yuigui (live).
 
 On a fresh throwaway account (never a real one):
 

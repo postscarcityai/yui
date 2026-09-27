@@ -123,7 +123,7 @@ Rates are token buckets: `burst` requests at once, refilled at `per minute`. A p
 
 **Retention.** `public.yui_retention()` deletes messages older than 90 days, plus expired pairing codes and sessions, old pairing attempts and idle rate buckets. The daily sweep (`supabase/scripts/media_sweep.py --delete`) runs it first, then removes pictures no remaining message uses.
 
-**Isolation.** `yui_user` and `yui_connector` hold no privilege on any table outside `yui_*` (plus the `yui-media` bucket in Storage), can run no non-Yui security-definer function, and no non-Yui policy applies to them. PROOF Auth keeps signups disabled; Yui accounts never enter it. `strangers_test.py` proves all of this on every run.
+**Isolation.** `yui_user` and `yui_connector` hold no privilege on any table outside `yui_*` (plus the `yui-media` bucket in Storage), can run no non-Yui security-definer function, and no non-Yui policy applies to them. yuigui Auth keeps signups disabled; Yui accounts never enter it. `strangers_test.py` proves all of this on every run.
 
 ## Invites
 

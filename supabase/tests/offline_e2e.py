@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """YUI-28 end to end: no message is lost or doubled when the agent's host dies,
-sleeps or loses its network. Live against PROOF, on a throwaway account.
+sleeps or loses its network. Live against yuigui, on a throwaway account.
 
 The host is the real `yui` platform adapter under Hermes' real
 BasePlatformAdapter (turn lifecycle, hooks, send), in its own process, with a

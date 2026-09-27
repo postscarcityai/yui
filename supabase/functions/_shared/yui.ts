@@ -31,7 +31,7 @@ export function admin() {
 const jwtKey = () => new TextEncoder().encode(env("YUI_JWT_SECRET"));
 
 // Access token PostgREST accepts as role yui_user. Never role=authenticated:
-// that role owns PROOF's portal tables.
+// that role is Supabase Auth's, which Yui accounts never enter.
 export function mintAccessToken(userId: string): Promise<string> {
   return new SignJWT({ role: "yui_user" })
     .setProtectedHeader({ alg: "HS256", typ: "JWT" })

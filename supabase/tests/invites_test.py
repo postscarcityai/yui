@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""YUI-56: invites, live against PROOF.
+"""YUI-56: invites, live against yuigui.
 
 yui_invites is server only (no anon, authenticated, yui_user or yui_connector
 access); invite.py adds, approves (code stored hashed, TestFlight request

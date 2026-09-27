@@ -1,6 +1,6 @@
 """Yui media: pictures and videos in and out of the app (YUI-21).
 
-Storage is the private `yui-media` bucket in PROOF (migration
+Storage is the private `yui-media` bucket in yuigui (migration
 20260924040000_yui_media.sql). Paths are `<user>/<agent>/<from>/<uuid>.<ext>`.
 The host writes under from=agent with its yui_connector token and hands the
 app signed URLs; the app writes the person's photos under from=user.

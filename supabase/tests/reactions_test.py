@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""YUI-49 reaction tests against PROOF (live).
+"""YUI-49 reaction tests against yuigui (live).
 
 A reaction is one event row from the app; a trigger copies its emoji onto the
 reacted agent message. Only the person's own agent messages, only the six

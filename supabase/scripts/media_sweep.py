@@ -30,7 +30,7 @@ entry), like the tests. Keys are fetched at run time and never written down.
 """
 import argparse, base64, json, os, subprocess, sys, urllib.error, urllib.request
 
-REF = "ewzzaoperdpxqxkshynx"
+REF = "txuibjxyfpalzvpneqgp"
 BASE = f"https://{REF}.supabase.co"
 
 

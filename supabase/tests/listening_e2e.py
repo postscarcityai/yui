@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """YUI-64 end to end: an agent that is paired but not listening says so.
 
-Live against PROOF, on a throwaway account. One computer (one connector
+Live against yuigui, on a throwaway account. One computer (one connector
 token), two agents, the way `hermes -p <profile> yui pair` leaves them:
 
   Alpha  its gateway runs: the real `yui` platform adapter under Hermes'

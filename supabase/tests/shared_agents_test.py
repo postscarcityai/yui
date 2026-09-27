@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""YUI-95: shared agents, live against PROOF (spec yuigui spec/AGENTS.md, "Shared agents").
+"""YUI-95: shared agents, live against yuigui (spec yuigui spec/AGENTS.md, "Shared agents").
 
 Templates, grants and yui_agent_grants are server only except a person's own
 live grants; the client-safe mark comes only from the host's sandbox report

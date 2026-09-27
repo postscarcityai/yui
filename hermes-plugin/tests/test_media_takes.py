@@ -23,7 +23,7 @@ U, A = "0b7e4c1a-2f7e-4a55-9d5e-1c2b3a4d5e6f", "9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b
 PHOTO = f"{U}/{A}/user/1f2e3d4c-5b6a-4978-8695-a4b3c2d1e0f9.jpg"
 TAKE = f"{U}/{A}/user/2a3b4c5d-6e7f-4081-9203-a4b5c6d7e8f9.m4a"
 MIDI = f"{U}/{A}/user/2a3b4c5d-6e7f-4081-9203-a4b5c6d7e8fa.mid"
-SIGN = "https://ewzzaoperdpxqxkshynx.supabase.co/storage/v1/object/sign/yui-media/{}?token=eyJhbGciOiJIUzI1NiJ9.x.y"
+SIGN = "https://txuibjxyfpalzvpneqgp.supabase.co/storage/v1/object/sign/yui-media/{}?token=eyJhbGciOiJIUzI1NiJ9.x.y"
 
 
 class TakeLinks(unittest.TestCase):

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""YUI-70: agent controls on the relay, live against PROOF (spec yuigui spec/CONTROLS.md, section 5).
+"""YUI-70: agent controls on the relay, live against yuigui (spec yuigui spec/CONTROLS.md, section 5).
 
 The host's capability report lands in yui_agents.controls through yui-connect
 (action=controls) and the owner's list returns it; a client the agent is

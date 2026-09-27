@@ -333,7 +333,7 @@ def cmd_revoke(a) -> int:
 
 
 def service_key() -> str:
-    """PROOF's service role key, from the Management API (never stored)."""
+    """yuigui's service role key, from the Management API (never stored)."""
     req = urllib.request.Request(f"https://api.supabase.com/v1/projects/{REF}/api-keys?reveal=true",
                                  headers={"authorization": f"Bearer {access_token()}", "user-agent": "yui-grant"})
     with urllib.request.urlopen(req, timeout=30) as r:

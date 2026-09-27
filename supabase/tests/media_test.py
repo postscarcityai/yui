@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""YUI-21 media tests against PROOF (live).
+"""YUI-21 media tests against yuigui (live).
 
 The yui-media bucket is private. The app's token (yui_user) reads its own
 media and uploads photos under from=user into its own agents' threads. The

@@ -7,7 +7,7 @@ verbatim; this script never edits the text.
 
     sync_channel.py              # write yui/CHANNEL.md (bundled with the plugin)
     sync_channel.py --check      # exit 1 if the bundled copy is stale
-    sync_channel.py --publish    # also upsert it into PROOF yui_channel_guides,
+    sync_channel.py --publish    # also upsert it into yuigui yui_channel_guides,
                                  # which yui-connect hands to non-Hermes agents
 
 The published text leaves out the restyle block (`<!-- restyle: ... -->` to
@@ -24,7 +24,7 @@ HERE = Path(__file__).resolve().parent
 SPEC = Path(os.environ.get("YUI_CHANNEL_SPEC", Path.home() / "dev/yuigui/spec/CHANNEL.md"))
 BUNDLED = HERE / "yui" / "CHANNEL.md"
 START = "## You are talking to someone in Yui"
-REF = "ewzzaoperdpxqxkshynx"
+REF = "txuibjxyfpalzvpneqgp"
 
 
 def extract(spec: str) -> tuple[str, str]:

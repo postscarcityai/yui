@@ -4,7 +4,7 @@ Yui is a phone app. To Hermes it is a messaging platform like Telegram: each
 Hermes profile that is registered as a Yui agent gets one thread in the app,
 and keeps one brain and memory across Telegram and Yui.
 
-Transport: the gateway dials OUT to Supabase (PROOF). No inbound ports.
+Transport: the gateway dials OUT to Supabase (the yuigui project). No inbound ports.
   1. The machine's connector token (~/.hermes/yui/connector.json, from
      `hermes -p <profile> yui pair <code>`) is traded at `yui-connect`
      (action=session) for a 60-minute JWT with role `yui_connector`. RLS lets

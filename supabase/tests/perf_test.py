@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""YUI-102 speed numbers (yui_perf) tests against PROOF (live). Helpers copied from look_test.py.
+"""YUI-102 speed numbers (yui_perf) tests against yuigui (live). Helpers copied from look_test.py.
 
 Migration 20260925120000_yui_perf.sql (spec yuigui/spec/PERF.md, section 5):
 the phone (yui_user) writes and reads its own rows; the owner's live host
@@ -14,7 +14,7 @@ accounts_test.py.
 """
 import base64, hashlib, hmac, json, os, subprocess, sys, time, urllib.request, urllib.error, uuid
 
-REF = "ewzzaoperdpxqxkshynx"
+REF = "txuibjxyfpalzvpneqgp"
 BASE = f"https://{REF}.supabase.co"
 
 def access_token():

@@ -95,13 +95,20 @@ on conflict (name) do update set value = excluded.value, note = excluded.note;
 
 -- The waitlist becomes invite requests. Waitlist rows have no first/last name
 -- or phone; whatever they have (a single name, the note with UTM tags, the
--- source) comes along.
-insert into public.yui_invites (email, first_name, source, utm, referrer, user_agent, notes, created_at)
-select lower(w.email), left(w.name, 80), w.source,
-       case when w.note ~ 'utm_' then left(w.note, 500) end,
-       w.referrer, w.user_agent,
-       case when w.note !~ 'utm_' then w.note end, w.created_at
-  from public.yui_waitlist w
-on conflict (lower(email)) do nothing;
+-- source) comes along. yui_waitlist was made by hand in PROOF; a new project
+-- has none, and skips this.
+do $$
+begin
+  if to_regclass('public.yui_waitlist') is null then return; end if;
+  execute $q$
+    insert into public.yui_invites (email, first_name, source, utm, referrer, user_agent, notes, created_at)
+    select lower(w.email), left(w.name, 80), w.source,
+           case when w.note ~ 'utm_' then left(w.note, 500) end,
+           w.referrer, w.user_agent,
+           case when w.note !~ 'utm_' then w.note end, w.created_at
+      from public.yui_waitlist w
+    on conflict (lower(email)) do nothing
+  $q$;
+end $$;
 
 notify pgrst, 'reload schema';

@@ -22,7 +22,7 @@ Once, for the Yui node and the MCP Client Tool (the webhook path pairs its own b
 1. In the Yui app: **Agents > Add agent**, name it "n8n". It shows a 6-digit code.
 2. Trade the code for a token (it works once, for ten minutes):
    ```
-   curl -s https://ewzzaoperdpxqxkshynx.supabase.co/functions/v1/yui-connect \
+   curl -s https://txuibjxyfpalzvpneqgp.supabase.co/functions/v1/yui-connect \
      -H 'content-type: application/json' \
      -d '{"action":"pair","code":"123456","remote_ref":"n8n","kind":"mcp","host_name":"n8n"}'
    ```
@@ -56,7 +56,7 @@ Example: [`workflows/yui-node-ask.json`](workflows/yui-node-ask.json) (Webhook, 
 
 1. Add an **AI Agent** node and a chat model.
 2. Add the **MCP Client Tool** as its tool:
-   - Endpoint: `https://ewzzaoperdpxqxkshynx.supabase.co/functions/v1/yui-mcp`
+   - Endpoint: `https://txuibjxyfpalzvpneqgp.supabase.co/functions/v1/yui-mcp`
    - Server Transport: **HTTP Streamable**
    - Authentication: **Bearer Auth**, a credential holding the `yui_ct_...` token. (MCP OAuth2 works too; see spec/MCP.md "OAuth".)
    - Tools to Include: `yui_show`, `yui_answers`, `yui_say`. Leave `yui_tap` out, it is for the in-chat screen.

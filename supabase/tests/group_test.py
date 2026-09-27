@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""YUI-93 group thread tests against PROOF (live). Spec: yuigui/spec/GROUPS.md.
+"""YUI-93 group thread tests against yuigui (live). Spec: yuigui/spec/GROUPS.md.
 
 Three of the person's agents in one group. Who answers (the lead, or the ones
 named), copies for the second and third, replies stamped into the group,

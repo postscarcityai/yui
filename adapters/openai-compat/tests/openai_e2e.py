@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""INT-12 end to end: the model bridge against live PROOF.
+"""INT-12 end to end: the model bridge against the live yuigui project.
 
 Runs, each on a fresh throwaway account (never a real one):
 

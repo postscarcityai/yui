@@ -19,7 +19,7 @@ removed by supabase/scripts/media_sweep.py.
 import argparse, base64, json, os, re, secrets, subprocess, sys, tempfile, urllib.error, urllib.parse, urllib.request
 from xml.sax.saxutils import escape
 
-REF = "ewzzaoperdpxqxkshynx"
+REF = "txuibjxyfpalzvpneqgp"
 BASE = f"https://{REF}.supabase.co"
 BUCKET = "yui-builds"
 BUNDLE = "com.yuigui.app.dev"  # Yui Dev, installs beside TestFlight Yui (YUI-91)
