@@ -212,11 +212,11 @@ final class AgentStore {
                 : args.contains("-yuiDemoShared") ? Self.demoShared : Self.demo
             // -yuiDemoFirstLaunch: a new person's first list, as yui-agents provisions it (YUI-145):
             // Yui and the starter crew, native, above any paired agents (-yuiDemoAgents adds some).
-            // -yuiDemoWithout <handle>: that one was removed, so Add agent offers it again.
+            // -yuiDemoWithout <handle>: that one was removed, so Add agent offers it again ("all": every one).
             if args.contains("-yuiDemoFirstLaunch") {
                 let gone = UserDefaults.standard.string(forKey: "yuiDemoWithout")
                 let paired = args.contains("-yuiDemoAgents") ? Self.demoCrew.filter { $0.id != "demo-yui" } : []
-                agents = Self.demoStarters.filter { $0.handle != gone } + paired
+                agents = Self.demoStarters.filter { gone != "all" && $0.handle != gone } + paired
                 crew = Self.crewOffer(agents)
                 // A first launch remembers no agent: it opens on the default, Yui.
                 selectedID = nil
@@ -348,6 +348,21 @@ final class AgentStore {
         let r: AgentReply = try await call(["action": "crew_add", "base": starter.base])
         await refresh()
         return r.agent.id
+    }
+
+    /// Everyone in the crew who isn't in the list, in one tap (Chris, 2026-09-27: "either have
+    /// all these agents or ... any number of them"). Nothing already in the list changes.
+    func addAllCrew() async throws {
+        #if DEBUG
+        if isDemo {
+            for s in crew ?? [] where !(s.agentID.map { id in agents.contains { $0.id == id } } ?? false) {
+                _ = try await addCrew(s)
+            }
+            return
+        }
+        #endif
+        let _: AddAllReply = try await call(["action": "crew_add_all"])
+        await refresh()
     }
 
     func newCode(for agent: YuiAgent) async throws -> PairingCode {
@@ -508,6 +523,7 @@ final class AgentStore {
     }
     private struct CreateReply: Decodable { let agent: YuiAgent; let pairing: PairingCode? }
     private struct AgentReply: Decodable { let agent: YuiAgent }
+    private struct AddAllReply: Decodable { let added: [String] }
     private struct DeleteReply: Decodable { let deleted: Bool }
     private struct OKReply: Decodable { let ok: Bool }
     private struct OKRevoked: Decodable { let revoked: Bool }

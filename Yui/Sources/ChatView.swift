@@ -114,12 +114,18 @@ struct ChatView: View {
         systemReduceMotion || ProcessInfo.processInfo.arguments.contains("-yuiReduceMotion")
     }
 
+    /// The chat pages sideways to the agent's screens only with stage first off. With it on
+    /// (Chris, 2026-09-27: "The chat is just the chat ... I want that navigation on the full
+    /// screen view"), the screens and their dots live on the stage and the chat is one page.
+    private var pagedChat: Bool { !stageFirstOn }
+
     /// The chat is on show (not a screen, and not the first run's welcome).
-    private var onChat: Bool { firstRun || (page ?? 1) == 1 }
+    private var onChat: Bool { firstRun || !pagedChat || (page ?? 1) == 1 }
 
     /// The screen on show when the agent keeps the composer on it (`>2 talk`, YUI-62).
     private var talkPage: Int? {
         let n = page ?? 1
+        if !pagedChat && !stageFirst.open { return nil }  // the chat is one page: nothing to talk about there
         return !firstRun && n != 1 && store.talks(on: n) ? n : nil
     }
 
@@ -136,14 +142,16 @@ struct ChatView: View {
         NavigationStack {
             Group {
                 if firstRun {
-                    FirstRun(loaded: agents.loaded, error: agents.error) {
+                    FirstRun(loaded: agents.loaded, error: agents.error, crew: agents.crew) {
                         addFirst = true
                     } retry: {
                         Task { await agents.refresh() }
                     }
                 } else {
                     // The chat, then each screen the agent put something on, a swipe apart (YUI-31).
-                    PagedThread(store: store, screens: store.screens, page: $page, fade: pageFade, agent: store.agent, style: agentStyle) { AnyView(thread) }
+                    // Stage first: just the chat; the screens are on the stage.
+                    PagedThread(store: store, screens: pagedChat ? store.screens : [1], page: pagedChat ? $page : .constant(1),
+                                fade: pageFade, agent: store.agent, style: agentStyle) { AnyView(thread) }
                         // Drag right on the chat: the drawer follows the finger (YUI-54). On a
                         // screen the pager is scrolled along, so the drag pages back instead.
                         // The record's field is out: a tap on the thread lets the keyboard go and folds it (YUI-121).
@@ -165,7 +173,7 @@ struct ChatView: View {
                         // A chat glyph and a dot per screen, in the composer's inset so every
                         // page clears it. Only there when there is somewhere to go.
                         let screens = store.screens
-                        if screens.count > 1 {
+                        if pagedChat, screens.count > 1 {
                             PageTabs(page: page ?? 1, screens: screens) { store.goToPage($0) }
                                 .transition(.scale(scale: 0.8).combined(with: .opacity))
                         }
@@ -234,7 +242,8 @@ struct ChatView: View {
             }
             .toolbarBackground(c.background, for: .navigationBar)
             // A screen is full screen: the agent switcher and settings stay with the chat.
-            .toolbar(onChat ? .visible : .hidden, for: .navigationBar)
+            // No agents yet: no agent picker or menu, nothing looks signed in to a thread (feedback AFFVLA66).
+            .toolbar(onChat && !firstRun ? .visible : .hidden, for: .navigationBar)
             .animation(theme.spring, value: onChat)
             .sheet(isPresented: $showSettings) {
                 SettingsView(focus: settingsFocus)
@@ -428,7 +437,8 @@ struct ChatView: View {
             // An agent that isn't listening yet is checked often: its gateway is about to start.
             while !Task.isCancelled {
                 await agents.refresh()
-                try? await Task.sleep(for: .seconds(agents.selected?.liveness == .notListening ? 5 : 30))
+                // An empty list is a new person whose crew is still being made: ask again soon.
+                try? await Task.sleep(for: .seconds(agents.agents.isEmpty ? 3 : agents.selected?.liveness == .notListening ? 5 : 30))
             }
         }
         .onChange(of: agents.selected?.id, initial: true) { old, new in
@@ -1271,6 +1281,7 @@ struct ChatView: View {
             focus: $stageFocused, photos: photos, sending: sending, mic: stageMicState,
             showMic: stageMic || !stageType, showType: stageType || !stageMic, showAttach: stageAttach,
             unread: max(0, store.shown.count - stageFirst.seen), waiting: store.waitingCount, reduceMotion: reduceMotion,
+            screens: store.screens, screen: store.screens.contains(page ?? 1) ? (page ?? 1) : 1, style: agentStyle,
             look: store.agent?.motionLook(reduced: reduceMotion) ?? MotionLook(character: "bouncy", reduced: reduceMotion),
             actions: StageActions(
                 menu: { settleDrawer(open: true) },
@@ -1280,6 +1291,7 @@ struct ChatView: View {
                 bar: barActions(tap: stageMicTap, type: {}) { withAnimation(theme.spring) { stageFirst.typing = true } },
                 send: send,
                 removePhoto: { p in photos.removeAll { $0.id == p.id } },
+                goScreen: { store.goToPage($0) },
                 retry: { words in composer.draft = words; send() }))
     }
 
@@ -2237,10 +2249,12 @@ private struct Chip: View {
     }
 }
 
-/// A new account: no agents yet. Says what Yui needs and the one next step.
+/// No agents in the list. With native Yui on (a crew offer), it offers the crew: everyone
+/// in one tap, or pick who you want. Only without it does it explain pairing your own.
 private struct FirstRun: View {
     let loaded: Bool
     let error: String?
+    var crew: [CrewStarter]? = nil
     let add: () -> Void
     let retry: () -> Void
     @Environment(\.yuiTheme) private var theme
@@ -2262,6 +2276,17 @@ private struct FirstRun: View {
             }
             .multilineTextAlignment(.center)
             .padding(theme.spacing.xl)
+        } else if let crew, !crew.isEmpty {
+            ScrollView {
+                VStack(spacing: theme.spacing.l) {
+                    Wordmark(height: 72)
+                    CrewPicker(crew: crew, open: { _ in })
+                    Button("Or connect your own agent", action: add)
+                        .font(theme.font(theme.type.body, .semibold)).tint(c.inkSoft)
+                        .accessibilityIdentifier("first-run-pair")
+                }
+                .padding(theme.spacing.xl)
+            }
         } else {
             VStack(spacing: theme.spacing.l) {
                 Spacer(minLength: 0)

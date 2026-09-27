@@ -511,7 +511,7 @@ struct AddAgentSheet: View {
 
 /// The crew in Add agent (YUI-145): each starter by name, one tap each. One that is
 /// gone comes back; one already in the list opens its thread. A tap only ever adds.
-private struct CrewPicker: View {
+struct CrewPicker: View {
     let crew: [CrewStarter]
     let open: (String) -> Void
     @Environment(AgentStore.self) private var store
@@ -529,6 +529,14 @@ private struct CrewPicker: View {
                 .font(theme.font(theme.type.caption)).foregroundStyle(c.inkSoft)
             LazyVGrid(columns: [GridItem(.flexible(), spacing: theme.spacing.s), GridItem(.flexible())], spacing: theme.spacing.s) {
                 ForEach(crew) { s in chip(s, c) }
+            }
+            // All of them or any number (Chris, 2026-09-27): one tap for everyone missing.
+            if missing > 1 {
+                PillButton(title: "Add all \(missing)", systemImage: "person.3.fill", working: adding == "all") {
+                    Task { await addAll() }
+                }
+                .disabled(adding != nil)
+                .accessibilityIdentifier("crew-all")
             }
             if let error {
                 Text(error).font(theme.font(theme.type.caption, .semibold)).foregroundStyle(.red)
@@ -565,6 +573,20 @@ private struct CrewPicker: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(here ? "\(s.name), in your list" : "Add \(s.name), \(s.role)")
         .accessibilityIdentifier("crew-\(s.base)")
+    }
+
+    private var missing: Int {
+        crew.filter { s in !(s.agentID.map { id in store.agents.contains { $0.id == id } } ?? false) }.count
+    }
+
+    private func addAll() async {
+        adding = "all"
+        defer { adding = nil }
+        do {
+            try await store.addAllCrew()
+        } catch {
+            self.error = "Couldn't add them just now. Check your connection and tap again."
+        }
     }
 
     private func tap(_ s: CrewStarter) async {

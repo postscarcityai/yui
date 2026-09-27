@@ -5,9 +5,17 @@ Off: a new account gets no Yui and no crew, and a message to an existing hosted 
 wakes nothing. On again: the same message gets an answer. The switch is always put
 back to what it was, and both throwaway accounts are deleted.
 
-    python3 supabase/tests/native_kill_switch_test.py
+The switch is GLOBAL: while it is off (~40 s), every real person who opens the app gets
+no crew, and a brand-new one lands on the pairing screen. That is what Chris saw on build
+229 (2026-09-27 19:42 UTC, this test ran then). So it refuses to run without the flag,
+and only when nobody is about to try the app.
+
+    python3 supabase/tests/native_kill_switch_test.py --flip-live-switch
 """
 import sys, time, uuid
+if "--flip-live-switch" not in sys.argv:
+    sys.exit("native_enabled is global: this turns native Yui off for every real person for ~40 s.\n"
+             "Rerun with --flip-live-switch only when nobody is using the app.")
 exec(open(__file__.replace("native_kill_switch_test.py", "agents_test.py")).read().split("results = []")[0])
 
 results = []

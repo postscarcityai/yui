@@ -68,6 +68,9 @@ struct PagedThread<Chat: View>: View {
 struct PageTabs: View {
     let page: Int
     let screens: [Int]
+    /// Page 1's glyph and name: the chat, or on the stage the answer playing there.
+    var homeIcon = "bubble.left"
+    var homeLabel = "Chat"
     let go: (Int) -> Void
     @Namespace private var tabs
     @Environment(\.yuiTheme) private var theme
@@ -81,7 +84,7 @@ struct PageTabs: View {
                 Button { go(n) } label: {
                     Group {
                         if n == 1 {
-                            Image(systemName: on ? "bubble.left.fill" : "bubble.left")
+                            Image(systemName: on ? homeIcon + ".fill" : homeIcon)
                                 .font(.system(size: 11, weight: .bold))
                                 .foregroundStyle(on ? c.accent : c.inkSoft)
                         } else {
@@ -99,7 +102,7 @@ struct PageTabs: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel(n == 1 ? "Chat" : "Screen \(n)")
+                .accessibilityLabel(n == 1 ? homeLabel : "Screen \(n)")
                 .accessibilityValue(on ? "showing" : "")
                 .accessibilityAddTraits(on ? .isSelected : [])
                 .accessibilityIdentifier("page-tab-\(n)")

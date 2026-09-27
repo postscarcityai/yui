@@ -16,6 +16,45 @@ final class FirstLaunchTests: XCTestCase {
         "card \"Arnold\" body=\"Trainer. Asks about injuries first, then builds a week you will actually do.\"",
     ].joined(separator: "\\n")
 
+    /// The crew is the person's choice (Chris, 2026-09-27: "either have all these agents or can
+    /// put any number of them to be in my list"). With every one removed, the first screen offers
+    /// the crew (never the pairing pitch): one tap adds one, "Add all 6" adds everyone. Add agent
+    /// opened and cancelled leaves the app standing (build 229 crash AGjOqLXNI70o).
+    func testPickTheCrew() throws {
+        tag = "light"
+        let app = XCUIApplication()
+        func text(_ s: String) -> XCUIElement {
+            app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", s)).firstMatch
+        }
+        launch(app, ["-yuiDemoWithout", "all", "-yuiNoAgents"])
+        let all = app.descendants(matching: .any)["crew-all"]
+        XCTAssertTrue(all.waitForExistence(timeout: 15), "the empty list does not offer the crew")
+        XCTAssertFalse(app.buttons["Add your first agent"].exists, "the pairing first run shows")
+        XCTAssertFalse(app.buttons["record-agents"].exists, "the agent picker shows with no agents")
+        XCTAssertTrue(app.buttons["first-run-pair"].exists, "pairing your own is gone")
+        sleep(1)
+        shot("07-pick")
+        app.descendants(matching: .any)["crew-arnold"].tap()
+        XCTAssertTrue(text("Arnold").waitForExistence(timeout: 15), "Arnold's thread did not open")
+        sleep(1)
+        shot("08-just-arnold")
+
+        launch(app, ["-yuiDemoWithout", "all", "-yuiNoAgents"])
+        XCTAssertTrue(all.waitForExistence(timeout: 15))
+        all.tap()
+        XCTAssertTrue(text("Your crew is here").waitForExistence(timeout: 15), "Add all did not land on Yui talking")
+        sleep(1)
+        shot("09-all")
+
+        // Add agent, then Cancel: the chat is back and the app still runs.
+        launch(app, ["-yuiDemoWithout", "arnold", "-yuiAgents", "-yuiAddAgent"])
+        let cancel = app.buttons["Cancel"].firstMatch
+        XCTAssertTrue(cancel.waitForExistence(timeout: 15), "Add agent did not open")
+        cancel.tap()
+        sleep(2)
+        XCTAssertEqual(app.state, .runningForeground, "the app died after Cancel")
+    }
+
     private var tag = ""
     private func shot(_ name: String) {
         let png = XCUIScreen.main.screenshot().pngRepresentation

@@ -93,6 +93,8 @@ struct StageActions {
     var bar: BarActions
     var send: () -> Void
     var removePhoto: (ComposerPhoto) -> Void
+    /// A dot under the stage: that screen (1 the answer).
+    var goScreen: (Int) -> Void = { _ in }
     /// Error's Try again: the person's words go again.
     var retry: (String) -> Void = { _ in }
 }
@@ -129,6 +131,11 @@ struct StageFirstView: View {
     /// Things waiting on the person: the dot on the menu.
     var waiting = 0
     let reduceMotion: Bool
+    /// The agent's screens (YUI-31): 1 is the answer playing here, 2... each screen it put
+    /// something on. Their dots are on the stage, not in the chat (Chris, 2026-09-27).
+    var screens: [Int] = [1]
+    var screen = 1
+    var style: [String: String] = [:]
     /// How this agent moves (YUI-120): its character and the look said in words. Reduce Motion gives the still look.
     let look: MotionLook
     let actions: StageActions
@@ -155,6 +162,9 @@ struct StageFirstView: View {
             Group {
                 if mic.live {
                     listening(c)
+                } else if screen > 1, screens.contains(screen) {
+                    ScreenPage(number: screen, parts: store.onPage(screen), agent: agent, style: style) { store.openStage($0) }
+                        .accessibilityIdentifier("stage-screen-\(screen)")
                 } else if let turn, turn.ask != nil {
                     play(turn, c)
                 } else {
@@ -171,6 +181,11 @@ struct StageFirstView: View {
                         .accessibilityHidden(true)
                         .accessibilityIdentifier("stage-tap-away")
                 }
+            }
+            if screens.count > 1, !mic.live {
+                PageTabs(page: screen, screens: screens, homeIcon: "play.rectangle", homeLabel: "Answer", go: actions.goScreen)
+                    .padding(.bottom, theme.spacing.xs)
+                    .transition(.opacity)
             }
             bottom(turn, c)
         }

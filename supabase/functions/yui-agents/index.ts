@@ -7,7 +7,7 @@
 //     codes. It is not a PostgREST JWT, so it can never read messages, and it
 //     cannot manage tokens, revoke hosts or delete the account.
 //
-// Actions: list, create, update, delete, reorder, pair_code, crew_add,
+// Actions: list, create, update, delete, reorder, pair_code, crew_add, crew_add_all,
 //          token_create, token_list, token_revoke, connector_revoke (app only).
 import {
   admin,
@@ -239,6 +239,31 @@ const ACTIONS: Record<string, Action> = {
       const id = Array.isArray(data) ? data[0]?.agent_id : data?.agent_id;
       if (!id) throw new Error("yui_native_add_agent returned no agent");
       return { agent: await agentView(db, userId, id), added: true };
+    },
+  },
+
+  // Everyone in the crew who isn't in the list, back in one tap (Chris,
+  // 2026-09-27: "either have all these agents or ... any number of them").
+  // Same rules as crew_add, one at a time; nothing already there changes.
+  crew_add_all: {
+    async run(userId) {
+      const db = admin();
+      const offer = await crewFor(db, userId);
+      if (!offer) throw new HttpError(409, "native_off");
+      const added: string[] = [];
+      for (const o of offer) {
+        if (o.agentId) continue;
+        const prof = starter(o.base);
+        if (!prof) continue;
+        const { data: listed, error } = await db.from("yui_agents").select("kind, sort").eq("user_id", userId);
+        if (error) throw error;
+        const why = crewRefusal(offer, prof.base, (listed ?? []).filter((a: { kind: string }) => a.kind === "hosted").length);
+        if (why) break;
+        const { error: e2 } = await db.rpc("yui_native_add_agent", { uid: userId, prof, at_sort: readdSort(listed ?? []) });
+        if (e2) throw e2;
+        added.push(o.base);
+      }
+      return { added };
     },
   },
 

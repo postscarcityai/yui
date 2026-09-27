@@ -1,0 +1,61 @@
+import XCTest
+
+/// The agent's screens live on the full screen, not in the chat (Chris, 2026-09-27: "The chat
+/// is just the chat. So right now we have on the chat the little navigation. I want that
+/// navigation on the full screen view."). With stage first, a reply that puts a timer on
+/// screen 2 and a list on screen 3 shows its dots under the stage; a dot opens that screen
+/// there. The chat underneath is one page: no dots, no sideways pages.
+/// Demo account, no network. Screenshots go to `YUI_SHOTS` when set.
+final class StagePagesTests: XCTestCase {
+    static let reply = [
+        "say Timer on screen 2, your list on screen 3.",
+        ">2 timer 25m Focus",
+        ">3 list@shop Shopping Eggs|Spinach|Rice|Gochujang +check",
+    ].joined(separator: "\\n")
+
+    func testScreensAreOnTheStageNotTheChat() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["-yuiStageFirst", "YES", "-yuiDemoAccount", "-yuiDemoAgents", "-yuiAgent", "yui",
+                               "-appearance", "light", "-yuiDemoReply", Self.reply,
+                               "-yuiDemoPickupAfter", "0.5", "-yuiDemoReplyAfter", "2"]
+        app.launch()
+        XCTAssertTrue(app.buttons["stage-type"].waitForExistence(timeout: 15), "no stage")
+        app.buttons["stage-type"].tap()
+        let field = app.textFields["stage-field"]
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        field.typeText("Cooking bibimbap, keep me on track")
+        app.buttons["stage-send-text"].tap()
+
+        // The dots are on the stage; a dot opens its screen there.
+        let tab2 = app.buttons["page-tab-2"], tab3 = app.buttons["page-tab-3"]
+        XCTAssertTrue(tab3.waitForExistence(timeout: 20), "no screen dots on the stage")
+        XCTAssertTrue(app.descendants(matching: .any)["stage-first"].exists)
+        XCTAssertEqual(app.buttons["page-tab-1"].label, "Answer")
+        tab2.tap()
+        XCTAssertTrue(app.descendants(matching: .any)["stage-screen-2"].waitForExistence(timeout: 5), "screen 2 is not on the stage")
+        tab3.tap()
+        XCTAssertTrue(app.descendants(matching: .any)["stage-screen-3"].waitForExistence(timeout: 5), "screen 3 is not on the stage")
+        XCTAssertTrue(app.descendants(matching: .any)["stage-screen-3"].staticTexts["Eggs"].exists, "the list is not on screen 3")
+        sleep(1)
+        shot("stage-pages")
+
+        // The chat: just the chat, no dots, no pages beside it.
+        app.buttons["stage-record"].tap()
+        XCTAssertTrue(app.buttons["back-to-stage"].waitForExistence(timeout: 10), "the chat did not open")
+        XCTAssertFalse(app.buttons["page-tab-2"].exists, "the chat still has the screen dots")
+        XCTAssertFalse(app.descendants(matching: .any)["page-2"].exists, "the chat still has a screen beside it")
+        sleep(1)
+        shot("chat-plain")
+    }
+
+    private func shot(_ name: String) {
+        let png = XCUIScreen.main.screenshot().pngRepresentation
+        if let dir = ProcessInfo.processInfo.environment["YUI_SHOTS"] {
+            try? png.write(to: URL(fileURLWithPath: dir).appending(path: "\(name).png"))
+        }
+        let a = XCTAttachment(data: png, uniformTypeIdentifier: "public.png")
+        a.name = name
+        a.lifetime = .keepAlways
+        add(a)
+    }
+}
