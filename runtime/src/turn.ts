@@ -103,11 +103,12 @@ export async function runScheduled(store: Store, scheduleId: string, opts: TurnO
   if (!s || s.paused) return result;
   const agent = await store.agent(s.agentId);
   const now = (opts.now ?? Date.now)();
+  // Its number as the agent's list shows it, read before a one-time check-in leaves the list.
+  const n = agent ? (await store.schedules(agent.id)).findIndex((x) => x.id === s.id) + 1 || "x" : "x";
   const at = next(s.rule, s.tz, now + 60_000);
   if (at) await store.setScheduleNext(s.id, new Date(at).toISOString());
   else await store.dropSchedule(s.id); // a one-time check-in is done once it fires
   if (!agent) return result;
-  const n = (await store.schedules(agent.id)).findIndex((x) => x.id === s.id) + 1 || "x";
   await synthetic(store, agent, `[yui] check-in s${n} "${s.note.replace(/"/g, "'")}"`, opts, log, result, 0);
   return result;
 }

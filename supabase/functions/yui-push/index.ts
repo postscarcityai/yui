@@ -54,6 +54,7 @@ import {
   take,
   verifyAccessToken,
 } from "../_shared/yui.ts";
+import { apnsPayload } from "./payload.ts";
 
 const NOTIFY_WINDOW_MS = 10 * 60_000;
 const PRESENCE_MS = 90_000;
@@ -188,11 +189,6 @@ async function connectorFor(db: DB, req: Request) {
   return { id: data.id, user_id: data.user_id };
 }
 
-// Text outside ```yui fences, squashed to one line.
-function preview(body: string): string {
-  return body.replace(/```yui[\s\S]*?(```|$)/g, " ").replace(/\s+/g, " ").trim().slice(0, 160);
-}
-
 // A native agent's reply (NATIVE-1): yui-native calls with the service key, and
 // the connector is the hosted one the message's agent sits on.
 async function nativeConnector(db: DB, messageId: unknown) {
@@ -210,7 +206,7 @@ async function notify(req: Request, b: Body): Promise<Response> {
   if (!connector) return json({ error: "unauthorized" }, 401);
   if (typeof b.message_id !== "string") return json({ error: "invalid_message_id" }, 400);
 
-  const { data: msg } = await db.from("yui_messages").select("id, user_id, agent_id, sender, body, kind, created_at")
+  const { data: msg } = await db.from("yui_messages").select("id, user_id, agent_id, sender, body, kind, meta, created_at")
     .eq("id", b.message_id).maybeSingle();
   const { data: agent } = msg
     ? await db.from("yui_agents").select("id, name, connector_id, push_muted, client_safe").eq("id", msg.agent_id).maybeSingle()
@@ -235,19 +231,8 @@ async function notify(req: Request, b: Body): Promise<Response> {
   if (Date.now() - new Date(msg.created_at).getTime() > NOTIFY_WINDOW_MS) return json({ error: "too_old" }, 409);
   if (muted) return json({ ok: true, muted: true, devices: 0, delivered: 0, skipped: 0, results: [] });
 
-  const from = cleanName(b.from);
-  const who = from ?? agent.name;
-  const text = preview(msg.body);
-  const alert = {
-    title: agent.name,
-    body: b.handoff || from || !text ? `${who} has something for you in Yui` : text,
-  };
-  const payload = {
-    aps: { alert, sound: "default", "thread-id": agent.id, "mutable-content": 1 },
-    agent_id: agent.id,
-    message_id: msg.id,
-    url: `yui://agent/${agent.id}/thread`,
-  };
+  // A native check-in (YUI-143) reads as the agent checking in when its reply is only a screen.
+  const payload = apnsPayload(agent, msg, { from: cleanName(b.from), handoff: !!b.handoff });
 
   const { data: all } = await db.from("yui_devices").select("id, apns_token, environment, topic, active_at, active_agent_id")
     .eq("user_id", msg.user_id).not("apns_token", "is", null);
