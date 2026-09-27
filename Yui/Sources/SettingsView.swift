@@ -30,6 +30,7 @@ struct SettingsView: View {
                 .overlay(RoundedRectangle(cornerRadius: theme.radius.card).stroke(c.outline, lineWidth: 1.5))
                 LookSection()
                 AgentAccessSection()
+                ModelKeySection()
                 HelpSection()
                 AccountSection()
                 AboutSection()
@@ -174,6 +175,128 @@ private struct AgentAccessSection: View {
         .background(c.surface, in: .rect(cornerRadius: theme.radius.card))
         .overlay(RoundedRectangle(cornerRadius: theme.radius.card).stroke(c.outline, lineWidth: 1.5))
         .task { await store.refreshTokens() }
+    }
+}
+
+/// Settings > Your model key (NATIVE-1): Yui and the crew run on Yui's key for a
+/// set number of turns a month; a person's own key (OpenRouter, TrustedRouter,
+/// Groq or another server) has no limit. The key goes to Yui's server once,
+/// is checked with the provider and kept in its vault; the phone never shows it again.
+private struct ModelKeySection: View {
+    @Environment(AgentStore.self) private var store
+    @Environment(\.yuiTheme) private var theme
+    @Environment(\.colorScheme) private var scheme
+    @State private var status: NativeStatus?
+    @State private var provider = "openrouter"
+    @State private var key = ""
+    @State private var model = ""
+    @State private var baseURL = ""
+    @State private var working = false
+    @State private var error: String?
+    @State private var saved = false
+
+    private var chosen: NativeStatus.Provider? { status?.providers.first { $0.id == provider } }
+
+    var body: some View {
+        let c = theme.swatch(scheme)
+        Group {
+            if store.agents.contains(where: { $0.kind == "hosted" }) {
+                VStack(alignment: .leading, spacing: theme.spacing.m) {
+                    Text("Your model key").font(theme.font(theme.type.caption, .bold)).foregroundStyle(c.inkSoft)
+                    if let status {
+                        if let k = status.key {
+                            HStack {
+                                Image(systemName: "key.fill").foregroundStyle(c.inkSoft)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(label(k.provider)).font(theme.font(theme.type.body, .bold)).foregroundStyle(c.ink)
+                                    Text("Ends in \(k.hint)" + (k.model.map { ", runs \($0)" } ?? ""))
+                                        .font(theme.font(theme.type.caption)).foregroundStyle(c.inkSoft)
+                                }
+                                Spacer(minLength: 0)
+                                Button("Remove") { Task { await run { try await store.removeModelKey() } } }
+                                    .font(theme.font(theme.type.caption, .bold)).tint(.red).disabled(working)
+                            }
+                            Text("Yui and your crew use this key, with no monthly limit.")
+                                .font(theme.font(theme.type.caption)).foregroundStyle(c.inkSoft)
+                        } else {
+                            Text("Yui and your crew have \(max(status.turns.limit - status.turns.used, 0)) of \(status.turns.limit) free turns left this month. Add your own key to keep going with no limit.")
+                                .font(theme.font(theme.type.body)).foregroundStyle(c.ink)
+                                .fixedSize(horizontal: false, vertical: true)
+                            Picker("Provider", selection: $provider) {
+                                ForEach(status.providers) { Text($0.label).tag($0.id) }
+                            }
+                            .pickerStyle(.menu).tint(c.ink)
+                            SecureField("Paste your key", text: $key)
+                                .textInputAutocapitalization(.never).autocorrectionDisabled()
+                                .padding(theme.spacing.m)
+                                .background(c.background, in: .rect(cornerRadius: theme.radius.bubble))
+                            if provider == "custom" {
+                                TextField("Server address, https://...", text: $baseURL)
+                                    .keyboardType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled()
+                                    .padding(theme.spacing.m)
+                                    .background(c.background, in: .rect(cornerRadius: theme.radius.bubble))
+                            }
+                            if chosen?.needsModel == true || provider == "custom" {
+                                TextField("Model name", text: $model)
+                                    .textInputAutocapitalization(.never).autocorrectionDisabled()
+                                    .padding(theme.spacing.m)
+                                    .background(c.background, in: .rect(cornerRadius: theme.radius.bubble))
+                            }
+                            Button {
+                                Task {
+                                    await run {
+                                        try await store.setModelKey(provider: provider, key: key.trimmingCharacters(in: .whitespacesAndNewlines),
+                                                                    model: model.trimmingCharacters(in: .whitespaces),
+                                                                    baseURL: baseURL.trimmingCharacters(in: .whitespaces))
+                                        key = ""
+                                        saved = true
+                                    }
+                                }
+                            } label: {
+                                Label(working ? "Checking the key" : "Save key", systemImage: "checkmark")
+                                    .font(theme.font(theme.type.body, .bold)).foregroundStyle(c.ink)
+                                    .frame(maxWidth: .infinity).padding(.vertical, theme.spacing.m)
+                                    .background(c.background, in: .rect(cornerRadius: theme.radius.bubble))
+                            }
+                            .buttonStyle(BounceButtonStyle())
+                            .disabled(working || key.isEmpty)
+                            Text("Your key goes to Yui's server once and is kept locked away there. The app never shows it again.")
+                                .font(theme.font(theme.type.caption)).foregroundStyle(c.inkSoft)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    } else {
+                        ProgressView()
+                    }
+                    if saved { Text("Saved. Your crew uses it from the next message.").font(theme.font(theme.type.caption, .semibold)).foregroundStyle(c.accent) }
+                    if let error { Text(error).font(theme.font(theme.type.caption, .semibold)).foregroundStyle(.red) }
+                }
+                .padding(theme.spacing.l)
+                .background(c.surface, in: .rect(cornerRadius: theme.radius.card))
+                .overlay(RoundedRectangle(cornerRadius: theme.radius.card).stroke(c.outline, lineWidth: 1.5))
+                .task { await load() }
+            }
+        }
+    }
+
+    private func label(_ id: String) -> String {
+        status?.providers.first { $0.id == id }?.label ?? id
+    }
+
+    private func load() async {
+        do { status = try await store.nativeStatus() } catch { self.error = error.localizedDescription }
+    }
+
+    private func run(_ work: () async throws -> Void) async {
+        working = true
+        error = nil
+        saved = false
+        do {
+            try await work()
+            await load()
+        } catch {
+            self.error = error.localizedDescription
+        }
+        working = false
     }
 }
 

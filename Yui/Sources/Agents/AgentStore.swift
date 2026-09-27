@@ -246,6 +246,7 @@ final class AgentStore {
             firstName = r.firstName
             loaded = true
             error = nil
+            if agents.contains(where: { $0.kind == "hosted" }) { await sendTimeZoneIfNeeded() }
         } catch {
             self.error = error.localizedDescription
         }
@@ -529,4 +530,92 @@ final class AgentStore {
     static let demoReport = AgentControls(v: 1, sections: ["soul": "rw", "memory": "rwd", "skills": "rwd",
                                                              "schedules": "rwd", "model": "r", "channels": "r"])
     static let demoCode = PairingCode(code: "123456", expiresAt: .now.addingTimeInterval(600))
+}
+
+// MARK: Native Yui (NATIVE-1, yuigui spec/NATIVE.md)
+
+/// What `yui-native` says about this person: their own model key (never the key
+/// itself), the providers it takes, and this month's free turns.
+struct NativeStatus: Decodable, Equatable, Sendable {
+    struct Key: Decodable, Equatable, Sendable {
+        let provider: String
+        let model: String?
+        let hint: String
+    }
+    struct Provider: Decodable, Equatable, Identifiable, Sendable {
+        let id: String
+        let label: String
+        let needsModel: Bool
+    }
+    struct Turns: Decodable, Equatable, Sendable {
+        let used: Int
+        let limit: Int
+    }
+    let key: Key?
+    let providers: [Provider]
+    let turns: Turns
+}
+
+/// A refusal from `yui-native`, in its own words ("the provider turned this key down").
+struct NativeError: LocalizedError {
+    let message: String
+    var errorDescription: String? { message }
+}
+
+extension AgentStore {
+    func nativeStatus() async throws -> NativeStatus {
+        try await nativeCall(["action": "status"])
+    }
+
+    /// Checked with the provider first; a key that doesn't work is never kept.
+    func setModelKey(provider: String, key: String, model: String?, baseURL: String?) async throws {
+        var body: [String: Any] = ["action": "key_set", "provider": provider, "key": key]
+        if let model, !model.isEmpty { body["model"] = model }
+        if let baseURL, !baseURL.isEmpty { body["base_url"] = baseURL }
+        let _: NativeOK = try await nativeCall(body)
+    }
+
+    func removeModelKey() async throws {
+        let _: NativeOK = try await nativeCall(["action": "key_remove"])
+    }
+
+    /// Native agents set check-ins in the person's own time. Sent when it changes.
+    func sendTimeZoneIfNeeded() async {
+        if isDemo { return }
+        let tz = TimeZone.current.identifier
+        guard UserDefaults.standard.string(forKey: "nativeTimeZoneSent") != tz else { return }
+        do {
+            let _: NativeOK = try await nativeCall(["action": "timezone", "tz": tz])
+            UserDefaults.standard.set(tz, forKey: "nativeTimeZoneSent")
+        } catch {}
+    }
+
+    private struct NativeOK: Decodable { let ok: Bool }
+    private struct NativeRefusal: Decodable { let error: String; let message: String? }
+
+    private func nativeCall<T: Decodable>(_ body: [String: Any]) async throws -> T {
+        let payload = try JSONSerialization.data(withJSONObject: body)
+        let token = try await account.validAccessToken()
+        var req = URLRequest(url: YuiBackend.function("yui-native"))
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.setValue(YuiBackend.publishableKey, forHTTPHeaderField: "apikey")
+        req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        req.httpBody = payload
+        let (data, response) = try await URLSession.shared.data(for: req)
+        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+            let r = try? JSONDecoder().decode(NativeRefusal.self, from: data)
+            throw NativeError(message: r?.message ?? Self.nativeWords[r?.error ?? ""] ?? "Yui's server couldn't do that. Try again in a moment.")
+        }
+        let d = JSONDecoder()
+        d.keyDecodingStrategy = .convertFromSnakeCase
+        return try d.decode(T.self, from: data)
+    }
+
+    private static let nativeWords = [
+        "invalid_key": "That doesn't look like a key.",
+        "invalid_base_url": "The server address needs to start with https://.",
+        "model_required": "Add the model name this provider should run.",
+        "unknown_provider": "Pick a provider.",
+    ]
 }
