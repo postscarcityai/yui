@@ -28,3 +28,7 @@ verify_jwt = false
 
 [functions.yui-account]
 verify_jwt = false
+
+# NATIVE-1: called by the database (pg_net) with its own secret header.
+[functions.yui-native]
+verify_jwt = false

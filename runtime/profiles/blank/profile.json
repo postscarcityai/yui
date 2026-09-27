@@ -1,0 +1,2 @@
+{ "name": "New agent", "handle": "new", "role": "Anything you want", "version": 1, "color": "mint", "blank": true,
+  "favorites": ["choose", "form", "list", "card"], "model": "default", "shelf": true }

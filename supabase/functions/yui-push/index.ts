@@ -30,6 +30,9 @@
 //       answer already shows. Phones open on another thread still get it.
 //
 // Server side, Bearer the service role key (grant.py, YUI-97):
+//   {action: "notify", message_id, native: true}
+//       A native agent's reply (yui-native, NATIVE-1): as the host's notify,
+//       for agents on a hosted connector.
 //   {action: "revoked", agent_id, user_id}
 //       A grant was just revoked. A silent push (kind "revoked", no content)
 //       to every phone of that person, so the app refreshes its agent list at
@@ -190,9 +193,20 @@ function preview(body: string): string {
   return body.replace(/```yui[\s\S]*?(```|$)/g, " ").replace(/\s+/g, " ").trim().slice(0, 160);
 }
 
+// A native agent's reply (NATIVE-1): yui-native calls with the service key, and
+// the connector is the hosted one the message's agent sits on.
+async function nativeConnector(db: DB, messageId: unknown) {
+  if (typeof messageId !== "string") return null;
+  const { data: msg } = await db.from("yui_messages").select("user_id, agent_id").eq("id", messageId).maybeSingle();
+  if (!msg) return null;
+  const { data: agent } = await db.from("yui_agents").select("connector_id, kind").eq("id", msg.agent_id).maybeSingle();
+  if (!agent || agent.kind !== "hosted" || !agent.connector_id) return null;
+  return { id: agent.connector_id as string, user_id: msg.user_id as string };
+}
+
 async function notify(req: Request, b: Body): Promise<Response> {
   const db = admin();
-  const connector = await connectorFor(db, req);
+  const connector = b.native === true && await isService(req) ? await nativeConnector(db, b.message_id) : await connectorFor(db, req);
   if (!connector) return json({ error: "unauthorized" }, 401);
   if (typeof b.message_id !== "string") return json({ error: "invalid_message_id" }, 400);
 

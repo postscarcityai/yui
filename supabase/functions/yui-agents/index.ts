@@ -30,6 +30,7 @@ import {
   validRemoteRef,
   verifyAccessToken,
 } from "../_shared/yui.ts";
+import { starters } from "../_native/profiles.ts";
 
 const PAIR_TTL_MINUTES = 10;
 
@@ -163,12 +164,29 @@ async function updateGrant(db: any, userId: string, b: Body) {
   return { agent: data };
 }
 
+// NATIVE-1: every person gets Yui and the starter crew, once, the first time
+// the app lists agents after native_enabled is switched on. The database does
+// the work (yui_native_provision) so two phones opening at once make one crew.
+// A failure here never breaks the list.
+// deno-lint-ignore no-explicit-any
+async function provisionNative(db: any, userId: string) {
+  try {
+    const { data: hosted } = await db.from("yui_connectors").select("id").eq("user_id", userId).eq("kind", "hosted").limit(1);
+    if (hosted?.length) return;
+    const { error } = await db.rpc("yui_native_provision", { uid: userId, profs: starters() });
+    if (error) console.error("yui_native_provision", error);
+  } catch (e) {
+    console.error("yui_native_provision", e);
+  }
+}
+
 type Action = { appOnly?: boolean; run: (userId: string, b: Body) => Promise<unknown> };
 
 const ACTIONS: Record<string, Action> = {
   list: {
     async run(userId) {
       const db = admin();
+      await provisionNative(db, userId);
       const { data: agents, error } = await db.from("yui_agent_list").select(AGENT_COLUMNS)
         .eq("user_id", userId).order("sort").order("created_at");
       if (error) throw error;

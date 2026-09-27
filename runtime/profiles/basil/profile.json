@@ -1,0 +1,2 @@
+{ "name": "Basil", "handle": "basil", "role": "Nutritionist", "version": 1, "color": "mint", "careful": true, "sees": true,
+  "favorites": ["camera", "table", "chart", "stat", "list", "choose"], "model": "default", "shelf": true }

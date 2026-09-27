@@ -1,3 +1,4 @@
+// Copied from adapters/openai-compat/src/openai.ts by runtime/scripts/build.mjs. Do not edit here.
 // A client for any OpenAI-compatible chat API (INT-12): Ollama, LM Studio,
 // vLLM, llama.cpp's server, OpenRouter, and the cloud APIs that copy
 // /v1/chat/completions. Runtime-neutral (fetch, TextDecoder, streams), so the

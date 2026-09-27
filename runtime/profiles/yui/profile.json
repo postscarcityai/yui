@@ -1,0 +1,2 @@
+{ "name": "Yui", "handle": "yui", "role": "Helper and maker", "version": 1, "color": "brand", "maker": true,
+  "favorites": ["choose", "plan", "list", "card", "shapes"], "model": "default", "shelf": false }

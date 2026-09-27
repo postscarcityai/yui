@@ -1,3 +1,4 @@
+// Copied from adapters/openai-compat/src/thread.ts by runtime/scripts/build.mjs. Do not edit here.
 // Yui holds the thread (INT-12): a chat API remembers nothing, so every turn
 // sends the channel guide as the system message, then as much of the thread as
 // fits, then the person's new messages. Runtime-neutral, no I/O.
