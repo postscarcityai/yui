@@ -50,6 +50,8 @@ final class MusicHost {
     var loopOwner: Int?
     /// The metronome that is clicking, if any (one at a time, like the loop).
     var metroOwner: Int?
+    /// The instrument recording a take, if any (one at a time).
+    var takeOwner: Int?
 }
 
 /// Row colors from the agent's theme, so a beat looks like its agent.
@@ -61,7 +63,12 @@ func rowColor(_ i: Int, _ s: Swatch) -> Color {
 struct SoundHold: ViewModifier {
     func body(content: Content) -> some View {
         content
-            .onAppear { YuiSound.shared.acquire() }
+            .onAppear {
+                #if DEBUG
+                MIDIFeed.startIfAsked()
+                #endif
+                YuiSound.shared.acquire()
+            }
             .onDisappear { YuiSound.shared.release() }
     }
 }
@@ -180,6 +187,7 @@ struct LoopPreset: View {
                 controls(compact: true)
             }
             BluetoothHint()
+            TakeControl(c: c, bpm: Double(bpm)) { ["bpm": .number(Double(bpm))] }
             OptionPill(text: sent ? "Sent" : "Send", fill: s.accent, ink: s.onAccent, check: sent, grow: true) { send() }
                 .disabled(c.locked)
                 .accessibilityIdentifier("loop-send")
@@ -316,10 +324,11 @@ struct DrumsPreset: View {
     @State private var tapped = 0
     private var host: MusicHost { .shared }
     @Environment(\.ylEmit) private var emit
+    @Environment(\.yuiMedia) private var media
     @Environment(\.yuiTheme) private var theme
     @Environment(\.colorScheme) private var scheme
 
-    enum Phase { case idle, recording, done, empty }
+    enum Phase { case idle, recording, sending, done, empty }
 
     private var grid: (rows: Int, cols: Int) {
         let n = (c.string("grid") ?? "2x2").lowercased().split(separator: "x").compactMap { Int($0) }
@@ -355,7 +364,7 @@ struct DrumsPreset: View {
             .frame(maxWidth: 420)
             .frame(maxWidth: .infinity)
             BluetoothHint()
-            if c.flag("record") { recorder(s) }
+            if c.flag("record") { recorder(s) } else { TakeControl(c: c, bpm: Double(bpm)) }
         }
         .modifier(SoundHold())
         .sensoryFeedback(.impact(weight: .light), trigger: tapped)
@@ -415,8 +424,8 @@ struct DrumsPreset: View {
                         .foregroundStyle(step < 16 ? s.ink : s.accent)
                         .accessibilityIdentifier("drums-status")
                         .onChange(of: step >= 48) { _, over in if over { finish() } }
-                } else if phase == .done || phase == .empty {
-                    Text(phase == .done ? "Take sent." : "No hits. Try again.")
+                } else if phase == .done || phase == .empty || phase == .sending {
+                    Text(phase == .done ? "Take sent." : phase == .sending ? "Sending the take" : "No hits. Try again.")
                         .font(theme.font(theme.type.body, .bold))
                         .foregroundStyle(s.inkSoft)
                         .accessibilityIdentifier("drums-status")
@@ -425,7 +434,7 @@ struct DrumsPreset: View {
         }
         OptionPill(text: phase == .recording ? "Recording" : phase == .done ? "Record again" : "Record",
                    fill: s.accent, ink: s.onAccent, dim: phase == .recording, grow: true, icon: "record.circle") { record() }
-            .disabled(phase == .recording || c.locked)
+            .disabled(phase == .recording || phase == .sending || c.locked || (host.takeOwner != nil && host.takeOwner != c.serial))
             .accessibilityIdentifier("drums-record")
     }
 
@@ -443,6 +452,8 @@ struct DrumsPreset: View {
         let beats = (0..<16).map { $0 % 4 == 0 }
         YuiSound.shared.setLoop(rows: ["tick"], sound: "pluck", steps: 16, bpm: Double(bpm), swing: 0, pattern: [beats])
         YuiSound.shared.startLoop()
+        // The sound of the take too (step 5), from the count-in on; the file starts at the first bar.
+        if host.takeOwner == nil, (try? YuiSound.shared.startTake()) != nil { host.takeOwner = c.serial }
         phase = .recording
     }
 
@@ -452,13 +463,27 @@ struct DrumsPreset: View {
             YuiSound.shared.stopLoop()
             host.loopOwner = nil
         }
+        let sound = host.takeOwner == c.serial ? YuiSound.shared.stopTake(bpm: Double(bpm)) : nil
+        if host.takeOwner == c.serial { host.takeOwner = nil }
         let take = LoopPattern.take(hits, pads: pads, bpm: bpm)
-        guard !take.rows.isEmpty else { phase = .empty; return }
-        phase = .done
-        emit(c.event([
+        guard !take.rows.isEmpty else {
+            if let sound { try? FileManager.default.removeItem(at: sound.audio); try? FileManager.default.removeItem(at: sound.midi) }
+            phase = .empty
+            return
+        }
+        var fields: [String: YLValue] = [
             "take": .bool(true), "bpm": .number(Double(bpm)), "steps": .number(32),
             "rows": .array(take.rows.map(YLValue.string)), "p": .array(take.p.map(YLValue.string)),
-        ], echo: "Sent a take, \(bpm) BPM"))
+        ]
+        phase = .sending
+        Task { @MainActor in
+            // The recording rides along when it can; the pattern goes either way.
+            if let sound, let audio = try? await TakeUpload.fields(sound, media: media) {
+                fields.merge(audio) { a, _ in a }
+            }
+            phase = .done
+            emit(c.event(fields, echo: "Sent a take, \(bpm) BPM"))
+        }
     }
 }
 

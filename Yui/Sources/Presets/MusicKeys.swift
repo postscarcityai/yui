@@ -181,6 +181,8 @@ struct KeysPreset: View {
     @State private var fingers: [ObjectIdentifier: (midi: Int, tag: UInt32)] = [:]
     @State private var played: [String] = []
     @State private var sent = false
+    /// MIDI notes already taken (MIDIKeyboard.hits when we last looked).
+    @State private var midiSeen = 0
     @Environment(\.ylEmit) private var emit
     @Environment(\.ylScope) private var scope
     @Environment(\.ylAnswers) private var answers
@@ -195,7 +197,7 @@ struct KeysPreset: View {
     }
     private var base: Int { 12 * (octave + 1) }
     private func playable(_ m: Int) -> Bool { !c.locked && Theory.inScale(m, key: key, scale: scale) }
-    private var down: Set<Int> { Set(fingers.values.map(\.midi)) }
+    private var down: Set<Int> { Set(fingers.values.map(\.midi)).union(MIDIKeyboard.shared.held) }
 
     var body: some View {
         let s = theme.swatch(scheme)
@@ -220,6 +222,7 @@ struct KeysPreset: View {
                     .disabled(octave >= 7)
                     .accessibilityLabel("Octave up")
                     .accessibilityIdentifier("keys-octave-up")
+                MIDIButton()
                 Spacer(minLength: 0)
                 Text(played.suffix(6).joined(separator: " "))
                     .font(theme.font(theme.type.caption, .bold))
@@ -229,6 +232,7 @@ struct KeysPreset: View {
                     .accessibilityIdentifier("keys-played")
             }
             BluetoothHint()
+            TakeControl(c: c)
             if c.flag("send") {
                 OptionPill(text: sent ? "Sent" : "Send", fill: s.accent, ink: s.onAccent, check: sent, grow: true) { send() }
                     .disabled(played.isEmpty || c.locked)
@@ -245,7 +249,28 @@ struct KeysPreset: View {
             played = p
             sent = true
         }
-        .onDisappear { letGoAll() }
+        .onAppear {
+            MIDIKeyboard.shared.attach(sound: sound)
+            midiSeen = MIDIKeyboard.shared.hits
+        }
+        .onChange(of: sound) { MIDIKeyboard.shared.use(sound: sound) }
+        .onChange(of: MIDIKeyboard.shared.hits) { midiNote() }
+        .onDisappear {
+            letGoAll()
+            MIDIKeyboard.shared.detach()
+        }
+    }
+
+    /// A note from a MIDI keyboard: counted as played, and the keys follow it
+    /// to its octave so it lights. Every note plays; the lock is for fingers.
+    private func midiNote() {
+        let midi = MIDIKeyboard.shared
+        let fresh = midi.notes.suffix(min(midi.notes.count, max(0, midi.hits - midiSeen)))
+        midiSeen = midi.hits
+        guard let last = fresh.last else { return }
+        for m in fresh { played = last32(played, Theory.name(m, flats: key.flats)) }
+        if last < base || last > base + 16 { octave = min(7, max(1, last / 12 - 1)) }
+        sent = false
     }
 
     private func keyboard(_ s: Swatch) -> some View {
@@ -436,6 +461,7 @@ struct ChordsPreset: View {
                     .accessibilityIdentifier("chords-played")
             }
             BluetoothHint()
+            TakeControl(c: c)
             if c.flag("send") {
                 OptionPill(text: sent ? "Sent" : "Send", fill: s.accent, ink: s.onAccent, check: sent, grow: true) { send() }
                     .disabled(played.isEmpty || c.locked)

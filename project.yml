@@ -60,6 +60,7 @@ targets:
         UIBackgroundModes: [audio, remote-notification]
         NSCameraUsageDescription: Send a photo to an agent, or take one when it asks, like your plate or a receipt. Yui sends it only to the agent in that thread.
         NSMicrophoneUsageDescription: So you can talk to your agents, and so the tuner can hear the note you play. Your voice turns into text on your phone, and only the text is sent. The tuner listens only while it is open; nothing is recorded or sent.
+        NSBluetoothAlwaysUsageDescription: Yui uses Bluetooth only when you pair a MIDI keyboard, so it can play the keys. Nothing else is looked for or sent.
         NSSpeechRecognitionUsageDescription: Your words turn into text right on your phone. The audio never leaves it.
         # yui://agent/<id>/thread opens that agent's thread (push taps, links from other channels).
         CFBundleURLTypes:

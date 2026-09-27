@@ -75,8 +75,9 @@ try:
 
     print("== Bucket")
     b = sql("select public, file_size_limit, allowed_mime_types from storage.buckets where id='yui-media'")[0]
-    check("yui-media is private, 50 MB cap, images + mp4/mov only", b["public"] is False and b["file_size_limit"] == 52428800
-          and set(b["allowed_mime_types"]) == {"image/jpeg", "image/png", "image/webp", "image/gif", "image/heic", "video/mp4", "video/quicktime"}, str(b))
+    check("yui-media is private, 50 MB cap, images + mp4/mov + music takes (m4a, mid) only", b["public"] is False and b["file_size_limit"] == 52428800
+          and set(b["allowed_mime_types"]) == {"image/jpeg", "image/png", "image/webp", "image/gif", "image/heic", "video/mp4", "video/quicktime",
+                                               "audio/mp4", "audio/midi"}, str(b))
     rows = sql("select policyname, roles::text r from pg_policies where schemaname='storage' and policyname like 'yui_media%'")
     check("every yui-media policy is for yui_user or yui_connector, none for authenticated/anon/public",
           rows and all(set(x["r"].strip("{}").split(",")) <= {"yui_user", "yui_connector"} for x in rows), str(rows))
@@ -104,6 +105,18 @@ try:
     check("A cannot overwrite an object (no update, new picture = new path)", s in (400, 403, 409) and get(tokA, a_photo)[1] == PNG, f"{s}")
     s = up(tokA, P(A, a_agent, "user").replace(".png", ".html"), data=b"<script>x</script>", ct="text/html")
     check("the bucket refuses non-media content types", s in (400, 403, 415), f"{s}")
+
+    # A music take (YUI-116 step 5): the .m4a and .mid go up like a photo and sign the same way.
+    take = P(A, a_agent, "user").replace(".png", ".m4a")
+    m4a = b"\x00\x00\x00\x1cftypM4A yui-take-test"
+    check("A uploads a music take (.m4a, audio/mp4)", up(tokA, take, data=m4a, ct="audio/mp4") == 200 and exists(take))
+    s, url = sign(tokA, take)
+    check("the take's signed link serves it", s == 200 and url and raw("GET", f"{STORE}{url}", None)[1] == m4a, f"{s}")
+    mid = P(A, a_agent, "user").replace(".png", ".mid")
+    check("A uploads the take's MIDI (.mid, audio/midi)", up(tokA, mid, data=b"MThd\x00\x00\x00\x06", ct="audio/midi") == 200 and exists(mid))
+    check("A's host reads the take (so the agent can open it)", get(hostA, take) == (200, m4a))
+    s = up(tokA, P(A, a_agent, "user").replace(".png", ".mp3"), data=b"ID3", ct="audio/mpeg")
+    check("other audio types stay refused", s in (400, 403, 415), f"{s}")
 
     b_photo = P(B, b_agent, "user")
     assert up(tokB, b_photo) == 200

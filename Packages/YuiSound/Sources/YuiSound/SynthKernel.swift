@@ -62,6 +62,60 @@ final class CommandRing: @unchecked Sendable {
     }
 }
 
+/// A note the engine started or let go, for the MIDI side of a take (step 5).
+struct NoteEvent {
+    var time: Int64 = 0
+    var midi: Int32 = -1
+    var velocity: Float = 0
+    /// Seconds until release, < 0 for none (the note decays on its own).
+    var hold: Float = -1
+    var tag: UInt32 = 0
+    var recipe: UInt8 = 0
+    /// false: a noteOff for `tag`.
+    var on = true
+}
+
+/// A lock-free single-producer single-consumer ring the render thread writes
+/// note starts into while a take records. It writes nothing when off.
+final class NoteLog: @unchecked Sendable {
+    static let capacity = 4096
+    let buffer: UnsafeMutablePointer<NoteEvent>
+    let head = Atomic<Int>(0)
+    let tail = Atomic<Int>(0)
+    let on = Atomic<Bool>(false)
+    /// Notes the ring had no room for (the reader fell behind).
+    let dropped = Atomic<Int>(0)
+
+    init() {
+        buffer = .allocate(capacity: Self.capacity)
+        buffer.initialize(repeating: NoteEvent(), count: Self.capacity)
+    }
+    deinit { buffer.deallocate() }
+
+    @inline(__always) func push(_ e: NoteEvent) {
+        let t = tail.load(ordering: .relaxed)
+        if t - head.load(ordering: .acquiring) >= Self.capacity {
+            dropped.add(1, ordering: .relaxed)
+            return
+        }
+        buffer[t & (Self.capacity - 1)] = e
+        tail.store(t + 1, ordering: .releasing)
+    }
+
+    /// Reader side (one thread at a time): everything written so far.
+    func drain() -> [NoteEvent] {
+        var out: [NoteEvent] = []
+        var h = head.load(ordering: .relaxed)
+        let t = tail.load(ordering: .acquiring)
+        while h < t {
+            out.append(buffer[h & (Self.capacity - 1)])
+            h += 1
+        }
+        head.store(h, ordering: .releasing)
+        return out
+    }
+}
+
 struct LoopRow {
     var recipe: Recipe = .tick
     var midi: Int32 = -1
@@ -114,6 +168,9 @@ struct DSP {
     /// Packed (tick in bar + 1) << 48 | sample time, written for the UI.
     var metroHistory: UnsafeMutablePointer<Atomic<UInt64>>
     var metroStartAt: UnsafeMutablePointer<Atomic<Int64>>
+    /// Where note starts go while a take records. unowned(unsafe): the kernel
+    /// keeps it alive, and the render thread must not retain or release.
+    unowned(unsafe) var notes: NoteLog
 
     static func stepSamples(sampleRate: Double, bpm: Double, steps: Int) -> Double {
         sampleRate * 60 / bpm * (steps <= 8 ? 0.5 : 0.25)
@@ -163,7 +220,11 @@ struct DSP {
         return anchor + Int64((Double(nextN - base) * sps + swingOffset).rounded())
     }
 
-    mutating func startVoice(_ recipe: Recipe, midi: Int32, velocity: Float, hold: Float, at time: Int64, tag: UInt32 = 0, hz: Float = 0) {
+    mutating func startVoice(_ recipe: Recipe, midi: Int32, velocity: Float, hold: Float, at time: Int64, tag: UInt32 = 0, hz: Float = 0,
+                             logged: Bool = true) {
+        if logged, notes.on.load(ordering: .relaxed) {
+            notes.push(NoteEvent(time: time, midi: midi, velocity: velocity, hold: hold, tag: tag, recipe: recipe.rawValue))
+        }
         var slot = 0
         var oldest = Int64.max
         var i = 0
@@ -190,6 +251,7 @@ struct DSP {
                 startVoice(Recipe(rawValue: c.recipe) ?? .tick, midi: c.midi, velocity: c.velocity, hold: c.hold, at: now, tag: c.tag, hz: c.hz)
             }
         case .noteOff:
+            if notes.on.load(ordering: .relaxed) { notes.push(NoteEvent(time: now, tag: c.tag, on: false)) }
             // Let go of the sounding note, and drop it if it has not started yet.
             var i = 0
             while i < Self.voiceCount {
@@ -301,9 +363,9 @@ struct DSP {
         let perBar = Int64(metroBeats * metroSub)
         let k = Int(metroNext % perBar)
         if k == 0 {
-            startVoice(.tick, midi: -1, velocity: 1, hold: -1, at: time, hz: 3000)
+            startVoice(.tick, midi: -1, velocity: 1, hold: -1, at: time, hz: 3000, logged: false)
         } else {
-            startVoice(.tick, midi: -1, velocity: k % metroSub == 0 ? 0.65 : 0.3, hold: -1, at: time, hz: 2000)
+            startVoice(.tick, midi: -1, velocity: k % metroSub == 0 ? 0.65 : 0.3, hold: -1, at: time, hz: 2000, logged: false)
         }
         metroHistory[metroFired % Self.historyCount].store(UInt64(k + 1) << 48 | UInt64(time), ordering: .relaxed)
         metroFired += 1
@@ -376,6 +438,8 @@ struct DSP {
 /// The kernel: the render entry point plus the producer side of the ring.
 final class SynthKernel: @unchecked Sendable {
     let ring = CommandRing()
+    /// Note starts for a take's MIDI file, written only while `notes.on`.
+    let notes = NoteLog()
     let dsp: UnsafeMutablePointer<DSP>
     /// Samples rendered so far.
     let rendered = Atomic<Int64>(0)
@@ -408,7 +472,7 @@ final class SynthKernel: @unchecked Sendable {
         rows.initialize(repeating: LoopRow(), count: DSP.maxRows)
         dsp = .allocate(capacity: 1)
         dsp.initialize(to: DSP(sampleRate: sampleRate, voices: voices, pending: pending, staged: staged, rows: rows, history: history, loopStart: loopStart,
-                                metroHistory: metroHistory, metroStartAt: metroStartAt))
+                                metroHistory: metroHistory, metroStartAt: metroStartAt, notes: notes))
         dsp.pointee.setRate(sampleRate)
         rateBits.store(sampleRate.bitPattern, ordering: .relaxed)
     }

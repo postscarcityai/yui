@@ -25,12 +25,18 @@ struct YuiMedia {
     /// JPEG-encodes a photo and uploads it. Returns the bucket path the agent gets.
     func upload(photo data: Data) async throws -> String {
         guard let jpeg = Self.jpeg(data) else { throw AccountError.server("not_a_photo") }
+        return try await upload(jpeg, type: "image/jpeg", ext: "jpg")
+    }
+
+    /// Uploads bytes the way a photo goes (a music take's .m4a and .mid, YUI-116
+    /// step 5). Returns the bucket path.
+    func upload(_ data: Data, type: String, ext: String) async throws -> String {
         guard let user = account.session?.userID else { throw AccountError.signedOut }
-        let path = "\(user.lowercased())/\(agentID.lowercased())/user/\(UUID().uuidString.lowercased()).jpg"
+        let path = "\(user.lowercased())/\(agentID.lowercased())/user/\(UUID().uuidString.lowercased()).\(ext)"
         var req = URLRequest(url: Self.storage.appending(path: "object/\(Self.bucket)/\(path)"))
         req.httpMethod = "POST"
-        req.setValue("image/jpeg", forHTTPHeaderField: "Content-Type")
-        req.httpBody = jpeg
+        req.setValue(type, forHTTPHeaderField: "Content-Type")
+        req.httpBody = data
         _ = try await send(req)
         return path
     }

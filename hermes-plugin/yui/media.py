@@ -41,7 +41,10 @@ MEDIA_HOSTS = ("fal.media", "fal.run", "fal.ai", "replicate.delivery", "oaidalle
 _FENCE = re.compile(r"```yui[^\n]*\n(.*?)```", re.S)
 _LOCAL = re.compile(r"(?:file://)?(?:~|/)[^\s\"|]+\.(?:" + "|".join(TYPES) + r")\b", re.I)
 _REMOTE = re.compile(r"https?://[^\s\"|]+")
-USER_PATH = re.compile(r"[0-9a-f-]{36}/[0-9a-f-]{36}/user/[A-Za-z0-9._-]{1,80}")
+# A bare path (`photo=<path>`), never one inside a URL: a music take (YUI-116
+# step 5) arrives as signed links (`audio=https://.../yui-media/<path>?token=`)
+# that the agent opens as they are.
+USER_PATH = re.compile(r"(?<![/\w.-])[0-9a-f-]{36}/[0-9a-f-]{36}/user/[A-Za-z0-9._-]{1,80}")
 # Never upload these, whatever the extension says.
 _BLOCKED = (".ssh", ".gnupg", ".aws", ".config/gcloud", "Keychains", ".hermes/.env", "auth.json")
 

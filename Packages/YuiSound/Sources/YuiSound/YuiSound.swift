@@ -87,6 +87,18 @@ final class SoundGraph {
     }
 
     func stop() { engine.stop() }
+
+    /// Sends what the main mixer plays to a take. The block is made outside
+    /// any actor: the tap calls it on its own thread.
+    nonisolated static func tapBlock(_ writer: TakeWriter) -> AVAudioNodeTapBlock {
+        { buffer, _ in writer.append(buffer) }
+    }
+
+    func tap(_ writer: TakeWriter?) {
+        let mixer = engine.mainMixerNode
+        mixer.removeTap(onBus: 0)
+        if let writer { mixer.installTap(onBus: 0, bufferSize: 4096, format: nil, block: Self.tapBlock(writer)) }
+    }
 }
 
 /// The app's one synth: pads, keys and the looper share its clock and voices.
@@ -112,6 +124,14 @@ public final class YuiSound: @unchecked Sendable {
     /// Output latency in seconds, as bits, for the render clock math.
     private let latencyBits = Atomic<UInt64>(0)
     private let heardBits = Atomic<UInt64>(0)
+    /// The looper's and the metronome's tempo, for the MIDI clock.
+    private let loopBpmBits = Atomic<UInt64>(96.0.bitPattern)
+    private let metroBpmBits = Atomic<UInt64>(100.0.bitPattern)
+    private lazy var clock = MIDIClockOut(
+        source: { [unowned self] in self.clockSource() },
+        now: { [unowned self] in Double(self.kernel.rendered.load(ordering: .relaxed)) },
+        sampleRate: { [unowned self] in self.kernel.sampleRate },
+        hostTime: { [unowned self] in self.hostTime(sample: $0) })
 
     @MainActor private init() {}
 
@@ -154,6 +174,7 @@ public final class YuiSound: @unchecked Sendable {
         do {
             try graph.start()
             running = true
+            clock.start()
         } catch {
             soundLog.error("engine start failed: \(error.localizedDescription, privacy: .public)")
             running = false
@@ -162,6 +183,8 @@ public final class YuiSound: @unchecked Sendable {
     }
 
     @MainActor private func shutDown() {
+        if take != nil { _ = stopTake() }
+        clock.stop()
         stopLoop()
         stopMetronome()
         graph.stop()
@@ -236,6 +259,7 @@ public final class YuiSound: @unchecked Sendable {
         do { try graph.start() } catch {
             soundLog.error("engine restart failed: \(error.localizedDescription, privacy: .public)")
         }
+        if let take { graph.tap(take) }
         updateLatency()
     }
 
@@ -298,6 +322,7 @@ public final class YuiSound: @unchecked Sendable {
             return m
         }
         kernel.setLoop(rows: resolved, masks: masks, steps: steps, bpm: bpm, swing: swing)
+        loopBpmBits.store(max(40, min(bpm, 240)).bitPattern, ordering: .relaxed)
     }
 
     public func startLoop() {
@@ -320,6 +345,7 @@ public final class YuiSound: @unchecked Sendable {
     /// next click.
     public func setMetronome(bpm: Int, beats: Int, sub: Int) {
         kernel.setMetronome(bpm: Double(bpm), beats: beats, sub: sub)
+        metroBpmBits.store(Double(max(30, min(bpm, 300))).bitPattern, ordering: .relaxed)
     }
 
     public func startMetronome() {
@@ -342,6 +368,41 @@ public final class YuiSound: @unchecked Sendable {
         let heard = Int64(heardSample())
         guard heard >= start else { return nil }
         return kernel.tick(at: heard)
+    }
+
+    // MARK: Recording
+
+    @MainActor private var take: TakeWriter?
+
+    /// True while a take records.
+    @MainActor public var isRecording: Bool { take != nil }
+
+    /// Seconds recorded so far in the take, 0 when none.
+    @MainActor public var takeSeconds: Double { take?.seconds ?? 0 }
+
+    /// The longest take; the app stops it there.
+    public static let maxTakeSeconds = TakeWriter.maxSeconds
+
+    /// Starts recording what the engine plays (not the mic): the sound to an
+    /// .m4a, the notes to a .mid. The engine must be running (an instrument
+    /// on screen holds it).
+    @MainActor public func startTake() throws {
+        guard take == nil else { return }
+        if !running { start() }
+        let format = graph.engine.mainMixerNode.outputFormat(forBus: 0)
+        let writer = try TakeWriter(kernel: kernel, sampleRate: format.sampleRate > 0 ? format.sampleRate : 48000,
+                                    channels: max(1, min(format.channelCount, 2)))
+        take = writer
+        graph.tap(writer)
+    }
+
+    /// Stops the take. `bpm` sets the MIDI file's tempo, so its bars line up
+    /// with the loop's. nil when nothing was recorded.
+    @MainActor public func stopTake(bpm: Double = 120) -> Take? {
+        guard let writer = take else { return nil }
+        graph.tap(nil)
+        take = nil
+        return writer.finish(bpm: bpm)
     }
 
     // MARK: Reference tones
@@ -406,6 +467,31 @@ public final class YuiSound: @unchecked Sendable {
     public var loopStartTime: Double? {
         guard isLooping, let start = kernel.loopStartSample else { return nil }
         return Double(start) / kernel.sampleRate
+    }
+
+    // MARK: MIDI clock
+
+    /// What the MIDI clock follows: the looper when it plays, else the metronome.
+    private func clockSource() -> MIDIClockOut.Source? {
+        if isLooping, let start = kernel.loopStartSample {
+            return .init(start: start, bpm: Double(bitPattern: loopBpmBits.load(ordering: .relaxed)))
+        }
+        if isClicking, let start = kernel.metroStartSample {
+            return .init(start: start, bpm: Double(bitPattern: metroBpmBits.load(ordering: .relaxed)))
+        }
+        return nil
+    }
+
+    /// When sample `s` is heard, in host time: from the last render's host
+    /// time, plus the output latency. nil before the engine has rendered.
+    private func hostTime(sample s: Double) -> UInt64? {
+        let host = kernel.lastHost.load(ordering: .acquiring)
+        let first = kernel.lastSample.load(ordering: .acquiring)
+        guard host != 0 else { return nil }
+        let latency = Double(bitPattern: latencyBits.load(ordering: .relaxed))
+        let seconds = (s - Double(first)) / kernel.sampleRate + latency
+        let ticks = Double(host) + seconds / hostTicksToSeconds
+        return ticks > 0 ? UInt64(ticks) : 0
     }
 
     // MARK: Route and timing
