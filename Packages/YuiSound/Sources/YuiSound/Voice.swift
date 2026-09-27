@@ -139,7 +139,9 @@ struct Voice {
     /// Sets the voice up for one note. `midi` < 0 plays the recipe's own pitch
     /// (C4 for pitched voices, C5 for the bell on a pad). `hold` is seconds
     /// until release, < 0 for none (held voices then get the pad cap).
-    mutating func noteOn(_ r: Recipe, midi: Int, velocity: Float, hold: Float, sampleRate: Float, at time: Int64, seed: UInt32) {
+    /// `hz` > 0 sets the pitch outright: a reference tone at a4 other than
+    /// 440, or the metronome's tick.
+    mutating func noteOn(_ r: Recipe, midi: Int, velocity: Float, hold: Float, sampleRate: Float, at time: Int64, seed: UInt32, hz: Float = 0) {
         self = Voice()
         active = true
         recipe = r
@@ -150,7 +152,7 @@ struct Voice {
         rng = seed | 1
         let s = sampleRate
         let m = midi >= 0 ? midi : (r == .bell || r == .pop ? 72 : 60)
-        f = Note.hz(m)
+        f = hz > 0 ? hz : Note.hz(m)
         var seconds: Float = 0.5
         switch r {
         case .kick:
@@ -207,7 +209,7 @@ struct Voice {
             aux = Int(0.15 * s)
         case .tick:
             seconds = 0.05
-            f = 3000
+            f = hz > 0 ? hz : 3000
             e0 = Hit(v, tau: 0.004, att: 0.0005, sr: s)
         case .pop:
             seconds = 0.35

@@ -48,6 +48,8 @@ extension YLComponent {
 final class MusicHost {
     static let shared = MusicHost()
     var loopOwner: Int?
+    /// The metronome that is clicking, if any (one at a time, like the loop).
+    var metroOwner: Int?
 }
 
 /// Row colors from the agent's theme, so a beat looks like its agent.

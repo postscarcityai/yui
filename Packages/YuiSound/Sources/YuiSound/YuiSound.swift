@@ -108,6 +108,7 @@ public final class YuiSound: @unchecked Sendable {
     @MainActor private var grace: Task<Void, Never>?
     @MainActor private var observers: [NSObjectProtocol] = []
     private let looping = Atomic<Bool>(false)
+    private let clicking = Atomic<Bool>(false)
     /// Output latency in seconds, as bits, for the render clock math.
     private let latencyBits = Atomic<UInt64>(0)
     private let heardBits = Atomic<UInt64>(0)
@@ -162,6 +163,7 @@ public final class YuiSound: @unchecked Sendable {
 
     @MainActor private func shutDown() {
         stopLoop()
+        stopMetronome()
         graph.stop()
         meter.clear()
         running = false
@@ -172,11 +174,22 @@ public final class YuiSound: @unchecked Sendable {
         #endif
     }
 
+    /// True while the tuner listens: the session switches to .playAndRecord
+    /// in the measurement mode (no voice processing), still out of the
+    /// speaker and still mixing (MUSIC.md section 5). Back to the
+    /// instruments' session when it goes false.
+    @MainActor public var listening = false {
+        didSet { if running, oldValue != listening { restart() } }
+    }
+
     @MainActor private func configureSession() {
         #if os(iOS)
         let s = AVAudioSession.sharedInstance()
         do {
-            if playsOnSilent {
+            if listening {
+                try s.setCategory(.playAndRecord, mode: .measurement,
+                                  options: [.defaultToSpeaker, .allowBluetoothA2DP, .mixWithOthers])
+            } else if playsOnSilent {
                 try s.setCategory(.playback, mode: .default, options: [.mixWithOthers])
             } else {
                 try s.setCategory(.ambient, mode: .default, options: [])
@@ -298,6 +311,50 @@ public final class YuiSound: @unchecked Sendable {
     }
 
     public var isLooping: Bool { looping.load(ordering: .relaxed) }
+
+    // MARK: Metronome
+
+    /// The metronome runs on the engine's clock beside the looper. Started
+    /// over a playing loop, its first click lands on the loop's next beat;
+    /// a loop started under it waits for its next beat. Changes land on the
+    /// next click.
+    public func setMetronome(bpm: Int, beats: Int, sub: Int) {
+        kernel.setMetronome(bpm: Double(bpm), beats: beats, sub: sub)
+    }
+
+    public func startMetronome() {
+        clicking.store(true, ordering: .relaxed)
+        kernel.startMetronome()
+    }
+
+    public func stopMetronome() {
+        clicking.store(false, ordering: .relaxed)
+        kernel.stopMetronome()
+    }
+
+    public var isClicking: Bool { clicking.load(ordering: .relaxed) }
+
+    /// The click you can hear now, as its place in the bar (0 is the accent,
+    /// counted in clicks, so beat = tick / sub). nil when stopped or before
+    /// the first click. Safe to call every frame.
+    public var audibleTick: Int? {
+        guard isClicking, let start = kernel.metroStartSample else { return nil }
+        let heard = Int64(heardSample())
+        guard heard >= start else { return nil }
+        return kernel.tick(at: heard)
+    }
+
+    // MARK: Reference tones
+
+    /// A tuner's reference tone: `midi` at concert pitch `a4` Hz, rung for
+    /// `seconds` (MUSIC.md section 6). Keys, not pluck: it rings long enough
+    /// to tune by ear, and its slow decay reads true on the tuner (a pluck's
+    /// fast decay pulls a bass string about 2 cents).
+    public func tone(_ midi: Int, a4: Double = 440, sound: String = "keys", seconds: Double = 2.5) {
+        let hz = Float(a4 * pow(2, Double(midi - 69) / 12))
+        let recipe = Words.sound(sound, pitched: true)
+        kernel.noteOn(recipe, midi: midi, velocity: 0.9, hold: Float(seconds), hz: hz)
+    }
 
     // MARK: Clock
 

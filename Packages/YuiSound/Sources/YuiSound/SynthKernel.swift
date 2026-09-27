@@ -1,7 +1,8 @@
 import Foundation
 import Synchronization
 
-// The DSP kernel: a voice pool, the looper and a limiter on one sample clock.
+// The DSP kernel: a voice pool, the looper, the metronome and a limiter on
+// one sample clock.
 // Pure Swift, no AVAudioEngine, so tests render it directly. The render path
 // touches only preallocated pointers and POD values: no allocation, no locks,
 // no arrays, strings or dictionaries. Loops are `while`, not `for in`: a
@@ -9,7 +10,7 @@ import Synchronization
 
 /// A fixed-size command from the main thread to the render thread.
 struct Command {
-    enum Kind: UInt8 { case none, noteOn, noteOff, loopRow, loopCommit, loopStart, loopStop }
+    enum Kind: UInt8 { case none, noteOn, noteOff, loopRow, loopCommit, loopStart, loopStop, metroSet, metroStart, metroStop }
     var kind: Kind = .none
     var recipe: UInt8 = 0
     var row: UInt8 = 0
@@ -27,6 +28,8 @@ struct Command {
     var tag: UInt32 = 0
     var bpm: Double = 120
     var swing: Double = 0
+    /// Pitch in Hz, 0 for the note's own (a4 other than 440, the metronome's tick).
+    var hz: Float = 0
 }
 
 /// A lock-free single-producer single-consumer ring of commands.
@@ -97,6 +100,21 @@ struct DSP {
     var history: UnsafeMutablePointer<Atomic<UInt64>>
     var loopStart: UnsafeMutablePointer<Atomic<Int64>>
 
+    // The metronome: its own tick grid on the same clock. A tick is one
+    // subdivision; tick 0 of each bar is the accent.
+    var metro = false
+    var metroBpm = 100.0
+    var metroBeats = 4
+    var metroSub = 1
+    var metroGap = 0.0 // samples per tick
+    var metroAnchor: Int64 = 0 // the time of tick `metroBase`
+    var metroBase: Int64 = 0
+    var metroNext: Int64 = 0 // the next tick to fire, counted from the start
+    var metroFired = 0
+    /// Packed (tick in bar + 1) << 48 | sample time, written for the UI.
+    var metroHistory: UnsafeMutablePointer<Atomic<UInt64>>
+    var metroStartAt: UnsafeMutablePointer<Atomic<Int64>>
+
     static func stepSamples(sampleRate: Double, bpm: Double, steps: Int) -> Double {
         sampleRate * 60 / bpm * (steps <= 8 ? 0.5 : 0.25)
     }
@@ -105,6 +123,38 @@ struct DSP {
         sampleRate = sr
         limRel = Float(exp(-1 / (0.08 * sr)))
         sps = Self.stepSamples(sampleRate: sr, bpm: bpm, steps: steps)
+        metroGap = sr * 60 / metroBpm / Double(metroSub)
+    }
+
+    @inline(__always) func nextTickTime() -> Int64 {
+        metroAnchor + Int64((Double(metroNext - metroBase) * metroGap).rounded())
+    }
+
+    /// The first loop beat at or after now, unswung (a beat is 2 steps up to
+    /// 8 steps, 4 past that). Lets the metronome start on the loop's beat.
+    func nextLoopBeat() -> Int64 {
+        let perBeat = Int64(steps <= 8 ? 2 : 4)
+        var n = nextN
+        if n % perBeat != 0 { n += perBeat - n % perBeat }
+        var t = anchor + Int64((Double(n - base) * sps).rounded())
+        while t < now {
+            n += perBeat
+            t = anchor + Int64((Double(n - base) * sps).rounded())
+        }
+        return t
+    }
+
+    /// The first metronome beat at or after now, for a loop that starts under it.
+    func nextMetroBeat() -> Int64 {
+        var n = metroNext
+        let sub = Int64(metroSub)
+        if n % sub != 0 { n += sub - n % sub }
+        var t = metroAnchor + Int64((Double(n - metroBase) * metroGap).rounded())
+        while t < now {
+            n += sub
+            t = metroAnchor + Int64((Double(n - metroBase) * metroGap).rounded())
+        }
+        return t
     }
 
     /// The sample time of step `nextN` (theory.mjs stepTime, from the anchor).
@@ -113,7 +163,7 @@ struct DSP {
         return anchor + Int64((Double(nextN - base) * sps + swingOffset).rounded())
     }
 
-    mutating func startVoice(_ recipe: Recipe, midi: Int32, velocity: Float, hold: Float, at time: Int64, tag: UInt32 = 0) {
+    mutating func startVoice(_ recipe: Recipe, midi: Int32, velocity: Float, hold: Float, at time: Int64, tag: UInt32 = 0, hz: Float = 0) {
         var slot = 0
         var oldest = Int64.max
         var i = 0
@@ -123,7 +173,7 @@ struct DSP {
             i += 1
         }
         seed = seed &* 1_664_525 &+ 1_013_904_223
-        voices[slot].noteOn(recipe, midi: Int(midi), velocity: velocity, hold: hold, sampleRate: Float(sampleRate), at: time, seed: seed)
+        voices[slot].noteOn(recipe, midi: Int(midi), velocity: velocity, hold: hold, sampleRate: Float(sampleRate), at: time, seed: seed, hz: hz)
         voices[slot].tag = tag
     }
 
@@ -137,7 +187,7 @@ struct DSP {
                 pending[pendingCount] = c
                 pendingCount += 1
             } else {
-                startVoice(Recipe(rawValue: c.recipe) ?? .tick, midi: c.midi, velocity: c.velocity, hold: c.hold, at: now, tag: c.tag)
+                startVoice(Recipe(rawValue: c.recipe) ?? .tick, midi: c.midi, velocity: c.velocity, hold: c.hold, at: now, tag: c.tag, hz: c.hz)
             }
         case .noteOff:
             // Let go of the sounding note, and drop it if it has not started yet.
@@ -179,17 +229,52 @@ struct DSP {
         case .loopStart:
             if !looping {
                 looping = true
-                anchor = now
+                // Under a running metronome the loop waits for its next beat.
+                anchor = metro ? nextMetroBeat() : now
                 base = 0
                 nextN = 0
                 pos = 0
                 var i = 0
                 while i < Self.historyCount { history[i].store(0, ordering: .relaxed); i += 1 }
-                loopStart.pointee.store(now, ordering: .relaxed)
+                loopStart.pointee.store(anchor, ordering: .relaxed)
             }
         case .loopStop:
             looping = false
             loopStart.pointee.store(-1, ordering: .relaxed)
+        case .metroSet:
+            let newBpm = max(30, min(c.bpm, 300))
+            let newSub = max(1, min(Int(c.steps), 4))
+            let newGap = sampleRate * 60 / newBpm / Double(newSub)
+            if metro, newGap != metroGap || newSub != metroSub {
+                // Keep phase: the next tick stays put, later ones follow the new tempo.
+                metroAnchor += Int64((Double(metroNext - metroBase) * metroGap).rounded())
+                metroBase = metroNext
+                if newSub != metroSub {
+                    // A new subdivision lands on the next beat, counted in the new ticks.
+                    let beat = (metroNext + Int64(metroSub) - 1) / Int64(metroSub)
+                    metroAnchor += Int64((Double(beat * Int64(metroSub) - metroNext) * metroGap).rounded())
+                    metroNext = beat * Int64(newSub)
+                    metroBase = metroNext
+                }
+            }
+            metroBpm = newBpm
+            metroBeats = max(1, min(Int(c.row), 12))
+            metroSub = newSub
+            metroGap = newGap
+        case .metroStart:
+            if !metro {
+                metro = true
+                // Over a running loop the first click lands on the loop's next beat.
+                metroAnchor = looping ? nextLoopBeat() : now
+                metroBase = 0
+                metroNext = 0
+                var i = 0
+                while i < Self.historyCount { metroHistory[i].store(0, ordering: .relaxed); i += 1 }
+                metroStartAt.pointee.store(metroAnchor, ordering: .relaxed)
+            }
+        case .metroStop:
+            metro = false
+            metroStartAt.pointee.store(-1, ordering: .relaxed)
         }
     }
 
@@ -210,6 +295,21 @@ struct DSP {
         pos = (pos + 1) % steps
     }
 
+    /// One click: the accent on the bar's first tick, a softer one on each
+    /// beat, softest between beats (music.js Metronome).
+    mutating func fireTick(at time: Int64) {
+        let perBar = Int64(metroBeats * metroSub)
+        let k = Int(metroNext % perBar)
+        if k == 0 {
+            startVoice(.tick, midi: -1, velocity: 1, hold: -1, at: time, hz: 3000)
+        } else {
+            startVoice(.tick, midi: -1, velocity: k % metroSub == 0 ? 0.65 : 0.3, hold: -1, at: time, hz: 2000)
+        }
+        metroHistory[metroFired % Self.historyCount].store(UInt64(k + 1) << 48 | UInt64(time), ordering: .relaxed)
+        metroFired += 1
+        metroNext += 1
+    }
+
     mutating func render(frames: Int, into out: UnsafeMutablePointer<Float>) {
         out.update(repeating: 0, count: frames)
         var i = 0
@@ -221,11 +321,15 @@ struct DSP {
                 if st > t { break }
                 fireStep(at: t)
             }
+            while metro {
+                if nextTickTime() > t { break }
+                fireTick(at: t)
+            }
             var p = 0
             while p < pendingCount {
                 if pending[p].time <= t {
                     let c = pending[p]
-                    startVoice(Recipe(rawValue: c.recipe) ?? .tick, midi: c.midi, velocity: c.velocity, hold: c.hold, at: t, tag: c.tag)
+                    startVoice(Recipe(rawValue: c.recipe) ?? .tick, midi: c.midi, velocity: c.velocity, hold: c.hold, at: t, tag: c.tag, hz: c.hz)
                     pendingCount -= 1
                     pending[p] = pending[pendingCount]
                 } else {
@@ -235,6 +339,7 @@ struct DSP {
             // Render up to the next event.
             var end = frames
             if looping { end = min(end, Int(nextStepTime() - now)) }
+            if metro { end = min(end, Int(nextTickTime() - now)) }
             var q = 0
             while q < pendingCount { end = min(end, Int(pending[q].time - now)); q += 1 }
             if end <= i { end = i + 1 }
@@ -280,6 +385,8 @@ final class SynthKernel: @unchecked Sendable {
     let rateBits = Atomic<UInt64>(48000.0.bitPattern)
     let history: UnsafeMutablePointer<Atomic<UInt64>>
     let loopStart: UnsafeMutablePointer<Atomic<Int64>>
+    let metroHistory: UnsafeMutablePointer<Atomic<UInt64>>
+    let metroStartAt: UnsafeMutablePointer<Atomic<Int64>>
     private let producer = Mutex(())
 
     init(sampleRate: Double = 48000) {
@@ -287,6 +394,10 @@ final class SynthKernel: @unchecked Sendable {
         for i in 0..<DSP.historyCount { (history + i).initialize(to: Atomic(0)) }
         loopStart = .allocate(capacity: 1)
         loopStart.initialize(to: Atomic(-1))
+        metroHistory = .allocate(capacity: DSP.historyCount)
+        for i in 0..<DSP.historyCount { (metroHistory + i).initialize(to: Atomic(0)) }
+        metroStartAt = .allocate(capacity: 1)
+        metroStartAt.initialize(to: Atomic(-1))
         let voices = UnsafeMutablePointer<Voice>.allocate(capacity: DSP.voiceCount)
         voices.initialize(repeating: Voice(), count: DSP.voiceCount)
         let pending = UnsafeMutablePointer<Command>.allocate(capacity: DSP.maxPending)
@@ -296,7 +407,8 @@ final class SynthKernel: @unchecked Sendable {
         let rows = UnsafeMutablePointer<LoopRow>.allocate(capacity: DSP.maxRows)
         rows.initialize(repeating: LoopRow(), count: DSP.maxRows)
         dsp = .allocate(capacity: 1)
-        dsp.initialize(to: DSP(sampleRate: sampleRate, voices: voices, pending: pending, staged: staged, rows: rows, history: history, loopStart: loopStart))
+        dsp.initialize(to: DSP(sampleRate: sampleRate, voices: voices, pending: pending, staged: staged, rows: rows, history: history, loopStart: loopStart,
+                                metroHistory: metroHistory, metroStartAt: metroStartAt))
         dsp.pointee.setRate(sampleRate)
         rateBits.store(sampleRate.bitPattern, ordering: .relaxed)
     }
@@ -311,6 +423,10 @@ final class SynthKernel: @unchecked Sendable {
         history.deallocate()
         loopStart.deinitialize(count: 1)
         loopStart.deallocate()
+        metroHistory.deinitialize(count: DSP.historyCount)
+        metroHistory.deallocate()
+        metroStartAt.deinitialize(count: 1)
+        metroStartAt.deallocate()
     }
 
     var sampleRate: Double { Double(bitPattern: rateBits.load(ordering: .relaxed)) }
@@ -340,6 +456,8 @@ final class SynthKernel: @unchecked Sendable {
         d.pointee.setRate(sampleRate)
         d.pointee.anchor = d.pointee.now
         d.pointee.base = d.pointee.nextN
+        d.pointee.metroAnchor = d.pointee.now
+        d.pointee.metroBase = d.pointee.metroNext
         rateBits.store(sampleRate.bitPattern, ordering: .relaxed)
     }
 
@@ -355,8 +473,8 @@ final class SynthKernel: @unchecked Sendable {
 
     func send(_ c: Command) { producer.withLock { _ in _ = ring.push(c) } }
 
-    func noteOn(_ recipe: Recipe, midi: Int, velocity: Float, hold: Float = -1, at time: Int64 = -1, delay: Float = 0, tag: UInt32 = 0) {
-        send(Command(kind: .noteOn, recipe: recipe.rawValue, midi: Int32(midi), velocity: velocity, hold: hold, time: time, delay: delay, tag: tag))
+    func noteOn(_ recipe: Recipe, midi: Int, velocity: Float, hold: Float = -1, at time: Int64 = -1, delay: Float = 0, tag: UInt32 = 0, hz: Float = 0) {
+        send(Command(kind: .noteOn, recipe: recipe.rawValue, midi: Int32(midi), velocity: velocity, hold: hold, time: time, delay: delay, tag: tag, hz: hz))
     }
 
     func noteOff(tag: UInt32) { send(Command(kind: .noteOff, tag: tag)) }
@@ -374,6 +492,13 @@ final class SynthKernel: @unchecked Sendable {
     func startLoop() { send(Command(kind: .loopStart)) }
     func stopLoop() { send(Command(kind: .loopStop)) }
 
+    /// Tempo, beats per bar and clicks per beat; lands on the next click while it plays.
+    func setMetronome(bpm: Double, beats: Int, sub: Int) {
+        send(Command(kind: .metroSet, row: UInt8(max(1, min(beats, 12))), steps: UInt8(max(1, min(sub, 4))), bpm: bpm))
+    }
+    func startMetronome() { send(Command(kind: .metroStart)) }
+    func stopMetronome() { send(Command(kind: .metroStop)) }
+
     // MARK: Reading (any thread)
 
     /// The last fired step at or before sample `t`, or nil.
@@ -387,6 +512,26 @@ final class SynthKernel: @unchecked Sendable {
             if time <= t, time > best { best = time; step = Int(v >> 48) - 1 }
         }
         return step
+    }
+
+    /// The metronome's last click at or before sample `t`: its place in the
+    /// bar (0 is the accent), or nil.
+    func tick(at t: Int64) -> Int? {
+        var best: Int64 = -1
+        var tick: Int?
+        for i in 0..<DSP.historyCount {
+            let v = metroHistory[i].load(ordering: .relaxed)
+            if v == 0 { continue }
+            let time = Int64(v & 0xFFFF_FFFF_FFFF)
+            if time <= t, time > best { best = time; tick = Int(v >> 48) - 1 }
+        }
+        return tick
+    }
+
+    /// The metronome's first click in samples, nil when stopped.
+    var metroStartSample: Int64? {
+        let s = metroStartAt.pointee.load(ordering: .relaxed)
+        return s < 0 ? nil : s
     }
 
     /// The loop's first step time in samples, nil when stopped.

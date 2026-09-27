@@ -95,6 +95,8 @@ struct PresetView: View {
         case "drums": DrumsPreset(c: component)
         case "keys": KeysPreset(c: component)
         case "chords": ChordsPreset(c: component)
+        case "tuner": TunerPreset(c: component)
+        case "metronome": MetronomePreset(c: component)
         default: LaterPreset(c: component)
         }
     }

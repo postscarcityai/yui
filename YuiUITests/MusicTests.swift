@@ -9,13 +9,13 @@ final class MusicTests: XCTestCase {
     private var log = ""
     private var tag = ""
 
-    private func launch(_ tag: String, appearance: String, lines: [String]) {
+    private func launch(_ tag: String, appearance: String, lines: [String], extra: [String] = []) {
         self.tag = tag
         log = FileManager.default.temporaryDirectory.appending(path: "yui116-\(tag).jsonl").path
         try? FileManager.default.removeItem(atPath: log)
         app = XCUIApplication()
         app.launchArguments = ["-yuiDemoAccount", "-yuiDemoAgents", "-yuiAgent", "wizard", "-appearance", appearance,
-                               "-yuiThemeDemo", lines.joined(separator: "\\n"), "-yuiEventLog", log]
+                               "-yuiThemeDemo", lines.joined(separator: "\\n"), "-yuiEventLog", log] + extra
         app.launch()
     }
 
@@ -221,5 +221,122 @@ final class MusicTests: XCTestCase {
         XCTAssertEqual(app.staticTexts["keys-played"].label, "G3")
         sleep(1)
         shot("1-chat")
+    }
+
+    // MARK: tuner and metronome (step 4)
+
+    /// The tuner hears each string in turn, a little off (-yuiTunerFake plays
+    /// them instead of the mic: 1.3 s each), turns green within 3 cents and
+    /// sends one tuned event when every string has held in tune for a second.
+    private func tuner(_ appearance: String, instrument: String, strings: [String], cents: [Int]) {
+        launch("tuner-\(instrument)-\(appearance)", appearance: appearance,
+               lines: [#"say Time to tune up."#, "tuner \(instrument)"], extra: ["-yuiTunerFake", "1.3"])
+        let start = app.buttons["tuner-start"]
+        if !start.waitForExistence(timeout: 20) { shot("0-missing"); print(app.debugDescription) }
+        XCTAssertTrue(start.exists, "the tuner never drew")
+        XCTAssertEqual((0..<strings.count).map { app.buttons["tuner-string-\($0)"].label }, strings.map { "Hear \($0)" })
+        sleep(1)
+        shot("1-stage")
+
+        app.buttons["tuner-string-0"].tap() // a reference tone
+        start.tap()
+        let needle = app.otherElements["tuner-needle"]
+        waitFor("the first string", timeout: 5) { (needle.value as? String)?.hasPrefix(strings[0]) == true }
+        waitFor("the needle to go green", timeout: 5) { (needle.value as? String)?.hasSuffix("in tune") == true }
+        shot("2-listening")
+        waitFor("every string to be in tune", timeout: Double(strings.count) * 1.3 + 10) { !events("tuner").isEmpty }
+        let e = events("tuner").last
+        XCTAssertEqual(e?["tuned"] as? Bool, true)
+        XCTAssertEqual(e?["instrument"] as? String, instrument)
+        XCTAssertEqual(e?["tuning"] as? String, "standard")
+        XCTAssertEqual(e?["strings"] as? [String], strings)
+        XCTAssertEqual(e?["cents"] as? [Int], cents)
+        XCTAssertTrue(app.staticTexts["tuner-done"].exists)
+        shot("3-tuned")
+        XCTAssertEqual(events("tuner").count, 1, "the tuned event went out more than once")
+    }
+
+    func testTunerGuitarLight() { tuner("light", instrument: "guitar", strings: ["E2", "A2", "D3", "G3", "B3", "E4"], cents: [-2, 1, 1, 2, -1, 1]) }
+    func testTunerGuitarDark() { tuner("dark", instrument: "guitar", strings: ["E2", "A2", "D3", "G3", "B3", "E4"], cents: [-2, 1, 1, 2, -1, 1]) }
+    func testTunerUkuleleLight() { tuner("light", instrument: "ukulele", strings: ["G4", "C4", "E4", "A4"], cents: [-2, 1, 1, 2]) }
+
+    /// Drop D at A4 = 442 and the chromatic tuner, inline, which never sends.
+    func testTunerDropDAndChromatic() {
+        launch("tuner-more", appearance: "light", lines: [#"say Two more."#, #"tuner guitar tuning=dropd a4=442 +inline"#], extra: ["-yuiTunerFake", "1.3"])
+        XCTAssertTrue(app.buttons["tuner-string-0"].waitForExistence(timeout: 20), "the tuner never drew")
+        XCTAssertEqual(app.buttons["tuner-string-0"].label, "Hear D2")
+        app.buttons["tuner-start"].tap()
+        let needle = app.otherElements["tuner-needle"]
+        waitFor("drop D's low string", timeout: 5) { (needle.value as? String)?.hasPrefix("D2") == true }
+        shot("1-dropd")
+        app.buttons["tuner-start"].tap()
+    }
+
+    func testTunerChromatic() {
+        launch("tuner-chromatic", appearance: "dark", lines: [#"tuner chromatic"#], extra: ["-yuiTunerFake", "2"])
+        let start = app.buttons["tuner-start"]
+        XCTAssertTrue(start.waitForExistence(timeout: 20), "the tuner never drew")
+        XCTAssertEqual(app.buttons["tuner-string-0"].label, "Hear A4")
+        start.tap()
+        let needle = app.otherElements["tuner-needle"]
+        waitFor("the nearest note", timeout: 5) { (needle.value as? String)?.hasPrefix("A4, +12") == true }
+        sleep(1)
+        shot("1-listening")
+        sleep(2)
+        XCTAssertTrue(events("tuner").isEmpty, "the chromatic tuner sent something")
+    }
+
+    /// Start, tap tempo, eighths, then Stop after 10 s sends the practice.
+    private func metronome(_ appearance: String) {
+        launch("metronome-\(appearance)", appearance: appearance, lines: [#"say A slow click to warm up."#, #"metronome 72 beats=3"#])
+        let play = app.buttons["metronome-play"]
+        XCTAssertTrue(play.waitForExistence(timeout: 20), "the metronome never drew")
+        XCTAssertEqual(app.staticTexts["metronome-bpm"].label, "72 beats per minute")
+        sleep(1)
+        shot("1-chat")
+
+        // Tap tempo: four taps 0.5 s apart is about 120.
+        let tap = app.buttons["metronome-tap"]
+        for _ in 0..<4 { tap.tap(); usleep(500_000) }
+        // A UI test taps about once a second, so it reads near 60; the math is in TunerTests.
+        let bpm = Int(app.staticTexts["metronome-bpm"].label.split(separator: " ").first ?? "") ?? 0
+        XCTAssertNotEqual(bpm, 72, "tap tempo did not change the tempo")
+        XCTAssertTrue((30...300).contains(bpm), "tap tempo read \(bpm)")
+        app.buttons["metronome-sub"].tap()
+        XCTAssertEqual(app.buttons["metronome-sub"].label, "Clicks per beat: Eighths")
+        play.tap()
+        sleep(2)
+        shot("2-playing")
+        sleep(9)
+        play.tap()
+        waitFor("the practice to go out", timeout: 5) { !events("metronome").isEmpty }
+        let e = events("metronome").last
+        XCTAssertEqual(e?["bpm"] as? Int, bpm)
+        XCTAssertEqual(e?["beats"] as? Int, 3)
+        XCTAssertEqual(e?["sub"] as? Int, 2)
+        XCTAssertTrue(((e?["seconds"] as? Int) ?? 0) >= 10)
+        XCTAssertTrue(app.staticTexts["metronome-said"].label.hasPrefix("Practice sent"))
+        shot("3-sent")
+
+        // A short run sends nothing.
+        play.tap()
+        sleep(2)
+        play.tap()
+        sleep(1)
+        XCTAssertEqual(events("metronome").count, 1)
+    }
+
+    func testMetronomeLight() { metronome("light") }
+    func testMetronomeDark() { metronome("dark") }
+
+    /// A metronome under a loop: both play on the engine's one clock.
+    func testMetronomeWithLoop() {
+        launch("metronome-loop", appearance: "light", lines: [#"say Click along."#, #"metronome 96 +play"#, #"loop 96 p=x...x...|..x...x. +inline"#])
+        XCTAssertTrue(app.buttons["metronome-play"].waitForExistence(timeout: 20), "the metronome never drew")
+        XCTAssertEqual(app.buttons["metronome-play"].label, "Stop", "+play did not start it")
+        app.buttons["loop-play"].firstMatch.tap()
+        sleep(2)
+        shot("1-both")
+        XCTAssertEqual(app.buttons["metronome-play"].label, "Stop")
     }
 }
