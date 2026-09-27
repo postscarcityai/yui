@@ -252,7 +252,7 @@ async function oneTurn(store: Store, agent: NativeAgent, rows: Row[], opts: Turn
     if (!out.text.trim()) out.text = results.filter((r) => r.ok).map((r) => `Done: ${(r as { did: string }).did}.`).join("\n");
   }
   if (out.schedule.length) notes.push(...await applySchedules(store, agent, out.schedule, schedules, tzRaw ? tz : "UTC", now, log));
-  let body = unend(unbreak(undash(out.text)));
+  let body = unsprawl(unmark(unend(unbreak(undash(out.text)))));
   if (notes.length) body += `\n\n(I couldn't do all of that: ${notes.join("; ")}.)`;
   // Sources the answer didn't link, and the invite to add a Firecrawl key when the free lookups ran out.
   const cards = [...sourceCards(body, looked.sources), ...(looked.capped ? [searchInvite(looked.capped.why, looked.capped.limit)] : [])];
@@ -554,6 +554,163 @@ export function unend(text: string): string {
     if (lines.some((l) => GROUPS.test(l.trim()))) return lines.join("\n");
     return lines.filter((l) => l.trim() !== "end").join("\n");
   }).join("");
+}
+
+// The phone shows markdown as it is written (t_a88dc3b5, TestFlight build 244: Basil's "what can you do" came back
+// as raw **bold** bullets the stage cut into 7 pages). The prompt says no markdown; what a model still writes is
+// swept here: chat text with bullets, headings or bold becomes Yui Lines (a `say` per paragraph or heading, a
+// `list` per run of bullets) at the top of the answer's yui block, and bold left in a quoted string loses its stars.
+const MD_BULLET = /^[ \t]*(?:[-*•+]|\d{1,2}[.)])[ \t]+(?=\S)/;
+const MD_HEADING = /^[ \t]{0,3}#{1,6}[ \t]+(?=\S)/;
+const MD_BOLD = /\*\*(?=\S)([^*\n]+?)\*\*|__(?=\S)([^_\n]+?)__/;
+
+function plainInline(t: string): string {
+  return t
+    .replace(/\*\*(?=\S)([^*\n]+?)\*\*/g, "$1").replace(/__(?=\S)([^_\n]+?)__/g, "$1")
+    .replace(/(^|[\s(])\*(?=\S)([^*\n]+?)\*(?=[\s).,!?:;]|$)/g, "$1$2")
+    .replace(/`([^`\n]+)`/g, "$1")
+    .replace(/\[([^\]\n]+)\]\((https?:[^)\s]+)\)/g, "$1 ($2)")
+    .replace(/\*\*/g, "")
+    .replace(/\s+/g, " ").trim();
+}
+
+const quote = (t: string) => `"${t.replace(/\\/g, "\\\\").replace(/"/g, "'")}"`;
+
+/** Prose with markdown in it, as Yui Lines; null when it has none. */
+function markdownLines(prose: string): string[] | null {
+  const lines = prose.split("\n");
+  const bullets = lines.filter((l) => MD_BULLET.test(l));
+  // One numbered line ("1) Stretch first.") reads fine as prose; a real list has two or more, or a dash or a star.
+  const listy = bullets.length >= 2 || bullets.some((l) => /^[ \t]*[-*•+][ \t]/.test(l));
+  if (!listy && !lines.some((l) => MD_HEADING.test(l)) && !MD_BOLD.test(prose)) return null;
+  const out: string[] = [];
+  let para: string[] = [];
+  let run: string[] = [];
+  let numbered = true;
+  const flushPara = () => {
+    const t = plainInline(para.join(" "));
+    if (t) out.push(`say ${quote(t)}`);
+    para = [];
+  };
+  const flushRun = () => {
+    if (run.length) out.push(`list ${run.map(quote).join(" ")}${numbered ? " +num" : ""}`);
+    run = [];
+    numbered = true;
+  };
+  for (const l of lines) {
+    if (!l.trim()) {
+      flushPara();
+      flushRun();
+    } else if (MD_HEADING.test(l)) {
+      flushPara();
+      flushRun();
+      out.push(`say ${quote(plainInline(l.replace(MD_HEADING, "")))}`);
+    } else if (listy && MD_BULLET.test(l)) {
+      flushPara();
+      numbered &&= /^[ \t]*\d/.test(l);
+      const item = plainInline(l.replace(MD_BULLET, ""));
+      if (item) run.push(item);
+    } else if (run.length && /^[ \t]+\S/.test(l)) {
+      run[run.length - 1] = plainInline(`${run[run.length - 1]} ${l}`); // a bullet wrapped onto the next line
+    } else {
+      flushRun();
+      para.push(l);
+    }
+  }
+  flushPara();
+  flushRun();
+  return out;
+}
+
+/** The answer with no markdown where the person reads it (see above). Code fences other than yui are left alone. */
+export function unmark(text: string): string {
+  const parts = text.split(/(^```[^\n]*\n[\s\S]*?^```[ \t]*$)/m);
+  const isYui = (i: number) => i % 2 === 1 && /^```yui\b/.test(parts[i]);
+  // Bold inside a yui block's quoted strings loses its stars; a heading's hashes go too.
+  for (let i = 1; i < parts.length; i += 2) {
+    if (!isYui(i)) continue;
+    parts[i] = parts[i].replace(QUOTED, (m, inner: string) =>
+      MD_BOLD.test(inner) || /^#{1,6} /.test(inner) ? `"${inner.replace(/^#{1,6} +/, "").replace(/\*\*|__/g, "")}"` : m);
+  }
+  const into = (i: number, lines: string[], atTop: boolean) => {
+    const head = parts[i].match(/^```[^\n]*\n/)![0];
+    const rest = parts[i].slice(head.length);
+    parts[i] = atTop ? `${head}${lines.join("\n")}\n${rest}` : parts[i].replace(/\n?```[ \t]*$/, `\n${lines.join("\n")}\n\`\`\``);
+  };
+  for (let i = 0; i < parts.length; i += 2) {
+    const lines = markdownLines(parts[i]);
+    if (!lines) continue;
+    const lead = parts[i].match(/^\s*/)![0].includes("\n") ? "\n" : "";
+    const tail = /\n\s*$/.test(parts[i]) ? "\n" : "";
+    if (!lines.length) continue;
+    if (isYui(i + 1)) {
+      into(i + 1, lines, true);
+      parts[i] = lead;
+    } else if (isYui(i - 1)) {
+      into(i - 1, lines, false);
+      parts[i] = tail;
+    } else {
+      parts[i] = `${lead}\`\`\`yui\n${lines.join("\n")}\n\`\`\`${tail}`;
+    }
+  }
+  return parts.join("");
+}
+
+// The stage plays an answer as pages: a paragraph of chat text, a `say` or a deck `page` is one each (the app's
+// StageChunks). Past MOST_PAGES, short neighbours are merged so a small answer is never a long swipe.
+const MOST_PAGES = 4;
+const SHORT_WORDS = 40;
+const wordsIn = (t: string) => t.split(/\s+/).filter(Boolean).length;
+const SAY = /^say\s+"((?:[^"\\]|\\.)*)"\s*$/;
+const PAGE = /^page\s+"((?:[^"\\]|\\.)*)"(?:\s+body="((?:[^"\\]|\\.)*)")?\s*$/;
+
+/** Merges neighbours in `items` (`pair` returns the merge, or null for a pair that can't share a page) while `over()`. */
+function squeeze<T>(items: T[], over: () => boolean, pair: (a: T, b: T) => T | null): void {
+  for (let i = 0; over() && i < items.length - 1;) {
+    const m = pair(items[i], items[i + 1]);
+    if (m === null) i++;
+    else items.splice(i, 2, m);
+  }
+}
+
+const withStop = (t: string) => (/[.!?:]$/.test(t) ? t : `${t}.`);
+
+function mergeLines(a: string, b: string): string | null {
+  const sa = a.trim().match(SAY), sb = b.trim().match(SAY);
+  if (sa && sb && wordsIn(sa[1]) + wordsIn(sb[1]) <= SHORT_WORDS) return `say "${withStop(sa[1])} ${sb[1]}"`;
+  const pa = a.trim().match(PAGE), pb = b.trim().match(PAGE);
+  if (pa && pb && wordsIn(`${pa[2] ?? ""} ${pb[1]} ${pb[2] ?? ""}`) <= SHORT_WORDS) {
+    return `page "${pa[1]}" body="${[pa[2] && withStop(pa[2]), withStop(pb[1]), pb[2]].filter(Boolean).join(" ")}"`;
+  }
+  return null;
+}
+
+/** The answer on at most MOST_PAGES stage pages where short ones can share a page. */
+export function unsprawl(text: string): string {
+  const parts = text.split(/(^```[^\n]*\n[\s\S]*?^```[ \t]*$)/m);
+  const isYui = (i: number) => i % 2 === 1 && /^```yui\b/.test(parts[i]);
+  const paras = (p: string) => p.split(/\n\s*\n/).filter((x) => x.trim());
+  const count = (p: string, i: number) =>
+    i % 2 === 0 ? paras(p).length : isYui(i) ? p.split("\n").filter((l) => SAY.test(l.trim()) || PAGE.test(l.trim())).length : 0;
+  const total = () => parts.reduce((n, p, i) => n + count(p, i), 0);
+  if (total() <= MOST_PAGES) return text;
+  // Chat paragraphs first, then says and deck pages.
+  for (let i = 0; i < parts.length; i++) {
+    if (total() <= MOST_PAGES) break;
+    if (i % 2 === 0) {
+      const ps = paras(parts[i]).map((x) => x.trim());
+      if (ps.length < 2) continue;
+      const rest = total() - ps.length;
+      squeeze(ps, () => rest + ps.length > MOST_PAGES, (a, b) => (wordsIn(a) + wordsIn(b) <= SHORT_WORDS ? `${a} ${b}` : null));
+      parts[i] = `${parts[i].match(/^\s*/)![0]}${ps.join("\n\n")}${parts[i].match(/\s*$/)![0]}`;
+    } else if (isYui(i)) {
+      const lines = parts[i].split("\n");
+      const rest = total() - count(parts[i], i);
+      squeeze(lines, () => rest + count(lines.join("\n"), i) > MOST_PAGES, mergeLines);
+      parts[i] = lines.join("\n");
+    }
+  }
+  return parts.join("");
 }
 
 /** Streams when it can; one retry when the model is busy. */

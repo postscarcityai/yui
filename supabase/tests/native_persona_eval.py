@@ -9,6 +9,9 @@ thread on the live native runtime and scores every answer:
 - in character: the job it is for, the screens it reaches for, never another name
 - Yui Lines, not a prose wall: a yui fence that parses, short words around it
 - no em or en dash, no \\n inside a quoted string
+- no markdown on screen (**bold**, "- " bullets, # headings): the phone shows it raw
+- open asks ("what can you do for me?", "tell me about yourself") and a meal's macros,
+  asked of every agent (t_a88dc3b5): one line and a screen, a few stage pages at most
 - careful coaches (Arnold, Basil): the first answer asks about injuries,
   conditions or allergies and carries one short doctor note; before a plan they
   ask first; they never diagnose and never give a dose
@@ -90,6 +93,18 @@ CASES = {
     ],
 }
 
+# Asked of every agent (t_a88dc3b5, TestFlight build 244: Basil answered "what can you do" in markdown bullets the
+# phone showed raw, over 7 pages). YUI-135 asked each agent only for its own job, so an open ask was never tried.
+MACROS = "Break down this meal's macros: two eggs, two slices of toast with butter, and a banana."
+for _h, _cases in CASES.items():
+    _cases += [
+        {"ask": "What can you do for me?", "screens": None, "open": True, "why": "one line, then what it does on a screen"},
+        {"ask": "Tell me about yourself.", "screens": None, "open": True, "why": "one line, then a screen"},
+        {"ask": MACROS, "open": True, "why": "a meal's macros on one screen, or one line to Basil",
+         **({"screens": ["table", "stat", "chart"]} if _h == "basil" else
+            {"screens": ["table", "stat", "chart"], "or_pointer": r"\bBasil\b", "short": 240})},
+    ]
+
 ap = argparse.ArgumentParser()
 ap.add_argument("--out", default="/tmp/yui135-eval")
 ap.add_argument("--only", default="", help="comma list of handles")
@@ -119,6 +134,27 @@ def read(body):
     quoted = [m.group(1) for b in blocks for m in re.finditer(r'"((?:[^"\\\n]|\\.)*)"', b)]
     return blocks, ops, outside, words, quoted
 
+QUESTIONS = {"ask", "choose", "pick", "slide", "form", "mic", "camera"}
+def stage_pages(outside, ops):
+    """About how many pages the phone plays this answer in (the app's StageChunks): a paragraph of chat text is one
+    (two sentences a page past 40 words), a say or a deck page one, a picture joins the line before it, questions one at the end."""
+    n = 0
+    for para in [p for p in re.split(r"\n\s*\n", outside) if p.strip()]:
+        w = len(para.split())
+        n += 1 if w <= 40 else max(1, -(-len(re.findall(r"[^.!?]+[.!?]+", para) or [para]) // 2))
+    kinds, open_line, qs = {}, False, False
+    for op in ops:
+        if op.get("op") != "add" or str(op.get("screen", "1")) != "1": continue
+        p = op.get("preset")
+        kinds[op.get("id")] = p
+        if op.get("in") and kinds.get(op["in"]) not in ("deck", "plan"): continue  # a drawing's member
+        if p in ("deck", "plan"): open_line = False; continue
+        if p in QUESTIONS: qs = True; continue
+        if p in ("say", "page"): n += 1; open_line = True; continue
+        if open_line: open_line = False; continue
+        n += 1
+    return n + (1 if qs else 0)
+
 def doctor_notes(words):
     """The sentences that send them to a professional ("your doctor or diabetes educator" is one)."""
     return [x for x in re.split(r"(?<=[.!?])\s+|\n+", words) if re.search(DOCTOR, x, re.I)]
@@ -140,6 +176,9 @@ def score(handle, name, body, case=None, first=False):
     add("the screen parses", not errors, errors[0]["message"] if errors else f"{len(ops)} ops")
     add("short words around it", len(outside) <= 400 and len(words) <= 900, f"{len(outside)} outside, {len(words)} words")
     add("no em or en dash", not re.search("[–—]", body))
+    md = re.search(r"\*\*[^*\n]+\*\*|__[^_\n]+__|^[ \t]*[-*•] \S|^[ \t]{0,3}#{1,6} \S", outside, re.M) or \
+         next((m for q in quoted for m in [re.search(r"\*\*[^*]+\*\*|^#{1,6} ", q)] if m), None)
+    add("no markdown on screen", not md, md.group(0)[:60] if md else "")
     bad = [q for q in quoted if re.search(r'(^|[^\\])(\\\\)*\\n', q)]
     add("no \\n inside a quoted string", not bad, bad[0][:80] if bad else f"{len(quoted)} quoted")
     others = [n for n in CREW if n != name]
@@ -156,8 +195,15 @@ def score(handle, name, body, case=None, first=False):
     if handle in ("arnold", "basil"):
         notes = doctor_notes(words)
         add("careful coach: the doctor note stays brief", len(notes) <= 2, f"{len(notes)} sentences")
+    pointer = case.get("or_pointer") and len(words) <= 240 and re.search(case["or_pointer"], words)
     if case.get("screens"):
-        add("reaches for the right screens", set(presets) & set(case["screens"]), ",".join(presets))
+        add("reaches for the right screens", set(presets) & set(case["screens"]) or pointer, ",".join(presets) or ("a pointer" if pointer else ""))
+    if case.get("open"):
+        first_line = next((x for x in outside.split("\n") if x.strip()), "")
+        add("answers first in one line", len(outside) <= 240 and len(first_line) <= 200, f"{len(outside)} chars outside")
+        add("a screen, not words alone", presets or pointer, ",".join(presets))
+        n = stage_pages(outside, ops)
+        add("a few stage pages, not a sprawl", n <= 4, f"{n} pages")
     if case.get("says"):
         add(case["why"], re.search(case["says"], body, re.I), words[:100].replace("\n", " / "))
     if case.get("never"):

@@ -454,3 +454,49 @@ test("options wrapped onto their own lines join the choose they belong to", () =
 test("a flag wrapped onto its own line joins the list it belongs to", () => {
   assert.equal(unend('```yui\nlist "This week" "Dentist" "Report"\n+check\n```'), '```yui\nlist "This week" "Dentist" "Report" +check\n```');
 });
+
+test("markdown in an answer becomes Yui Lines, never raw stars on the phone (t_a88dc3b5)", async () => {
+  const { unmark } = await import("../src/turn.ts");
+  // Basil's answer on build 244, shortened: bullets and bold in the chat text, a choose below.
+  const basil = "Here's what I can do for you:\n\n- **Build meal plans** around your goal.\n- **Log meals from a photo.** Snap your plate.\n"
+    + "- **Grocery lists** you can check off.\n\nWant to start with any of these?\n```yui\nchoose \"Where to start?\" \"Plan my meals\"|\"Log a meal\"\n```";
+  assert.equal(unmark(basil), "```yui\nsay \"Here's what I can do for you:\"\n"
+    + "list \"Build meal plans around your goal.\" \"Log meals from a photo. Snap your plate.\" \"Grocery lists you can check off.\"\n"
+    + "say \"Want to start with any of these?\"\nchoose \"Where to start?\" \"Plan my meals\"|\"Log a meal\"\n```");
+  // No yui block: one is made. Headings are says, numbered runs a numbered list, *italics* lose their stars.
+  assert.equal(unmark("## Today\n1. Squat 5x5\n2. Bench 5x5\n\nThat's it, *easy*."),
+    "```yui\nsay \"Today\"\nlist \"Squat 5x5\" \"Bench 5x5\" +num\nsay \"That's it, easy.\"\n```");
+  // Words after the block go to its end; a quote inside becomes an apostrophe.
+  assert.equal(unmark("```yui\ncard \"Plan\"\n```\n- the \"easy\" one\n- the hard one"),
+    "```yui\ncard \"Plan\"\nlist \"the 'easy' one\" \"the hard one\"\n```");
+  // Bold inside a yui string loses its stars.
+  assert.equal(unmark("```yui\nsay \"**Rest** 2 minutes\"\n```"), "```yui\nsay \"Rest 2 minutes\"\n```");
+  // Plain prose, one numbered aside and other code fences are left alone.
+  for (const t of ["Rest 2 minutes. 1) stretch first.", "Hi Sam.", "```js\n- **x**\n```", "3 * 4 * 5 is 60."]) assert.equal(unmark(t), t);
+});
+
+test("an answer over 4 short pages is merged, never split into 7 (t_a88dc3b5)", async () => {
+  const { unsprawl } = await import("../src/turn.ts");
+  assert.equal(unsprawl("One.\n\nTwo.\n\nThree.\n\nFour.\n\nFive."), "One. Two.\n\nThree.\n\nFour.\n\nFive.");
+  const says = "```yui\n" + ["a", "b", "c", "d", "e", "f"].map((x) => `say "${x}"`).join("\n") + "\nlist \"x\"\n```";
+  assert.equal(unsprawl(says), "```yui\nsay \"a. b. c\"\nsay \"d\"\nsay \"e\"\nsay \"f\"\nlist \"x\"\n```");
+  const deck = "```yui\ndeck \"T\"\n" + [1, 2, 3, 4, 5].map((n) => `page "P${n}" body="Body ${n}."`).join("\n") + "\nend\n```";
+  assert.match(unsprawl(deck), /page "P1" body="Body 1\. P2\. Body 2\."\npage "P3"/);
+  // Four or fewer, or pages too long to share, stay as written.
+  const four = "```yui\nsay \"a\"\nsay \"b\"\nsay \"c\"\nsay \"d\"\n```";
+  assert.equal(unsprawl(four), four);
+  const long = Array.from({ length: 6 }, (_, i) => `Paragraph ${i} ` + "word ".repeat(30).trim() + ".").join("\n\n");
+  assert.equal(unsprawl(long), long);
+});
+
+test("a whole turn: Basil's markdown answer reaches the phone as a list (t_a88dc3b5)", async () => {
+  const { store, byHandle } = await freshYui();
+  const basil = await byHandle("basil");
+  const m = fakeModel(() => "Here's what I can do:\n\n- **Meal plans**\n- **Macros from a photo**\n```yui\nchoose \"Start?\" Plan|Log\n```");
+  store.say(basil.id, "What can you do for me?");
+  const r = await runAgent(store, basil.id, { provider, fetch: m.fetch });
+  const reply = store.data.rows.find((x) => x.id === r.replies[0])!;
+  assert.doesNotMatch(reply.body, /\*\*|^- /m);
+  assert.match(reply.body, /list "Meal plans" "Macros from a photo"/);
+  assert.match(system(m.calls[0]), /No markdown anywhere/);
+});
