@@ -33,6 +33,22 @@ final class Account {
     var isSignedIn: Bool { session != nil }
 
     private static let keychainKey = "session"
+    /// Set on the first launch of this install. The keychain outlives deleting the app,
+    /// UserDefaults don't, so without it a reinstall opened signed in to the last
+    /// account, top bar and all, before the person ever signed in (feedback AFFVLA66).
+    static let installedKey = "yuiInstalled"
+    /// Keys every signed-in build before the marker wrote: an update, not a new install.
+    static let earlierInstallKeys = ["selectedAgent", "nativeTimeZoneSent", "appearance"]
+
+    /// True once per install, on its first launch, when no earlier build ran here either.
+    /// Marks the install either way.
+    /// Reads what was saved (`domain`), not launch arguments like `-appearance dark`.
+    static func freshInstall(_ defaults: UserDefaults = .standard, domain: String? = Bundle.main.bundleIdentifier) -> Bool {
+        let saved = domain.flatMap { defaults.persistentDomain(forName: $0) } ?? [:]
+        guard saved[installedKey] == nil else { return false }
+        defaults.set(true, forKey: installedKey)
+        return !earlierInstallKeys.contains { saved[$0] != nil }
+    }
     /// Raw nonce for the Apple request in flight; Apple only sees its SHA-256.
     private var pendingNonce: String?
     /// The refresh in flight. Every caller waits on it: spending one refresh
@@ -49,6 +65,14 @@ final class Account {
             return
         }
         if ProcessInfo.processInfo.arguments.contains("-yuiSignedOut") { return }
+        // -yuiReinstalled: a session an earlier install left in the keychain, on a phone
+        // that just installed Yui again (feedback AFFVLA66, UI test TopBarGateTests).
+        if ProcessInfo.processInfo.arguments.contains("-yuiReinstalled") {
+            // The demo account: it stays signed in offline, the way a live session did.
+            Keychain.save(YuiSession(userID: "demo", appleUserID: "demo", email: nil, accessToken: "",
+                                     accessExpiry: .distantFuture, refreshToken: ""), key: Self.keychainKey)
+            for key in [Self.installedKey] + Self.earlierInstallKeys { UserDefaults.standard.removeObject(forKey: key) }
+        }
         // Simulator runs against the live backend: `-yuiRefreshToken <token> -yuiUserID <uuid>`
         // (a yui_sessions row made server-side). Sign in with Apple can't be driven headless.
         if let rt = UserDefaults.standard.string(forKey: "yuiRefreshToken"),
@@ -58,6 +82,7 @@ final class Account {
             return
         }
         #endif
+        if Self.freshInstall() { Keychain.delete(key: Self.keychainKey) }
         session = Keychain.load(YuiSession.self, key: Self.keychainKey)
         NotificationCenter.default.addObserver(
             forName: ASAuthorizationAppleIDProvider.credentialRevokedNotification, object: nil, queue: .main
