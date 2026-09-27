@@ -247,7 +247,7 @@ async function oneTurn(store: Store, agent: NativeAgent, rows: Row[], opts: Turn
     if (!out.text.trim()) out.text = results.filter((r) => r.ok).map((r) => `Done: ${(r as { did: string }).did}.`).join("\n");
   }
   if (out.schedule.length) notes.push(...await applySchedules(store, agent, out.schedule, schedules, tzRaw ? tz : "UTC", now, log));
-  let body = undash(out.text);
+  let body = unbreak(undash(out.text));
   if (notes.length) body += `\n\n(I couldn't do all of that: ${notes.join("; ")}.)`;
   // Sources the answer didn't link, and the invite to add a Firecrawl key when the free lookups ran out.
   const cards = [...sourceCards(body, looked.sources), ...(looked.capped ? [searchInvite(looked.capped.why, looked.capped.limit)] : [])];
@@ -436,6 +436,88 @@ export function undash(text: string): string {
     if (i % 2 === 0) return undashProse(part);
     if (!/^```yui\b/.test(part)) return part;
     return part.replace(/"((?:[^"\\\n]|\\.)*)"/g, (_m, inner: string) => `"${undashProse(inner)}"`);
+  }).join("");
+}
+
+// Models write \n inside a quoted YL string to break a line (YUI-161). In YL a
+// backslash escapes the next character, so the person would read "nn". The
+// answer is swept once more: a `say` becomes one line per break, a run of
+// bullets a `list`, and a break in any other quoted string a space.
+const QUOTED = /"((?:[^"\\\n]|\\.)*)"/g;
+const BULLET = /^\s*(?:[•·*-]|\d{1,2}[.)])\s+/;
+
+/** A quoted string's inside, cut at each \n (\r dropped, \t a space). Other escapes stay as written. */
+function breaks(inner: string): string[] {
+  const out = [""];
+  for (let i = 0; i < inner.length; i++) {
+    if (inner[i] !== "\\" || i + 1 >= inner.length) {
+      out[out.length - 1] += inner[i];
+      continue;
+    }
+    const next = inner[++i];
+    if (next === "n") out.push("");
+    else if (next === "t") out[out.length - 1] += " ";
+    else if (next !== "r") out[out.length - 1] += `\\${next}`;
+  }
+  return out;
+}
+
+/** One `say` line whose text breaks, as the lines it meant: a `say` per line, a `list` per run of bullets. */
+function sayLines(route: string, id: string, segs: string[]): string[] {
+  const lines: string[] = [];
+  let run: string[] = [];
+  let numbered = true;
+  const flush = () => {
+    if (run.length) lines.push(`${route}list ${run.map((s) => `"${s}"`).join(" ")}${numbered ? " +num" : ""}`);
+    run = [];
+    numbered = true;
+  };
+  for (const s of segs.map((x) => x.trim())) {
+    if (!s) {
+      flush();
+      continue;
+    }
+    if (BULLET.test(s)) {
+      numbered &&= /^\s*\d/.test(s);
+      run.push(s.replace(BULLET, ""));
+      continue;
+    }
+    flush();
+    lines.push(`${route}say${lines.length ? "" : id} "${s}"`);
+  }
+  flush();
+  return lines.length ? lines : [`${route}say${id} ""`];
+}
+
+/** One line of a yui block with no \n left in its quoted strings. */
+function breakLine(line: string): string[] {
+  if (!line.includes("\\")) return [line];
+  const say = line.match(/^(\s*(?:>[\w-]+\s+)?)say(@[\w-]+)?\s+(.*?)\s*$/);
+  if (say) {
+    const [, route, id = "", rest] = say;
+    const whole = rest.match(/^"((?:[^"\\]|\\.)*)"$/);
+    // Outside quotes a backslash is literal, so an unquoted say is cut at the two characters \n.
+    const segs = whole ? breaks(whole[1])
+      : rest.includes('"') ? null
+      : rest.replace(/\\r/g, "").split("\\n").map((s) => s.replace(/\\/g, "\\\\"));
+    if (segs && segs.length > 1) return sayLines(route, id, segs);
+  }
+  return [line.replace(QUOTED, (m, inner: string) => {
+    const segs = breaks(inner);
+    if (segs.length < 2) return m;
+    const text = segs.map((s) => s.replace(BULLET, "").trim()).filter(Boolean)
+      .reduce((all, s) => (!all ? s : /[.!?:;,]$/.test(all) ? `${all} ${s}` : `${all}. ${s}`), "");
+    return `"${text}"`;
+  })];
+}
+
+/** The answer with every \n inside a yui block's quoted strings turned into real lines. */
+export function unbreak(text: string): string {
+  if (!text.includes("\\")) return text;
+  const parts = text.split(/(^```[^\n]*\n[\s\S]*?^```[ \t]*$)/m);
+  return parts.map((part, i) => {
+    if (i % 2 === 0 || !/^```yui\b/.test(part)) return part;
+    return part.split("\n").flatMap(breakLine).join("\n");
   }).join("");
 }
 

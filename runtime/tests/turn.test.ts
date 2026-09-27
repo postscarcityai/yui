@@ -283,6 +283,38 @@ test("a turn's written answer has no dashes", async () => {
   assert.match(system(m.calls[0]), /Never use an em dash/);
 });
 
+// YUI-161: GLM 5.2 wrote \n inside a quoted say; YL reads \n as the letter n, so the app showed "nn".
+const BASIL = "```yui\nsay \"A few dinners that skip peanuts:\\n\\n\u2022 Grilled chicken with greens\\n\u2022 Salmon with rice\\n\\nWant a recipe?\"\nchoose \"Pick one\" Chicken|Salmon\n```";
+
+test("a line break written as \\n inside a quoted say becomes real lines, bullets a list (YUI-161)", async () => {
+  const { unbreak } = await import("../src/turn.ts");
+  assert.equal(unbreak(BASIL),
+    "```yui\nsay \"A few dinners that skip peanuts:\"\nlist \"Grilled chicken with greens\" \"Salmon with rice\"\nsay \"Want a recipe?\"\nchoose \"Pick one\" Chicken|Salmon\n```");
+  assert.equal(unbreak("```yui\n>2 say@top \"Step one\\n1. Warm up\\n2) Squat 5x5\"\n```"),
+    "```yui\n>2 say@top \"Step one\"\n>2 list \"Warm up\" \"Squat 5x5\" +num\n```", "route and id kept, numbers become +num");
+  assert.equal(unbreak("```yui\nsay First line\\nSecond \"line\"\n```"), "```yui\nsay First line\\nSecond \"line\"\n```",
+    "an unquoted say with a quote in it is left alone");
+  assert.equal(unbreak("```yui\nsay Hi there\\nsee you\n```"), "```yui\nsay \"Hi there\"\nsay \"see you\"\n```");
+  assert.equal(unbreak("```yui\ncard \"Dinner\" body=\"Chicken\\n\\n\u2022 Salmon\\nRice.\\nDone\"\n```"),
+    "```yui\ncard \"Dinner\" body=\"Chicken. Salmon. Rice. Done\"\n```", "a break in any other string is a space");
+  const kept = "```yui\nsay \"She said \\\"hi\\\" and left a \\\\ here\"\n```";
+  assert.equal(unbreak(kept), kept, "other escapes stay as written");
+  const prose = "Use \\n in the regex.\n```python\nprint('a\\nb')\n```";
+  assert.equal(unbreak(prose), prose, "prose and other fences are left alone");
+});
+
+test("a native turn's \\n in a say reaches the thread as lines", async () => {
+  const { store, byHandle } = await freshYui();
+  const yui = await byHandle("yui");
+  const m = fakeModel(() => BASIL);
+  store.say(yui.id, "Dinner ideas?");
+  const r = await runAgent(store, yui.id, { provider, fetch: m.fetch });
+  const body = store.data.rows.find((x) => x.id === r.replies[0])!.body;
+  assert.ok(!body.includes("\\n"), body);
+  assert.match(body, /^list "Grilled chicken with greens" "Salmon with rice"$/m);
+  assert.match(system(m.calls[0]), /never write \\n/);
+});
+
 // YUI-162: GLM 5.2 could think through the whole budget and answer nothing.
 function thinker(answers: Array<{ content: string; finish: string; thought?: number }>) {
   const calls: any[] = [];
