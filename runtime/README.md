@@ -31,7 +31,7 @@ A profile is a folder in `profiles/`:
 | `soul.md` | who the agent is, how it talks, what it never does, in the second person |
 | `first.yui` | its first answer: a line of text and a `yui` fence with a real question on a screen |
 
-Copy a folder, change it, run `node runtime/scripts/build.mjs` (it bakes the profiles into `src/crew.gen.ts` and refreshes the edge copy), then `node runtime/cli.ts profiles` to check it. Bump `version` to try a v2 next to v1.
+Copy a folder, change it, run `node runtime/scripts/build.mjs` (it loads every folder with `loadProfile` from `src/profiles.ts`, stops on any that fails its check, bakes the rest into `src/crew.gen.ts` and refreshes the edge copy), then `node runtime/cli.ts profiles` to check it. The check wants a known color and handle, favorites the app draws, a soul under 4000 characters with no em dashes, and a first answer that is a line of text then a screen. Bump `version` to try a v2 next to v1.
 
 ## How a turn works
 

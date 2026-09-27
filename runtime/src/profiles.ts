@@ -4,6 +4,22 @@
 import { COLORS, PRESETS, type Profile } from "./types.ts";
 import { CREW } from "./crew.gen.ts";
 
+/** The three files every profile folder holds. */
+export const PROFILE_FILES = ["profile.json", "soul.md", "first.yui"] as const;
+
+/** One profile folder -> a Profile. read(file) gives a file's text, or null when it is missing. */
+export function loadProfile(base: string, read: (file: string) => string | null): Profile {
+  const files: Record<string, string> = {};
+  const missing: string[] = [];
+  for (const f of PROFILE_FILES) {
+    const text = read(f);
+    if (text == null) missing.push(f);
+    else files[f] = text;
+  }
+  if (missing.length) throw new Error(`${base}: missing ${missing.join(", ")}`);
+  return parseProfile(base, files as { "profile.json": string; "soul.md": string; "first.yui": string });
+}
+
 /** The files of one profile folder -> a Profile. Throws with what is wrong. */
 export function parseProfile(base: string, files: { "profile.json": string; "soul.md": string; "first.yui": string }): Profile {
   let meta: any;
@@ -45,7 +61,10 @@ export function checkProfile(p: Profile): string[] {
   if (unknown.length) out.push(`favorites not drawn by the app: ${unknown.join(", ")}`);
   if (!p.soul) out.push("soul.md is empty");
   if (p.soul.length > 4000) out.push("soul.md is over 4000 characters");
-  if (!/```yui\n[\s\S]+?\n```/.test(p.first)) out.push("first.yui needs a ```yui fence");
+  const screen = p.first.match(/```yui\n([\s\S]+?)\n```/);
+  if (!screen) out.push("first.yui needs a ```yui fence");
+  else if (!PRESETS.has(screen[1].trim().split(/\s/)[0])) out.push(`first.yui opens with "${screen[1].trim().split(/\s/)[0]}", not a screen the app draws`);
+  else if (!p.first.slice(0, screen.index).trim()) out.push("first.yui needs a line of text before its screen");
   if (/\u2014/.test(p.soul + p.first)) out.push("no em dashes");
   return out;
 }
