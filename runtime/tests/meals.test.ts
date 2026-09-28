@@ -3,7 +3,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { runAgent, runJob } from "../src/turn.ts";
-import { ACK, breakdown, clip, honour, saidNo, mealName, mealTurn, parseEstimate, plainPortion, short, spoken } from "../src/meals.ts";
+import { ACK, breakdown, clip, honour, saidNo, short, mealName, mealTurn, parseEstimate, plainPortion, short, spoken } from "../src/meals.ts";
 import { extract } from "../src/directives.ts";
 import { fakeModel, freshYui, provider, type Call } from "./helpers.ts";
 
@@ -248,6 +248,8 @@ test("pieces: spoken words, meal names, the estimate read loosely, and the break
   assert.equal(plainPortion("150 g"), "1 portion");
   assert.equal(plainPortion("2 slices"), "2 slices");
   assert.equal(clip("A little drizzle of sauce", 20), "A little drizzle of");
+  assert.equal(short("Lettuce and greens"), "Lettuce", "a cut name never ends on and");
+  assert.equal(short("Salmon, grilled"), "Salmon");
   assert.deepEqual(saidNo("no mayo on mine, and without the dressing. I skipped the rice"), ["mayo", "dressing", "rice"]);
   assert.deepEqual(saidNo("no more, thanks"), []);
   const bowl = { food: true, title: "Poke", sure: "", items: [{ food: "Rice", portion: "1 cup", cal: 200, protein: 4, carbs: 45, fat: 0 },
