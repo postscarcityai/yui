@@ -69,12 +69,12 @@ def key() -> str:
     k = os.getenv("YUI_MAIL_KEY")
     if k:
         return k.strip()
-    for p in [Path(connector.STATE).parent / "mail.json", connector.hermes_root() / "yui" / "mail.json"]:
-        try:
-            if p.exists():
-                return str(json.loads(p.read_text()).get("key") or "").strip()
-        except (OSError, ValueError):
-            pass
+    p = Path(connector.STATE).parent / "mail.json"  # next to the connector token
+    try:
+        if p.exists():
+            return str(json.loads(p.read_text()).get("key") or "").strip()
+    except (OSError, ValueError):
+        pass
     return ""
 
 
