@@ -88,7 +88,7 @@ test("seeds: every starter ships its tables; blank ships none; seeds use no date
   assert.deepEqual(names("yui"), ["todos", "groceries", "notes"]);
   assert.deepEqual(names("basil"), ["foods", "meals", "recipes", "goal", "meal_plan", "plan_prefs", "groceries"]);
   assert.deepEqual(names("arnold"), ["exercises", "this_week", "workouts"]);
-  assert.deepEqual(names("penny"), ["tasks", "errands", "bills"]);
+  assert.deepEqual(names("penny"), ["tasks", "errands", "bills", "reminders", "reviews", "week_prefs"]);
   assert.deepEqual(names("quill"), ["decks", "review"]);
   assert.deepEqual(names("gouda"), ["loops", "songs", "practice", "sessions", "studio"]);
   assert.equal(c.blank.tables, undefined);
@@ -199,7 +199,7 @@ test("an agent from before tables gets its starter tables once, on its next turn
   const m = fakeModel(() => "Hi.\n```yui\nsay Hi\n```");
   store.say(penny.id, "hi");
   await runAgent(store, penny.id, { provider, fetch: m.fetch });
-  assert.deepEqual(Object.keys((await store.tables(penny.id)).tables), ["tasks", "errands", "bills"]);
+  assert.deepEqual(Object.keys((await store.tables(penny.id)).tables), ["tasks", "errands", "bills", "reminders", "reviews", "week_prefs"]);
   assert.equal((await store.agent(penny.id))!.profile.seeded, true);
   await store.saveTables(penny, diff((await store.tables(penny.id)), emptyStore()), emptyStore()); // they deleted them all
   store.say(penny.id, "hi again");

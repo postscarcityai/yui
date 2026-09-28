@@ -1,6 +1,8 @@
-# Penny's starter tables (YUI-170). Bills are the usual ones with amounts left for you; Due is the day of the month.
-table create tasks Task:text Due:date Priority:text Done:bool
-put tasks t1 Task="Tell Penny what's on your mind this week" Priority=High
+# Penny's starter tables (YUI-170, YUI-185). Bills are the usual ones with amounts left for you; Due is the day of the month.
+# tasks: Due is the day it's on, Time a 24-hour HH:MM when it has one, Status Open, Done or Dropped, Order its place in the day.
+# reminders are kept by the runtime from tasks with a time (src/planner.ts); the app turns them into notifications.
+table create tasks Task:text Due:date Time:text Priority:text Done:bool Status:text Order:number
+put tasks t1 Task="Tell Penny what's on your mind this week" Priority=High Status=Open
 table create errands Errand:text Where:text Done:bool
 put errands e1 Errand="Pick up a prescription" Where=Pharmacy
 put errands e2 Errand="Drop off returns" Where="Post office"
@@ -10,3 +12,6 @@ put bills phone Bill=Phone Due=15
 put bills internet Bill=Internet Due=20
 put bills electric Bill=Electric Due=25
 put bills streaming Bill=Streaming Due=5
+table create reminders Task:text Day:date Time:text At:text Lead:number
+table create reviews Day:date Done:number Moved:number Dropped:number Felt:text
+table create week_prefs Busy:text Pace:text Carry:text Remind:text Planned:date

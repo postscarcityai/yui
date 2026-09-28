@@ -1,10 +1,17 @@
-# Penny's home (YUI-168, yuigui spec/HOME.md). Today and This week fill in as you tell her things.
-menu shortcut@plan "Plan my week" say="Plan my week"
+# Penny's home (YUI-168, yuigui spec/HOME.md). Played once when she joins; the runtime patches it after (YUI-185, src/planner.ts).
+# Chips show newest first, so the most important one goes last.
+menu shortcut@review "Evening review" say="Evening review"
+menu shortcut@next "What's next?" say="What's next today?"
 menu shortcut@todo "Add a to-do" say="Add a to-do: "
+menu shortcut@plan "Plan my week" say="Plan my week"
 >2
-list@today title=Today "Tell Penny what's on your mind this week" +check
+card@next-task "Nothing on today yet" "Tell me what's on your mind and I'll sort your week into days." sub="Up next" cta="Plan my week"
+list@today title=Today "Nothing on today" +check
+card@wrap "Evening review" "Two minutes at the end of the day: done, tomorrow or drop." cta="Wrap up the day"
 save today
 >3
-timeline@week "This week" mark=Today
-next@start "Your week goes here once you tell Penny what's on it" key=start
+timeline@week "This week" mark=Today fold=12
+next@wk-t1 "Tell Penny what's on your mind this week" at="Any day" key=t1
+card@week-move "Move a task" "Drag with Edit order, or pick a task and a day." cta="Move a task"
+card@week-plan "Plan my week" "Talk it out: everything on your plate. I'll sort it into days." cta="Plan my week"
 save this week

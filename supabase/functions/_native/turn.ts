@@ -31,6 +31,9 @@ import { ADD_BODY, GOAL, GROCERIES, LOG_BODY, MEALS as MEAL_LOG, PLAN as MEAL_PL
 import { applyBar, applyLearn, applyOpen, applyPracticed, applySave, applyScale, applySpeed, drawnShape as musicShape, ensureTools as ensureMusic,
          keepDraft, learnBody, logPractice, musicAsks, musicPages, pasteBody, playBpm, lesson, playsMusic, practiceBody, readTake, saveBody,
          screenLines as musicScreenLines, streak, type MusicAsk, type Page as MusicPage } from "./music.ts";
+import { ADD_BODY as TODO_BODY, TASKS, addTasks, applyMove, applyOrder, applyPlan as applyWeekPlan, applyReview, clockText, dayWord, drawnShape as plannerShape,
+         ensureTools as ensurePlanner, moveBody, nextText, nextTask, planAsks, planBody as weekPlanBody, plansWeeks, remindLead, reminderMeta, reviewBody,
+         screenLines as plannerScreenLines, syncReminders, tickTask, type Page as PlannerPage, type PlanAsk } from "./planner.ts";
 import { card as handoffCard, cards as handoffCards, handedIn, handlesIn, oneThread, threadOf, withCard } from "./handoff.ts";
 
 export interface Provider {
@@ -222,6 +225,18 @@ async function oneTurn(store: Store, agent: NativeAgent, rows: Row[], opts: Turn
     }
   }
 
+  // Penny's tools (YUI-185): plan my week, the today list, what's next, move a task and the evening review, with no model turn.
+  if (plansWeeks(agent)) {
+    const { asks, rest } = planAsks(rows);
+    if (asks.length) {
+      await plannerTools(store, agent, asks, now, say, log);
+      const done = asks.map((a) => a.row.id).filter((id) => !id.startsWith(SYNTHETIC));
+      if (done.length) await store.markHandled(done);
+      if (!rest.length) return { handled: true };
+      return oneTurn(store, agent, rest, opts, log, result, depth);
+    }
+  }
+
   // Arnold's tools (YUI-182): Start, the runner's Send, the log and a changed day are answered here, with no model turn.
   if (trains(agent)) {
     const { asks, rest } = workoutAsks(rows);
@@ -268,6 +283,8 @@ async function oneTurn(store: Store, agent: NativeAgent, rows: Row[], opts: Turn
   if (plansMeals(agent)) tables = await ensureMealTools(store, agent, tables);
   // Gouda from before YUI-184 gets his practice, sessions and studio tables and his songs' chords, once.
   if (playsMusic(agent)) tables = await ensureMusicTools(store, agent, tables);
+  // Penny from before YUI-185 gets her reminders, reviews and week tables and the new task columns, once.
+  if (plansWeeks(agent)) tables = await ensurePlannerTools(store, agent, tables);
   // A Delete or Keep tap on deletes held last turn: done here, and the agent hears what happened.
   let turnRows = rows;
   ({ tables, rows: turnRows } = await heldTaps(store, agent, rows, history, tables, clk, log));
@@ -373,8 +390,14 @@ async function oneTurn(store: Store, agent: NativeAgent, rows: Row[], opts: Turn
     notes.push(...t.problems.slice(0, 3).map((x) => `a table change didn't fit (${x})`));
   }
   const tchange = diff(tables, t.store);
+  // Penny's reminders follow the tasks the answer wrote (YUI-185): a to-do with a time gets one.
+  let reminded: ReturnType<typeof reminderMeta> | undefined;
+  if (plansWeeks(agent) && touches(tchange, TASKS)) {
+    t.store = syncReminders(t.store, clk);
+    reminded = reminderMeta(t.store);
+  }
   if (changed(tchange)) {
-    await store.saveTables(agent, tchange, t.store);
+    await store.saveTables(agent, diff(tables, t.store), t.store);
     log(`${p.name}: tables: ${tchange.rows.length} row(s) written, ${tchange.dropRows.length} gone, ${tchange.tables.length} table(s) made or changed`);
   }
   // Writes with no screen to show them: the table that changed, under the words (or "Saved.").
@@ -394,6 +417,8 @@ async function oneTurn(store: Store, agent: NativeAgent, rows: Row[], opts: Turn
   // Gouda's pages follow what the answer wrote to his songs, practice, sessions or studio (YUI-184).
   const mpages = playsMusic(agent) ? musicPages(tchange) : [];
   if (mpages.length && body.trim()) body = await withMusicScreens(store, agent, body, t.store, clk, mpages);
+  // Penny's pages follow what the answer wrote to her tasks (YUI-185).
+  if (reminded && body.trim()) body = await withPlannerScreens(store, agent, body, t.store, clk, ["today", "week"]);
   // Hand-offs (YUI-144): one a turn, never from a turn another agent started, never inside a group.
   // The card goes under the answer, so the phone jumps to that agent once it has been read.
   const passes = depth === 0 && !handedIn(rows) && !thread;
@@ -415,7 +440,7 @@ async function oneTurn(store: Store, agent: NativeAgent, rows: Row[], opts: Turn
       ...(mentions.length ? { mentions } : {}),
       native: { model, ...(answer.usage ? { usage: answer.usage } : {}), ...(budget.left <= 10 ? { left: budget.left } : {}),
                 ...(looked.sources.length ? { sources: looked.sources.slice(0, 8) } : {}), ...(looked.capped ? { search_capped: looked.capped.why } : {}),
-                ...(t.held ? { held: t.held } : {}) },
+                ...(t.held ? { held: t.held } : {}), ...(reminded ? { reminders: reminded } : {}) },
       ...(depth === 0 && !real.length && rows[0]?.body.startsWith("[yui] check-in") ? { checkin: true } : {}),
     });
   }
@@ -721,6 +746,126 @@ async function musicTools(store: Store, agent: NativeAgent, asks: MusicAsk[], no
     const sl = musicScreenLines(tables, clk, musicShape(agent.profile), only);
     await say(`${text}\n\`\`\`yui\n${sl.lines.join("\n")}\n\`\`\``, { ...turn, native: { musictool: a.kind } });
     agent.profile = { ...agent.profile, musicScreens: sl.shape };
+    await store.updateAgent(agent.id, agent.profile);
+    log(`${p.name}: ${a.kind}, ${sl.lines.some((l) => /^>\d clear$/.test(l)) ? "a page drawn again" : "pages patched"}`);
+  }
+  const ch = diff(start, tables);
+  if (changed(ch)) await store.saveTables(agent, ch, tables);
+}
+
+/** A table change that wrote to, or removed rows from, the named table. */
+function touches(ch: { rows: { table: string }[]; dropRows: { table: string }[]; tables: { name: string }[] }, name: string): boolean {
+  return ch.rows.some((r) => r.table === name) || ch.dropRows.some((r) => r.table === name) || ch.tables.some((t) => t.name === name);
+}
+
+/** Penny's tool tables, made once for a Penny from before YUI-185 (from her starter seeds), and saved. */
+async function ensurePlannerTools(store: Store, agent: NativeAgent, tables: TableStore): Promise<TableStore> {
+  const out = ensurePlanner(tables, crew().penny?.tables);
+  const ch = diff(tables, out);
+  if (changed(ch)) await store.saveTables(agent, ch, out);
+  return out;
+}
+
+/** A reply with Penny's page lines added, inside its last yui fence or in a new one. Keeps the shape in her profile. */
+async function withPlannerScreens(store: Store, agent: NativeAgent, body: string, tables: TableStore, clk: Clock, only: PlannerPage[]): Promise<string> {
+  const { lines, shape } = plannerScreenLines(tables, clk, plannerShape(agent.profile), only);
+  if (!lines.length) return body;
+  if (agent.profile.plannerScreens !== shape) {
+    agent.profile = { ...agent.profile, plannerScreens: shape };
+    await store.updateAgent(agent.id, agent.profile);
+  }
+  const at = body.lastIndexOf("\n```");
+  if (/```yui\n/.test(body) && at > body.lastIndexOf("```yui\n")) return `${body.slice(0, at)}\n${lines.join("\n")}${body.slice(at)}`;
+  return `${body.trim()}\n\`\`\`yui\n${lines.join("\n")}\n\`\`\``;
+}
+
+/** Penny's tools, answered from her tables: the week planned, a task added, ticked or moved, the day reviewed; her pages patched after. */
+async function plannerTools(store: Store, agent: NativeAgent, asks: PlanAsk[], now: number,
+                            say: (body: string, meta: Record<string, unknown>) => Promise<string>, log: (m: string) => void): Promise<void> {
+  const p = agent.profile;
+  const clk = clock(now, validZone(await store.timezone(agent.userId)));
+  const start = await seedOnce(store, agent, await store.tables(agent.id), log);
+  let tables = ensurePlanner(start, crew().penny?.tables, true);
+  for (const a of asks) {
+    const turn = a.row.id.startsWith(SYNTHETIC) ? {} : { turn: [a.row.id] };
+    // The ones that open a flow: nothing written yet.
+    const opens: Partial<Record<PlanAsk["kind"], () => string>> = {
+      plan: () => weekPlanBody(tables, clk), add: () => TODO_BODY, review: () => reviewBody(tables, clk), move: () => moveBody(tables, clk),
+    };
+    if (opens[a.kind]) {
+      await say(opens[a.kind]!(), turn);
+      log(`${p.name}: ${a.kind}`);
+      continue;
+    }
+    const before = JSON.stringify(reminderMeta(tables));
+    let text = "";
+    let only: PlannerPage[] = ["today", "week"];
+    if (a.kind === "planned") {
+      const r = applyWeekPlan(tables, a.answers, clk);
+      tables = r.store;
+      if (!r.added.length && !r.carried) {
+        await say("I didn't catch anything to plan. Talk it out again, like: call the dentist Tuesday at 9, groceries, finish the report by Friday.", turn);
+        continue;
+      }
+      const days = new Set(r.added.map((x) => x.due)).size;
+      const timed = r.added.filter((x) => x.time).length;
+      text = `Your week is planned: ${r.added.length} ${r.added.length === 1 ? "thing" : "things"} over ${days} ${days === 1 ? "day" : "days"}`
+        + `${r.carried ? `, plus ${r.carried} brought in` : ""}. Drag to reorder on This week.`
+        + `${timed && r.prefs.remind != null ? ` ${timed === 1 ? "The timed one gets" : `The ${timed} timed ones get`} a reminder.` : ""}`;
+      const n = nextTask(tables, clk);
+      if (n) text += ` First up: ${n.task.toLowerCase()}.`;
+    } else if (a.kind === "next") {
+      text = nextText(tables, clk);
+      only = ["today"];
+    } else if (a.kind === "added") {
+      const r = addTasks(tables, a.words, clk);
+      tables = r.store;
+      if (!r.added.length) {
+        await say("I didn't catch a to-do. Try: add a to-do: call mom tomorrow at 5.", turn);
+        continue;
+      }
+      const reminds = r.added.some((x) => x.time) && remindLead(tables) != null;
+      text = `Added ${joinWords(r.added.map((x) => `${x.task.toLowerCase()} for ${dayWord(x.due, clk)}${x.time ? ` at ${clockText(x.time)}` : ""}`))}.`
+        + `${reminds ? " I'll remind you." : ""}`;
+    } else if (a.kind === "tick" || a.kind === "donenext") {
+      const label = a.kind === "tick" ? a.item : nextTask(tables, clk)?.key ?? "";
+      const r = tickTask(tables, label, a.kind === "tick" ? a.done : true, clk);
+      tables = r.store;
+      if (!r.task) {
+        if (a.kind === "tick") continue; // the "Nothing on today" line: nothing to do
+        text = "Nothing left today.";
+      } else if (a.kind === "donenext") {
+        const n = nextTask(tables, clk);
+        text = `Done: ${r.task.task.toLowerCase()}.${n ? ` Next: ${n.task.toLowerCase()}.` : " That was the last one today."}`;
+      }
+      // A tick says nothing: the phone shows it; the pages follow in patches (a quiet reply).
+    } else if (a.kind === "order") {
+      const r = applyOrder(tables, a.order, clk);
+      tables = r.store;
+      text = r.moved.length ? `Moved ${joinWords(r.moved.slice(0, 3).map((x) => `${x.task.toLowerCase()} to ${dayWord(x.due, clk)}`))}.` : "";
+    } else if (a.kind === "moved") {
+      const r = applyMove(tables, a.answers, clk);
+      if (!r.task) {
+        await say("That task isn't on your week any more.", turn);
+        continue;
+      }
+      tables = r.store;
+      text = `${r.task.task} is on ${dayWord(r.day!, clk)} now.`;
+    } else if (a.kind === "reviewed") {
+      const r = applyReview(tables, a.answers, clk);
+      tables = r.store;
+      const bits = [r.done && `${r.done} done`, r.moved && `${r.moved} to tomorrow`, r.dropped && `${r.dropped} dropped`].filter(Boolean) as string[];
+      const morning = clock(Date.parse(`${clk.today}T12:00:00Z`) + 86400000, "UTC").today;
+      const first = nextTask(tables, { today: morning, now: `${morning}T00:00` });
+      text = `Day wrapped${bits.length ? `: ${joinWords(bits)}` : ""}.${r.felt === "Rough" ? " Tomorrow's a fresh start." : r.felt === "Great" ? " Good day." : ""}`
+        + `${first ? ` First up tomorrow: ${first.task.toLowerCase()}.` : ""}`;
+    }
+    // A moved task changes its place in the week: This week is drawn again so the rows read in day order.
+    const sl = plannerScreenLines(tables, clk, plannerShape(agent.profile), only, a.kind === "moved");
+    const after = reminderMeta(tables);
+    const native: Record<string, unknown> = { plannertool: a.kind, ...(JSON.stringify(after) !== before ? { reminders: after } : {}) };
+    await say(text ? `${text}\n\`\`\`yui\n${sl.lines.join("\n")}\n\`\`\`` : `\`\`\`yui\n${sl.lines.join("\n")}\n\`\`\``, { ...turn, native });
+    agent.profile = { ...agent.profile, plannerScreens: sl.shape };
     await store.updateAgent(agent.id, agent.profile);
     log(`${p.name}: ${a.kind}, ${sl.lines.some((l) => /^>\d clear$/.test(l)) ? "a page drawn again" : "pages patched"}`);
   }

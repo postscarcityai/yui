@@ -2091,8 +2091,8 @@ export const CREW: Record<string, Profile> = {
     "about": "Lists, plans and timelines for everything on your plate. Say what's going on and get back a week you can see.",
     "can": [
       "Plan my week",
-      "Make a to-do list",
-      "What's next today?"
+      "What's next today?",
+      "Evening review"
     ],
     "version": 1,
     "color": "butter",
@@ -2105,7 +2105,7 @@ export const CREW: Record<string, Profile> = {
       "table"
     ],
     "model": "default",
-    "soul": "You are Penny, a planner in the Yui app. Organized, cheerful, allergic to clutter.\n\n- You keep lists (`list` with `+check`), plan weeks and projects (`timeline`, `plan`), and turn a messy brain dump into three things to do today.\n- You remember recurring things in your notes: routines, people, deadlines they told you about.\n- You cannot send reminders or messages to anyone yet. When they ask, say so in one line and give them a list or a timer instead.",
+    "soul": "You are Penny, a planner in the Yui app. Organized, cheerful, allergic to clutter.\n\n- You keep lists (`list` with `+check`), plan weeks and projects (`timeline`, `plan`), and turn a messy brain dump into three things to do today.\n- Your tools run on their own: Plan my week (talk it out, you sort it into days), the Today list, What's next today, Move a task and the Evening review. Point people to them instead of redoing them in words.\n- To-dos live in your `tasks` table: Due is the day, Time a 24-hour HH:MM. A to-do with a time gets a reminder on their phone, so write the Time when they say one.\n- You remember recurring things in your notes: routines, people, deadlines they told you about.\n- You cannot send messages to anyone else. When they ask, say so in one line and offer a to-do with a reminder instead.",
     "first": "Penny here. Let's get this week out of your head. What's on it?\n```yui\nform \"This week\" must:voice maybe:voice\n```",
     "shelf": true,
     "visual": {
@@ -2127,12 +2127,24 @@ export const CREW: Record<string, Profile> = {
             "type": "date"
           },
           {
+            "name": "Time",
+            "type": "text"
+          },
+          {
             "name": "Priority",
             "type": "text"
           },
           {
             "name": "Done",
             "type": "bool"
+          },
+          {
+            "name": "Status",
+            "type": "text"
+          },
+          {
+            "name": "Order",
+            "type": "number"
           }
         ],
         "next": 1,
@@ -2141,7 +2153,8 @@ export const CREW: Record<string, Profile> = {
             "key": "t1",
             "values": {
               "Task": "Tell Penny what's on your mind this week",
-              "Priority": "High"
+              "Priority": "High",
+              "Status": "Open"
             }
           }
         ]
@@ -2243,9 +2256,90 @@ export const CREW: Record<string, Profile> = {
             }
           }
         ]
+      },
+      {
+        "name": "reminders",
+        "cols": [
+          {
+            "name": "Task",
+            "type": "text"
+          },
+          {
+            "name": "Day",
+            "type": "date"
+          },
+          {
+            "name": "Time",
+            "type": "text"
+          },
+          {
+            "name": "At",
+            "type": "text"
+          },
+          {
+            "name": "Lead",
+            "type": "number"
+          }
+        ],
+        "next": 1,
+        "rows": []
+      },
+      {
+        "name": "reviews",
+        "cols": [
+          {
+            "name": "Day",
+            "type": "date"
+          },
+          {
+            "name": "Done",
+            "type": "number"
+          },
+          {
+            "name": "Moved",
+            "type": "number"
+          },
+          {
+            "name": "Dropped",
+            "type": "number"
+          },
+          {
+            "name": "Felt",
+            "type": "text"
+          }
+        ],
+        "next": 1,
+        "rows": []
+      },
+      {
+        "name": "week_prefs",
+        "cols": [
+          {
+            "name": "Busy",
+            "type": "text"
+          },
+          {
+            "name": "Pace",
+            "type": "text"
+          },
+          {
+            "name": "Carry",
+            "type": "text"
+          },
+          {
+            "name": "Remind",
+            "type": "text"
+          },
+          {
+            "name": "Planned",
+            "type": "date"
+          }
+        ],
+        "next": 1,
+        "rows": []
       }
     ],
-    "home": "# Penny's home (YUI-168, yuigui spec/HOME.md). Today and This week fill in as you tell her things.\nmenu shortcut@plan \"Plan my week\" say=\"Plan my week\"\nmenu shortcut@todo \"Add a to-do\" say=\"Add a to-do: \"\n>2\nlist@today title=Today \"Tell Penny what's on your mind this week\" +check\nsave today\n>3\ntimeline@week \"This week\" mark=Today\nnext@start \"Your week goes here once you tell Penny what's on it\" key=start\nsave this week"
+    "home": "# Penny's home (YUI-168, yuigui spec/HOME.md). Played once when she joins; the runtime patches it after (YUI-185, src/planner.ts).\n# Chips show newest first, so the most important one goes last.\nmenu shortcut@review \"Evening review\" say=\"Evening review\"\nmenu shortcut@next \"What's next?\" say=\"What's next today?\"\nmenu shortcut@todo \"Add a to-do\" say=\"Add a to-do: \"\nmenu shortcut@plan \"Plan my week\" say=\"Plan my week\"\n>2\ncard@next-task \"Nothing on today yet\" \"Tell me what's on your mind and I'll sort your week into days.\" sub=\"Up next\" cta=\"Plan my week\"\nlist@today title=Today \"Nothing on today\" +check\ncard@wrap \"Evening review\" \"Two minutes at the end of the day: done, tomorrow or drop.\" cta=\"Wrap up the day\"\nsave today\n>3\ntimeline@week \"This week\" mark=Today fold=12\nnext@wk-t1 \"Tell Penny what's on your mind this week\" at=\"Any day\" key=t1\ncard@week-move \"Move a task\" \"Drag with Edit order, or pick a task and a day.\" cta=\"Move a task\"\ncard@week-plan \"Plan my week\" \"Talk it out: everything on your plate. I'll sort it into days.\" cta=\"Plan my week\"\nsave this week"
   },
   "quill": {
     "base": "quill",

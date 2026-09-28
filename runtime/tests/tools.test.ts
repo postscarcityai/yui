@@ -182,7 +182,7 @@ test("a person's own key: their provider, their model, no monthly cap", async ()
     seen.push(`${url} ${init.headers.authorization}`);
     return m.fetch(url, init);
   }) as unknown as typeof fetch;
-  store.say(penny.id, "plan my week");
+  store.say(penny.id, "any tips for a busy week?");
   await runAgent(store, penny.id, { provider, fetch: spy });
   assert.equal(m.calls[0].model, "qwen/qwen3.8-27b");
   assert.deepEqual(seen, ["https://api.groq.test/openai/v1/chat/completions Bearer gsk-own"]);
