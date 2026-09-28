@@ -227,6 +227,9 @@ struct StageFirstView: View {
     /// How many dots the last turn crossed: a tap on the fourth dot from the second slides one
     /// page but moves the pill two.
     @State private var span: CGFloat = 1
+    /// The room the dots have in the bar (YUI-189): between the page arrows (or the bar's
+    /// leading edge) and +, T and the mic.
+    @State private var dotsRoom: CGFloat?
 
     static let small = BarButtons.small, touch = BarButtons.touch
 
@@ -252,12 +255,6 @@ struct StageFirstView: View {
                         .accessibilityHidden(true)
                         .accessibilityIdentifier("stage-tap-away")
                 }
-            }
-            // The dots (YUI-187): above the bar, only when there is somewhere to go.
-            if screens.count > 1, !mic.live {
-                PageDots(screens: screens, progress: dotsAt, page: at, go: actions.goScreen)
-                    .padding(.bottom, theme.spacing.xs)
-                    .transition(.opacity)
             }
             bottom(turn, c)
         }
@@ -890,9 +887,10 @@ struct StageFirstView: View {
             if model.typing {
                 typingField(c)
             } else {
+                let pages = turn?.pages ?? 0
+                let arrows = pages > 1 && !mic.live
                 HStack(spacing: 8) {
-                    let pages = turn?.pages ?? 0
-                    if pages > 1, !mic.live {
+                    if arrows {
                         let at = min(model.at, pages - 1)
                         small("chevron.left", c, filled: false, label: "Back", id: "stage-back") { step(-1) }
                             .opacity(at == 0 ? 0.35 : 1)
@@ -901,7 +899,22 @@ struct StageFirstView: View {
                             .opacity(at == pages - 1 ? 0.35 : 1)
                             .disabled(at == pages - 1)
                     }
-                    Spacer(minLength: 0)
+                    // The dots live in the bar (YUI-189, Chris Sep 28: "I put three little dots in
+                    // the bottom bar ... They should be centered there and they should adjust when
+                    // the page arrows appear"): centered in the room between the arrows and +, T and
+                    // the mic, sliding over when the arrows come or go. Only with somewhere to go.
+                    Color.clear
+                        .frame(maxWidth: .infinity, minHeight: 30, maxHeight: 30)
+                        .onGeometryChange(for: CGFloat.self, of: { $0.size.width }) { dotsRoom = $0 }
+                        .overlay {
+                            if screens.count > 1, !mic.live {
+                                PageDots(screens: screens, progress: dotsAt, page: at, room: dotsRoom,
+                                         go: actions.goScreen)
+                                    .transition(.opacity)
+                            }
+                        }
+                        // With no arrows, the same gap at the bar's edge as before the +.
+                        .padding(.leading, arrows ? 0 : 8)
                     BarButtons(prefix: "stage", showMic: showMic, showType: showType, showAttach: showAttach,
                                micOn: mic.on, micLive: mic.live, armed: mic.armed,
                                attachDisabled: sending || photos.count >= Attachments.maxPhotos,
@@ -913,6 +926,8 @@ struct StageFirstView: View {
         .padding(.bottom, theme.spacing.s)
         .animation(reduceMotion ? .easeInOut(duration: 0.2) : theme.spring, value: model.typing)
         .animation(reduceMotion ? .easeInOut(duration: 0.2) : theme.spring, value: mic.on)
+        .animation(reduceMotion ? .easeInOut(duration: 0.2) : theme.spring, value: (turn?.pages ?? 0) > 1)
+        .animation(reduceMotion ? .easeInOut(duration: 0.2) : theme.spring, value: screens.count > 1)
     }
 
     private func small(_ icon: String, _ c: Swatch, filled: Bool, label: String, id: String,

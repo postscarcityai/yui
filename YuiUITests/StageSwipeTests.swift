@@ -150,11 +150,101 @@ final class StageSwipeTests: XCTestCase {
         waitScreen(app, 2, "a drag right on screen 3 did not go back to screen 2")
     }
 
+    /// Two chunks (so the page arrows show) and two more screens.
+    static let chunked = [
+        "say \"Rice first, then the greens.\"",
+        "shapes w=10 h=6 caption=\"Rice, then spinach.\"",
+        "shape box Rice at=3,3 +fill",
+        "shape box Spinach at=7,3 tone=mint",
+        "say \"The egg goes on last.\"",
+        "shapes w=10 h=6 caption=\"A fried egg on top.\"",
+        "shape circle Egg at=5,3 +fill +grow",
+        ">2 timer 25m Focus",
+        ">3 list@shop Shopping Eggs|Spinach|Rice|Gochujang +check",
+    ].joined(separator: "\\n")
+
+    /// The dots live in the bottom bar (YUI-189, Chris Sep 28: "I put three little dots in the
+    /// bottom bar ... They should be centered there and they should adjust when the page arrows
+    /// appear"). Centered between the bar's leading edge and +, T and the mic with no arrows;
+    /// centered between the arrows and +, T and the mic with them; never touching a button.
+    /// Nothing is left above the bar. Run on a 440 pt and a 375 pt phone.
+    func testDotsInTheBarWithoutArrows() throws { try dotsInTheBar(arrows: false, "light") }
+    func testDotsInTheBarWithArrows() throws { try dotsInTheBar(arrows: true, "light") }
+    func testDotsInTheBarWithArrowsDark() throws { try dotsInTheBar(arrows: true, "dark") }
+
+    private func dotsInTheBar(arrows: Bool, _ appearance: String) throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["-yuiStageFirst", "YES", "-yuiDemoAccount", "-yuiDemoAgents", "-yuiAgent", "yui",
+                               "-appearance", appearance,
+                               "-yuiDemoReply", arrows ? Self.chunked : StagePagesTests.reply,
+                               "-yuiDemoPickupAfter", "0.5", "-yuiDemoReplyAfter", "2"]
+        app.launch()
+        XCTAssertTrue(app.buttons["stage-type"].waitForExistence(timeout: 15), "no stage")
+        app.buttons["stage-type"].tap()
+        let field = app.textFields["stage-field"]
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        field.typeText("Cooking bibimbap, keep me on track")
+        app.buttons["stage-send-text"].tap()
+        waitScreens(app, 3, "the stage has no screen 3")
+        app.goToScreen(1)
+        waitScreen(app, 1, "did not get back to the answer")
+        let dots = app.pagePosition
+        XCTAssertTrue(dots.waitForExistence(timeout: 5), "no dots")
+        let next = app.buttons["stage-next"]
+        if arrows {
+            XCTAssertTrue(next.waitForExistence(timeout: 10), "no page arrows on a two-chunk answer")
+        } else {
+            XCTAssertFalse(next.exists, "arrows on a one-chunk answer")
+        }
+        sleep(2)
+        let width = Int(app.windows.firstMatch.frame.width)
+        check(app, arrows: arrows, "on the answer at \(width) pt")
+        shot("dots-bar-\(arrows ? "arrows" : "plain")-\(width)-\(appearance)")
+
+        // Paging the answer keeps the arrows; the dots stay put and still read right.
+        if arrows {
+            next.tap()
+            sleep(1)
+            check(app, arrows: true, "after Next at \(width) pt")
+        }
+        // A dot tap still jumps from the bar, and the dots stay centered on screen 3.
+        tapDot(app, 2)
+        waitScreen(app, 3, "the third dot did not go to screen 3")
+        XCTAssertEqual(dots.value as? String, "3 of 3")
+        sleep(1)
+        check(app, arrows: arrows, "on screen 3 at \(width) pt")
+        shot("dots-bar-\(arrows ? "arrows" : "plain")-\(width)-\(appearance)-screen3")
+    }
+
+    /// The dots sit in the bar, centered in the room left between the arrows (or the bar's
+    /// leading edge) and the first of +, T and the mic, overlapping neither.
+    private func check(_ app: XCUIApplication, arrows: Bool, _ where_: String,
+                       file: StaticString = #filePath, line: UInt = #line) {
+        let d = app.pagePosition.frame
+        let win = app.windows.firstMatch.frame
+        let right = ["stage-attach", "stage-type", "stage-mic"]
+            .map { app.buttons[$0] }.filter { $0.exists }.map { $0.frame.minX }.min() ?? win.maxX
+        let left = arrows ? app.buttons["stage-next"].frame.maxX : win.minX + 16
+        XCTAssertGreaterThanOrEqual(d.minX, left, "the dots overlap the arrows \(where_)", file: file, line: line)
+        XCTAssertLessThanOrEqual(d.maxX, right, "the dots overlap + or T \(where_)", file: file, line: line)
+        XCTAssertEqual(d.midX, (left + right) / 2, accuracy: 2, "the dots are not centered \(where_) (\(d), \(left)-\(right))",
+                       file: file, line: line)
+        let mic = app.buttons["stage-mic"].frame
+        XCTAssertEqual(d.midY, mic.midY, accuracy: 6, "the dots are not in the bar \(where_)", file: file, line: line)
+        XCTAssertGreaterThan(d.minY, mic.minY - 12, "something of the dots sits above the bar \(where_)", file: file, line: line)
+    }
+
     /// Taps dot `k` (0 is the first) inside the dots' row: 8 points of padding, then a dot
-    /// every `PageDots.pitch` (14) from the pill's half width (8).
-    private func tapDot(_ app: XCUIApplication, _ k: Int) {
+    /// every pitch from the pill's half width. The row may be tight in the bar (YUI-189), so the
+    /// pitch comes from its width: `(width - 16 - pill) / (n - 1)` with the pill 2 wider than a
+    /// tight pitch; with room it is 14 and the pill 16.
+    private func tapDot(_ app: XCUIApplication, _ k: Int, of n: Int = 3) {
         let row = app.pagePosition
-        let x = 8 + 8 + CGFloat(k) * 14
+        let inner = row.frame.width - 16
+        let full = CGFloat(n - 1) * 14 + 16
+        let pitch = inner >= full - 0.5 ? 14 : (inner - 2) / CGFloat(n)
+        let pill = inner >= full - 0.5 ? 16 : pitch + 2
+        let x = 8 + pill / 2 + CGFloat(k) * pitch
         row.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: x, dy: row.frame.height / 2)).tap()
     }
 

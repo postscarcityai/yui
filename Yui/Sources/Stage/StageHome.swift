@@ -254,6 +254,9 @@ struct PagePosition: View {
 /// the agent's colors. The one on show is a pill that stretches toward the next dot and slides
 /// there as the finger drags, read from the pager's offset, so it follows the finger and
 /// springs with the page on release. A tap on a dot goes to that screen.
+/// They sit in the bottom bar (YUI-189) and fit the room they get: the dots close up first,
+/// then only the nearest seven (fewer on a tight bar) show, the ones at a cut edge faded and
+/// smaller, and the row slides with the pill.
 /// VoiceOver hears one control, as before: "Screen 2, 2 of 4", and swipes up or down to page.
 struct PageDots: View, Animatable {
     let screens: [Int]
@@ -261,6 +264,8 @@ struct PageDots: View, Animatable {
     var progress: CGFloat
     /// The screen on show, for VoiceOver.
     let page: Int
+    /// The width the dots may take, background and all; nil draws them all at full pitch.
+    var room: CGFloat? = nil
     let go: (Int) -> Void
     @Environment(\.yuiTheme) private var theme
     @Environment(\.colorScheme) private var scheme
@@ -271,33 +276,63 @@ struct PageDots: View, Animatable {
     }
 
     static let dot: CGFloat = 6, pill: CGFloat = 16, pitch: CGFloat = 14
+    /// The closest the dots get, the most drawn at once, and the padding either side.
+    static let tightPitch: CGFloat = 10, most = 7, pad: CGFloat = 8
+
+    /// How the row is laid out for `n` screens in `room`: the pitch, the pill, how many dots show.
+    struct Layout: Equatable {
+        var pitch: CGFloat, pill: CGFloat, shown: Int
+        var width: CGFloat { CGFloat(shown - 1) * pitch + pill }
+    }
+
+    static func layout(_ n: Int, room: CGFloat?) -> Layout {
+        let full = Layout(pitch: pitch, pill: pill, shown: min(n, most))
+        guard let room, n > 1 else { return full }
+        let inner = room - 2 * pad
+        if full.width <= inner { return full }
+        // All of them closed up, the pill 2 wider than a dot's pitch: (n - 1) * p + p + 2 fits.
+        let p = max(tightPitch, min(pitch, (inner - 2) / CGFloat(n)))
+        let pl = min(pill, p + 2)
+        let fits = Int(((inner - pl) / p + 0.001).rounded(.down)) + 1
+        return Layout(pitch: p, pill: pl, shown: max(2, min(n, most, fits)))
+    }
 
     var body: some View {
         let c = theme.swatch(scheme)
         let n = screens.count
+        let l = Self.layout(n, room: room)
         let p = min(max(progress, 0), CGFloat(n - 1))
         let i = screens.firstIndex(of: page) ?? 0
+        // The first dot drawn: the window keeps the pill in its middle, stopping at the ends.
+        let first = min(max(p - CGFloat(l.shown - 1) / 2, 0), CGFloat(n - l.shown))
         // Between two dots the pill reaches for the next one, most at halfway.
         let between = p - p.rounded(.down)
-        let reach = (1 - abs(2 * between - 1)) * Self.pitch * 0.7
-        let width = CGFloat(n - 1) * Self.pitch + Self.pill
+        let reach = (1 - abs(2 * between - 1)) * l.pitch * 0.7
         ZStack(alignment: .leading) {
             ForEach(0..<n, id: \.self) { k in
-                Circle().fill(c.inkSoft.opacity(0.4))
-                    .frame(width: Self.dot, height: Self.dot)
-                    .position(x: Self.pill / 2 + CGFloat(k) * Self.pitch, y: 15)
+                let at = CGFloat(k) - first
+                if at > -1, at < CGFloat(l.shown) {
+                    // A dot past a cut edge fades out and shrinks as the row slides.
+                    let edge = min(at + 1, CGFloat(l.shown) - at, 1)
+                    let cut = (k > 0 && at < 0.5) || (k < n - 1 && at > CGFloat(l.shown) - 1.5)
+                    let fade = cut ? min(max(edge, 0), 1) * 0.5 : 1
+                    Circle().fill(c.inkSoft.opacity(0.4 * fade))
+                        .frame(width: Self.dot, height: Self.dot)
+                        .scaleEffect(cut ? 0.7 : 1)
+                        .position(x: l.pill / 2 + at * l.pitch, y: 15)
+                }
             }
             Capsule().fill(c.accent)
-                .frame(width: Self.pill + reach, height: Self.dot)
-                .position(x: Self.pill / 2 + p * Self.pitch, y: 15)
+                .frame(width: l.pill + reach, height: Self.dot)
+                .position(x: l.pill / 2 + (p - first) * l.pitch, y: 15)
         }
-        .frame(width: width, height: 30)
-        .padding(.horizontal, 8)
+        .frame(width: l.width, height: 30)
+        .padding(.horizontal, Self.pad)
         .background(c.surface.opacity(0.72), in: Capsule())
         .contentShape(Capsule())
         // A full finger to tap: the nearest dot to the touch.
         .onTapGesture { at in
-            let k = Int(((at.x - 8 - Self.pill / 2) / Self.pitch).rounded())
+            let k = Int(((at.x - Self.pad - l.pill / 2) / l.pitch + first).rounded())
             let hit = min(max(k, 0), n - 1)
             if screens[hit] != page { go(screens[hit]) }
         }
