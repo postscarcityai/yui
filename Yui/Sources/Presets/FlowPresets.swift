@@ -505,6 +505,8 @@ struct PlanPreset: View {
     /// Steps holding Next: a form with a required field still empty.
     @State private var missing: Set<String> = []
     @State private var restored = false
+    /// A workout (YUI-182): where the runner is, kept on the phone.
+    @State private var progress = RunnerProgress()
     @Environment(\.ylComponents) private var all
     @Environment(\.ylAnswers) private var sent
     @Environment(\.ylScope) private var scope
@@ -515,15 +517,18 @@ struct PlanPreset: View {
 
     var body: some View {
         let s = theme.swatch(scheme)
-        let steps = all.steps(of: c)
+        let everything = all.steps(of: c)
+        // A workout draws each move's nudges on its own page: they are not steps.
+        let runner = RunnerPlan.of(everything)
+        let steps = runner.map { r in everything.filter { !r.absorbed.contains($0.ylID) } } ?? everything
         let review = c.props["review"]?.bool != false
         // On the stage the plan is the screen, not a card on it (YUI-82).
         PresetCard(flat: onStage) {
             if let t = c.string("title") { PresetTitle(text: t) }
             if submitted {
-                summary(steps, s)
+                summary(everything, s)
             } else if reviewing {
-                reviewList(steps, s)
+                reviewList(steps, runner, s)
             } else if steps.isEmpty {
                 Text("The questions are on their way.").font(theme.font(theme.type.body, .medium)).foregroundStyle(s.inkSoft)
             } else {
@@ -538,7 +543,15 @@ struct PlanPreset: View {
                     ForEach(Array(steps.enumerated()), id: \.element.serial) { i, step in
                         Group {
                             // A page is a step to read: full size, no answer, Next moves on.
-                            if step.preset == "page", onStage { StoryPage(c: step, active: i == cur) }
+                            if let runner, let move = runner.move(step.ylID) {
+                                ScrollView {
+                                    RunnerMoveView(move: move, rest: runner.rest, progress: $progress, active: i == cur)
+                                        .padding(.vertical, theme.spacing.s)
+                                }
+                                .scrollBounceBehavior(.basedOnSize)
+                                .scrollIndicators(.hidden)
+                            }
+                            else if step.preset == "page", onStage { StoryPage(c: step, active: i == cur) }
                             else if step.preset == "page" { PagePreset(c: step).padding(.vertical, theme.spacing.s) }
                             else if onStage { StageCenter { PresetView(component: step) } }
                             else { PresetView(component: step) }
@@ -563,18 +576,39 @@ struct PlanPreset: View {
                     let held = missing.contains(steps[cur].ylID)
                     OptionPill(text: last ? (review ? "Review" : c.string("submit") ?? "Send") : "Next",
                                fill: s.accent, ink: s.onAccent, on: !held, grow: true) {
-                        if last { review ? withAnimation(theme.spring) { reviewing = true } : submit(steps) }
+                        if last { review ? withAnimation(theme.spring) { reviewing = true } : submit(everything) }
                         else { withAnimation(theme.spring) { at = cur + 1 } }
                     }
                     .disabled(held)
                 }
             }
         }
-        .onAppear(perform: restore)
+        .onAppear { restore(runner) }
+        // The reply streams in: the moves may land after the plan first shows.
+        .onChange(of: runner?.moves.count ?? 0) { restore(runner) }
+        .onChange(of: at) { _, n in
+            guard runner != nil, !submitted else { return }
+            progress.at = n
+        }
+        .onChange(of: progress) { _, p in
+            guard let runner, !submitted else { return }
+            for m in runner.moves { answers[m.sets.ylID] = nil }
+            answers.merge(p.answers(runner)) { _, new in new }
+            p.save(c.ylID)
+        }
     }
 
     /// Reopened after a send (a relaunch, a scroll back): come back sent, answers filled in.
-    private func restore() {
+    private func restore(_ runner: RunnerPlan?) {
+        // A workout under way (a kill, a relaunch, another agent and back): the same move, the same sets.
+        if let runner, !restored, sent(scope, c.ylID)?["plan"] == nil {
+            restored = true
+            let p = RunnerProgress.load(c.ylID) ?? RunnerProgress()
+            progress = p
+            at = p.at
+            answers.merge(p.answers(runner)) { _, new in new }
+            return
+        }
         // Once: a hosted form hands over its fields on appear, so `answers` may not be empty here.
         guard !restored, let plan = sent(scope, c.ylID)?["plan"]?.object else { return }
         restored = true
@@ -603,15 +637,15 @@ struct PlanPreset: View {
         }
     }
 
-    private func reviewList(_ steps: [YLComponent], _ s: Swatch) -> some View {
+    private func reviewList(_ steps: [YLComponent], _ runner: RunnerPlan?, _ s: Swatch) -> some View {
         VStack(alignment: .leading, spacing: theme.spacing.m) {
             ForEach(Array(steps.enumerated()).filter { $0.element.preset != "page" }, id: \.element.serial) { i, step in
                 HStack(alignment: .top) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(step.prompt).font(theme.font(theme.type.caption, .heavy)).foregroundStyle(s.inkSoft)
-                        Text(YLComponent.answerText(answers[step.ylID]))
+                        Text(reviewText(step, runner))
                             .font(theme.font(theme.type.body, .bold))
-                            .foregroundStyle(answers[step.ylID] == nil ? s.inkSoft : s.ink)
+                            .foregroundStyle(answers[step.ylID] == nil && runner?.move(step.ylID) == nil ? s.inkSoft : s.ink)
                     }
                     Spacer()
                     Button("Edit") {
@@ -622,8 +656,18 @@ struct PlanPreset: View {
                     .accessibilityLabel("Edit \(step.prompt)")
                 }
             }
-            OptionPill(text: c.string("submit") ?? "Send", fill: s.accent, ink: s.onAccent, grow: true) { submit(steps) }
+            OptionPill(text: c.string("submit") ?? "Send", fill: s.accent, ink: s.onAccent, grow: true) {
+                submit(all.steps(of: c))
+            }
         }
+    }
+
+    /// A move reads as its sets and what it was done at: "Set 1, Set 2 · 8 reps · 135 lb".
+    private func reviewText(_ step: YLComponent, _ runner: RunnerPlan?) -> String {
+        guard let m = runner?.move(step.ylID) else { return YLComponent.answerText(answers[step.ylID]) }
+        let sets = answers[step.ylID].map { YLComponent.answerText($0) } ?? "All sets"
+        let at = m.nudges.compactMap { n in answers[n.ylID]?.number.map { YLComponent.format($0) + (n.string("unit").map { " \($0)" } ?? (n.ylID.hasSuffix("-secs") ? "s" : " reps")) } }
+        return ([sets] + at).joined(separator: " · ")
     }
 
     private func summary(_ steps: [YLComponent], _ s: Swatch) -> some View {
@@ -645,6 +689,7 @@ struct PlanPreset: View {
         for step in steps where step.preset != "page" { if let v = answers[step.ylID] { plan[step.ylID] = v } }
         // The echo is the fold-back: the chat shows it as the person's own message.
         emit(c.event(["plan": .object(plan)], echo: YLComponent.foldText(steps, answers)))
+        RunnerProgress.clear(c.ylID)
         withAnimation(theme.spring) { submitted = true; reviewing = false }
     }
 }
