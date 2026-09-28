@@ -1792,11 +1792,11 @@ export const CREW: Record<string, Profile> = {
     "handle": "gouda",
     "role": "Musician",
     "tagline": "Beats, chords and practice, right on screen",
-    "about": "Beats you edit while they play, chords to strum and a keyboard that stays in key. A tuner and a click for practice too.",
+    "about": "Learn a song on chord buttons with the click counting you in, slow it down, loop the hard bar. Beats you save by name, and a practice log with a streak.",
     "can": [
+      "Learn a song",
       "Make a beat",
-      "Tune my guitar",
-      "Teach me a song's chords"
+      "Log practice"
     ],
     "version": 1,
     "color": "lavender",
@@ -1809,7 +1809,7 @@ export const CREW: Record<string, Profile> = {
       "tuner"
     ],
     "model": "default",
-    "soul": "You are Gouda, a musician in the Yui app. Easygoing, playful, a little nerdy about sound.\n\n- Music gets an instrument, not advice. Make beats with a `loop` and `drums`, teach with `keys` and `chords`, keep time with `metronome`, tune with `tuner`. Patch what is playing instead of starting over.\n- You do four jobs: make beats with them, teach theory (scales, chords, ear training, a short quiz), write songs (lyrics, structure, a playable progression), and coach practice (a plan, a tempo, a streak).\n- Keep what they play, their level and their taste in your notes: instruments, genres, what they are working on.\n- You never claim a song or a riff you know is someone else's as new.",
+    "soul": "You are Gouda, a musician in the Yui app. Easygoing, playful, a little nerdy about sound.\n\n- Music gets an instrument, not advice. Make beats with a `loop` and `drums`, teach with `keys` and `chords`, keep time with `metronome`, tune with `tuner`. Patch what is playing instead of starting over.\n- You do four jobs: make beats with them, teach theory (scales, chords, ear training, a short quiz), write songs (lyrics, structure, a playable progression), and coach practice (a plan, a tempo, a streak).\n- Your tools run themselves, from your tables, before you see the turn: \"Learn a song\" opens the learn flow and its Send puts the song on Chords (the chords, the click, a speed and a bar to loop), \"Log practice\" logs a session, a click stopped after 10 seconds logs itself, and the Looper's Send saves a beat by name. To offer one, put `card \"Learn a song\" \"<why>\" cta=\"Learn a song\"`; never write those flows yourself.\n- Your pages: Looper (screen 2), Chords (3), Keys (4), Practice (5: streak, this week, what's next). `songs` is the library (Chords a bar at a time, `|` between bars), `practice` the log (Day, Minutes, What, Feel), `sessions` their saved beats, `studio` what is on the pages now. A song they tell you: `put songs` with its Chords, then offer Learn.\n- Keep what they play, their level and their taste in your notes: instruments, genres, what they are working on.\n- You never claim a song or a riff you know is someone else's as new.",
     "first": "Gouda here. Let's make some noise. Here's a beat to start; tell me what you play and I'll build from there.\n```yui\nloop 92 \"Lazy Sunday\" p=x...x...|..x...x.|........|x.x.x.x.\nchoose \"What are we doing?\" \"Make a beat\"|\"Learn theory\"|\"Write a song\"|\"Practice plan\" +other\n```",
     "shelf": true,
     "visual": {
@@ -1919,6 +1919,10 @@ export const CREW: Record<string, Profile> = {
           {
             "name": "Status",
             "type": "text"
+          },
+          {
+            "name": "Chords",
+            "type": "text"
           }
         ],
         "next": 1,
@@ -1930,7 +1934,8 @@ export const CREW: Record<string, Profile> = {
               "Artist": "Ben E. King",
               "Scale": "A",
               "Bpm": 118,
-              "Status": "Want to learn"
+              "Status": "Want to learn",
+              "Chords": "A|A|F#m|F#m|D|E|A|A"
             }
           },
           {
@@ -1940,7 +1945,8 @@ export const CREW: Record<string, Profile> = {
               "Artist": "Bob Marley",
               "Scale": "A",
               "Bpm": 74,
-              "Status": "Want to learn"
+              "Status": "Want to learn",
+              "Chords": "A|A|D|A|A|E|D|A"
             }
           },
           {
@@ -1950,7 +1956,8 @@ export const CREW: Record<string, Profile> = {
               "Artist": "The Beatles",
               "Scale": "C",
               "Bpm": 72,
-              "Status": "Want to learn"
+              "Status": "Want to learn",
+              "Chords": "C|G|Am|F|C|G|F|C"
             }
           },
           {
@@ -1960,13 +1967,119 @@ export const CREW: Record<string, Profile> = {
               "Artist": "Bob Dylan",
               "Scale": "G",
               "Bpm": 69,
-              "Status": "Want to learn"
+              "Status": "Want to learn",
+              "Chords": "G|D|Am|Am|G|D|C|C"
             }
           }
         ]
+      },
+      {
+        "name": "practice",
+        "cols": [
+          {
+            "name": "Day",
+            "type": "date"
+          },
+          {
+            "name": "Minutes",
+            "type": "number"
+          },
+          {
+            "name": "What",
+            "type": "text"
+          },
+          {
+            "name": "Feel",
+            "type": "text"
+          },
+          {
+            "name": "Bpm",
+            "type": "number"
+          }
+        ],
+        "next": 1,
+        "rows": []
+      },
+      {
+        "name": "sessions",
+        "cols": [
+          {
+            "name": "Name",
+            "type": "text"
+          },
+          {
+            "name": "Kind",
+            "type": "text"
+          },
+          {
+            "name": "Bpm",
+            "type": "number"
+          },
+          {
+            "name": "Swing",
+            "type": "number"
+          },
+          {
+            "name": "Steps",
+            "type": "number"
+          },
+          {
+            "name": "Rows",
+            "type": "text"
+          },
+          {
+            "name": "Pattern",
+            "type": "text"
+          },
+          {
+            "name": "Saved",
+            "type": "date"
+          }
+        ],
+        "next": 1,
+        "rows": []
+      },
+      {
+        "name": "studio",
+        "cols": [
+          {
+            "name": "Song",
+            "type": "text"
+          },
+          {
+            "name": "Tonic",
+            "type": "text"
+          },
+          {
+            "name": "Bpm",
+            "type": "number"
+          },
+          {
+            "name": "Speed",
+            "type": "number"
+          },
+          {
+            "name": "Chords",
+            "type": "text"
+          },
+          {
+            "name": "Bar",
+            "type": "number"
+          },
+          {
+            "name": "Scale",
+            "type": "text"
+          },
+          {
+            "name": "Session",
+            "type": "text"
+          }
+        ],
+        "next": 1,
+        "rows": []
       }
     ],
-    "home": "# Gouda's home (YUI-168, yuigui spec/HOME.md): the looper, the chords and the keys, ready to play.\nmenu shortcut@tune \"Tune up\" say=\"Tune my guitar\"\nmenu shortcut@jam \"Jam\" say=\"Make me a beat to jam on\"\n>2\nloop@looper 92 \"Looper\" p=x...x...|..x...x.|........|x.x.x.x. +inline\nsave looper\n>3\nchords@chords C I-V-vi-IV \"Chords\" +inline\nsave chords\n>4\nkeys@keys C major \"Keys\" +inline\nsave keys"
+    "home": "# Gouda's home (YUI-168, yuigui spec/HOME.md). Played once when he joins; the runtime patches it after (YUI-184, src/music.ts).\n# Chips show newest first, so the most important one goes last.\nmenu shortcut@tune \"Tune up\" say=\"Tune my guitar\"\nmenu shortcut@jam \"Jam\" say=\"Make me a beat to jam on\"\nmenu shortcut@log \"Log practice\" say=\"Log practice\"\nmenu shortcut@learn \"Learn a song\" say=\"Learn a song\"\n>2\nloop@looper 92 \"Lazy Sunday\" p=x...x...|..x...x.|........|x.x.x.x. +inline\nchoose@sessions \"Open a beat\" \"Lazy Sunday\"|\"Boom bap\"|\"Four on the floor\"|\"Rock backbeat\"|\"One drop\" body=\"Send on the looper saves your version.\"\nsave looper\n>3\ncard@lesson \"Learn a song\" \"Pick a song or paste its chords. The click counts you in and your keys stay in key.\" cta=\"Learn a song\"\nchords@chords C I-V-vi-IV \"Chords\" +inline\nmetronome@click 90 \"Click\"\nsave chords\n>4\nkeys@keys C major \"Keys\" +inline\nchoose@scale \"Scale\" \"Major\"|\"Minor\"|\"Pentatonic\"|\"Blues\" body=\"C major. Keys outside it stay quiet.\"\nsave keys\n>5\nstat@streak \"0 days\" \"Streak\" sub=\"Practice today and this starts.\"\nstat@week-min \"0 min\" \"This week\" sub=\"The click logs itself after 10 seconds\"\nchart@practice-chart bar \"Minutes a day\" x=Mon|Tue|Wed|Thu|Fri|Sat|Sun y=0|0|0|0|0|0|0 unit=min\ncard@next-up \"Next: ten minutes\" \"Pick a song on Chords and play along with the click. It all counts toward your streak.\" cta=\"Log practice\"\nlist@recent title=\"Lately\" \"Nothing logged yet\"\nsave practice"
   },
   "penny": {
     "base": "penny",

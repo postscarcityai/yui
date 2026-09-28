@@ -90,7 +90,7 @@ test("seeds: every starter ships its tables; blank ships none; seeds use no date
   assert.deepEqual(names("arnold"), ["exercises", "this_week", "workouts"]);
   assert.deepEqual(names("penny"), ["tasks", "errands", "bills"]);
   assert.deepEqual(names("quill"), ["decks", "review"]);
-  assert.deepEqual(names("gouda"), ["loops", "songs"]);
+  assert.deepEqual(names("gouda"), ["loops", "songs", "practice", "sessions", "studio"]);
   assert.equal(c.blank.tables, undefined);
   assert.ok(c.basil.tables![0].rows.length >= 40);
   assert.ok(c.arnold.tables![0].rows.every((r) => String(r.values.Cue).length > 30), "every exercise has a how-to cue");

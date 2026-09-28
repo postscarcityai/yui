@@ -1,12 +1,26 @@
-# Gouda's home (YUI-168, yuigui spec/HOME.md): the looper, the chords and the keys, ready to play.
+# Gouda's home (YUI-168, yuigui spec/HOME.md). Played once when he joins; the runtime patches it after (YUI-184, src/music.ts).
+# Chips show newest first, so the most important one goes last.
 menu shortcut@tune "Tune up" say="Tune my guitar"
 menu shortcut@jam "Jam" say="Make me a beat to jam on"
+menu shortcut@log "Log practice" say="Log practice"
+menu shortcut@learn "Learn a song" say="Learn a song"
 >2
-loop@looper 92 "Looper" p=x...x...|..x...x.|........|x.x.x.x. +inline
+loop@looper 92 "Lazy Sunday" p=x...x...|..x...x.|........|x.x.x.x. +inline
+choose@sessions "Open a beat" "Lazy Sunday"|"Boom bap"|"Four on the floor"|"Rock backbeat"|"One drop" body="Send on the looper saves your version."
 save looper
 >3
+card@lesson "Learn a song" "Pick a song or paste its chords. The click counts you in and your keys stay in key." cta="Learn a song"
 chords@chords C I-V-vi-IV "Chords" +inline
+metronome@click 90 "Click"
 save chords
 >4
 keys@keys C major "Keys" +inline
+choose@scale "Scale" "Major"|"Minor"|"Pentatonic"|"Blues" body="C major. Keys outside it stay quiet."
 save keys
+>5
+stat@streak "0 days" "Streak" sub="Practice today and this starts."
+stat@week-min "0 min" "This week" sub="The click logs itself after 10 seconds"
+chart@practice-chart bar "Minutes a day" x=Mon|Tue|Wed|Thu|Fri|Sat|Sun y=0|0|0|0|0|0|0 unit=min
+card@next-up "Next: ten minutes" "Pick a song on Chords and play along with the click. It all counts toward your streak." cta="Log practice"
+list@recent title="Lately" "Nothing logged yet"
+save practice

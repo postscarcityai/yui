@@ -27,6 +27,9 @@ import { ACK, type MealFix, applyFix, fixTaps, logsMeals, mealTurn, runMealJob, 
 import { ADD_BODY, GOAL, GROCERIES, LOG_BODY, MEALS as MEAL_LOG, PLAN as MEAL_PLAN, addGroceries, applyMealFix, applyPlan, applySwap, ensureTools,
          drawnShape, fixBody, groceryText, lastPrefs, logPlanned, mealAsks, nextPlanned, planBody, plansMeals, readItems, screenLines as mealScreenLines, tickGrocery,
          weekDeck, type MealAsk } from "./mealplan.ts";
+import { applyBar, applyLearn, applyOpen, applyPracticed, applySave, applyScale, applySpeed, drawnShape as musicShape, ensureTools as ensureMusic,
+         keepDraft, learnBody, logPractice, musicAsks, musicPages, pasteBody, playBpm, lesson, playsMusic, practiceBody, readTake, saveBody,
+         screenLines as musicScreenLines, streak, type MusicAsk, type Page as MusicPage } from "./music.ts";
 import { card as handoffCard, cards as handoffCards, handedIn, handlesIn, oneThread, threadOf, withCard } from "./handoff.ts";
 
 export interface Provider {
@@ -206,6 +209,18 @@ async function oneTurn(store: Store, agent: NativeAgent, rows: Row[], opts: Turn
     }
   }
 
+  // Gouda's tools (YUI-184): learn a song, the practice log and saved sessions, with no model turn.
+  if (playsMusic(agent)) {
+    const { asks, rest } = musicAsks(rows, rows.some((r) => r.kind !== "event") ? await store.tables(agent.id) : undefined);
+    if (asks.length) {
+      await musicTools(store, agent, asks, now, say, log);
+      const done = asks.map((a) => a.row.id).filter((id) => !id.startsWith(SYNTHETIC));
+      if (done.length) await store.markHandled(done);
+      if (!rest.length) return { handled: true };
+      return oneTurn(store, agent, rest, opts, log, result, depth);
+    }
+  }
+
   // Arnold's tools (YUI-182): Start, the runner's Send, the log and a changed day are answered here, with no model turn.
   if (trains(agent)) {
     const { asks, rest } = workoutAsks(rows);
@@ -250,6 +265,8 @@ async function oneTurn(store: Store, agent: NativeAgent, rows: Row[], opts: Turn
   let tables = await seedOnce(store, agent, tables0, log);
   // Basil from before YUI-183 gets his recipes, goal, plan and grocery tables, once.
   if (plansMeals(agent)) tables = await ensureMealTools(store, agent, tables);
+  // Gouda from before YUI-184 gets his practice, sessions and studio tables and his songs' chords, once.
+  if (playsMusic(agent)) tables = await ensureMusicTools(store, agent, tables);
   // A Delete or Keep tap on deletes held last turn: done here, and the agent hears what happened.
   let turnRows = rows;
   ({ tables, rows: turnRows } = await heldTaps(store, agent, rows, history, tables, clk, log));
@@ -373,6 +390,9 @@ async function oneTurn(store: Store, agent: NativeAgent, rows: Row[], opts: Turn
   // Basil's pages follow what the answer wrote to his log, plan, goal or grocery list (YUI-183): patches under it.
   const pages = plansMeals(agent) ? mealPages(tchange) : [];
   if (pages.length && body.trim()) body = await withMealScreens(store, agent, body, t.store, clk, pages);
+  // Gouda's pages follow what the answer wrote to his songs, practice, sessions or studio (YUI-184).
+  const mpages = playsMusic(agent) ? musicPages(tchange) : [];
+  if (mpages.length && body.trim()) body = await withMusicScreens(store, agent, body, t.store, clk, mpages);
   // Hand-offs (YUI-144): one a turn, never from a turn another agent started, never inside a group.
   // The card goes under the answer, so the phone jumps to that agent once it has been read.
   const passes = depth === 0 && !handedIn(rows) && !thread;
@@ -583,6 +603,123 @@ async function mealTools(store: Store, agent: NativeAgent, asks: MealAsk[], now:
     const sl = mealScreenLines(tables, clk, drawnShape(agent.profile), only);
     await say(`${text}\n\`\`\`yui\n${[...extra, ...sl.lines].join("\n")}\n\`\`\``, { ...turn, native: { mealtool: a.kind } });
     agent.profile = { ...agent.profile, mealScreens: sl.shape };
+    await store.updateAgent(agent.id, agent.profile);
+    log(`${p.name}: ${a.kind}, ${sl.lines.some((l) => /^>\d clear$/.test(l)) ? "a page drawn again" : "pages patched"}`);
+  }
+  const ch = diff(start, tables);
+  if (changed(ch)) await store.saveTables(agent, ch, tables);
+}
+
+/** Gouda's tool tables, made once for a Gouda from before YUI-184 (from his starter seeds), and saved. */
+async function ensureMusicTools(store: Store, agent: NativeAgent, tables: TableStore): Promise<TableStore> {
+  const out = ensureMusic(tables, crew().gouda?.tables);
+  const ch = diff(tables, out);
+  if (changed(ch)) await store.saveTables(agent, ch, out);
+  return out;
+}
+
+/** A reply with Gouda's page lines added, inside its last yui fence or in a new one. Keeps the shape in his profile. */
+async function withMusicScreens(store: Store, agent: NativeAgent, body: string, tables: TableStore, clk: Clock, only: MusicPage[]): Promise<string> {
+  const { lines, shape } = musicScreenLines(tables, clk, musicShape(agent.profile), only);
+  if (!lines.length) return body;
+  if (agent.profile.musicScreens !== shape) {
+    agent.profile = { ...agent.profile, musicScreens: shape };
+    await store.updateAgent(agent.id, agent.profile);
+  }
+  const at = body.lastIndexOf("\n```");
+  if (/```yui\n/.test(body) && at > body.lastIndexOf("```yui\n")) return `${body.slice(0, at)}\n${lines.join("\n")}${body.slice(at)}`;
+  return `${body.trim()}\n\`\`\`yui\n${lines.join("\n")}\n\`\`\``;
+}
+
+/** Gouda's tools, answered from his tables: a song learned, practice logged, a beat saved or opened; his pages patched after. */
+async function musicTools(store: Store, agent: NativeAgent, asks: MusicAsk[], now: number,
+                          say: (body: string, meta: Record<string, unknown>) => Promise<string>, log: (m: string) => void): Promise<void> {
+  const p = agent.profile;
+  const clk = clock(now, validZone(await store.timezone(agent.userId)));
+  const start = await seedOnce(store, agent, await store.tables(agent.id), log);
+  let tables = ensureMusic(start, crew().gouda?.tables);
+  for (const a of asks) {
+    const turn = a.row.id.startsWith(SYNTHETIC) ? {} : { turn: [a.row.id] };
+    // The ones that open a flow: nothing written yet.
+    if (a.kind === "learn" || a.kind === "log") {
+      await say(a.kind === "learn" ? learnBody(tables, a.song) : practiceBody(tables, clk), turn);
+      log(`${p.name}: ${a.kind}`);
+      continue;
+    }
+    if (a.kind === "take") {
+      const take = readTake(a.value);
+      if (!take) {
+        await say("That loop is empty. Tap a few steps on, then Send.", turn);
+        continue;
+      }
+      tables = keepDraft(tables, take, clk);
+      await say(saveBody(take), turn);
+      log(`${p.name}: a ${take.kind} to name`);
+      continue;
+    }
+    let text = "";
+    let only: MusicPage[] = [];
+    if (a.kind === "learned") {
+      const r = applyLearn(tables, a.answers, clk);
+      if (!r.lesson) {
+        await say(pasteBody(r.missing ?? "that song"), turn);
+        continue;
+      }
+      tables = r.store;
+      const l = r.lesson;
+      text = `${l.song} is on your Chords page: ${l.bars.length} bars in ${l.key}, the click at ${playBpm(l)}. Tap Start, count four, play.`;
+      only = ["chords", "keys", "practice"];
+    } else if (a.kind === "speed" || a.kind === "bar") {
+      const r = a.kind === "speed" ? applySpeed(tables, a.choice, clk) : applyBar(tables, a.choice, clk);
+      if (!r.lesson) {
+        await say("Pick a song to learn first.", turn);
+        continue;
+      }
+      tables = r.store;
+      text = a.kind === "speed" ? `${r.lesson.song} at ${playBpm(r.lesson)} now.`
+        : r.lesson.bar ? `Looping bar ${r.lesson.bar} of ${r.lesson.song}. Stay on it until it's easy.` : `The whole of ${r.lesson.song} again.`;
+      only = ["chords", "practice"];
+    } else if (a.kind === "scale") {
+      tables = applyScale(tables, a.choice, clk);
+      text = `Keys locked to ${a.choice.toLowerCase()}.`;
+      only = ["keys"];
+    } else if (a.kind === "practiced" || a.kind === "clicked") {
+      if (a.kind === "clicked") {
+        const l = lesson(tables);
+        const minutes = Math.max(1, Math.round(a.seconds / 60));
+        const what = a.id === "click" && l ? l.song : `The click at ${a.bpm || "your tempo"}`;
+        tables = logPractice(tables, { minutes, what, bpm: a.bpm || undefined }, clk);
+        text = `Logged ${minutes} ${minutes === 1 ? "minute" : "minutes"}: ${what}.`;
+      } else {
+        const r = applyPracticed(tables, a.answers, clk);
+        tables = r.store;
+        text = `Logged ${r.minutes} minutes: ${r.what}.`;
+      }
+      const s = streak(tables, clk);
+      if (s > 1) text += ` ${s} days in a row.`;
+      only = ["practice", "chords"];
+    } else if (a.kind === "saved") {
+      const r = applySave(tables, a.answers, clk);
+      if (!r.session) {
+        await say("That beat isn't waiting any more. Tap Send on the looper again.", turn);
+        continue;
+      }
+      tables = r.store;
+      text = `Saved ${r.session.name}. ${r.looper ? "It's on your Looper." : "Open it from your Looper any time."}`;
+      only = ["looper"];
+    } else if (a.kind === "open") {
+      const r = applyOpen(tables, a.name, clk);
+      if (!r.session) {
+        await say(`I can't find ${a.name} any more.`, turn);
+        continue;
+      }
+      tables = r.store;
+      text = `${r.session.name} is on your Looper, ${r.session.bpm} bpm.`;
+      only = ["looper"];
+    }
+    const sl = musicScreenLines(tables, clk, musicShape(agent.profile), only);
+    await say(`${text}\n\`\`\`yui\n${sl.lines.join("\n")}\n\`\`\``, { ...turn, native: { musictool: a.kind } });
+    agent.profile = { ...agent.profile, musicScreens: sl.shape };
     await store.updateAgent(agent.id, agent.profile);
     log(`${p.name}: ${a.kind}, ${sl.lines.some((l) => /^>\d clear$/.test(l)) ? "a page drawn again" : "pages patched"}`);
   }

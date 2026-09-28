@@ -27,6 +27,7 @@ export interface Profile {
   seeded?: boolean; // its starter tables were written (they are never kept in the saved profile)
   workoutScreens?: string; // Arnold's pages were drawn by the runtime (YUI-182), and which lift charts Progress holds
   mealScreens?: string; // Basil's pages were drawn by the runtime (YUI-183), and which days and aisles they hold
+  musicScreens?: string; // Gouda's pages were drawn by the runtime (YUI-184), and which song Chords holds
   soulEdited?: boolean; // the person rewrote its personality in Controls: the shelf's soul never replaces it
   meals?: boolean; // logs meals from a photo in the background (YUI-103, meals.ts); base basil always does
   home?: string; // its home (YUI-168, profiles/<name>/home.yui): shortcuts and starter screens, played once

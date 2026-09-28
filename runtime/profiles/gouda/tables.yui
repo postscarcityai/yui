@@ -1,12 +1,16 @@
-# Gouda's starter tables (YUI-170). Pattern is a loop's p= rows: kick|snare|perc|hats, 8 steps each.
+# Gouda's starter tables (YUI-170, YUI-184). Pattern is a loop's p= rows: kick|snare|perc|hats, 8 steps each.
+# Chords is a song's chart, a bar at a time (a bar with two chords has them space apart). src/music.ts reads them all.
 table create loops Name:text Bpm:number Scale:text Style:text Pattern:text
 put loops lazy-sunday Name="Lazy Sunday" Bpm=92 Scale="C minor" Style=Lo-fi Pattern="x...x...|..x...x.|........|x.x.x.x."
 put loops boom-bap Name="Boom bap" Bpm=90 Scale="A minor" Style="Hip hop" Pattern="x...x.x.|..x...x.|........|xxxxxxxx"
 put loops four-floor Name="Four on the floor" Bpm=124 Scale="F minor" Style=House Pattern="x.x.x.x.|..x...x.|........|.x.x.x.x"
 put loops backbeat Name="Rock backbeat" Bpm=110 Scale=E Style=Rock Pattern="x...xx..|..x...x.|........|x.x.x.x."
 put loops one-drop Name="One drop" Bpm=76 Scale=G Style=Reggae Pattern="....x...|....x...|........|x.x.x.x."
-table create songs Title:text Artist:text Scale:text Bpm:number Status:text
-put songs stand-by-me Title="Stand By Me" Artist="Ben E. King" Scale=A Bpm=118 Status="Want to learn"
-put songs three-little-birds Title="Three Little Birds" Artist="Bob Marley" Scale=A Bpm=74 Status="Want to learn"
-put songs let-it-be Title="Let It Be" Artist="The Beatles" Scale=C Bpm=72 Status="Want to learn"
-put songs heavens-door Title="Knockin' on Heaven's Door" Artist="Bob Dylan" Scale=G Bpm=69 Status="Want to learn"
+table create songs Title:text Artist:text Scale:text Bpm:number Status:text Chords:text
+put songs stand-by-me Title="Stand By Me" Artist="Ben E. King" Scale=A Bpm=118 Status="Want to learn" Chords="A|A|F#m|F#m|D|E|A|A"
+put songs three-little-birds Title="Three Little Birds" Artist="Bob Marley" Scale=A Bpm=74 Status="Want to learn" Chords="A|A|D|A|A|E|D|A"
+put songs let-it-be Title="Let It Be" Artist="The Beatles" Scale=C Bpm=72 Status="Want to learn" Chords="C|G|Am|F|C|G|F|C"
+put songs heavens-door Title="Knockin' on Heaven's Door" Artist="Bob Dylan" Scale=G Bpm=69 Status="Want to learn" Chords="G|D|Am|Am|G|D|C|C"
+table create practice Day:date Minutes:number What:text Feel:text Bpm:number
+table create sessions Name:text Kind:text Bpm:number Swing:number Steps:number Rows:text Pattern:text Saved:date
+table create studio Song:text Tonic:text Bpm:number Speed:number Chords:text Bar:number Scale:text Session:text
