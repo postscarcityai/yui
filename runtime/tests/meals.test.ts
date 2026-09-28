@@ -3,7 +3,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { runAgent, runJob } from "../src/turn.ts";
-import { ACK, breakdown, clip, honour, saidNo, short, mealName, mealTurn, parseEstimate, plainPortion, short, spoken } from "../src/meals.ts";
+import { ACK, breakdown, clip, honour, saidNo, mealName, mealTurn, parseEstimate, plainPortion, short, spoken } from "../src/meals.ts";
 import { extract } from "../src/directives.ts";
 import { fakeModel, freshYui, provider, type Call } from "./helpers.ts";
 
