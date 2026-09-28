@@ -43,6 +43,15 @@ def http(*a, **k):
             if i == 3: raise
             time.sleep(3 * (i + 1))
 
+# The management API throttles (429) when six threads poll at once: back off and try again, never crash mid-run.
+_sql = sql
+def sql(q):
+    for i in range(8):
+        try: return _sql(q)
+        except RuntimeError as e:
+            if "429" not in str(e) or i == 7: raise
+            time.sleep(5 * (i + 1))
+
 CREW = ["Yui", "Arnold", "Basil", "Gouda", "Penny", "Quill"]
 FAVORITES = {n.lower(): json.loads((HERE.parents[1] / "runtime/profiles" / n.lower() / "profile.json").read_text())["favorites"]
              for n in CREW}
@@ -271,7 +280,7 @@ def ask_agent(T, name, agent_id, first_body, log):
         since, t0 = sql(f"select created_at from yui_messages where id='{mid}'")[0]["created_at"], time.time()
         handled = False
         while time.time() < t0 + args.wait and not handled:
-            time.sleep(4)
+            time.sleep(8)
             handled = sql(f"select handled_at is not null as h from yui_messages where id='{mid}'")[0]["h"]
         # Only the answers to this ask (meta.turn names it): another agent handing the person over to this one writes
         # in this thread too (the macros ask sends four agents' hand-offs to Basil), and those are not this answer.
