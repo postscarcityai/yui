@@ -28,7 +28,7 @@ A profile is a folder in `profiles/`:
 
 | File | What it holds |
 |---|---|
-| `profile.json` | name, handle, role, version, color (lavender, mint, butter), favorite Yui Lines, model (`default` or a model id), `shelf` |
+| `profile.json` | name, handle, role, version, color (lavender, mint, butter), favorite Yui Lines, model (`default` or a model id), `shelf`, `visual` (its own quiet visual on the stage: look, hears, strength `dim` or `faint`, pace `slow` or `even`; none means the soft orb, [The visual](https://www.yuigui.com/developers/visual)) |
 | `soul.md` | who the agent is, how it talks, what it never does, in the second person |
 | `first.yui` | its first answer: a line of text and a `yui` fence with a real question on a screen |
 | `tables.yui` | optional: its starter tables, as `table create` and `put` lines (no `today` or `now`: seeds are written by SQL) |
