@@ -23,6 +23,9 @@ struct ChatMessage: Identifiable, Equatable {
     var fromScreen: Int? = nil
     /// Sent about a Controls item (YUI-69): "About SOUL.md".
     var about: String? = nil
+    /// The agent's hello, the first message its thread opens on (`meta.native = "first"`):
+    /// an answer to start from, never something waiting on you in Review (YUI-165).
+    var hello = false
 }
 
 /// The chat's messages and the events going back to the agent.
@@ -898,9 +901,10 @@ final class ChatStore {
             }
         } else {
             if let r = row.reaction { reactions[id] = r }
+            let hello = row.meta?.object?["native"]?.string == "first"
             for (i, seg) in YuiFence.split(row.body).enumerated() {
                 switch seg {
-                case .text(let t): new.append(ChatMessage(id: "\(id)#\(i)", text: t, fromUser: false))
+                case .text(let t): new.append(ChatMessage(id: "\(id)#\(i)", text: t, fromUser: false, hello: hello))
                 case .yl(let y):
                     var screen = YLScreen()
                     let known = lastingIds
@@ -921,7 +925,7 @@ final class ChatStore {
                     file(screen.shelfOps, at: at)
                     fileMenu(screen.menuLines, at: at)
                     if let agentID = agent?.id { for look in screen.looks { onLook?(agentID, look, row.createdAt) } }
-                    new.append(ChatMessage(id: "\(id)#\(i)", text: "", fromUser: false, yl: screen))
+                    new.append(ChatMessage(id: "\(id)#\(i)", text: "", fromUser: false, yl: screen, hello: hello))
                     if loaded { live += nodes }
                 }
             }

@@ -73,7 +73,8 @@ extension ChatStore {
     /// Asks the person hasn't answered, newest first. An ask counts while its
     /// reply is the newest one using its id (a re-sent screen replaces the old
     /// one), and either it sits on a screen beside the chat or nothing was said
-    /// after it (typing past a question answers it, or lets it go).
+    /// after it (typing past a question answers it, or lets it go). An agent's
+    /// hello is its answer to start from, not an ask: it stays on the stage (YUI-165).
     var awaitingYou: [ReviewItem] {
         // Reading both keeps the views that ask observing them.
         let messages = messages, answers = answers
@@ -82,7 +83,7 @@ extension ChatStore {
         var seen = Set<String>()
         var out: [ReviewItem] = []
         for (i, m) in messages.enumerated().reversed() {
-            guard !m.fromUser, let yl = m.yl, !m.id.hasPrefix("shelf-") else { continue }
+            guard !m.fromUser, !m.hello, let yl = m.yl, !m.id.hasPrefix("shelf-") else { continue }
             let top = yl.top
             for (j, c) in top.enumerated().reversed() {
                 let fresh = seen.insert(c.ylID).inserted
