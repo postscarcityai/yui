@@ -50,6 +50,8 @@ struct ChatView: View {
     @State private var picked: [PhotosPickerItem] = []
     @State private var pickingPhotos = false
     @State private var shooting = false
+    /// Hold to snap and say (YUI-166): the camera and the mic, one press.
+    @State private var snapping = false
     /// + > Files: pictures from Files join the message like photos (YUI-121).
     @State private var importingFiles = false
     @State private var sending = false
@@ -924,6 +926,7 @@ struct ChatView: View {
     /// One + for everything that isn't words. Room for files and more later, no new buttons.
     private func attachMenu(_ c: Swatch) -> AnyView {
         AnyView(Menu {
+            if SnapCamera.available { Button { openSnap() } label: { Label("Snap and say", systemImage: "camera.viewfinder") } }
             Button { pickingPhotos = true } label: { Label("Photo library", systemImage: "photo.on.rectangle") }
             if UIImagePickerController.isSourceTypeAvailable(.camera) {
                 Button { shooting = true } label: { Label("Camera", systemImage: "camera") }
@@ -1257,6 +1260,39 @@ struct ChatView: View {
         }
     }
 
+    /// Hold to snap and say: hands-free lets go of the mic, the camera comes up.
+    private func openSnap() {
+        handsFreeDo(.stop)
+        focused = false
+        stageFocused = false
+        snapping = true
+    }
+
+    /// The photo and what was said over it, as one message: the words ride with the picture.
+    private func sendSnap(_ said: SnapSaid) {
+        guard let photo = ComposerPhoto(said.photo) else { flash("Couldn't read that photo. Try again."); return }
+        let words = said.words.trimmingCharacters(in: .whitespacesAndNewlines)
+        if account.session?.userID != "demo" {
+            guard store.agent != nil, !sending else { return }
+            sending = true
+            Task {
+                defer { sending = false }
+                do { try await store.send(words, photos: [photo]) } catch { flash("Couldn't send the photo. Try again.") }
+            }
+            return
+        }
+        let body = Attachments.body(text: words, photos: 1)
+        withAnimation(ChatStore.sendSpring) {
+            store.messages.append(ChatMessage(text: Attachments.caption(body: body, photos: 1), fromUser: true,
+                                              photos: [.local(photo.preview)]))
+        }
+        #if DEBUG
+        if let reply = UserDefaults.standard.string(forKey: "yuiDemoReply") {
+            withAnimation(ChatStore.sendSpring) { store.demoAnswer(reply) }
+        }
+        #endif
+    }
+
     // MARK: Stage first (YUI-119)
 
     /// A send puts the stage up on it, working; a new thread starts at the greeting.
@@ -1282,6 +1318,20 @@ struct ChatView: View {
                 stageFirst.seen = store.shown.count
             }
             .onChange(of: store.loaded) { if store.loaded { stageFirst.seen = store.shown.count } }
+            // Hold to snap and say (YUI-166): the photo and the words go as one message.
+            .fullScreenCover(isPresented: $snapping) {
+                SnapSayView { said in
+                    snapping = false
+                    if let said { sendSnap(said) }
+                }
+            }
+            // yui://snap (a shortcut such as Basil's "Log a meal"): straight to the camera.
+            .onChange(of: push.pendingSnap, initial: true) {
+                guard push.pendingSnap, store.agent != nil else { return }
+                push.pendingSnap = false
+                settleDrawer(open: false)
+                openSnap()
+            }
             // The chat is one page, so a pill or drawer row for a screen opens the stage on it.
             .onChange(of: store.screenAsks) { if !pagedChat, !stageFirst.open, store.page > 1 { openStageFirst() } }
     }
@@ -1338,6 +1388,7 @@ struct ChatView: View {
             type: type,
             photos: { attaching(); pickingPhotos = true },
             camera: UIImagePickerController.isSourceTypeAvailable(.camera) ? { attaching(); shooting = true } : nil,
+            snap: SnapCamera.available ? { attaching(); openSnap() } : nil,
             files: { attaching(); importingFiles = true },
             micDown: {
                 if handsFree.on { micTapOnly = true; return }

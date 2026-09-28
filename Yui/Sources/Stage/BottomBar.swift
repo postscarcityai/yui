@@ -12,6 +12,8 @@ struct BarActions {
     var type: () -> Void
     var photos: () -> Void
     var camera: (() -> Void)?
+    /// Hold to snap and say (YUI-166): nil with no camera.
+    var snap: (() -> Void)? = nil
     var files: () -> Void
     /// Finger down on the mic, then its slide (points, negative is left), then up.
     var micDown: () -> Void
@@ -173,6 +175,7 @@ struct AttachMenu<Label: View>: View {
 
     var body: some View {
         Menu {
+            if let snap = actions.snap { Button(action: snap) { SwiftUI.Label("Snap and say", systemImage: "camera.viewfinder") } }
             Button(action: actions.photos) { SwiftUI.Label("Photo library", systemImage: "photo.on.rectangle") }
             if let camera = actions.camera { Button(action: camera) { SwiftUI.Label("Camera", systemImage: "camera") } }
             Button(action: actions.files) { SwiftUI.Label("Files", systemImage: "folder") }

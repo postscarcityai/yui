@@ -673,6 +673,8 @@ enum MenuAction {
     /// A shortcut sends its words as the person's message; words that end in a
     /// space go in the composer to finish.
     static func shortcut(_ item: YLMenuItem, store: ChatStore, compose: (String) -> Void) {
+        // `url=yui://snap` (YUI-166, Basil's "Log a meal"): hold to snap and say, no message.
+        if let raw = item.url, let u = URL(string: raw), PushCenter.isSnap(u) { PushCenter.shared.open(u); return }
         let words = item.say ?? item.label
         if words.hasSuffix(" ") { compose(words) } else { _ = store.send(words) }
     }

@@ -60,6 +60,15 @@ class TakeLinks(unittest.TestCase):
         self.assertIn(f"photo={paths[0]}", out)
         self.assertIn(f"audio={audio}", out, "the take link was rewritten")
 
+    def test_snap_and_say_words_stay_with_the_photo(self):
+        # YUI-166: the composer row's body is the spoken words, meta.photos the picture.
+        words = "Two eggs in a lot of butter"
+        out, paths, types = media.localize(words, {"photos": [PHOTO]}, "tok")
+        self.assertEqual(out, words, "the words changed on the way to the agent")
+        self.assertEqual(self.fetched, [PHOTO])
+        self.assertEqual(len(paths), 1)
+        self.assertEqual(types, ["image/jpeg"])
+
     def test_json_meta_photo(self):
         self.assertTrue(media.USER_PATH.search(f'{{"photo": "{PHOTO}"}}'))
 

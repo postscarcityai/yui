@@ -233,9 +233,11 @@ struct VideoPreset: View {
 }
 
 /// `camera [prompt] [front|back]`: one photo, uploaded, sent as `{photo: path}`.
+/// `+say` (YUI-166): hold to snap and say, sent as `{photo: path, words: "..."}`.
 struct CameraPreset: View {
     let c: YLComponent
     @State private var shooting = false
+    @State private var snapping = false
     @State private var picking: PhotosPickerItem?
     @State private var preview: UIImage?
     @State private var state: Phase = .idle
@@ -272,7 +274,11 @@ struct CameraPreset: View {
                 EmptyView()
             }
             HStack(spacing: theme.spacing.s) {
-                if hasCamera {
+                if c.flag("say"), SnapCamera.available {
+                    OptionPill(text: preview == nil ? "Snap and say" : "Again", fill: s.accent, ink: s.onAccent,
+                               on: state != .sending, grow: true) { snapping = true }
+                        .accessibilityIdentifier("camera-snap")
+                } else if hasCamera {
                     OptionPill(text: preview == nil ? "Open camera" : "Retake", fill: s.accent, ink: s.onAccent,
                                on: state != .sending, grow: true) { shooting = true }
                 }
@@ -295,6 +301,12 @@ struct CameraPreset: View {
             }
             .ignoresSafeArea()
         }
+        .fullScreenCover(isPresented: $snapping) {
+            SnapSayView(prompt: c.string("prompt")) { said in
+                snapping = false
+                if let said { Task { await send(said.photo, words: said.words) } }
+            }
+        }
         .onChange(of: picking) { _, item in
             guard let item else { return }
             Task {
@@ -304,14 +316,16 @@ struct CameraPreset: View {
         }
     }
 
-    private func send(_ data: Data) async {
+    private func send(_ data: Data, words: String = "") async {
         preview = Pictures.downsample(data, points: CGSize(width: 400, height: 220), scale: 3)
         guard let media else { state = .failed("Photos need a signed-in account"); return }
         state = .sending
         do {
             let path = try await media.upload(photo: data)
             state = .sent
-            emit(c.event(["photo": .string(path)], echo: "Photo"))
+            let said = words.trimmingCharacters(in: .whitespacesAndNewlines)
+            emit(said.isEmpty ? c.event(["photo": .string(path)], echo: "Photo")
+                 : c.event(["photo": .string(path), "words": .string(said)], echo: "Photo: \(said)"))
         } catch {
             state = .failed("Couldn't send it. Try again.")
         }

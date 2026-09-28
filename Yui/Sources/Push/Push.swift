@@ -23,6 +23,8 @@ final class PushCenter: NSObject {
     var pendingAgentID: String?
     /// Settings to open from a link (`yui://settings/search`, YUI-142): the section, "" for the top. ChatView consumes it.
     var pendingSettings: String?
+    /// `yui://snap` (YUI-166): hold to snap and say, in the thread on screen. ChatView consumes it.
+    var pendingSnap = false
     /// Bumped by a silent push that says the agent list changed (a revoke, YUI-97).
     private(set) var listChanged = 0
 
@@ -134,11 +136,18 @@ final class PushCenter: NSObject {
             pendingSettings = section
             return true
         }
+        if Self.isSnap(url) {
+            pendingSnap = true
+            return true
+        }
         guard url.scheme == "yui", url.host() == "agent", let id = url.pathComponents.dropFirst().first,
               !id.isEmpty else { return false }
         pendingAgentID = id
         return true
     }
+
+    /// `yui://snap`: the camera that hears you (a shortcut like "Log a meal").
+    nonisolated static func isSnap(_ url: URL) -> Bool { url.scheme == "yui" && url.host() == "snap" }
 
     /// `yui://settings` is "", `yui://settings/search` is "search"; anything else is nil.
     nonisolated static func settingsSection(_ url: URL) -> String? {

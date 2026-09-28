@@ -168,6 +168,30 @@ test("a composer photo (meta.photos, as the app sends it) reaches the model that
   assert.deepEqual(parts.filter((p: any) => p.type === "image_url"), [{ type: "image_url", image_url: { url: "https://img.test/salmon.jpg" } }]);
 });
 
+test("snap and say (YUI-166): the spoken words and the photo reach the model in one turn", async () => {
+  const { store, byHandle } = await freshYui();
+  const basil = await byHandle("basil");
+  const m = fakeModel(() => "Two eggs and the butter: about 250 kcal.");
+  store.say(basil.id, "Two eggs in a lot of butter", "text");
+  store.data.rows.at(-1)!.meta = { photos: ["https://img.test/eggs.jpg"] };
+  await runAgent(store, basil.id, { provider, fetch: m.fetch });
+  assert.equal(m.calls.length, 1, "one turn, not one for the photo and one for the words");
+  const parts = lastUser(m.calls[0]).content;
+  assert.match(parts.find((p: any) => p.type === "text").text, /a lot of butter/);
+  assert.deepEqual(parts.filter((p: any) => p.type === "image_url"), [{ type: "image_url", image_url: { url: "https://img.test/eggs.jpg" } }]);
+});
+
+test("snap and say from an agent's camera +say: the words ride the event with the photo", async () => {
+  const { store, byHandle } = await freshYui();
+  const basil = await byHandle("basil");
+  const m = fakeModel(() => "Noted, the butter too.");
+  store.say(basil.id, '[yui] c1 camera photo=https://img.test/eggs.jpg words="Two eggs in a lot of butter"', "event");
+  await runAgent(store, basil.id, { provider, fetch: m.fetch });
+  const parts = lastUser(m.calls[0]).content;
+  assert.match(parts.find((p: any) => p.type === "text").text, /words="Two eggs in a lot of butter"/);
+  assert.deepEqual(parts.filter((p: any) => p.type === "image_url"), [{ type: "image_url", image_url: { url: "https://img.test/eggs.jpg" } }]);
+});
+
 test("a photo the model can't fetch goes again as bytes, once", async () => {
   const { store, byHandle } = await freshYui();
   const basil = await byHandle("basil");
