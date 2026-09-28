@@ -31,7 +31,7 @@ import {
   verifyAccessToken,
 } from "../_shared/yui.ts";
 import { starters } from "../_native/profiles.ts";
-import { type CrewOffer, crewOffer, crewRefusal, readdSort, starter } from "../_native/starters.ts";
+import { type CrewOffer, crewOffer, crewRefusal, type DescribedRow, describeAgents, readdSort, starter } from "../_native/starters.ts";
 
 const PAIR_TTL_MINUTES = 10;
 
@@ -181,20 +181,32 @@ async function provisionNative(db: any, userId: string) {
   }
 }
 
-// YUI-145: the crew in Add agent, by name, with the agent each one is while it
-// is in the list. Null when this person has no native Yui (native_enabled off).
+// The person's native profiles: base and what each says it does (YUI-165).
+// Null when this person has no native Yui (native_enabled off).
 // deno-lint-ignore no-explicit-any
-async function crewFor(db: any, userId: string): Promise<CrewOffer[] | null> {
+async function nativeRows(db: any, userId: string): Promise<DescribedRow[] | null> {
   const { data: hosted } = await db.from("yui_connectors").select("id").eq("user_id", userId)
     .eq("kind", "hosted").is("revoked_at", null).limit(1);
   if (!hosted?.length) return null;
-  const { data: rows, error } = await db.from("yui_native_profiles").select("agent_id, base:profile->>base")
+  const { data: rows, error } = await db.from("yui_native_profiles")
+    .select("agent_id, base:profile->>base, tagline:profile->>tagline, about:profile->>about, can:profile->can")
     .eq("user_id", userId);
   if (error) throw error;
-  return crewOffer(rows ?? []);
+  return (rows ?? []).map((r: DescribedRow) => ({ ...r, can: Array.isArray(r.can) ? r.can : null }));
 }
 
-const crewView = (o: CrewOffer) => ({ base: o.base, name: o.name, role: o.role, color: o.color, agent_id: o.agentId });
+// YUI-145: the crew in Add agent, by name, with the agent each one is while it
+// is in the list.
+// deno-lint-ignore no-explicit-any
+async function crewFor(db: any, userId: string): Promise<CrewOffer[] | null> {
+  const rows = await nativeRows(db, userId);
+  return rows && crewOffer(rows);
+}
+
+// YUI-165: each starter says what it does, so Add agent can show it before the tap.
+// Older apps ignore the fields they don't know.
+const crewView = (o: CrewOffer) => ({ base: o.base, name: o.name, role: o.role, color: o.color, agent_id: o.agentId,
+                                      tagline: o.tagline, about: o.about, can: o.can });
 
 type Action = { appOnly?: boolean; run: (userId: string, b: Body) => Promise<unknown> };
 
@@ -214,8 +226,11 @@ const ACTIONS: Record<string, Action> = {
       const { data: invite } = await db.from("yui_invites").select("first_name")
         .eq("claimed_user_id", userId).not("first_name", "is", null)
         .order("claimed_at", { ascending: false }).limit(1).maybeSingle();
-      const crew = await crewFor(db, userId).catch((e) => (console.error("crew", e), null));
-      return { agents, connectors, first_name: invite?.first_name ?? null, crew: crew?.map(crewView) ?? null };
+      const rows = await nativeRows(db, userId).catch((e) => (console.error("crew", e), null));
+      // YUI-165: a native agent carries what it does (About, the picker); others get nothing new.
+      const said = rows ? describeAgents(rows) : {};
+      const listed = (agents ?? []).map((a: { id: string }) => said[a.id] ? { ...a, ...said[a.id] } : a);
+      return { agents: listed, connectors, first_name: invite?.first_name ?? null, crew: rows ? crewOffer(rows).map(crewView) : null };
     },
   },
 

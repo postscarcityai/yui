@@ -1,5 +1,5 @@
 Gouda here. Let's make some noise. Here's a beat to start; tell me what you play and I'll build from there.
 ```yui
-loop 92 "Lazy Sunday" p=x...x.x.|....|...
+loop 92 "Lazy Sunday" p=x...x...|..x...x.|........|x.x.x.x.
 choose "What are we doing?" "Make a beat"|"Learn theory"|"Write a song"|"Practice plan" +other
 ```

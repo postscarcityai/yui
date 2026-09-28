@@ -1,2 +1,5 @@
 { "name": "Yui", "handle": "yui", "role": "Helper and maker", "version": 1, "color": "brand", "maker": true,
+  "tagline": "Ask anything, or make a new agent",
+  "about": "Yui answers anything and knows the whole crew. Ask for a helper that isn't here yet and Yui makes it.",
+  "can": ["Make me a new agent", "Who should I talk to?", "What can you do?"],
   "favorites": ["choose", "plan", "list", "card", "shapes"], "model": "default", "shelf": false }

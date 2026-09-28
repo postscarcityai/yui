@@ -7,6 +7,13 @@ export const CREW: Record<string, Profile> = {
     "name": "Arnold",
     "handle": "arnold",
     "role": "Trainer",
+    "tagline": "Workouts built around your week and body",
+    "about": "A training week around your days, your gear and anything that hurts. Timers run on screen and every set gets logged.",
+    "can": [
+      "Build my training week",
+      "Give me a 20 minute workout",
+      "Log today's workout"
+    ],
     "version": 1,
     "color": "butter",
     "favorites": [
@@ -28,6 +35,13 @@ export const CREW: Record<string, Profile> = {
     "name": "Basil",
     "handle": "basil",
     "role": "Nutritionist",
+    "tagline": "Eat better without counting everything",
+    "about": "Meals and swaps that fit your goal and what you can't eat. Snap a plate for a quick read on it.",
+    "can": [
+      "Plan my meals this week",
+      "What should I eat tonight?",
+      "Check a photo of my plate"
+    ],
     "version": 1,
     "color": "mint",
     "favorites": [
@@ -50,6 +64,13 @@ export const CREW: Record<string, Profile> = {
     "name": "New agent",
     "handle": "new",
     "role": "Anything you want",
+    "tagline": "Anything you want it to be",
+    "about": "A blank agent you shape yourself. Say what it should help with and it becomes that.",
+    "can": [
+      "Help me cook",
+      "Help me with money",
+      "Teach me a language"
+    ],
     "version": 1,
     "color": "mint",
     "favorites": [
@@ -69,6 +90,13 @@ export const CREW: Record<string, Profile> = {
     "name": "Gouda",
     "handle": "gouda",
     "role": "Musician",
+    "tagline": "Beats, chords and practice, right on screen",
+    "about": "Beats you edit while they play, chords to strum and a keyboard that stays in key. A tuner and a click for practice too.",
+    "can": [
+      "Make a beat",
+      "Tune my guitar",
+      "Teach me a song's chords"
+    ],
     "version": 1,
     "color": "lavender",
     "favorites": [
@@ -81,7 +109,7 @@ export const CREW: Record<string, Profile> = {
     ],
     "model": "default",
     "soul": "You are Gouda, a musician in the Yui app. Easygoing, playful, a little nerdy about sound.\n\n- Music gets an instrument, not advice. Make beats with a `loop` and `drums`, teach with `keys` and `chords`, keep time with `metronome`, tune with `tuner`. Patch what is playing instead of starting over.\n- You do four jobs: make beats with them, teach theory (scales, chords, ear training, a short quiz), write songs (lyrics, structure, a playable progression), and coach practice (a plan, a tempo, a streak).\n- Keep what they play, their level and their taste in your notes: instruments, genres, what they are working on.\n- You never claim a song or a riff you know is someone else's as new.",
-    "first": "Gouda here. Let's make some noise. Here's a beat to start; tell me what you play and I'll build from there.\n```yui\nloop 92 \"Lazy Sunday\" p=x...x.x.|....|...\nchoose \"What are we doing?\" \"Make a beat\"|\"Learn theory\"|\"Write a song\"|\"Practice plan\" +other\n```",
+    "first": "Gouda here. Let's make some noise. Here's a beat to start; tell me what you play and I'll build from there.\n```yui\nloop 92 \"Lazy Sunday\" p=x...x...|..x...x.|........|x.x.x.x.\nchoose \"What are we doing?\" \"Make a beat\"|\"Learn theory\"|\"Write a song\"|\"Practice plan\" +other\n```",
     "shelf": true
   },
   "penny": {
@@ -89,6 +117,13 @@ export const CREW: Record<string, Profile> = {
     "name": "Penny",
     "handle": "penny",
     "role": "Planner",
+    "tagline": "Get your week out of your head",
+    "about": "Lists, plans and timelines for everything on your plate. Say what's going on and get back a week you can see.",
+    "can": [
+      "Plan my week",
+      "Make a to-do list",
+      "What's next today?"
+    ],
     "version": 1,
     "color": "butter",
     "favorites": [
@@ -109,6 +144,13 @@ export const CREW: Record<string, Profile> = {
     "name": "Quill",
     "handle": "quill",
     "role": "Study buddy",
+    "tagline": "Learn anything fast, then get quizzed",
+    "about": "Five minute lessons with pictures, math and charts, one idea per page. A quick quiz at the end makes it stick.",
+    "can": [
+      "Teach me something new",
+      "Quiz me on what I learned",
+      "Walk me through a math problem"
+    ],
     "version": 1,
     "color": "lavender",
     "favorites": [
@@ -129,6 +171,13 @@ export const CREW: Record<string, Profile> = {
     "name": "Yui",
     "handle": "yui",
     "role": "Helper and maker",
+    "tagline": "Ask anything, or make a new agent",
+    "about": "Yui answers anything and knows the whole crew. Ask for a helper that isn't here yet and Yui makes it.",
+    "can": [
+      "Make me a new agent",
+      "Who should I talk to?",
+      "What can you do?"
+    ],
     "version": 1,
     "color": "brand",
     "favorites": [

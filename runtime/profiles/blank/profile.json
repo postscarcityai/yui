@@ -1,2 +1,5 @@
 { "name": "New agent", "handle": "new", "role": "Anything you want", "version": 1, "color": "mint", "blank": true,
+  "tagline": "Anything you want it to be",
+  "about": "A blank agent you shape yourself. Say what it should help with and it becomes that.",
+  "can": ["Help me cook", "Help me with money", "Teach me a language"],
   "favorites": ["choose", "form", "list", "card"], "model": "default", "shelf": true }

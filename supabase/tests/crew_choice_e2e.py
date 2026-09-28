@@ -33,6 +33,17 @@ try:
     crew = {c["base"]: c for c in (r.get("crew") or [])}
     check("the list offers the crew, each one marked as in the list",
           sorted(crew) == sorted(n.lower() for n in CREW) and all(c["agent_id"] for c in crew.values()), f"{list(crew)}")
+    # YUI-165: every starter says what it does, in Add agent and on its own row (About, the picker).
+    check("every starter in the offer has a tagline, an about and three things to ask",
+          all(c.get("tagline") and c.get("about") and len(c.get("can") or []) == 3 for c in crew.values()),
+          f"basil: {crew.get('basil', {}).get('tagline')!r}")
+    check("every crew agent in the list says what it does",
+          all(a.get("tagline") and a.get("about") and len(a.get("can") or []) == 3 for a in r["agents"]),
+          f"{[(a['name'], a.get('tagline')) for a in r['agents']]}")
+    hello = sql(f"select body from yui_messages where user_id='{T}' and agent_id='{ids(r)['Gouda']}' "
+                f"and meta->>'native' = 'first'")
+    check("Gouda's hello is a normal answer with its beat on the backbone",
+          bool(hello) and "p=x...x...|..x...x." in hello[0]["body"], (hello[0]["body"] if hello else "")[:90])
     before = ids(r)
 
     # A real turn: the person says hi, hosted Yui answers through the live runtime.

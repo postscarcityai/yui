@@ -14,7 +14,13 @@ function slug(name: string): string {
   return (name.toLowerCase().normalize("NFKD").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "agent").slice(0, 28);
 }
 
-/** Soul, color and favorites from `key=value` args onto a profile. */
+/** A profile that is becoming someone new keeps nothing of what the blank said it does. */
+function fresh(p: Profile): Profile {
+  const { tagline: _t, about: _a, can: _c, ...rest } = p;
+  return rest;
+}
+
+/** Soul, color, favorites and what it does from `key=value` args onto a profile. */
 function withArgs(p: Profile, args: Record<string, string>): Profile {
   const out = { ...p, favorites: [...p.favorites] };
   if (args.name) out.name = args.name.trim().slice(0, 40);
@@ -23,6 +29,9 @@ function withArgs(p: Profile, args: Record<string, string>): Profile {
   if (args.color && (COLORS as readonly string[]).includes(args.color) && args.color !== "brand") out.color = args.color as Profile["color"];
   if (args.favorites) out.favorites = args.favorites.split(/[,|\s]+/).filter((f) => PRESETS.has(f)).slice(0, 8);
   if (args.first) out.first = args.first;
+  if (args.tagline) out.tagline = args.tagline.trim();
+  if (args.about) out.about = args.about.trim();
+  if (args.can) out.can = args.can.split("|").map((c) => c.trim()).filter(Boolean).slice(0, 3);
   return out;
 }
 
@@ -48,7 +57,7 @@ async function applyOne(store: Store, self: NativeAgent, op: AgentOp): Promise<A
   if (op.op === "self") {
     // Any agent may rewrite itself only while blank; after that, only Yui changes agents.
     if (!self.profile.blank) return { ok: false, why: "self: only a new, blank agent sets itself up" };
-    const next = withArgs({ ...self.profile, blank: false, base: "custom", version: self.profile.version }, op.args);
+    const next = withArgs({ ...fresh(self.profile), blank: false, base: "custom", version: self.profile.version }, op.args);
     const bad = checkProfile({ ...next, first: next.first || "```yui\nsay Hi\n```" });
     if (bad.length) return { ok: false, why: `self: ${bad.join("; ")}` };
     await store.updateAgent(self.id, next);
@@ -68,7 +77,7 @@ async function applyOne(store: Store, self: NativeAgent, op: AgentOp): Promise<A
       const name = (op.name ?? op.target ?? "").trim();
       if (!name) return { ok: false, why: "make: needs a shelf name or a new name" };
       const blank = crew().blank;
-      p = withArgs({ ...blank, blank: false, base: "custom", name, handle: slug(name), role: op.args.role ?? "",
+      p = withArgs({ ...fresh(blank), blank: false, base: "custom", name, handle: slug(name), role: op.args.role ?? "",
                      first: op.args.first ?? `${name} here. What are we starting with?\n\`\`\`yui\nask "Ready when you are" Go\n\`\`\`` }, op.args);
       if (!op.args.soul) p.soul = `You are ${name}, an agent on this person's Yui. Be helpful, brief and kind, and use screens when they help.`;
     }

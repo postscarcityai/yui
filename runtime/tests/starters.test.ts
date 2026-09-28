@@ -2,7 +2,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { MAX_NATIVE_AGENTS } from "../src/agents.ts";
-import { crewOffer, crewRefusal, readdSort, starter } from "../src/starters.ts";
+import { crewOffer, crewRefusal, describeAgents, readdSort, starter } from "../src/starters.ts";
 
 test("the offer is every starter, Yui first, each by name and role", () => {
   const offer = crewOffer([]);
@@ -43,4 +43,24 @@ test("a re-added starter goes after the crew and above every paired agent", () =
   // Only paired agents left (every native one removed): the top.
   assert.equal(readdSort(paired), -1);
   assert.equal(readdSort([]), 0);
+});
+
+test("the offer says what each starter does, so Add agent can show it before the tap (YUI-165)", () => {
+  const basil = crewOffer([]).find((o) => o.base === "basil")!;
+  assert.equal(basil.tagline, "Eat better without counting everything");
+  assert.ok(basil.about);
+  assert.equal(basil.can.length, 3);
+});
+
+test("a listed agent says what it does: its own words, else its starter's, never a starter's for a custom one", () => {
+  const said = describeAgents([
+    { agent_id: "a-new", base: "gouda", tagline: "Beats all day", about: "Mine.", can: ["x", "y", "z"] },
+    { agent_id: "a-old", base: "gouda" },
+    { agent_id: "a-custom", base: "custom", tagline: null, about: null, can: null },
+    { agent_id: "a-none", base: null },
+  ]);
+  assert.equal(said["a-new"].tagline, "Beats all day");
+  assert.equal(said["a-old"].tagline, crewOffer([]).find((o) => o.base === "gouda")!.tagline, "made before profiles carried it");
+  assert.deepEqual(said["a-custom"], { tagline: null, about: null, can: [] });
+  assert.deepEqual(said["a-none"], { tagline: null, about: null, can: [] });
 });

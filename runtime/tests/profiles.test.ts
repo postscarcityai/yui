@@ -89,3 +89,27 @@ test("Yui answers a first turn locally, from her own folder", async () => {
   const reply = store.data.rows.find((x) => x.id === r.replies[0])!;
   assert.match(reply.body, /```yui\nplan "Your week"/);
 });
+
+test("every profile folder says what it does: a tagline, two sentences and three things to ask (YUI-165)", () => {
+  for (const [b, p] of Object.entries(crew())) {
+    assert.ok(p.tagline && p.tagline.split(/\s+/).length < 8, `${b}: tagline under 8 words`);
+    assert.ok(p.about && p.about.length <= 200, `${b}: about`);
+    assert.equal(p.can?.length, 3, `${b}: three things it can do`);
+    assert.doesNotMatch([p.tagline, p.about, ...p.can!].join(" "), /—/, b);
+  }
+  assert.equal(crew().basil.tagline, "Eat better without counting everything");
+});
+
+test("the checks turn down a long tagline, a long about and the wrong number of things to ask", () => {
+  const meta = (m: object) => files({ "profile.json": JSON.stringify({ name: "T", favorites: [], ...m }) });
+  assert.throws(() => loadProfile("tutor", meta({ tagline: "one two three four five six seven eight" })), /tagline must be 1 to 7 words/);
+  assert.throws(() => loadProfile("tutor", meta({ about: "One. Two. Three." })), /about must be at most two sentences/);
+  assert.throws(() => loadProfile("tutor", meta({ can: ["Only one"] })), /can must be 3 things/);
+  assert.throws(() => loadProfile("tutor", meta({ tagline: "Kind — and quick" })), /no em dashes/);
+  const ok = loadProfile("tutor", meta({ tagline: "Spanish in ten minutes a day", about: "Short lessons. Real talk.", can: ["A", "B", "C"] }));
+  assert.deepEqual(ok.can, ["A", "B", "C"]);
+});
+
+test("Gouda's first beat sits on the backbone: kick on 1 and 3, snare on 2 and 4", () => {
+  assert.match(crew().gouda.first, /loop 92 "Lazy Sunday" p=x\.\.\.x\.\.\.\|\.\.x\.\.\.x\.\|/);
+});

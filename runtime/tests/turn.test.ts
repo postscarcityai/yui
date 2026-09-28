@@ -111,7 +111,8 @@ test("start blank: the new agent sets itself up", async () => {
   await runAgent(store, (store.say(yui.id, "blank one please"), yui.id), { provider, fetch: fakeModel(() => "Here you go.\n```agents\nmake blank\n```").fetch });
   const blank = await byHandle("new");
   assert.ok(blank.profile.blank);
-  const m = fakeModel(() => 'I\'m Chef Luna now. Let\'s cook.\n```agents\nself name="Chef Luna" color=butter favorites=list,timer,camera soul="You are Chef Luna, a cooking coach."\n```');
+  assert.equal(blank.profile.tagline, "Anything you want it to be");
+  const m = fakeModel(() => 'I\'m Chef Luna now. Let\'s cook.\n```agents\nself name="Chef Luna" color=butter favorites=list,timer,camera tagline="Dinner without the stress" can="Plan dinner|Use my fridge|Quick lunch" soul="You are Chef Luna, a cooking coach."\n```');
   store.say(blank.id, "[yui] n1 choose choice=Cooking");
   await runAgent(store, blank.id, { provider, fetch: m.fetch });
   assert.match(system(m.calls[0]), /Becoming yourself/);
@@ -119,6 +120,10 @@ test("start blank: the new agent sets itself up", async () => {
   assert.equal(now.name, "Chef Luna");
   assert.equal(now.blank, false);
   assert.deepEqual(now.favorites, ["list", "timer", "camera"]);
+  // What it does is its own now; nothing of the blank's words is left (YUI-165).
+  assert.equal(now.tagline, "Dinner without the stress");
+  assert.deepEqual(now.can, ["Plan dinner", "Use my fridge", "Quick lunch"]);
+  assert.equal(now.about, undefined);
   // Once set up, it can't rewrite itself again.
   const m2 = fakeModel(() => 'Ok.\n```agents\nself name="Someone else"\n```');
   store.say(blank.id, "be someone else");

@@ -2,11 +2,14 @@
 // Chris's feedback APsS404f7C): each starter by name, one tap each, and a tap
 // only ever adds. yui-agents lists the offer and runs `crew_add`.
 import { MAX_NATIVE_AGENTS } from "./agents.ts";
-import { starters } from "./profiles.ts";
+import { crew, describe, type Described, starters } from "./profiles.ts";
 import type { Profile } from "./types.ts";
 
-/** One starter as Add agent shows it. `agentId` is set while it is in the person's list. */
-export interface CrewOffer {
+/**
+ * One starter as Add agent shows it: its name, role and what it does (YUI-165).
+ * `agentId` is set while it is in the person's list.
+ */
+export interface CrewOffer extends Described {
   base: string;
   name: string;
   role: string;
@@ -27,8 +30,32 @@ export function crewOffer(rows: NativeRow[]): CrewOffer[] {
     name: p.name,
     role: p.role,
     color: p.color,
+    ...describe(p),
     agentId: rows.find((r) => r.base === p.base)?.agent_id ?? null,
   }));
+}
+
+/** A native agent's profile as the list reads it: its base and what it says it does. */
+export interface DescribedRow extends NativeRow {
+  tagline?: string | null;
+  about?: string | null;
+  can?: string[] | null;
+}
+
+/**
+ * What each native agent in the list does, by agent id (YUI-165): its own
+ * profile's words, else (a crew agent made before profiles carried them) its
+ * starter's. A custom agent that never said stays empty, never a starter's words.
+ */
+export function describeAgents(rows: DescribedRow[]): Record<string, Described> {
+  const out: Record<string, Described> = {};
+  for (const r of rows) {
+    const own = r.tagline || r.about || r.can?.length;
+    const from = own ? { tagline: r.tagline ?? undefined, about: r.about ?? undefined, can: r.can ?? undefined }
+      : r.base && r.base !== "custom" ? crew()[r.base] : null;
+    out[r.agent_id] = describe(from);
+  }
+  return out;
 }
 
 /** The starter profile for a base name, or null when it isn't one. */

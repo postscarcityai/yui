@@ -7,6 +7,9 @@ export interface Profile {
   name: string;
   handle: string;
   role: string;
+  tagline?: string; // one line under its name: what it helps with, under 8 words (YUI-165)
+  about?: string; // what it does, two short sentences, for About and Add agent
+  can?: string[]; // three things to ask it, each sent as the person's message when tapped
   version: number;
   color: "lavender" | "mint" | "butter" | "brand";
   favorites: string[]; // Yui Lines it reaches for first
