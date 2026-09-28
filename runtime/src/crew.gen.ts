@@ -1524,14 +1524,6 @@ export const CREW: Record<string, Profile> = {
         "next": 1,
         "rows": [
           {
-            "key": "milk",
-            "values": {
-              "Item": "Milk",
-              "Qty": "1 gallon",
-              "Aisle": "Dairy"
-            }
-          },
-          {
             "key": "eggs",
             "values": {
               "Item": "Eggs",
@@ -1561,6 +1553,14 @@ export const CREW: Record<string, Profile> = {
               "Item": "Spinach",
               "Qty": "1 bag",
               "Aisle": "Produce"
+            }
+          },
+          {
+            "key": "rice",
+            "values": {
+              "Item": "Rice",
+              "Qty": "2 lb",
+              "Aisle": "Pantry"
             }
           },
           {

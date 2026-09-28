@@ -121,7 +121,7 @@ test("a whole turn: add milk to my groceries, and the answer shows the list", as
   assert.equal(g.rows.milk.Qty, "2 gallons");
   assert.equal(g.order[g.order.length - 1], "oat-milk");
   const reply = store.data.rows.filter((r) => r.agent_id === yui.id && r.sender === "agent").pop()!;
-  assert.match(reply.body, /^Added milk\.\n```yui\nlist title="Still to get" "Bread · 1 loaf · Bakery" "Milk · 2 gallons · Dairy" .*"Oat milk · Dairy"/);
+  assert.match(reply.body, /^Added milk\.\n```yui\nlist title="Still to get" "Bread · 1 loaf · Bakery" .*"Milk · 2 gallons · Dairy" "Oat milk · Dairy"/);
   assert.doesNotMatch(reply.body, /\bput |\bquery /);
 });
 

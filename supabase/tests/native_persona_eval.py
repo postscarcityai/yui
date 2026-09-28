@@ -16,11 +16,16 @@ thread on the live native runtime and scores every answer:
   conditions or allergies and carries one short doctor note; before a plan they
   ask first; they never diagnose and never give a dose
 
+- tables (YUI-170, --tables runs only these): "add milk to my groceries", "what did
+  I eat this week", "log today's bench", "make me a table for my reading list" each
+  hit the agent's own tables (checked in yui_native_tables / _rows) and answer with a screen
+
 Writes every ask, answer and verdict to --out (transcript.md, eval.json). The
 account is deleted at the end.
 
     python3 supabase/tests/native_persona_eval.py --out /tmp/yui135-eval
     python3 supabase/tests/native_persona_eval.py --only arnold,basil
+    python3 supabase/tests/native_persona_eval.py --tables --out /tmp/yui170-eval
 """
 import argparse, json, re, sys, threading, time, uuid
 from pathlib import Path
@@ -105,14 +110,42 @@ for _h, _cases in CASES.items():
             {"screens": ["table", "stat", "chart"], "or_pointer": r"\bBasil\b", "short": 240})},
     ]
 
+# YUI-170: each agent keeps its own tables. `setup` runs first (SQL, {T} the person, {A} the agent); `store` is SQL
+# that must return ok=true after the answer. Asked on a throwaway account whose zone is unknown, so today is UTC's.
+TABLES = {
+    "yui": [
+        {"ask": "Add milk to my groceries.", "screens": ["list", "table"], "why": "adds milk to the groceries table and shows the list",
+         "store": "select exists(select 1 from yui_native_table_rows where agent_id='{A}' and tname='groceries' and vals->>'Item' ilike '%milk%') as ok"},
+        {"ask": "Make me a table for my reading list.", "screens": None, "why": "makes a reading list table of its own",
+         "store": "select exists(select 1 from yui_native_tables where agent_id='{A}' and name ~* 'read|book') as ok"},
+    ],
+    "basil": [
+        {"ask": "What did I eat this week?", "screens": ["table", "chart", "list", "stat"], "says": r"oat|chicken|salmon|1,?660",
+         "why": "reads the meals table and answers from it",
+         "setup": "insert into yui_native_table_rows (agent_id, user_id, tname, key, vals) values "
+                  "('{A}','{T}','meals','e1', jsonb_build_object('Day', (now() at time zone 'utc')::date - 2, 'Meal','Breakfast','Food','Oatmeal with berries','Cal',300,'Protein',10)),"
+                  "('{A}','{T}','meals','e2', jsonb_build_object('Day', (now() at time zone 'utc')::date - 1, 'Meal','Lunch','Food','Chicken bowl','Cal',640,'Protein',52)),"
+                  "('{A}','{T}','meals','e3', jsonb_build_object('Day', (now() at time zone 'utc')::date - 1, 'Meal','Dinner','Food','Salmon and rice','Cal',720,'Protein',40))",
+         "store": "select true as ok"},
+    ],
+    "arnold": [
+        {"ask": "Log today's bench: 3 sets of 8 at 135.", "screens": None, "why": "logs the session in its sessions table, dated today",
+         "store": "select exists(select 1 from yui_native_table_rows where agent_id='{A}' and tname='sessions' and vals->>'Exercise' ilike '%bench%' "
+                  "and left(vals->>'Day', 10) = to_char(now() at time zone 'utc', 'YYYY-MM-DD')) as ok"},
+    ],
+}
+
 ap = argparse.ArgumentParser()
 ap.add_argument("--out", default="/tmp/yui135-eval")
 ap.add_argument("--only", default="", help="comma list of handles")
 ap.add_argument("--wait", type=int, default=300)
 ap.add_argument("--rows", action="store_true", help="save every row of the account to rows.json before it is deleted")
+ap.add_argument("--tables", action="store_true", help="only the YUI-170 table cases")
 args = ap.parse_args()
+if args.tables:
+    CASES = TABLES
 OUT = Path(args.out); OUT.mkdir(parents=True, exist_ok=True)
-ONLY = [h for h in args.only.split(",") if h] or [n.lower() for n in CREW]
+ONLY = [h for h in args.only.split(",") if h] or [n.lower() for n in CREW if n.lower() in CASES]
 
 results = []
 lock = threading.Lock()
@@ -223,9 +256,11 @@ def run_agent(T, name, agent_id, first_body, log):
 
 def ask_agent(T, name, agent_id, first_body, log):
     handle = name.lower()
-    log.append({"agent": name, "ask": "(opens the thread)", "answer": first_body,
-                "checks": score(handle, name, first_body, first=True)})
+    if not args.tables:
+        log.append({"agent": name, "ask": "(opens the thread)", "answer": first_body,
+                    "checks": score(handle, name, first_body, first=True)})
     for case in CASES[handle]:
+        if case.get("setup"): sql(case["setup"].replace("{A}", agent_id).replace("{T}", T))
         # The id is ours, so a POST the retry above sends twice (the first landed, its answer got lost) is a 409, never
         # a second ask: that doubled the agent's answer in a run ("Already done! I broke that meal down just above").
         mid = str(uuid.uuid4())
@@ -243,8 +278,15 @@ def ask_agent(T, name, agent_id, first_body, log):
         rows = sql(f"select body from yui_messages where user_id='{T}' and agent_id='{agent_id}' and sender='agent' "
                    f"and created_at > '{since}' and coalesce(meta->'turn', '[]'::jsonb) ? '{mid}' order by created_at")
         body = "\n".join(x["body"] or "" for x in rows)
-        log.append({"agent": name, "ask": case["ask"], "answer": body, "seconds": round(time.time() - t0),
-                    "checks": score(handle, name, body, case)})
+        checks = score(handle, name, body, case)
+        if case.get("store"):
+            got = sql(case["store"].replace("{A}", agent_id).replace("{T}", T))
+            tabs = sql(f"select t.name, count(r.key) as n from yui_native_tables t left join yui_native_table_rows r "
+                       f"on r.agent_id = t.agent_id and r.tname = t.name where t.agent_id = '{agent_id}' group by t.name order by t.name")
+            checks.append(("hits the agent's own tables", bool(got and got[0]["ok"]), ", ".join(f"{x['name']} {x['n']}" for x in tabs)))
+            leak = re.search(r"^\s*(?:put|query|table create|table drop)\s", body, re.M)
+            checks.append(("no table words reach the phone", not leak, leak.group(0) if leak else ""))
+        log.append({"agent": name, "ask": case["ask"], "answer": body, "seconds": round(time.time() - t0), "checks": checks})
 
 T = str(uuid.uuid4())
 sql(f"insert into yui_users(id, apple_sub) values ('{T}','test.{T}')")
