@@ -14,6 +14,8 @@ Want your agent to do this every week on its own? The routine prompts for Claude
 
 Everything in [CONTRIBUTING.md](CONTRIBUTING.md) applies too.
 
+A card for the Mac, a watch, Android or another platform names its own repo (`yui-macos`, `yui-android` and the rest; README, "Every Yui"): fork that one, not this. When a platform card needs a change in the shared Swift here, that change is its own small pull request to this repo, and the iPhone tests below must still pass.
+
 ## Never touch
 
 - Keys, tokens, team ids, certificates, provisioning profiles or anyone's personal data. `DEVELOPMENT_TEAM` stays `${YUI_TEAM_ID}` in `project.yml`: set your own team in your shell, or use Sign to Run Locally.
