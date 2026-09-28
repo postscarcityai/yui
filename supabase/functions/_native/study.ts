@@ -200,10 +200,10 @@ function logSession(store: TableStore, values: Record<string, unknown>, clk: Clo
 
 /** Learn a topic: what happens first, then the questions (topic, time, what they know), one Send. */
 export function learnBody(store: TableStore, topic = ""): string {
-  const has = decks(store).length;
+  const ds = decks(store);
   const lines = [
     `plan@learn "Learn a topic" submit="Teach me"`,
-    `page "Five minutes, then a quiz" body=${q(`Tell me what you want to learn, how long you have and what you know already. I'll make a short lesson, one idea a page, with a quick quiz at the end. What you learn becomes cards you review later${has ? `, next to your ${plural(has, "deck")}` : ""}.`)}`,
+    `page "Five minutes, then a quiz" body=${q(`Tell me what you want to learn, how long you have and what you know already. I'll make a short lesson, one idea a page, with a quick quiz at the end. What you learn becomes cards you review later${ds.length ? `, next to ${ds.length === 1 ? ds[0].deck : `your ${ds.length} decks`}` : ""}.`)}`,
     ...(topic ? [] : [`form@topic "What do you want to learn?" topic:voice! submit=Next`]),
     `choose@time "How much time do you have?" ${opts(TIME_OPTS)}`,
     `choose@know ${q(topic ? `What do you know about ${topic} already?` : "What do you know about it already?")} ${opts(KNOW_OPTS)}`,
