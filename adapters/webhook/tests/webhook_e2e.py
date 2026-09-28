@@ -16,6 +16,10 @@ For each client, on a fresh throwaway account (never a real one):
   F. a clean stop reads offline at once; two messages sent while it is down
      go in as one turn, in order.
   G. `send` puts a handoff in the thread.
+  H. tables (TABLES.md section 8): a reply with table lines is saved without
+     them and with the query drawn, the rows land on the server; a response of
+     `tables` alone is a read, so the webhook gets a second POST at once with
+     the rows; after a hand over the next turn opens with the tables line.
 
 Pass: every person's row is handled and named by exactly one reply, and the
 webhook saw each row once (twice only for the turn killed mid-flight).
@@ -36,6 +40,8 @@ CLIENTS = {
     "node": ["node", str(WEBHOOK_DIR / "node/yui-webhook.mjs")],
 }
 SECRET = "test-secret-" + uuid.uuid4().hex[:8]
+TABLE_REPLY = ("Logged.\n```yui\ntable create meals Food:text Cal:number:kcal\n"
+               "put meals Food=Oats Cal=300\nquery meals as table\n```")
 
 ap = argparse.ArgumentParser()
 ap.add_argument("--client", choices=["python", "node", "both"], default="both")
@@ -85,13 +91,22 @@ class Hook:
                     self.send_response(500); self.end_headers()
                     return
                 taps = [m["event"]["echo"] for m in turn["messages"] if (m["event"] or {}).get("echo")]
-                if taps:
+                answer = None
+                if turn.get("round"):  # H: the rows of a read, back in the same turn
+                    answer = {"reply": "From your tables: " + json.dumps(turn.get("tables", {}).get("results"))}
+                elif turn["text"] == "log oats":
+                    answer = {"reply": TABLE_REPLY}
+                elif turn["text"] == "what did I eat":
+                    answer = {"tables": "query meals"}
+                if answer:
+                    reply = None
+                elif taps:
                     reply = f"{taps[-1]} it is."
                 elif turn["text"] == "hi":
                     reply = 'Hi! What sounds good?\n```yui\nchoose "Pick one" Coffee|Walk|Nap\n```'
                 else:
                     reply = "got: " + " / ".join(m["body"] for m in turn["messages"])
-                body = json.dumps({"reply": reply}).encode()
+                body = json.dumps(answer or {"reply": reply}).encode()
                 self.send_response(200); self.send_header("content-type", "application/json")
                 self.send_header("content-length", str(len(body))); self.end_headers(); self.wfile.write(body)
 
@@ -249,6 +264,35 @@ def run_client(name: str) -> None:
         check(f"{name}: webhook saw each row once (the killed turn twice)",
               all(hook.seen(m["id"]) == (2 if m["id"] == crash else 1) for m in users),
               f"{[hook.seen(m['id']) for m in users]}")
+
+        print("== H. tables")
+        log_ = say("log oats")
+        rep = wait(lambda: replies_to(log_), 30, "reply to log oats")
+        body = rep[0]["body"] if rep else ""
+        check(f"{name}: a reply with table lines is saved without them",
+              len(rep) == 1 and "put meals" not in body and "table create" not in body and body.startswith("Logged."),
+              body[:200])
+        check(f"{name}: its query is drawn as a table with the row",
+              "```yui" in body and any(l.startswith("table") and "Oats" in l for l in body.splitlines()), body[:200])
+        rows = sql(f"select vals from yui_native_table_rows where agent_id = '{agent}' and tname = 'meals'")
+        check(f"{name}: the row is on the server for this agent",
+              len(rows) == 1 and rows[0]["vals"].get("Food") == "Oats" and float(rows[0]["vals"].get("Cal") or 0) == 300, f"{rows}")
+        ask = say("what did I eat")
+        rep = wait(lambda: replies_to(ask), 30, "reply to the read")
+        calls = [c for c in hook.calls if ask in c["turn"]]
+        check(f"{name}: `tables` alone is a read: a second POST at once with the rows",
+              len(calls) == 2 and calls[1].get("round") == 1 and "Oats" in json.dumps(calls[1].get("tables", {}).get("results"))
+              and calls[1]["turn_header"] != calls[0]["turn_header"],
+              f"{len(calls)} POSTs; {json.dumps(calls[-1].get('tables'))[:200]}")
+        check(f"{name}: the answer to the rows is saved, once",
+              len(rep) == 1 and rep[0]["body"].startswith("From your tables:") and "Oats" in rep[0]["body"], f"{rep}")
+        sql(f"update yui_native_tables set given_at = now() where agent_id = '{agent}'")
+        log("meals stamped as handed over to this agent")
+        back = say("hello again")
+        wait(lambda: replies_to(back), 30, "reply after the hand over")
+        call = next(c for c in hook.calls if back in c["turn"])
+        check(f"{name}: after a hand over the turn opens with the tables line",
+              call["text"] == "[yui] tables meals(1 row: Food, Cal)\nhello again", call["text"][:200])
         stop()
     finally:
         if proc[0] and proc[0].poll() is None:

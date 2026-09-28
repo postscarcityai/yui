@@ -18,6 +18,10 @@ account (never a real one):
      same task, without a second guide.
   F. a tap on a screen reaches the agent as text and data.
   G. failed: the person reads why.
+  T. tables (YUI-171): table lines in the answer are written and drawn before
+     it is saved; an answer with only a {"yui": "tables"} data part gets its
+     rows back at once and its next answer is saved once; a table handed over
+     (given_at) opens the next turn with its one line.
   H. a clean stop reads offline.
   ADK (--protocol adk, INT-9, not in `all`): a real Google ADK agent,
      tests/sdk/adk_agent.py, served over A2A by ADK's own to_a2a, its model
@@ -149,8 +153,9 @@ def run(protocol: str) -> None:
     def presence():
         return rest("GET", f"yui_agent_list?select=presence&id=eq.{agent}", tok)[1][0]["presence"]
 
-    def sends(text):  # how many times the agent got a message with this text
-        return sum(1 for c in agent_log(url) if c.get("text") == text)
+    def sends(text):  # how many times the agent got a message with this text (a hand-over line may open it)
+        return sum(1 for c in agent_log(url) if c.get("text") == text
+                   or (c.get("text") or "").startswith("[yui] tables ") and c["text"].endswith("\n" + text))
 
     agent = None
     try:
@@ -248,6 +253,34 @@ def run(protocol: str) -> None:
         rep = wait(lambda: replies_to(f), 30, "reply to fail")
         check(f"{protocol}: the person reads why it failed",
               [m["body"] for m in rep] == ["Echo couldn't finish that.\n\nThe printer is on fire."], f"{rep}")
+
+        print("== T. tables")
+        tl = say("tables log")
+        rep = wait(lambda: replies_to(tl), 30, "reply to tables log")
+        body = rep[0]["body"] if rep else ""
+        drawn = [l for l in body.splitlines() if l.strip().startswith("table ") and "Oats" in l]
+        check(f"{protocol}: table lines in the answer are taken out and the query is drawn as a table",
+              len(rep) == 1 and "put meals" not in body and "table create" not in body and drawn, body[:300])
+        got = sql(f"select tname, vals from yui_native_table_rows where agent_id = '{agent}'")
+        check(f"{protocol}: the row is in yui_native_table_rows for this agent",
+              len(got) == 1 and got[0]["tname"] == "meals" and "Oats" in json.dumps(got[0]["vals"]), f"{got}")
+        tr = say("tables read")
+        rep = wait(lambda: replies_to(tr), 30, "reply to tables read")
+        back = [c for c in agent_log(url)
+                if any(isinstance(d, dict) and d.get("yui") == "tables" and "results" in d for d in c.get("data") or [])]
+        check(f"{protocol}: a data part alone is a read: the rows go back at once, as data and as words",
+              len(back) == 1 and "Oats" in json.dumps(back[0]["data"]) and back[0]["text"].startswith("[yui] Your tables"),
+              json.dumps(back)[:400])
+        check(f"{protocol}: the answer to the rows is saved once",
+              len(rep) == 1 and rep[0]["body"].startswith("Read 1 row(s): Oats"), f"{rep}")
+        wait(lambda: row(tr)["handled_at"], 15, "tables read handled")
+        sql(f"update yui_native_tables set given_at = now() where agent_id = '{agent}'")
+        hv = say("what do you have?")
+        rep = wait(lambda: replies_to(hv), 30, "reply after the hand over")
+        call = next((c for c in agent_log(url) if (c.get("text") or "").endswith("what do you have?")), {})
+        check(f"{protocol}: a hand over opens the agent's next turn with its tables line",
+              (call.get("text") or "").startswith("[yui] tables meals(1 row: Food, Cal)\n") and len(rep) == 1,
+              f"{call.get('text')!r} meta={row(hv).get('meta')}")
 
         print("== H. clean stop, totals")
         wait(lambda: all(m["handled_at"] for m in thread() if m["sender"] == "user"), 20, "all handled")

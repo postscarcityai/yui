@@ -17,6 +17,9 @@
 //   "ping"     a plain Message, no task
 //   "...screen..." completed with a ```yui screen
 //   a tap      "[yui] <id> choose choice=X" -> "X it is."
+//   "tables log"  table lines in the answer (create meals, put Oats, query it)
+//   "tables read" an answer with only a data part {"yui": "tables", "lines": "query meals"}
+//   the rows back (a data part {"yui": "tables", "results"}) -> "Read N row(s): <cells>"
 //   anything   completed, one artifact: "You said: <text>"
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { randomUUID } from "node:crypto";
@@ -140,15 +143,24 @@ function handle(msg: Msg): Task | Msg {
     }, 200);
     return task;
   }
+  const rowsBack = msg.parts.map((p) => p.data as any).find((d) => d?.yui === "tables" && Array.isArray(d.results));
   queueMicrotask(() => {
     const tap = /^\[yui\] \S+ choose choice=(.+)$/.exec(text);
     if (/^ask\b/i.test(text)) {
       task.plan = "ask";
       setState(task, "input-required", agentMsg("Which color?", task));
+    } else if (rowsBack || text === "tables read") {
+      const rows = (rowsBack?.results ?? []).flatMap((r: any) => r.rows ?? []);
+      const parts: Part[] = rowsBack ? [{ text: `Read ${rows.length} row(s): ${rows.map((r: any[]) => r.join(" ")).join("; ")}` }]
+        : [{ data: { yui: "tables", lines: "query meals" } }];
+      task.artifacts.push({ artifactId: `a${task.artifacts.length}`, parts });
+      emit(task, evArtifact(task, task.artifacts[task.artifacts.length - 1], false, true));
+      setState(task, "completed");
     } else if (text === "fail") {
       setState(task, "failed", agentMsg("The printer is on fire.", task));
     } else {
       const reply = tap ? `${tap[1]} it is.`
+        : text === "tables log" ? "Logged.\n```yui\ntable create meals Food:text Cal:number:kcal\nput meals Food=Oats Cal=300\nquery meals as table\n```"
         : /\bscreen\b/i.test(text) ? 'Pick one\n```yui\nchoose "Pick one" Tea|Coffee\n```' : `You said: ${text}`;
       task.artifacts.push({ artifactId: `a${task.artifacts.length}`, parts: [{ text: reply }] });
       emit(task, evArtifact(task, task.artifacts[task.artifacts.length - 1], false, true));
@@ -227,7 +239,7 @@ const server = createServer(async (req, res) => {
       const m = params.message;
       const msg: Msg = { messageId: m.messageId, role: "user", parts: readParts(m.parts), taskId: m.taskId, contextId: m.contextId };
       log.push({ method, messageId: msg.messageId, taskId: msg.taskId ?? null, contextId: msg.contextId ?? null,
-                 text: personText(msg.parts), context: msg.parts.filter((p) => (p.metadata as any)?.yui).map((p) => p.metadata),
+                 text: personText(msg.parts), data: msg.parts.filter((p) => p.data !== undefined).map((p) => p.data), context: msg.parts.filter((p) => (p.metadata as any)?.yui).map((p) => p.metadata),
                  version });
       const r = handle(msg);
       if (!("id" in r) || !(r as Task).subs) { // a plain message

@@ -15,19 +15,22 @@
 // Your webhook gets one POST per turn (JSON, see README.md) and answers with
 // {"reply": "..."} or {"replies": [...]} or plain text; an empty 2xx means no
 // reply. Anything else and the turn is tried again later, so a crash in your
-// agent never loses a message.
+// agent never loses a message. {"tables": "put meals Food=Oats"} next to (or
+// instead of) the reply runs table lines on Yui (spec/TABLES.md section 8).
 //
 // State (the connector token, a floor per agent, the reply outbox) lives in
 // ~/.yui/webhook.json (mode 600), or --state / $YUI_WEBHOOK_STATE. Same file
 // format as the Python bridge: either one can pick up where the other stopped.
 import { createHash, createHmac, randomUUID } from "node:crypto";
-import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, realpathSync, renameSync, writeFileSync } from "node:fs";
 import { hostname, homedir } from "node:os";
 import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 
 const SUPABASE_URL = process.env.YUI_SUPABASE_URL ?? "https://txuibjxyfpalzvpneqgp.supabase.co";
 const CONNECT = `${SUPABASE_URL}/functions/v1/yui-connect`;
+const TABLES = `${CONNECT}/tables`;
 const PUSH = `${SUPABASE_URL}/functions/v1/yui-push`;
 const REST = `${SUPABASE_URL}/rest/v1`;
 // Public client key (anon role only; it cannot read any yui_ table).
@@ -37,10 +40,14 @@ const HEARTBEAT_SECONDS = 45;
 const REFRESH_MARGIN_SECONDS = 600; // the 60-minute session is renewed 10 minutes early
 const BACKOFF_MAX = 60;
 const MAX_BODY = 32000;
+const TABLE_ROUNDS = 2; // read-backs to the agent in one turn
+// A reply that may hold table words; anything else skips the /tables call.
+const TABLE_WORDS = /^[ \t]*(?:table[ \t]+(?:create|drop)[ \t]|put[ \t]+[A-Za-z]|query[ \t]+[A-Za-z])|^```tables\b/m;
+const TABLE_KEYS = ["results", "failed", "held", "tables", "note"];
 
 const nowIso = () => new Date().toISOString();
 const sleep = (s) => new Promise((r) => setTimeout(r, s * 1000));
-const log = (msg) => console.error(`${new Date().toTimeString().slice(0, 8)} yui: ${msg}`);
+let log = (msg) => console.error(`${new Date().toTimeString().slice(0, 8)} yui: ${msg}`);
 
 /** Yui said no for good (bad token, removed host): stop, don't retry. */
 class Refused extends Error {}
@@ -60,6 +67,7 @@ class State {
     this.data.floors ??= {};
     this.data.outbox ??= [];
     this.data.acks ??= [];
+    this.data.tables ??= {}; // agent -> what its last `tables` did, for its next POST
   }
   save() {
     mkdirSync(dirname(this.path), { recursive: true });
@@ -109,7 +117,7 @@ async function pair(state, code, ref, name) {
   }, auth);
   if (s !== 200) throw new Refused(`pair failed: ${r?.error ?? s}`);
   if (r.connector_token) { // a new connector (first pairing, or another Yui account)
-    Object.assign(state.data, { token: r.connector_token, connector: r.connector, floors: {}, outbox: [], acks: [] });
+    Object.assign(state.data, { token: r.connector_token, connector: r.connector, floors: {}, outbox: [], acks: [], tables: {} });
   }
   // Messages sent from the moment of pairing reach the agent, even before `run`.
   state.data.floors[r.agent.id] ??= nowIso();
@@ -248,24 +256,85 @@ class Bridge {
   }
 
   turnPayload(agent, rows) {
-    return {
+    // A hand over of tables to this agent opens its turn with one line (TABLES.md section 8).
+    const given = [];
+    for (const r of rows) {
+      const t = r.kind !== "event" && r.meta && typeof r.meta === "object" ? r.meta.tables : null;
+      if (typeof t === "string" && !given.includes(t)) given.push(t);
+    }
+    const p = {
       agent: { id: agent.id, name: agent.name, handle: agent.handle, ref: agent.remote_ref },
       turn: rows.map((r) => r.id),
-      text: rows.map((r) => r.body).join("\n"),
+      text: [...given, ...rows.map((r) => r.body)].join("\n"),
       messages: rows.map((r) => ({
         id: r.id, kind: r.kind, body: r.body,
         event: r.kind === "event" ? (r.meta ?? null) : null, created_at: r.created_at,
       })),
       guide: this.guide,
     };
+    if (this.state.data.tables[agent.id]) p.tables = this.state.data.tables[agent.id]; // what last turn's `tables` did
+    return p;
   }
 
-  /** The replies (maybe none), or null when the turn should be tried again. */
+  // -- tables (TABLES.md section 8) --
+
+  /** POST yui-connect/tables for one agent; null (and a log line) when it fails. */
+  async tablesCall(aid, body) {
+    let s, r;
+    try {
+      [s, r] = await http("POST", TABLES, { agent: aid, ...body }, { authorization: `Bearer ${this.ct}` }, 60);
+    } catch (e) {
+      if (!(e instanceof Retry)) throw e;
+      log(`tables: ${e.message}`);
+      return null;
+    }
+    if (s !== 200 || !r || typeof r !== "object") {
+      log(`tables: ${s} ${r?.error ?? r}`);
+      return null;
+    }
+    return r;
+  }
+
+  /** What the agent gets as `tables`: the server's rows, refusals, held delete, list and note. */
+  static tablesField(...results) {
+    const out = {};
+    for (const r of results.filter(Boolean)) {
+      for (const k of TABLE_KEYS) {
+        if (!(k in r)) continue;
+        if (k === "results" || k === "failed") out[k] = [...(out[k] ?? []), ...(r[k] ?? [])];
+        else if (k === "note" && out.note) out.note += "\n" + r.note;
+        else out[k] = r[k];
+      }
+    }
+    return Object.keys(out).length ? out : null;
+  }
+
+  /** One webhook answer: [texts to save, `tables` for a POST right now, `tables` for the next turn]. */
+  async answer(aid, got) {
+    const lines = got.tables;
+    const done = lines ? await this.tablesCall(aid, { lines }) : null;
+    const texts = [], reads = [];
+    for (const text of got.replies) {
+      if (!TABLE_WORDS.test(text)) {
+        texts.push(text);
+        continue;
+      }
+      const r = await this.tablesCall(aid, { reply: text });
+      if (r === null) texts.push(text); // the call failed: the reply goes out as written
+      else if (r.read) reads.push(r); // only queries: nothing to save, the rows go back now
+      else if (String(r.text ?? "").trim()) texts.push(r.text);
+    }
+    if (reads.length || (lines && !got.replies.length)) return [texts, Bridge.tablesField(done, ...reads), null];
+    return [texts, null, Bridge.tablesField(done)];
+  }
+
+  /** {replies (maybe none), tables (lines or null)}, or null when the turn should be tried again. */
   async callWebhook(payload) {
     const raw = JSON.stringify(payload);
+    const key = payload.turn.join(",") + (payload.round ? `#${payload.round}` : "");
     const headers = {
       "content-type": "application/json", "user-agent": UA,
-      "x-yui-turn": createHash("sha256").update(payload.turn.join(",")).digest("hex").slice(0, 32),
+      "x-yui-turn": createHash("sha256").update(key).digest("hex").slice(0, 32),
     };
     if (this.secret) {
       const ts = String(Math.floor(Date.now() / 1000));
@@ -285,7 +354,7 @@ class Bridge {
       log(`webhook answered ${r.status}; trying this turn again later`);
       return null;
     }
-    if (!body.trim()) return [];
+    if (!body.trim()) return { replies: [], tables: null };
     if ((r.headers.get("content-type") ?? "").includes("json")) {
       let data;
       try {
@@ -294,11 +363,14 @@ class Bridge {
         log("webhook sent bad JSON; trying this turn again later");
         return null;
       }
-      const replies = Array.isArray(data) ? data
-        : data && typeof data === "object" ? ("replies" in data ? data.replies : [data.reply]) : [data];
-      return (replies ?? []).filter((x) => typeof x === "string" && x.trim());
+      const obj = data && typeof data === "object" && !Array.isArray(data);
+      const replies = Array.isArray(data) ? data : obj ? ("replies" in data ? data.replies : [data.reply]) : [data];
+      let tables = obj ? data.tables : null;
+      if (Array.isArray(tables)) tables = tables.map(String).join("\n");
+      tables = typeof tables === "string" && tables.trim() ? tables.trim() : null;
+      return { replies: (Array.isArray(replies) ? replies : []).filter((x) => typeof x === "string" && x.trim()), tables };
     }
-    return [body];
+    return { replies: [body], tables: null };
   }
 
   async runTurns() {
@@ -318,8 +390,9 @@ class Bridge {
       const ids = rows.map((r) => r.id);
       await this.mark(ids, "delivered_at");
       log(`turn for ${agent.name}: ${rows.length} message(s)`);
-      const replies = await this.callWebhook(this.turnPayload(agent, rows));
-      if (replies === null) {
+      const payload = this.turnPayload(agent, rows);
+      let got = await this.callWebhook(payload);
+      if (got === null) {
         const wait = Math.min((this.backoff.get(aid) ?? 1) * 2, BACKOFF_MAX);
         this.backoff.set(aid, wait);
         this.retryAt.set(aid, Date.now() / 1000 + wait + Math.random());
@@ -327,6 +400,34 @@ class Bridge {
       }
       this.backoff.delete(aid);
       this.retryAt.delete(aid);
+      if (aid in this.state.data.tables) {
+        delete this.state.data.tables[aid]; // the agent has it now
+        this.state.save();
+      }
+      const replies = [];
+      let later;
+      for (let n = 0; ;) {
+        let now, texts;
+        [texts, now, later] = await this.answer(aid, got);
+        replies.push(...texts);
+        if (!now) break;
+        if (n === TABLE_ROUNDS) {
+          log(`${agent.name}: ${TABLE_ROUNDS} table reads this turn; the rows wait for its next one`);
+          later = now;
+          break;
+        }
+        n += 1; // a read: the same turn again, with the rows
+        const text = [payload.text, now.note].filter(Boolean).join("\n");
+        got = await this.callWebhook({ ...payload, round: n, tables: now, text });
+        if (got === null) {
+          later = now;
+          break;
+        }
+      }
+      if (later) {
+        this.state.data.tables[aid] = later; // goes with this agent's next POST
+        this.state.save();
+      }
       if (!replies.length) {
         this.state.data.acks.push(...ids);
         this.state.save();
@@ -450,7 +551,13 @@ async function main(argv) {
   return 2;
 }
 
-main(process.argv.slice(2)).then((code) => process.exit(code), (e) => {
-  console.error(`yui: ${e instanceof Refused ? e.message : e.stack ?? e}`);
-  process.exit(1);
-});
+export { Bridge, State };
+export const setLog = (f) => { log = f; }; // tests
+
+// Run as a command, not when imported (the offline tests import it).
+if (process.argv[1] && realpathSync(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  main(process.argv.slice(2)).then((code) => process.exit(code), (e) => {
+    console.error(`yui: ${e instanceof Refused ? e.message : e.stack ?? e}`);
+    process.exit(1);
+  });
+}

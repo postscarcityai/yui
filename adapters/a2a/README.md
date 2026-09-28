@@ -45,9 +45,23 @@ More agents on the same machine, no new code: `node yui-a2a.ts add --card <url>`
 | a tap on a screen | the tap's line as text, plus its JSON as a data part |
 
 - **The channel guide goes in as a context part.** On the first message of every new task, the Yui channel guide travels as a text part with `metadata: {"yui": "channel_guide", "version": ...}`, before the person's words. An agent that passes it to its model can answer with [Yui screens](https://www.yuigui.com/yl). One that ignores it still works: its answers show as chat.
-- **Text parts become the message.** File parts show as their link. Data parts are skipped for now.
+- **Text parts become the message.** File parts show as their link. Data parts are skipped, except tables (below).
 - **Failed, rejected, canceled:** the person reads one line saying so, then the agent's reason.
 - **`auth-required`:** the person reads that the agent needs a sign-in. Keys per agent are YUI-34.
+
+## Tables
+
+An A2A agent gets the same tables a Yui agent has (YUI-171, yuigui `spec/TABLES.md` section 8). They live in Yui, so they stay if the person moves to another agent. The bridge makes one call for them, `yui-connect/tables`, with this machine's connector token.
+
+- **In the reply.** An answer with `table create`, `put`, `table drop` or `query` lines (in a ```` ```yui ```` block) goes to Yui before it is saved. Yui writes the rows, draws each `query` as a screen, and hands back the answer the person reads, with the table lines taken out. An answer without table words makes no call. If the call fails, the answer is saved as it came.
+- **A read.** An answer that is only `query` lines (or a ```` ```tables ```` block) has nothing for the person yet. The bridge saves nothing and sends the rows back to the agent as its next message, a text part starting `[yui] Your tables:`. The agent's next answer is the one saved. Twice a turn at most.
+- **As a data part.** For an agent that wants the rows as data, it puts a data part in its answer:
+  ```json
+  {"kind": "data", "data": {"yui": "tables", "lines": "query meals where=Day=today"}}
+  ```
+  The bridge runs the lines. The rows come back as a data part, `{"yui": "tables", "results": [...], "failed": [...], "held": ..., "tables": [...]}`. If the answer had words for the person, they are saved and the rows ride on the next message the bridge sends this agent (kept in the state file until then). If it had nothing else, it is a read: the rows go back at once, with the rows in words as a text part.
+- **Handed tables.** When the person gives this agent tables another agent held, the turn's text opens with one line: `[yui] tables foods(3 rows: Food, Cal)`.
+- A LangGraph server gets the rows under the `yui_tables` key of its context data part.
 
 ## Streams, drops and restarts
 
@@ -92,8 +106,9 @@ console.log(card.name, view.state, view.text());
 
 ```
 node --test tests/client.test.ts        # the client: SSE, both versions, resubscribe (no network)
+node --test tests/tables.test.ts        # tables: the reply path, reads, the data part, hand-overs (no network)
 node --test tests/sdk_interop.test.ts   # against the official a2a-sdk servers, 1.x and 0.3 (needs uv)
-python3 tests/a2a_e2e.py                # live: pair, turns, a long task, kill -9 mid-task (throwaway account)
+python3 tests/a2a_e2e.py                # live: pair, turns, a long task, kill -9 mid-task, tables (throwaway account)
 python3 tests/a2a_e2e.py --protocol 1.0 --sim <udid>   # plus the app on a simulator, with screenshots
 python3 tests/a2a_e2e.py --protocol adk # live with a real Google ADK agent (tests/sdk/adk_agent.py on Ollama qwen2.5:7b; needs uv)
 python3 tests/a2a_e2e.py --protocol langgraph # live with a LangGraph graph on LangGraph's Agent Server (tests/sdk/langgraph_agent.py, no model; needs uv)

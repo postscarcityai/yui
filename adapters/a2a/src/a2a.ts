@@ -587,4 +587,24 @@ export class TaskView {
     if (!bits.length && this.task?.state === "completed" && this.lastSaid) return partsText(this.lastSaid.parts);
     return bits.join("\n\n");
   }
+
+  /** The data parts of the answer, from the same places text() reads, each once. */
+  data(): unknown[] {
+    const said = this.message ? [this.message] : [];
+    if (!this.message) {
+      said.push({ parts: this.artifactList.flatMap((a) => a.parts) } as Message);
+      const status = this.task?.statusMessage ?? (this.task?.state === "completed" ? this.lastSaid : undefined);
+      if (status) said.push(status);
+    }
+    const seen = new Set<string>();
+    const out: unknown[] = [];
+    for (const p of said.flatMap((m) => m.parts)) {
+      if (p.data === undefined) continue;
+      const k = JSON.stringify(p.data);
+      if (seen.has(k)) continue;
+      seen.add(k);
+      out.push(p.data);
+    }
+    return out;
+  }
 }

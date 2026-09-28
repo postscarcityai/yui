@@ -214,6 +214,12 @@ export class YuiRelay<D extends StateData = StateData> {
     return [s, r];
   }
 
+  /** The one tables call (YUI-171, yuigui spec/TABLES.md section 8): {agent, lines} or {agent, reply}.
+   * [status, body]; a network failure throws Retry. */
+  tables(body: { agent: string; lines?: string; reply?: string }): Promise<[number, any]> {
+    return http("POST", `${CONNECT}/tables`, body, { authorization: `Bearer ${this.ct}` }, 20, this.ua);
+  }
+
   // -- acks (RELAY.md, Delivery) --
 
   async mark(ids: string[], column: "delivered_at" | "handled_at"): Promise<boolean> {

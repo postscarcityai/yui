@@ -15,17 +15,19 @@ back into their thread, exactly once. Stdlib only, Python 3.10+.
 Your webhook gets one POST per turn (JSON, see README.md) and answers with
 {"reply": "..."} or {"replies": [...]} or plain text; an empty 2xx means no
 reply. Anything else and the turn is tried again later, so a crash in your
-agent never loses a message.
+agent never loses a message. {"tables": "put meals Food=Oats"} next to (or
+instead of) the reply runs table lines on Yui (spec/TABLES.md section 8).
 
 State (the connector token, a floor per agent, the reply outbox) lives in
 ~/.yui/webhook.json (mode 600), or --state / $YUI_WEBHOOK_STATE.
 """
-import argparse, hashlib, hmac, json, os, random, signal, socket, sys, threading, time, urllib.error, urllib.parse, urllib.request, uuid
+import argparse, hashlib, hmac, json, os, random, re, signal, socket, sys, threading, time, urllib.error, urllib.parse, urllib.request, uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
 SUPABASE_URL = os.environ.get("YUI_SUPABASE_URL", "https://txuibjxyfpalzvpneqgp.supabase.co")
 CONNECT = f"{SUPABASE_URL}/functions/v1/yui-connect"
+TABLES = f"{CONNECT}/tables"
 PUSH = f"{SUPABASE_URL}/functions/v1/yui-push"
 REST = f"{SUPABASE_URL}/rest/v1"
 # Public client key (anon role only; it cannot read any yui_ table).
@@ -35,6 +37,10 @@ HEARTBEAT_SECONDS = 45
 REFRESH_MARGIN_SECONDS = 600   # the 60-minute session is renewed 10 minutes early
 BACKOFF_MAX = 60
 MAX_BODY = 32000
+TABLE_ROUNDS = 2   # read-backs to the agent in one turn
+# A reply that may hold table words; anything else skips the /tables call.
+TABLE_WORDS = re.compile(r"^[ \t]*(?:table[ \t]+(?:create|drop)[ \t]|put[ \t]+[A-Za-z]|query[ \t]+[A-Za-z])|^```tables\b", re.M)
+TABLE_KEYS = ("results", "failed", "held", "tables", "note")
 
 
 def now_iso() -> str:
@@ -56,7 +62,8 @@ class Retry(Exception):
 # -- state ----------------------------------------------------------------------
 
 class State:
-    """One JSON file: {token, connector, floors: {agent: iso}, outbox: [...], acks: [...]}."""
+    """One JSON file: {token, connector, floors: {agent: iso}, outbox: [...], acks: [...],
+    tables: {agent: result for its next POST}}."""
 
     def __init__(self, path: Path):
         self.path = path
@@ -68,6 +75,7 @@ class State:
         self.data.setdefault("floors", {})
         self.data.setdefault("outbox", [])
         self.data.setdefault("acks", [])
+        self.data.setdefault("tables", {})
 
     def save(self) -> None:
         with self.lock:
@@ -121,7 +129,7 @@ def pair(state: State, code: str, ref: str, name: str | None) -> dict:
     if s != 200:
         raise Refused(f"pair failed: {(r or {}).get('error', s) if isinstance(r, dict) else s}")
     if r.get("connector_token"):  # a new connector (first pairing, or another Yui account)
-        state.data.update(token=r["connector_token"], connector=r["connector"], floors={}, outbox=[], acks=[])
+        state.data.update(token=r["connector_token"], connector=r["connector"], floors={}, outbox=[], acks=[], tables={})
     # Messages sent from the moment of pairing reach the agent, even before `run`.
     state.data["floors"].setdefault(r["agent"]["id"], now_iso())
     state.save()
@@ -253,22 +261,83 @@ class Bridge:
         return [row for row in r if row["id"] not in pending]
 
     def turn_payload(self, agent: dict, rows: list) -> dict:
-        return {
+        # A hand over of tables to this agent opens its turn with one line (TABLES.md section 8).
+        given = []
+        for r in rows:
+            m = r.get("meta")
+            t = m.get("tables") if r["kind"] != "event" and isinstance(m, dict) else None
+            if isinstance(t, str) and t not in given:
+                given.append(t)
+        p = {
             "agent": {"id": agent["id"], "name": agent.get("name"), "handle": agent.get("handle"),
                       "ref": agent.get("remote_ref")},
             "turn": [r["id"] for r in rows],
-            "text": "\n".join(r["body"] for r in rows),
+            "text": "\n".join(given + [r["body"] for r in rows]),
             "messages": [{"id": r["id"], "kind": r["kind"], "body": r["body"],
                           "event": (r.get("meta") or None) if r["kind"] == "event" else None,
                           "created_at": r["created_at"]} for r in rows],
             "guide": self.guide,
         }
+        if self.state.data["tables"].get(agent["id"]):
+            p["tables"] = self.state.data["tables"][agent["id"]]  # what last turn's `tables` did
+        return p
 
-    def call_webhook(self, payload: dict) -> list | None:
-        """The replies (maybe none), or None when the turn should be tried again."""
+    # -- tables (TABLES.md section 8) --
+
+    def tables_call(self, aid: str, body: dict) -> dict | None:
+        """POST yui-connect/tables for one agent; None (and a log line) when it fails."""
+        try:
+            s, r = http("POST", TABLES, {"agent": aid, **body}, {"authorization": f"Bearer {self.ct}"}, timeout=60)
+        except Retry as e:
+            log(f"tables: {e}")
+            return None
+        if s != 200 or not isinstance(r, dict):
+            log(f"tables: {s} {r.get('error') if isinstance(r, dict) else r}")
+            return None
+        return r
+
+    @staticmethod
+    def tables_field(*results) -> dict | None:
+        """What the agent gets as `tables`: the server's rows, refusals, held delete, list and note."""
+        out: dict = {}
+        for r in filter(None, results):
+            for k in TABLE_KEYS:
+                if k not in r:
+                    continue
+                if k in ("results", "failed"):
+                    out[k] = out.get(k, []) + list(r[k] or [])
+                elif k == "note" and out.get("note"):
+                    out["note"] += "\n" + r["note"]
+                else:
+                    out[k] = r[k]
+        return out or None
+
+    def answer(self, aid: str, got: dict) -> tuple[list, dict | None, dict | None]:
+        """One webhook answer: (texts to save, `tables` for a POST right now, `tables` for the next turn)."""
+        lines = got["tables"]
+        done = self.tables_call(aid, {"lines": lines}) if lines else None
+        texts, reads = [], []
+        for text in got["replies"]:
+            if not TABLE_WORDS.search(text):
+                texts.append(text)
+                continue
+            r = self.tables_call(aid, {"reply": text})
+            if r is None:
+                texts.append(text)  # the call failed: the reply goes out as written
+            elif r.get("read"):
+                reads.append(r)  # only queries: nothing to save, the rows go back now
+            elif str(r.get("text") or "").strip():
+                texts.append(r["text"])
+        if reads or (lines and not got["replies"]):
+            return texts, self.tables_field(done, *reads), None
+        return texts, None, self.tables_field(done)
+
+    def call_webhook(self, payload: dict) -> dict | None:
+        """{replies (maybe none), tables (lines or None)}, or None when the turn should be tried again."""
         raw = json.dumps(payload).encode()
+        key = ",".join(payload["turn"]) + (f"#{payload['round']}" if payload.get("round") else "")
         headers = {"content-type": "application/json", "user-agent": UA,
-                   "x-yui-turn": hashlib.sha256(",".join(payload["turn"]).encode()).hexdigest()[:32]}
+                   "x-yui-turn": hashlib.sha256(key.encode()).hexdigest()[:32]}
         if self.secret:
             ts = str(int(time.time()))
             sig = hmac.new(self.secret.encode(), f"{ts}.".encode() + raw, hashlib.sha256).hexdigest()
@@ -284,19 +353,24 @@ class Bridge:
             log(f"webhook unreachable ({e}); trying this turn again later")
             return None
         if not body.strip():
-            return []
+            return {"replies": [], "tables": None}
         if "json" in ctype:
             try:
                 data = json.loads(body)
             except ValueError:
                 log("webhook sent bad JSON; trying this turn again later")
                 return None
+            tables = None
             if isinstance(data, dict):
                 replies = data.get("replies") if "replies" in data else [data.get("reply")]
+                tables = data.get("tables")
+                if isinstance(tables, list):
+                    tables = "\n".join(str(x) for x in tables)
+                tables = tables.strip() if isinstance(tables, str) and tables.strip() else None
             else:
                 replies = data if isinstance(data, list) else [data]
-            return [str(x) for x in replies if isinstance(x, str) and x.strip()]
-        return [body]
+            return {"replies": [str(x) for x in replies or [] if isinstance(x, str) and x.strip()], "tables": tables}
+        return {"replies": [body], "tables": None}
 
     def run_turns(self) -> None:
         for aid, agent in list(self.agents.items()):
@@ -315,13 +389,36 @@ class Bridge:
             ids = [r["id"] for r in rows]
             self.mark(ids, "delivered_at")
             log(f"turn for {agent['name']}: {len(rows)} message(s)")
-            replies = self.call_webhook(self.turn_payload(agent, rows))
-            if replies is None:
+            payload = self.turn_payload(agent, rows)
+            got = self.call_webhook(payload)
+            if got is None:
                 wait = self.backoff[aid] = min(self.backoff.get(aid, 1) * 2, BACKOFF_MAX)
                 self.retry_at[aid] = time.time() + wait + random.random()
                 continue
             self.backoff.pop(aid, None)
             self.retry_at.pop(aid, None)
+            if self.state.data["tables"].pop(aid, None) is not None:
+                self.state.save()  # the agent has it now
+            replies, n = [], 0
+            while True:
+                texts, now, later = self.answer(aid, got)
+                replies += texts
+                if not now:
+                    break
+                if n == TABLE_ROUNDS:
+                    log(f"{agent['name']}: {TABLE_ROUNDS} table reads this turn; the rows wait for its next one")
+                    later = now
+                    break
+                n += 1  # a read: the same turn again, with the rows
+                again = dict(payload, round=n, tables=now,
+                             text="\n".join(x for x in (payload["text"], now.get("note")) if x))
+                got = self.call_webhook(again)
+                if got is None:
+                    later = now
+                    break
+            if later:
+                self.state.data["tables"][aid] = later  # goes with this agent's next POST
+                self.state.save()
             if not replies:
                 self.state.data["acks"] += ids
                 self.state.save()

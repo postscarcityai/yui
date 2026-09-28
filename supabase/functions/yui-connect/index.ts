@@ -46,9 +46,13 @@
 //   POST .../yui-connect/tables {agent?, lines | reply}  Bearer yui_ct_...
 //       (or {action: "tables", ...}) Tables for any agent (YUI-171, yuigui
 //       spec/TABLES.md section 8): the agent's table words run on the same
-//       store native agents keep (_shared/tables.ts). agent is a remote_ref or
-//       handle this token serves (default: the only one). Takes from the
-//       agent's own `tables` bucket, not this host's `connect` one.
+//       store native agents keep (_shared/tables.ts). agent is an id,
+//       remote_ref or handle this token serves (default: the only one). Takes
+//       from the agent's own `tables` bucket, not this host's `connect` one.
+//       reply (step 3) is the agent's whole answer before it is saved: the
+//       table lines come out and `text` is what the adapter saves instead; a
+//       reply of query lines alone is a read ({read: true, note}): save
+//       nothing, give `note` to the agent as its next turn.
 //
 // Wrong codes are throttled per client address (10 per 10 minutes). Every
 // call with a connector token takes from that host's rate bucket, and a
@@ -414,7 +418,7 @@ async function tables(req: Request, b: Body): Promise<Response> {
   if (error) throw error;
   const want = typeof b.agent === "string" ? b.agent.trim().toLowerCase() : "";
   const agent = want
-    ? (list ?? []).find((a: DB) => [a.remote_ref, a.handle].some((v) => (v ?? "").toLowerCase() === want))
+    ? (list ?? []).find((a: DB) => [a.id, a.remote_ref, a.handle].some((v) => (v ?? "").toLowerCase() === want))
     : (list ?? []).length === 1 ? list[0] : null;
   if (!agent) {
     return json({ error: want ? "no_such_agent" : "agent_required",

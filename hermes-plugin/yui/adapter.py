@@ -166,7 +166,7 @@ from gateway.config import Platform, PlatformConfig
 from gateway.platforms.base import (BasePlatformAdapter, MessageEvent, MessageType, ProcessingOutcome,
                                     SendResult)
 
-from . import board, compat, connector, controls, doing, flywheel, groups, media, mentions, needs, outbox, restyle, sandbox, talk, textbomb
+from . import board, compat, connector, controls, doing, flywheel, groups, media, mentions, needs, outbox, restyle, sandbox, tables, talk, textbomb
 from . import commands as slash
 
 logger = logging.getLogger(__name__)
@@ -324,6 +324,7 @@ class YuiAdapter(BasePlatformAdapter):
         self._outbox = outbox.Outbox(self._state_dir() / "outbox.jsonl")
         self._outbox_wake = asyncio.Event()
         self._notes: Dict[str, List[str]] = {}       # agent id -> notes for its next turn (board order)
+        self._reads: Dict[str, int] = {}             # thread -> table reads in a row (YUI-171)
         self._paused_said: Optional[str] = None      # the rule list the owner was last told about (YUI-95)
         self._commands_sent: Optional[str] = None    # fingerprint of the /command list Yui has (YUI-61)
         self._controls_sent: Optional[str] = None    # the agents Yui has this host's controls report for (YUI-70)
@@ -911,6 +912,11 @@ class YuiAdapter(BasePlatformAdapter):
                 logger.warning("[yui] talk state: %s", e)
         for r in rows:
             text = r["body"]
+            if (r.get("meta") or {}).get("tables") and owner:  # tables handed to this agent (YUI-171)
+                texts.append(str(r["meta"]["tables"])[:2000])
+            if owner and tables.TAP.match(text):  # Delete or Keep on a held table delete: settle it now
+                said = await asyncio.to_thread(tables.settled_note, row["agent_id"])
+                text = f"{text}\n{said}" if said else text
             if t and r.get("kind") == "text" and text.startswith("[yui] attach "):  # Talk about this (YUI-69)
                 mine = owner and r.get("user_id") == self._user_id and not groups.threads_in([r])
                 text = await asyncio.to_thread(t.expand, text, key=key, owner=mine, profile=self._remote_ref or "")
@@ -1093,6 +1099,26 @@ class YuiAdapter(BasePlatformAdapter):
             self._doing.note(key, now)
         if not body:
             return SendResult(success=True, message_id=None)
+        reads = self.__dict__.setdefault("_reads", {})
+        if user_id == self._user_id and tables.has_words(body):
+            # Table words (YUI-171): out before the reply is saved, queries drawn; a read goes back to the agent.
+            text, note, refused = await asyncio.to_thread(tables.in_reply, body, agent_id)
+            if note is not None and reads.get(key, 0) >= 2:  # two reads in a row: draw this one for the person
+                text, note, refused = await asyncio.to_thread(tables.in_reply, tables.MORE + body, agent_id)
+            if refused:  # the agent hears it on its next turn (spec section 3, event 1)
+                self._notes.setdefault(agent_id, []).append(refused)
+            if note is not None:
+                reads[key] = reads.get(key, 0) + 1
+                logger.info("[yui] %s read its tables, rows go back as its next turn", agent_id[:8])
+                self._queue.setdefault(key, []).append({
+                    "id": str(uuid.uuid4()), "user_id": user_id, "agent_id": agent_id, "sender": "user",
+                    "kind": "text", "body": note, "meta": {}, "created_at": datetime.now(tz=timezone.utc).isoformat()})
+                self._poke()
+                return SendResult(success=True, message_id=None)
+            body = (text or "").strip()
+            if not body:
+                return SendResult(success=True, message_id=None)
+        reads.pop(key, None)
         if len(body) > MAX_MESSAGE_LENGTH:
             body = body[:MAX_MESSAGE_LENGTH]
         # `theme app` (YUI-96): only from the owner's turn to a phone that draws the preview.
@@ -1352,6 +1378,13 @@ async def _standalone_send(pconfig, chat_id: str, message: str, *, thread_id: Op
         target, sender = connector.pick_agent(s.get("agents") or [], ref, chat_id)
         if not target:
             return {"error": f"yui: no agent {chat_id!r} for profile {ref}"}
+        if tables.has_words(message):  # out of process there is no next turn: a read is drawn for the person
+            text, note, _ = await asyncio.to_thread(tables.in_reply, message, target["id"])
+            if note is not None:
+                text, _, _ = await asyncio.to_thread(tables.in_reply, tables.MORE + message, target["id"])
+            message = text or ""
+            if not message.strip() and not media_files:
+                return {"success": True, "platform": "yui", "chat_id": target["id"], "message_id": None}
         files = [f[0] if isinstance(f, (tuple, list)) else f for f in (media_files or [])]  # (path, is_voice)
         body = "\n\n".join([message.strip()] + [
             media_fence("video" if f.lower().endswith((".mp4", ".mov", ".m4v")) else "image", f)

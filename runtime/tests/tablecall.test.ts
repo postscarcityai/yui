@@ -1,7 +1,7 @@
 // YUI-171: the one tables call any agent reaches (tablecall.ts), on the same store a native agent keeps.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { callLines, holdAsk, holdTap, holdingLine, refuseCall, rowsText, runLines, runReply, settleHold } from "../src/tablecall.ts";
+import { callLines, holdAsk, holdTap, holdingLine, readNote, refuseCall, replyRead, rowsText, runLines, runReply, settleHold } from "../src/tablecall.ts";
 import { diff, emptyStore } from "../src/tables.ts";
 
 const CTX = { today: "2026-09-27", now: "2026-09-27T12:30" };
@@ -98,4 +98,19 @@ test("a whole reply works like a native answer: queries drawn, words gone", () =
 test("what the agent holds, one line", () => {
   assert.equal(holdingLine(emptyStore()), "[yui] tables (none yet)");
   assert.equal(holdingLine(made()), "[yui] tables foods(3 rows: Food, Cal, Protein)");
+});
+
+test("a reply of query lines alone is a read; anything else for the person is not (step 3)", () => {
+  assert.deepEqual(replyRead("```yui\nquery foods sort=-Protein limit=2\n```"), ["query foods sort=-Protein limit=2"]);
+  assert.deepEqual(replyRead("```tables\nfoods where=Food~oat\n```"), ["query foods where=Food~oat"]);
+  assert.deepEqual(replyRead("query foods"), ["query foods"]); // loose, gathered into a yui block
+  assert.equal(replyRead("Here you go.\n```yui\nquery foods\n```"), null);
+  assert.equal(replyRead("```yui\nquery foods\ncard \"Hi\"\n```"), null);
+  assert.equal(replyRead("```yui\nput foods Food=Rice Cal=200\n```"), null);
+  assert.equal(replyRead("Just words."), null);
+  const r = runLines(replyRead("```yui\nquery foods sort=-Protein limit=2\nquery nope\n```")!, made(), CTX, ids());
+  const note = readNote(r);
+  assert.match(note, /^\[yui\] Your tables:\n\nfoods\nkey \| Food/);
+  assert.match(note, /Refused "query nope": No table called nope yet\./);
+  assert.match(note, /\[yui\] Answer the person now/);
 });

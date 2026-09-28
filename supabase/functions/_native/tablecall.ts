@@ -22,6 +22,7 @@ import {
   applyTables,
   deleteAsk,
   findKey,
+  gather,
   LIMITS,
   query,
   queryLine,
@@ -116,6 +117,40 @@ export function runLines(lines: string[], store: TableStore, ctx: Partial<Clock>
     held = { id, lines: deletes.map((d) => d.line!.trim()), ask: deleteAsk(store, deletes) };
   }
   return { ok, failed, results, held, store, read: [...read] };
+}
+
+/**
+ * A reply that only reads (spec section 8, "In the reply"): nothing for the
+ * person, just `query` lines in yui blocks (or a ```tables block, the native
+ * way). Its query lines, or null when the reply has anything else in it.
+ */
+export function replyRead(text: string): string[] | null {
+  const parts = gather(text).split(/(^```[^\n]*\n[\s\S]*?^```[ \t]*$)/m);
+  const lines: string[] = [];
+  for (const [i, part] of parts.entries()) {
+    if (i % 2 === 0) {
+      if (part.trim()) return null;
+      continue;
+    }
+    const m = part.match(/^```(\w*)[^\n]*\n([\s\S]*?)^```/m);
+    if (!m || !["yui", "tables"].includes(m[1])) return null;
+    for (const raw of m[2].split("\n")) {
+      const l = raw.trim();
+      if (!l || l.startsWith("#")) continue;
+      const line = m[1] === "tables" && !/^query\s/.test(l) ? `query ${l}` : l;
+      if (!queryLine(line)) return null;
+      lines.push(line);
+    }
+  }
+  return lines.length ? lines.slice(0, CALL_LIMITS.lines) : null;
+}
+
+/** What a read hands back to the agent as its next turn: the rows, then answer the person. */
+export function readNote(r: { results: CallRows[]; failed: { line: string; error: string }[] }): string {
+  const found = r.results.map(rowsText);
+  const bad = r.failed.map((f) => `Refused "${f.line}": ${f.error}.`);
+  return `[yui] Your tables:\n\n${[...found, ...bad].join("\n\n") || "(nothing matched)"}\n\n`
+    + "[yui] Answer the person now: a line, then a screen. A query line in your yui block draws these rows for them.";
 }
 
 /** A whole reply: the same as a native agent's answer (tables.ts applyTables). */

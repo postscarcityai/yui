@@ -16,7 +16,10 @@
 //   - a task that asks for more (input-required) stays open, and the person's
 //     next message continues it;
 //   - the running task's id is on disk, so a restart picks the task back up
-//     (SubscribeToTask, then GetTask) instead of sending the turn again.
+//     (SubscribeToTask, then GetTask) instead of sending the turn again;
+//   - tables (YUI-171): table words in the answer go through Yui's one tables
+//     call before the answer is saved, and a data part {"yui": "tables",
+//     "lines": ...} runs its lines, the rows coming back as a data part.
 //
 // Node only (files, crypto). The protocol code in a2a.ts is runtime-neutral;
 // the hosted step moves this loop into a Durable Object.
@@ -49,19 +52,28 @@ export interface Remote {
 /** The turn in flight for one Yui agent. On disk before the message goes out. */
 interface Inflight extends RelayInflight {
   taskId: string | null; // null until the agent names its task
+  round?: number; // tables reads sent back this turn
+  followup?: Part[]; // the rows sent back for a read, instead of the person's words
+  tables?: Record<string, unknown>; // rows from the last answer's data part, riding on this message
 }
 
 interface StateData extends RelayData {
   remotes: Record<string, Remote>; // remote_ref -> card
   inflight: Record<string, Inflight>;
   open: Record<string, string>; // Yui agent id -> task waiting on the person
+  tables: Record<string, Record<string, unknown>>; // Yui agent id -> rows for its next message
 }
 
 export class State extends RelayState<StateData> {
   constructor(path: string) {
-    super(path, { remotes: {}, open: {} });
+    super(path, { remotes: {}, open: {}, tables: {} });
   }
 }
+
+/** An answer with table words in it (cheap: an ordinary answer makes no tables call). */
+export const TABLE_WORDS = /^[ \t]*(?:table[ \t]+(?:create|drop)[ \t]|put[ \t]+[A-Za-z]|query[ \t]+[A-Za-z])|^```tables\b/m;
+/** Reads sent back to the agent in one turn, like the native runtime. */
+const READ_ROUNDS = 2;
 
 export async function pair(state: State, code: string, ref: string, remote: Remote, hostName?: string): Promise<any> {
   const r = await pairConnector(state, code, ref, { hostName, kind: "http", reset: { open: {} }, ua: UA });
@@ -136,21 +148,96 @@ export class Bridge extends YuiRelay<StateData> {
   /** The A2A message for a turn: the person's words, plus the guide when a task starts.
    * A LangGraph server gets one text part and the rest as keyed data (state input keys). */
   message(agentId: string, rows: Row[], inflight: Inflight, taskId?: string, card?: AgentCard): Message {
+    if (inflight.followup) {
+      return { messageId: `${inflight.messageId}-t${inflight.round ?? 1}`, role: "user", parts: inflight.followup,
+               contextId: agentId, ...(taskId ? { taskId } : {}) };
+    }
     const parts: Part[] = [];
     const guide = !taskId && this.sendGuide && this.guide.body;
     const taps = rows.filter((r) => r.kind === "event" && r.meta);
+    // Tables handed to this agent: the server's one line opens the turn.
+    const handed = [...new Set(rows.map((r) => r.meta?.tables).filter((t) => typeof t === "string" && t.trim()))];
+    const words = [...handed, ...rows.map((r) => r.body)].join("\n");
+    const rowsBack = inflight.tables;
     if (card && isLangGraph(card)) {
-      parts.push({ text: rows.map((r) => r.body).join("\n") });
+      parts.push({ text: words });
       const data: Record<string, unknown> = {};
       if (guide) data.yui_channel_guide = { version: this.guide.version, body: this.guide.body };
       if (taps.length) data.yui_events = taps.map((r) => ({ ...r.meta, row: r.id }));
-      if (guide || taps.length) parts.push({ data, metadata: { yui: "context" } });
+      if (rowsBack) data.yui_tables = rowsBack;
+      if (guide || taps.length || rowsBack) parts.push({ data, metadata: { yui: "context" } });
     } else {
       if (guide) parts.push({ text: this.guide.body, metadata: { yui: "channel_guide", version: this.guide.version } });
-      parts.push({ text: rows.map((r) => r.body).join("\n") });
+      parts.push({ text: words });
       for (const r of taps) parts.push({ data: r.meta, metadata: { yui: "event", row: r.id } }); // a tap, as data too
+      if (rowsBack) parts.push({ data: rowsBack });
     }
     return { messageId: inflight.messageId, role: "user", parts, contextId: agentId, ...(taskId ? { taskId } : {}) };
+  }
+
+  /** One tables call. Never throws: a failure is logged and comes back as null with why. */
+  async callTables(agent: YuiAgent, body: { lines: string } | { reply: string }): Promise<{ r: any; why?: string }> {
+    try {
+      const [s, r] = await this.tables({ agent: agent.id, ...body });
+      if (s === 200 && r && typeof r === "object") return { r };
+      const why = `${s} ${r?.error ?? ""}${r?.message ? `: ${r.message}` : ""}`.trim();
+      log(`${agent.name}: tables call refused (${why})`);
+      return { r: null, why };
+    } catch (e) {
+      log(`${agent.name}: tables call failed (${(e as Error).message})`);
+      return { r: null, why: (e as Error).message };
+    }
+  }
+
+  /**
+   * The tables in an answer (spec TABLES.md section 8). Data parts {"yui": "tables", "lines"} run first: with
+   * words for the person their rows ride on the next message, alone they are a read. Then table words in the
+   * text go through the reply call, and its text is what the person gets. A read hands back the parts to send
+   * the agent now (twice a turn at most); otherwise the text to save ("" saves nothing).
+   */
+  async tablesIn(agent: YuiAgent, view: TaskView, text: string, inflight: Inflight, card?: AgentCard):
+    Promise<{ text: string; followup?: Part[] }> {
+    const aid = agent.id;
+    const more = (inflight.round ?? 0) < READ_ROUNDS;
+    const calls = view.data().filter((d: any) => d?.yui === "tables" && typeof d.lines === "string" && d.lines.trim()) as any[];
+    if (calls.length) {
+      const back: Record<string, unknown> & { results: any[]; failed: any[] } = { yui: "tables", results: [], failed: [], held: null };
+      const notes: string[] = [];
+      for (const d of calls) {
+        const { r, why } = await this.callTables(agent, { lines: d.lines });
+        if (!r) {
+          back.failed.push({ line: d.lines, error: `Yui could not run these lines just now (${why}). Nothing was written.` });
+          continue;
+        }
+        back.results.push(...(r.results ?? []));
+        back.failed.push(...(r.failed ?? []));
+        if (r.held) back.held = r.held;
+        if (r.tables !== undefined) back.tables = r.tables;
+        if (r.note) notes.push(r.note);
+      }
+      const note = notes.join("\n\n") || tablesSummary(back);
+      if (!text && more) return { text, followup: this.rowsBack(note, back, card) };
+      this.state.data.tables[aid] = back; // saved with the reply (queueReply) or the end of the turn
+    }
+    if (text && TABLE_WORDS.test(text)) {
+      const { r } = await this.callTables(agent, { reply: text });
+      if (r?.read) {
+        if (more && typeof r.note === "string" && r.note) return { text: "", followup: this.rowsBack(r.note, null, card) };
+        return { text: "" }; // only reads, and no rounds left: nothing for the person
+      }
+      if (r && typeof r.text === "string") {
+        if ((r.failed ?? []).length) log(`${agent.name}: ${r.failed.length} table line(s) refused`);
+        return { text: r.text.trim() };
+      }
+    }
+    return { text };
+  }
+
+  /** What goes back to the agent for a read: the rows in words, and as data when there is data. */
+  rowsBack(note: string, data: Record<string, unknown> | null, card?: AgentCard): Part[] {
+    const parts: Part[] = [{ text: note }];
+    if (data) parts.push(card && isLangGraph(card) ? { data: { yui_tables: data }, metadata: { yui: "context" } } : { data });
+    return parts;
   }
 
   tick(): void {
@@ -191,60 +278,78 @@ export class Bridge extends YuiRelay<StateData> {
       // Same rows, same id: an agent that dedupes by messageId sees a resend once.
       const messageId = "yui-" + createHash("sha256").update(`${aid}:${turn.join(",")}`).digest("hex").slice(0, 32);
       inflight = { turn, messageId, taskId: null, started: Date.now() };
+      const back = this.state.data.tables[aid]; // rows the last answer asked for go out with this message
+      if (back) inflight.tables = back;
+      delete this.state.data.tables[aid];
       this.state.data.inflight[aid] = inflight;
       this.state.save();
       await this.mark(turn, "delivered_at"); // the app's working row starts here
       log(`turn for ${agent.name}: ${rows.length} message(s)`);
     } else if (inflight.taskId) {
       log(`${agent.name}: picking task ${inflight.taskId.slice(0, 8)} back up`);
+    } else if (inflight.followup) {
+      log(`${agent.name}: sending its table rows again (no task id before the restart)`);
     } else {
       rows = await this.rowsById(aid, inflight.turn); // crashed before the agent named a task: send again
       await this.mark(inflight.turn, "delivered_at"); // in case the crash came before the first mark
       log(`${agent.name}: sending ${inflight.turn.length} message(s) again (no task id before the restart)`);
     }
 
-    const view = new TaskView();
-    const onUpdate = (u: Update) => {
-      view.apply(u);
-      const id = view.task?.id;
-      if (id && inflight!.taskId !== id) {
-        inflight!.taskId = id;
-        this.state.save(); // from here a restart resubscribes instead of resending
+    for (;;) {
+      const view = new TaskView();
+      const onUpdate = (u: Update) => {
+        view.apply(u);
+        const id = view.task?.id;
+        if (id && inflight!.taskId !== id) {
+          inflight!.taskId = id;
+          this.state.save(); // from here a restart resubscribes instead of resending
+        }
+      };
+      if (!inflight.taskId) await this.start(aid, c, rows, inflight, onUpdate);
+      if (!view.settled && inflight.taskId) {
+        try {
+          await this.follow(c.client, inflight.taskId, onUpdate);
+        } catch (e) {
+          if (!(e instanceof A2AError)) throw e;
+          onUpdate(failed(`It lost track of that task (${e.message}).`));
+        }
       }
-    };
-    if (!inflight.taskId) await this.start(aid, c, rows, inflight, onUpdate);
-    if (!view.settled && inflight.taskId) {
-      try {
-        await this.follow(c.client, inflight.taskId, onUpdate);
-      } catch (e) {
-        if (!(e instanceof A2AError)) throw e;
-        onUpdate(failed(`It lost track of that task (${e.message}).`));
+      if (!view.settled) {
+        if (!this.running) return; // stopping: the task id is on disk, the next run picks it up
+        throw new Error(`task ${inflight.taskId?.slice(0, 8) ?? "(none)"} ended the stream still ${view.state ?? "unnamed"}`);
       }
-    }
-    if (!view.settled) {
-      if (!this.running) return; // stopping: the task id is on disk, the next run picks it up
-      throw new Error(`task ${inflight.taskId?.slice(0, 8) ?? "(none)"} ended the stream still ${view.state ?? "unnamed"}`);
-    }
 
-    const state = view.state;
-    const name = c.card.name;
-    let text = view.text().trim();
-    if (state && INTERRUPTED.has(state)) {
-      this.state.data.open[aid] = view.task!.id; // the next message continues this task
+      const state = view.state;
+      const name = c.card.name;
+      let text = view.text().trim();
+      if (state && INTERRUPTED.has(state)) this.state.data.open[aid] = view.task!.id; // the next message continues this task
+      else delete this.state.data.open[aid];
+      const said = !(state === "failed" || state === "rejected" || state === "canceled");
+      if (said) {
+        const t = await this.tablesIn(agent, view, text, inflight, c.card);
+        if (t.followup) { // a read: the rows go back as the next message, the person sees nothing yet
+          inflight.round = (inflight.round ?? 0) + 1;
+          inflight.followup = t.followup;
+          inflight.taskId = null;
+          this.state.save();
+          log(`${agent.name}: sent its table rows back (read ${inflight.round} of ${READ_ROUNDS})`);
+          continue;
+        }
+        text = t.text;
+      }
       if (state === "auth-required") text = `${name} needs you to sign in before it can go on.${text ? `\n\n${text}` : ""}`;
-      else if (!text) text = `${name} needs more from you to go on.`;
-    } else {
-      delete this.state.data.open[aid];
-      if (state === "failed" || state === "rejected" || state === "canceled") {
+      else if (state && INTERRUPTED.has(state) && !text) text = `${name} needs more from you to go on.`;
+      else if (!said) {
         const what = state === "rejected" ? "turned that down" : state === "canceled" ? "stopped that task" : "couldn't finish that";
         text = `${name} ${what}.${text ? `\n\n${text}` : ""}`;
       }
-    }
-    log(`${agent.name}: task ${state ?? "answered"}${view.task ? ` (${view.task.id.slice(0, 8)})` : ""}, ${text.length} chars`);
-    if (text) {
-      this.queueReply(aid, text, inflight.turn);
-    } else { // nothing to say: the turn is done
-      this.endTurn(aid, inflight.turn);
+      log(`${agent.name}: task ${state ?? "answered"}${view.task ? ` (${view.task.id.slice(0, 8)})` : ""}, ${text.length} chars`);
+      if (text) {
+        this.queueReply(aid, text, inflight.turn);
+      } else { // nothing to say: the turn is done
+        this.endTurn(aid, inflight.turn);
+      }
+      break;
     }
     await this.flushOutbox();
     await this.flushAcks();
@@ -339,6 +444,13 @@ export class Bridge extends YuiRelay<StateData> {
       }
     }
   }
+}
+
+/** A few words for a tables result the server sent no note for. */
+function tablesSummary(t: { results: any[]; failed: any[] }): string {
+  const bits = t.results.map((r) => `${r.table}: ${r.count ?? r.rows?.length ?? 0} row(s)`);
+  for (const f of t.failed) bits.push(`Refused "${f.line}": ${f.error}`);
+  return `[yui] Your tables: ${bits.join("; ") || "done"}. Answer the person now.`;
 }
 
 /** A made-up final status, for the times Yui has to end the turn itself. */

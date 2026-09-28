@@ -51,6 +51,7 @@ One POST per turn, `content-type: application/json`:
 
 - **A turn can hold several messages.** While your agent works on one, anything the person sends waits and goes in together as the next turn, oldest first, one line each in `text`.
 - **Taps are events.** When the person answers a screen you sent, the message is `kind: "event"`. `body` is the one-line form (`[yui] <id> <preset> key=value`), `event` the same thing as JSON, and `event.echo` is what the person sees as their reply. Spec: [RELAY.md](https://github.com/postscarcityai/yuigui/blob/main/spec/RELAY.md).
+- **`tables` is what your table lines did,** present only after a turn that sent them (see Tables).
 - **`guide` is the channel guide.** Put it in your agent's system prompt. Without it your agent writes plain text and never a screen. It changes rarely; `guide.version` tells you when. `yui_webhook.py guide` prints it.
 
 Headers: `x-yui-turn` is a stable key for this turn (use it to skip a turn you already answered). With `--secret S`, every POST also carries `x-yui-timestamp` and `x-yui-signature: sha256=<hex>`, the HMAC-SHA256 of `<timestamp>.<raw body>` with `S`.
@@ -61,6 +62,8 @@ Headers: `x-yui-turn` is a stable key for this turn (use it to skip a turn you a
 | --- | --- |
 | `200` `{"reply": "text"}` | one message in the thread |
 | `200` `{"replies": ["a", "b"]}` | several, in order |
+| `200` `{"reply": "Logged.", "tables": "put meals Food=Oats"}` | the reply, and the table lines run on Yui (see Tables) |
+| `200` `{"tables": "query meals"}` | a read: the rows come back to you at once (see Tables) |
 | `200` `text/plain` body | the body is the message |
 | `200` or `204` with no body | no reply; the turn is done |
 | anything else, or no answer within `--timeout` (300 s) | nothing is written; the turn is tried again, backing off up to a minute |
@@ -73,6 +76,33 @@ Hi! What sounds good?
 choose "Pick one" Coffee|Walk|Nap
 ```
 ````
+
+## Tables
+
+Your agent can keep tables in Yui: a meal log, a to-do list, a small CRM. The words are `table create`, `put` and `query`, the same for every agent ([TABLES.md](https://github.com/postscarcityai/yuigui/blob/main/spec/TABLES.md), section 8). The rows live on Yui's server, held by your agent, and outlive every reply.
+
+Two ways in:
+
+- **In the reply.** Write the lines in your reply, in a ```` ```yui ```` or ```` ```tables ```` fence. Before the reply is saved the bridge hands it to Yui, which writes the rows, draws each `query` as a screen and takes the table lines out; the person sees the result. A reply with no table words skips this. A reply of only `query` lines is a read: nothing is saved and the rows come back to you at once (below).
+- **As a field.** Answer `{"reply": "Logged.", "tables": "put meals Food=Oats Cal=300"}`. The lines run, the reply is saved, and what the lines did arrives with your next POST as `tables`. Answer `tables` with no `reply` to read: `{"tables": "query meals where=Day=today"}`.
+
+After a read the bridge POSTs you again right away, in the same turn: the same `turn` ids, `"round": 1` (its own `x-yui-turn`), `text` with the rows in words added at the end, and the rows in `tables`:
+
+```json
+"tables": {
+  "results": [{"table": "meals", "cols": ["Food", "Cal"], "keys": ["r1"], "rows": [["Oats", 300]], "count": 1}],
+  "failed": [{"line": "put meals Cal=lots", "error": "Cal is a number"}],
+  "held": null,
+  "tables": [{"name": "meals", "rows": 1}],
+  "note": "[yui] Your tables:\n..."
+}
+```
+
+Keys Yui did not send are left out. `failed` holds each refused line and why; `held` is a delete waiting on the person's Delete or Keep tap; `tables` is what your agent holds now; `note` is all of it in words, ready for a prompt. A turn gets at most two read rounds; after that the rows wait for your next POST. A result waiting for your next POST is kept in the state file, so a restart does not lose it.
+
+**Tables handed to you.** When the person gives your agent tables from another agent, your next turn's `text` opens with one line saying what you now hold: `[yui] tables foods(3 rows: Food, Cal)`.
+
+If the tables call fails (network, Yui refuses it), the bridge logs it and saves your reply as written.
 
 ## Exactly once
 
@@ -88,9 +118,18 @@ The bridge keeps the relay's delivery rules (RELAY.md, Delivery):
 
 - `send "text" [--agent ref]` puts a message in a thread on its own, e.g. from a cron job. The phone gets a push.
 - `status` shows the connector and its agents. Pair more agents onto the same bridge with more codes; the payload's `agent` says which one a turn is for.
-- State lives in `~/.yui/webhook.json` (mode 600): the connector token, a start point per agent and the outbox. `--state` or `$YUI_WEBHOOK_STATE` moves it. Treat it like a password; removing the agent's computer in the app revokes it.
+- State lives in `~/.yui/webhook.json` (mode 600): the connector token, a start point per agent, the outbox and any tables result waiting for an agent's next POST. `--state` or `$YUI_WEBHOOK_STATE` moves it. Treat it like a password; removing the agent's computer in the app revokes it.
 - Limits are the relay's: 32,000 characters per message, and the rate limits in the app repo README.
 
 ## Tests
+
+Offline, no account needed (a fake Yui and a stub agent on localhost):
+
+```
+python3 adapters/webhook/tests/test_tables_offline.py
+node --test adapters/webhook/tests/tables-offline.test.mjs
+```
+
+Live:
 
 `python3 adapters/webhook/tests/webhook_e2e.py [--client python|node|both]` runs both clients against a fake webhook on a fresh throwaway account in the live backend: pairing, a screen round trip, a tap, a kill -9 mid-turn, a crash between the answer and the ack, a clean stop, a backlog, a handoff. It needs the maintainers' Supabase access token, like `supabase/tests`.

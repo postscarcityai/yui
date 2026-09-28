@@ -10,21 +10,25 @@
 //   2. settles deletes waiting on a tap: the person's Delete runs them, Keep
 //      or a week with no tap drops them;
 //   3. runs `lines` (the agent's table words, in order) or `reply` (a whole
-//      answer, the native way: queries drawn into screens);
+//      answer, the native way: queries drawn into screens). A reply of query
+//      lines alone is a read (step 3): it runs as lines, nothing is saved for
+//      the person, and `note` is the agent's next turn with the rows;
 //   4. refuses the whole call past a limit (50 lines, 100 tables a person),
 //      writing nothing;
 //   5. saves what changed, marks what was read, and puts any delete in front of
 //      the person as a Delete or Keep ask.
 import { SupabaseStore } from "../_native/supabase.ts";
 import { validZone } from "../_native/schedule.ts";
-import { changed, clock, diff, type TableStore } from "../_native/tables.ts";
+import { changed, clock, diff, draw, type TableStore } from "../_native/tables.ts";
 import {
   CALL_LIMITS,
   callLines,
   holdAsk,
   holding,
   holdTap,
+  readNote,
   refuseCall,
+  replyRead,
   runLines,
   runReply,
   settleHold,
@@ -58,15 +62,17 @@ function storeFor(): SupabaseStore {
 }
 
 export async function tablesCall(db: DB, agent: TablesAgent, input: TablesInput): Promise<Json> {
-  const hasLines = typeof input.lines === "string";
-  const hasReply = typeof input.reply === "string";
+  let hasLines = typeof input.lines === "string";
+  let hasReply = typeof input.reply === "string";
   if (hasLines && hasReply) throw new TablesRefused("invalid_request", "Send lines or reply, not both.");
   if (input.lines != null && !hasLines) throw new TablesRefused("invalid_request", "lines is a string of table lines.");
   if (input.reply != null && !hasReply) throw new TablesRefused("invalid_request", "reply is the whole answer as a string.");
-  const lines = hasLines ? callLines(input.lines as string) : [];
+  if (hasReply && (input.reply as string).length > 32000) throw new TablesRefused("too_long", "reply is 32000 characters at most.");
+  const reads = hasReply ? replyRead(input.reply as string) : null;
+  if (reads) [hasLines, hasReply] = [true, false];
+  const lines = reads ?? (hasLines ? callLines(input.lines as string) : []);
   const refused = refuseCall(lines);
   if (refused) throw new TablesRefused("too_many_lines", refused);
-  if (hasReply && (input.reply as string).length > 32000) throw new TablesRefused("too_long", "reply is 32000 characters at most.");
 
   await take(db, `tables:a:${agent.id}`, "tables");
   const store = storeFor();
@@ -119,6 +125,9 @@ export async function tablesCall(db: DB, agent: TablesAgent, input: TablesInput)
     held = r.held;
     read = r.read;
     out = { ok: r.ok, failed: r.failed, results: r.results };
+    // The rows (and any refusal) in words, for an adapter that hands them to its agent as a turn.
+    if (r.results.length || r.failed.length) out.note = readNote(r);
+    if (reads) Object.assign(out, { read: true, text: "" });
   }
 
   const made = Object.keys(after.tables).filter((n) => !before.tables[n]).length;
@@ -134,6 +143,11 @@ export async function tablesCall(db: DB, agent: TablesAgent, input: TablesInput)
 
   const ch = diff(before, after);
   if (changed(ch)) await store.saveTables(native, ch, after);
+  // A reply that was only writes: the table that changed, under "Saved." (as a native turn does).
+  if (hasReply && out.wrote && !out.text.trim()) {
+    const touched = ch.rows[ch.rows.length - 1]?.table ?? ch.tables[0]?.name;
+    out.text = touched ? `Saved.\n\`\`\`yui\n${draw(after, { table: touched, limit: 12 }, clk).join("\n")}\n\`\`\`` : "Saved.";
+  }
   if (read.length) {
     await db.from("yui_native_tables").update({ read_at: new Date().toISOString() })
       .eq("agent_id", agent.id).in("name", read);
@@ -183,7 +197,7 @@ export function tablesSummary(r: Json): string {
     parts.push(s.choice === "Delete" ? `The person tapped Delete on ${s.id}: ${s.deleted} gone.`
       : s.choice === "Keep" ? `The person tapped Keep on ${s.id}: nothing deleted.` : `${s.id} waited a week with no tap: nothing deleted.`);
   }
-  if (r.text !== undefined) parts.push(`Reply ready (${r.wrote} write${r.wrote === 1 ? "" : "s"}); send the text as your answer.`);
+  if (r.text !== undefined && !r.read) parts.push(`Reply ready (${r.wrote} write${r.wrote === 1 ? "" : "s"}); send the text as your answer.`);
   if (r.ok?.length) parts.push(`${r.ok.length} line${r.ok.length === 1 ? "" : "s"} done.`);
   for (const f of r.failed ?? []) parts.push(`Refused${f.line ? ` "${f.line}"` : ""}: ${f.error}.`);
   if (r.held) parts.push(`Nothing deleted yet: the person sees "${r.held.ask}" with Delete or Keep. Their tap settles it on your next yui_tables call.`);

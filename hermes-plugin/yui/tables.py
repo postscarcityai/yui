@@ -10,9 +10,16 @@ file only makes the call and reads the answer back to the model.
 
 The agent is this profile's Yui agent (its remote_ref: YUI_REMOTE_REF, else the
 profile name). Stdlib only.
+
+In the reply (step 3): table words in a ```yui block of the agent's answer come
+out before the answer is saved. The adapter hands the whole answer to the same
+call (reply=), saves the text it gets back (queries drawn as screens), and when
+the answer was only query lines (a read) gives the rows back to the agent as
+its next turn instead of saving anything.
 """
 import json
 import os
+import re
 import urllib.error
 import urllib.request
 
@@ -72,6 +79,37 @@ def call(lines: str = "", agent: str | None = None, reply: str | None = None) ->
             return e.code, {"error": f"http_{e.code}"}
     except (urllib.error.URLError, TimeoutError) as e:
         return 503, {"error": "unreachable", "message": str(e)}
+
+
+# Any table word: a reply without one never makes the call.
+WORDS = re.compile(r"^[ \t]*(?:table[ \t]+(?:create|drop)[ \t]|put[ \t]+[A-Za-z]|query[ \t]+[A-Za-z])|^```tables\b", re.M)
+TAP = re.compile(r"^\[yui\]\s+del-[A-Za-z0-9]+\s+choose\b")
+MORE = "Here they are.\n"  # after two reads in a row, the next read is drawn for the person instead
+
+
+def has_words(text: str) -> bool:
+    return bool(WORDS.search(text or ""))
+
+
+def in_reply(body: str, agent: str) -> tuple[str | None, str | None, str]:
+    """An answer on its way to the person: (text to save, None, refused), or (None, note, "")
+    when it only read, the note being the agent's next turn. refused says which table
+    writes did not land, for the agent's next turn. Yui unreachable: the answer as is."""
+    status, r = call(agent=agent, reply=body)
+    if status != 200:
+        return body, None, ""
+    if r.get("read"):
+        return None, r.get("note") or "[yui] Your tables: (nothing matched)", ""
+    bad = [f["error"] for f in r.get("failed") or []][:3]
+    return r.get("text", body), None, (f"[yui] Table writes in your last reply were refused: {'; '.join(bad)}." if bad else "")
+
+
+def settled_note(agent: str) -> str:
+    """After a Delete or Keep tap: settle it now and say what happened, for the agent's turn."""
+    status, r = call("", agent=agent)
+    if status != 200 or not r.get("settled"):
+        return ""
+    return "[yui] " + summary(status, {"settled": r["settled"]})
 
 
 def rows_text(r: dict) -> str:
