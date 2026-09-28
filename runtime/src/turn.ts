@@ -18,8 +18,8 @@ import { next, parseLine, validZone } from "./schedule.ts";
 import { Firecrawl, LookupError, searchInvite, sourceCards, type Source } from "./search.ts";
 import type { Store } from "./store.ts";
 import { crew } from "./profiles.ts";
-import { type Clock, type TableStore, applyHeld, applyTables, asText, changed, clock, diff, draw, emptyStore, fromSeeds, readQueries,
-         tablesPrompt } from "./tables.ts";
+import { type Clock, type TableStore, LIMITS, applyHeld, applyTables, asText, changed, clock, diff, draw, emptyStore, fromSeeds, pretty,
+         readQueries, tablesPrompt } from "./tables.ts";
 import type { NativeAgent, OwnKey, Row, ScheduleItem } from "./types.ts";
 import { applyDay, applyLogged, applyRunner, editDayBody, logBody, loggedLine, progressShape, screenLines, session, splitDays, startReply,
          trains, workoutAsks, type Session, type WorkoutAsk } from "./workouts.ts";
@@ -402,10 +402,8 @@ async function oneTurn(store: Store, agent: NativeAgent, rows: Row[], opts: Turn
   if (out.schedule.length) notes.push(...await applySchedules(store, agent, out.schedule, schedules, tzRaw ? tz : "UTC", now, log));
   // Table writes land, deletes wait for a tap, and every query is drawn with real rows.
   const t = applyTables(out.text, tables, clk, opts.newId ?? uuid);
-  if (t.problems.length) {
-    log(`${p.name}: table writes refused: ${t.problems.join("; ")}`);
-    notes.push(...t.problems.slice(0, 3).map((x) => `a table change didn't fit (${x})`));
-  }
+  if (t.made.length) log(`${p.name}: made table(s) ${t.made.join(", ")} from its puts`);
+  if (t.problems.length) log(`${p.name}: table writes refused: ${[...new Set(t.problems)].join("; ")}`);
   const tchange = diff(tables, t.store);
   // Penny's reminders follow the tasks the answer wrote (YUI-185): a to-do with a time gets one.
   let reminded: ReturnType<typeof reminderMeta> | undefined;
@@ -420,11 +418,21 @@ async function oneTurn(store: Store, agent: NativeAgent, rows: Row[], opts: Turn
   // Writes with no screen to show them: the table that changed, under the words (or "Saved.").
   if (t.wrote && !out.agents.length && !/^```yui\b/m.test(t.text)) {
     const touched = tchange.rows[tchange.rows.length - 1]?.table ?? tchange.tables[0]?.name;
-    if (touched) t.text = `${t.text.trim() || "Saved."}\n\`\`\`yui\n${draw(t.store, { table: touched, limit: 12 }, clk).join("\n")}\n\`\`\``;
+    // A grocery list reads as what's still to get, not a grid of every column (YUI-188).
+    const view = touched === "groceries" && t.store.tables.groceries?.cols.some((c) => c.name === "Got")
+      ? { table: touched, where: ["Got=off"], cols: ["Item", "Qty"].filter((n) => t.store.tables.groceries.cols.some((c) => c.name === n)),
+          as: "list", title: "Still to get", limit: 30 }
+      : { table: touched, limit: 12 };
+    if (touched) t.text = `${t.text.trim() || "Saved."}\n\`\`\`yui\n${draw(t.store, view, clk).join("\n")}\n\`\`\``;
   }
   out.text = t.text;
   let body = unsprawl(unmark(undeck(unend(unbreak(undash(out.text))))));
-  if (notes.length) body += `\n\n(I couldn't do all of that: ${notes.join("; ")}.)`;
+  // A slip is never the reply (YUI-188): logged in full, shown as one small card with a retry under what worked.
+  const slip = slipLine(notes, t.slipped);
+  if (slip) {
+    log(`${p.name}: slips: ${[...new Set(notes)].join("; ")}`);
+    body = withCard(body, `card@slip ${JSON.stringify(slip)} cta="Try again"`);
+  }
   // Sources the answer didn't link, and the invite to add a Firecrawl key when the free lookups ran out.
   const cards = [...sourceCards(body, looked.sources), ...(looked.capped ? [searchInvite(looked.capped.why, looked.capped.limit)] : [])];
   if (cards.length && body.trim()) body = `${body.trim()}\n\`\`\`yui\n${cards.join("\n")}\n\`\`\``;
@@ -1193,19 +1201,51 @@ export function shelfSoul(agent: NativeAgent): NativeAgent {
   return { ...agent, profile: { ...p, soul: shelf.soul } };
 }
 
-/** A starter agent from before tables (no `seeded` in its profile) gets its starter tables once, if it has none. */
+/**
+ * What didn't work in a turn, as one short plain line: a refused table write reads "Couldn't save that to
+ * Groceries.", anything else the first thing that went wrong, as a sentence. Never raw ops, never repeats.
+ */
+export function slipLine(notes: string[], slipped: string[]): string | null {
+  const tables = [...new Set(slipped)];
+  if (tables.length) return tables.length === 1 && tables[0] ? `Couldn't save that to ${pretty(tables[0])}.` : "Couldn't save all of that.";
+  const first = [...new Set(notes.map((n) => n.trim()).filter(Boolean))][0];
+  if (!first) return null;
+  const line = first.replace(/\s*\([^)]*\)/g, "").replace(/"/g, "'").replace(/[.;:]+$/, "");
+  const short = line.length > 80 ? `${line.slice(0, 77).replace(/\s+\S*$/, "")}...` : line;
+  return `${short[0].toUpperCase()}${short.slice(1)}.`;
+}
+
+/**
+ * Starter tables, once each (YUI-170, YUI-188): an agent whose profile ships a starter table it was never given
+ * (made before tables, or before that table joined its tables.yui) gets it now, with its starter rows. A table
+ * it already has is never touched, and one it was given and they dropped or gave away never comes back:
+ * `seededTables` names every starter table it has been given.
+ */
 async function seedOnce(store: Store, agent: NativeAgent, tables: TableStore, log: (m: string) => void): Promise<TableStore> {
   const p = agent.profile;
-  const seeds = p.seeded || p.base === "custom" ? undefined : crew()[p.base]?.tables;
+  const seeds = p.base === "custom" ? undefined : crew()[p.base]?.tables;
   if (!seeds?.length) return tables;
+  const given = new Set(p.seededTables ?? []);
+  const owed = seeds.filter((s) => !given.has(s.name));
+  if (!owed.length) return tables;
+  // Before YUI-188 a seeded agent kept no list: the starter tables it has now were given; the rest are owed.
+  // An agent never seeded that already made tables of its own gets only the ones it is missing, the same way.
   let out = tables;
-  if (!Object.keys(tables.tables).length) {
-    out = fromSeeds(seeds);
-    await store.saveTables(agent, diff(emptyStore(), out), out);
-    log(`${p.name}: wrote its ${seeds.length} starter table(s)`);
+  const added: string[] = [];
+  for (const s of owed) {
+    if (out.tables[s.name] || Object.keys(out.tables).length >= LIMITS.tables) continue;
+    out = { tables: { ...out.tables, ...fromSeeds([s]).tables } };
+    added.push(s.name);
   }
-  agent.profile = { ...p, seeded: true };
-  await store.updateAgent(agent.id, agent.profile);
+  if (added.length) {
+    await store.saveTables(agent, diff(tables, out), out);
+    log(`${p.name}: wrote its starter table(s) ${added.join(", ")}`);
+  }
+  const mark = { seeded: true, seededTables: [...new Set([...given, ...seeds.map((s) => s.name)])] };
+  agent.profile = { ...p, ...mark };
+  // Onto the saved profile, never this turn's copy: a soul read from the shelf is never saved over theirs.
+  const saved = (await store.agent(agent.id))?.profile ?? p;
+  await store.updateAgent(agent.id, { ...saved, ...mark });
   return out;
 }
 

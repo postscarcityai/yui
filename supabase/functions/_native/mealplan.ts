@@ -694,6 +694,9 @@ export type MealAsk =
 const PLAN_WORDS = /^\s*(?:(?:please|can you|could you|let'?s)\s+)?(?:plan|make|build)\s+(?:(?:my|me|a|the)\s+){0,2}(?:meals?|meal plan|week of meals|menu)(?:\s+(?:plan|for\s+(?:the|this)\s+week|this\s+week|for\s+the\s+week|a\s+week))?\s*(?:please)?\s*[.!?]*\s*$/i;
 const ADD_WORDS = /^\s*(?:please\s+)?(?:add|put)\s+(.+?)\s+(?:to|on)\s+(?:my|the)\s+(?:grocery|groceries|shopping)(?:\s+list)?\s*[.!]*\s*$/i;
 const ADD_COLON = /^\s*add\s+to\s+(?:my|the)\s+(?:grocery\s+list|groceries|shopping\s+list)\s*:?\s*(.*)$/is;
+// Words that point back at what was just said ("put the goods on my grocery list", "add those to my groceries") are not
+// an item: the model turn reads what they mean from the thread (YUI-188).
+const POINTS_BACK = /^(?:(?:all|each|every|both)\s+(?:of\s+)?)?(?:it|them|that|this|those|these|everything|all|all that|the\s+(?:goods|stuff|things|items|ingredients|rest|lot|above|whole\s+thing|list)|(?:those|these|that|the|this|your|its)\s+(?:ones?|things|items|ingredients|foods?|goods|groceries|stuff|meals?|recipes?|plan))(?:\s+(?:too|as well|in|over|for me|please))*$/i;
 const SHARE_WORDS = /^\s*(?:share|send|text|copy)\s+(?:me\s+)?(?:my|the)\s+(?:grocery|groceries|shopping)(?:\s+list)?\s*[.!?]*\s*$/i;
 const ID = (re: RegExp, id: string) => re.test(id);
 
@@ -710,7 +713,7 @@ export function mealAsks(rows: Row[]): { asks: MealAsk[]; rest: Row[] } {
       const add = body.match(ADD_WORDS);
       if (PLAN_WORDS.test(body)) a = { kind: "plan", row: r };
       else if (col) a = col[1].trim() ? { kind: "added", row: r, words: col[1].trim() } : { kind: "add", row: r };
-      else if (add) a = { kind: "added", row: r, words: add[1] };
+      else if (add && !POINTS_BACK.test(add[1].trim())) a = { kind: "added", row: r, words: add[1] };
       else if (SHARE_WORDS.test(body)) a = { kind: "share", row: r };
     } else if (e) {
       const v = e.value;

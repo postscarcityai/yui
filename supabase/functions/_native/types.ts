@@ -26,6 +26,7 @@ export interface Profile {
   blank?: boolean; // runs the setup flow on its first turns
   tables?: TableSeed[]; // starter tables written when the agent is added (YUI-170, profiles/<name>/tables.yui)
   seeded?: boolean; // its starter tables were written (they are never kept in the saved profile)
+  seededTables?: string[]; // the starter tables it has been given, each once (YUI-188); never given again
   workoutScreens?: string; // Arnold's pages were drawn by the runtime (YUI-182), and which lift charts Progress holds
   mealScreens?: string; // Basil's pages were drawn by the runtime (YUI-183), and which days and aisles they hold
   musicScreens?: string; // Gouda's pages were drawn by the runtime (YUI-184), and which song Chords holds

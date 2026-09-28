@@ -1,9 +1,9 @@
 // YUI-170: every native agent keeps its own little database (tables.ts), from the store up to a whole turn.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { applyTables, clock, diff, draw, emptyStore, parseSeeds, query, queryLine, write, writeLine } from "../src/tables.ts";
+import { applyTables, clock, diff, draw, emptyStore, inferCols, parseSeeds, query, queryLine, tableName, write, writeLine } from "../src/tables.ts";
 import { answerControl } from "../src/controls.ts";
-import { runAgent } from "../src/turn.ts";
+import { runAgent, slipLine } from "../src/turn.ts";
 import { crew } from "../src/profiles.ts";
 import { LocalStore } from "../src/store.ts";
 import { fakeModel, freshYui, lastUser, provider, system, USER } from "./helpers.ts";
@@ -264,4 +264,103 @@ test("a list labels its numbers; a table header with spaces is mended", async ()
   const { unsprawl } = await import("../src/turn.ts");
   assert.equal(unsprawl('Hi.\n```yui\ntable name="Week" Day|Cal (kcal)|Protein (g)|Meal type "Fri|300|10|Lunch"\n```'),
     'Hi.\n```yui\ntable name="Week" Day|Cal|Protein|Meal-type "Fri|300|10|Lunch" units=|kcal|g|\n```');
+});
+
+// YUI-188: Chris's Basil was made before his grocery list existed, and "put the goods on my grocery list" came back
+// as "(I couldn't do all of that: a table change didn't fit (put: no table "groceries")...)" three times over.
+
+const replyOf = (store: LocalStore, id: string) => store.data.rows.filter((r) => r.agent_id === id && r.sender === "agent").pop()!;
+
+test("an old agent gets each starter table it never had, with its rows, once; what they took off stays off", async () => {
+  const { store, byHandle } = await freshYui();
+  const basil = await byHandle("basil");
+  // As Chris's Basil was: made with YUI-170's starter set (foods, meals), seeded, no list of what he was given.
+  const t = store.data.tables![basil.id];
+  for (const n of Object.keys(t.tables)) if (n !== "foods" && n !== "meals") delete t.tables[n];
+  delete store.data.agents[basil.id].profile.seededTables;
+  t.tables.meals = { ...t.tables.meals, rows: { r1: { Food: "Toast" } }, order: ["r1"], next: 2 };
+  const m = fakeModel(() => "Hi.");
+  store.say(basil.id, "hi");
+  await runAgent(store, basil.id, { provider, fetch: m.fetch });
+  let now = await store.tables(basil.id);
+  assert.deepEqual(now.tables.groceries.order, ["greek-yogurt", "egg", "spinach", "chicken-thigh", "rice", "berry"]);
+  assert.equal(now.tables.recipes.order.length, 38);
+  assert.deepEqual(now.tables.meals.order, ["r1"], "a table he has is never touched");
+  assert.ok(now.tables.foods.order.length >= 40);
+  assert.ok(store.data.agents[basil.id].profile.seededTables!.includes("groceries"));
+  // They take the eggs off and drop the foods list: neither comes back (his tool tables are his tools' own, YUI-183).
+  now = write(now, { op: "put", table: "groceries", key: "egg", values: {}, delete: true }).store;
+  now = write(now, { op: "drop", name: "foods" }).store;
+  await store.saveTables(basil, diff(await store.tables(basil.id), now), now);
+  for (const words of ["hi again", "and again"]) {
+    store.say(basil.id, words);
+    await runAgent(store, basil.id, { provider, fetch: m.fetch });
+  }
+  now = await store.tables(basil.id);
+  assert.equal(now.tables.groceries.rows.egg, undefined, "a row they removed is never added again");
+  assert.equal(now.tables.groceries.order.length, 5);
+  assert.equal(now.tables.foods, undefined, "a table they dropped is never made again");
+});
+
+test("a put to a table that isn't there makes it from the columns it names; a near name finds the one there is", () => {
+  const ops = ["put reading dune Title=Dune Pages=412 +Done", "put reading Title=\"Piranesi\" Started=2026-09-01 Pages=272 Done=off"]
+    .map((l) => writeLine(l) as any);
+  assert.deepEqual(inferCols(ops, "reading"), [{ name: "Title", type: "text" }, { name: "Pages", type: "number" }, { name: "Done", type: "bool" },
+                                               { name: "Started", type: "date" }]);
+  const r = applyTables(`Saved.\n\`\`\`yui\n${["put reading dune Title=Dune Pages=412 +Done", "put reading Title=\"Piranesi\" Started=2026-09-01 Pages=272 Done=off", "query reading as list"].join("\n")}\n\`\`\``,
+    emptyStore(), CTX, ids());
+  assert.deepEqual(r.problems, []);
+  assert.deepEqual(r.made, ["reading"]);
+  assert.equal(r.store.tables.reading.rows.dune.Pages, 412);
+  assert.equal(r.store.tables.reading.order.length, 2);
+  assert.match(r.text, /list title="Reading" "Dune · Pages 412 · yes"/);
+  // "grocery", "Groceries" and "groceries" are one list; a new one is never made beside it.
+  const g = store(["table create groceries Item:text Qty:text Got:bool"]);
+  assert.equal(tableName(g, "grocery"), "groceries");
+  assert.equal(tableName(g, "Groceries"), "groceries");
+  assert.equal(tableName(g, "grocery_list"), "grocery_list");
+  const r2 = applyTables("```yui\nput grocery salmon Item=Salmon Qty=\"2 fillets\"\n```", g, CTX, ids());
+  assert.deepEqual(Object.keys(r2.store.tables), ["groceries"]);
+  assert.equal(r2.store.tables.groceries.rows.salmon.Qty, "2 fillets");
+  // A delete to a table that isn't there still waits for nobody: nothing is made for it.
+  assert.deepEqual(applyTables("```yui\nput reading dune +delete\n```", emptyStore(), CTX, ids()).store.tables, {});
+});
+
+test("a slip is one short plain line in a small card, never the ops, never three times", async () => {
+  assert.equal(slipLine(["x"], ["groceries", "groceries", "groceries"]), "Couldn't save that to Groceries.");
+  assert.equal(slipLine([], ["groceries", "meal_plan"]), "Couldn't save all of that.");
+  assert.equal(slipLine(["there's no agent called @zed (check the handle)", "there's no agent called @zed (check the handle)"], []),
+               "There's no agent called @zed.");
+  assert.equal(slipLine([], []), null);
+  const { store, byHandle } = await freshYui();
+  const yui = await byHandle("yui");
+  // Three writes the store refuses (no such column), and one that lands.
+  const m = fakeModel(() => "All set.\n```yui\nput groceries salmon Item=Salmon Cal=lots\nput groceries rice Item=Rice Cal=lots\n"
+    + "put groceries potato Item=Potatoes Cal=lots\nput groceries tuna Item=Tuna\nquery groceries where=Got=off as list \"Still to get\"\n```");
+  store.say(yui.id, "put the goods on my grocery list");
+  await runAgent(store, yui.id, { provider, fetch: m.fetch, newId: ids() });
+  const body = replyOf(store, yui.id).body;
+  assert.equal(body.match(/Couldn't save/g)?.length, 1, body);
+  assert.match(body, /\ncard@slip "Couldn't save that to Groceries\." cta="Try again"\n```$/);
+  assert.doesNotMatch(body, /I couldn't do all|didn't fit|put:|no column|\(/);
+  assert.match(body, /^All set\.\n```yui\nlist title="Still to get" .*"Tuna"/, "the reply is what worked");
+});
+
+test("Basil's grocery list after a meal plan: the goods land on Groceries and his Groceries page redraws", async () => {
+  const { store, byHandle } = await freshYui();
+  const basil = await byHandle("basil");
+  const t = store.data.tables![basil.id];
+  for (const n of Object.keys(t.tables)) if (n !== "foods" && n !== "meals") delete t.tables[n];
+  delete store.data.agents[basil.id].profile.seededTables;
+  const m = fakeModel(() => "On your list.\n```yui\nput groceries salmon Item=Salmon Qty=\"2 fillets\" Aisle=\"Meat and fish\" From=plan\n"
+    + "put groceries white-rice Item=\"White rice\" Aisle=Pantry From=plan\nput groceries potatoes Item=Potatoes Aisle=Produce From=plan\n```");
+  store.say(basil.id, "Put the goods on my grocery list.");
+  await runAgent(store, basil.id, { provider, fetch: m.fetch, newId: ids() });
+  const g = (await store.tables(basil.id)).tables.groceries;
+  assert.ok(["salmon", "white-rice", "potatoes"].every((k) => g.rows[k]), JSON.stringify(g.order));
+  const body = replyOf(store, basil.id).body;
+  assert.doesNotMatch(body, /Couldn't|didn't fit|no table/);
+  assert.match(body, /Salmon/);
+  assert.match(body, /\nlist title="Still to get" .*"Salmon · 2 fillets"/, body);
+  assert.match(body, /\n~aisle-meat-and-fish title="Meat and fish" .*"Salmon, 2 fillets"/, "his Groceries page redraws");
 });

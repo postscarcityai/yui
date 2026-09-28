@@ -503,7 +503,7 @@ function show(v: Cell, c?: TableCol): string {
   return String(v);
 }
 
-function pretty(name: string): string {
+export function pretty(name: string): string {
   return name.replace(/[_-]+/g, " ").replace(/^./, (c) => c.toUpperCase());
 }
 
@@ -598,6 +598,8 @@ export interface TablesApplied {
   text: string;
   store: TableStore;
   problems: string[]; // writes that were refused, in plain words
+  slipped: string[]; // the tables those refused writes were for ("" when the line named none)
+  made: string[]; // tables a put made because they did not exist yet
   held: Held | null; // deletes waiting for the person's tap
   wrote: number;
 }
@@ -636,26 +638,44 @@ export function gather(text: string): string {
 export function applyTables(text: string, store: TableStore, ctx: Partial<Clock>, newId: () => string): TablesApplied {
   text = gather(text);
   const problems: string[] = [];
+  const slipped: string[] = [];
+  const made: string[] = [];
   const deletes: TableOp[] = [];
   let wrote = 0;
-  // Writes first, in order, across every block; then draw.
+  const ops: TableOp[] = [];
   for (const m of text.matchAll(YUI_BLOCK)) {
     for (const line of m[2].split("\n")) {
       const op = writeLine(line);
       if (!op) continue;
       if ("error" in op) {
         problems.push(`${op.error}`);
+        slipped.push(/^\s*put\s/.test(line) ? line.trim().split(/\s+/)[1] ?? "" : "");
         continue;
       }
-      if (op.op === "drop" || (op.op === "put" && op.delete)) {
-        deletes.push(op);
-        continue;
-      }
-      const r = write(store, op, ctx);
-      if (r.error) problems.push(r.error);
-      else if (r.store !== store) wrote++;
-      store = r.store;
+      ops.push(op);
     }
+  }
+  // Writes first, in order, across every block; then draw.
+  for (let op of ops) {
+    if (op.op === "put") op = { ...op, table: tableName(store, op.table) };
+    if (op.op === "drop" || (op.op === "put" && op.delete)) {
+      deletes.push(op);
+      continue;
+    }
+    // A put to a table that isn't there makes it, from the columns the answer names for it (YUI-188).
+    if (op.op === "put" && !store.tables[op.table]) {
+      const r = write(store, { op: "table", name: op.table, cols: inferCols(ops, op.table) }, ctx);
+      if (!r.error) {
+        store = r.store;
+        made.push(op.table);
+      }
+    }
+    const r = write(store, op, ctx);
+    if (r.error) {
+      problems.push(r.error);
+      slipped.push(op.op === "put" ? op.table : op.name);
+    } else if (r.store !== store) wrote++;
+    store = r.store;
   }
   let held: Held | null = null;
   const real = deletes.filter((d) => (d.op === "drop" ? !!store.tables[d.name] : d.op === "put" && !!store.tables[d.table]
@@ -687,7 +707,46 @@ export function applyTables(text: string, store: TableStore, ctx: Partial<Clock>
     out = lastBlock ? out.slice(0, lastBlock.index! + lastBlock[0].length - lastBlock[3].length) + `${ask}\n` + out.slice(lastBlock.index! + lastBlock[0].length - lastBlock[3].length)
       : `${out.trim()}\n\`\`\`yui\n${ask}\n\`\`\``;
   }
-  return { text: out.replace(/\n{3,}/g, "\n\n").trim(), store, problems, held, wrote };
+  return { text: out.replace(/\n{3,}/g, "\n\n").trim(), store, problems, slipped, made, held, wrote };
+}
+
+/**
+ * The table a put means: its own name, or the one there is in another case or number ("Groceries",
+ * "grocery" and "groceries" are one list). A name with no match stays as written.
+ */
+export function tableName(store: TableStore, name: string): string {
+  if (store.tables[name]) return name;
+  const forms = (n: string) => {
+    const low = n.toLowerCase().replace(/[\s-]+/g, "_");
+    const one = low.replace(/ies$/, "y").replace(/(ch|sh|x|ss)es$/, "$1").replace(/s$/, "");
+    return [low, one];
+  };
+  const [low, one] = forms(name);
+  const names = Object.keys(store.tables);
+  return names.find((n) => forms(n)[0] === low) ?? names.find((n) => forms(n)[1] === one) ?? name;
+}
+
+/** Columns for a table a put makes: every column the answer's puts name for it, in order, typed by their values. */
+export function inferCols(ops: TableOp[], table: string): TableCol[] {
+  const seen = new Map<string, unknown[]>();
+  for (const op of ops) {
+    if (op.op !== "put" || op.delete || op.table.toLowerCase() !== table.toLowerCase()) continue;
+    for (const [k, v] of Object.entries(op.values)) {
+      const had = [...seen.keys()].find((x) => x.toLowerCase() === k.toLowerCase());
+      if (had) seen.get(had)!.push(v);
+      else if (COL.test(k) && k.toLowerCase() !== "key") seen.set(k, [v]);
+    }
+  }
+  const typeOf = (vs: unknown[]): ColType => {
+    const filled = vs.filter((v) => v !== "" && v != null);
+    if (!filled.length) return "text";
+    const all = (t: ColType) => filled.every((v) => !cell(t, v).error);
+    if (filled.every((v) => typeof v === "boolean" || /^(on|off|yes|no|true|false)$/i.test(String(v)))) return "bool";
+    if (all("number")) return "number";
+    if (all("date")) return "date";
+    return "text";
+  };
+  return [...seen].slice(0, LIMITS.cols).map(([name, vs]) => ({ name, type: typeOf(vs) }));
 }
 
 /** `table meals` (bound, no header) or `chart ... data=meals` on one of the agent's tables, as a query. */
@@ -731,8 +790,9 @@ export function deleteAsk(store: TableStore, ops: TableOp[]): string {
 export function applyHeld(store: TableStore, lines: string[], ctx: Partial<Clock> = {}): { store: TableStore; done: number } {
   let done = 0;
   for (const line of lines) {
-    const op = writeLine(line);
+    let op = writeLine(line);
     if (!op || "error" in op) continue;
+    if (op.op === "put") op = { ...op, table: tableName(store, op.table) };
     const r = write(store, op, ctx);
     if (!r.error && r.store !== store) done++;
     store = r.store;

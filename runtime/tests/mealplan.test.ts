@@ -93,6 +93,12 @@ test("Plan my meals: the shortcut's words open one full-screen flow, what it aim
     assert.equal(mealAsks([{ id: "x", sender: "user", kind: "text", body: words, meta: {}, created_at: "" } as any]).asks[0]?.kind, "plan", words);
   }
   assert.equal(mealAsks([{ id: "x", sender: "user", kind: "text", body: "what should I eat tonight?", meta: {}, created_at: "" } as any]).asks.length, 0);
+  // Words that point back at the plan are the model's to read, never an item called "the goods" (YUI-188).
+  const ask = (body: string) => mealAsks([{ id: "x", sender: "user", kind: "text", body, meta: {}, created_at: "" } as any]).asks[0];
+  for (const words of ["Put the goods on my grocery list.", "add those to my groceries", "put all of that on the shopping list", "Add them to my grocery list please"]) {
+    assert.equal(ask(words), undefined, words);
+  }
+  assert.equal((ask("put the oat milk on my grocery list") as any)?.words, "the oat milk");
 });
 
 test("the Send writes a week to meal_plan, keeps the answers, fills the grocery list by aisle and lands as a deck of swaps", async () => {
@@ -292,7 +298,8 @@ test("a Basil from before YUI-183 gets his recipes and goal once, keeps his own 
   const t1 = await store.tables(basil.id);
   assert.equal(t1.tables.recipes.order.length, 38);
   assert.equal(t1.tables.goal.rows.daily.Cal, 2100);
-  assert.equal(t1.tables.groceries.order.length, 0, "no starter list pushed on him");
+  // His grocery list is a starter table he never had: it comes with its starter rows, once (YUI-188).
+  assert.equal(t1.tables.groceries.order.length, 6);
   tap(store, basil.id, "mealplan", "plan", { plan: { days: "3 days", meals: "2 meals", avoid: ["Meat", "Fish"] } });
   await runAgent(store, basil.id, { provider, fetch: m.fetch, now });
   const f = fence(lastReply(store, basil.id).body);
