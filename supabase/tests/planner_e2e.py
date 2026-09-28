@@ -16,7 +16,7 @@ the app writes them, with the real yui-native answering from the database trigge
   4. "Add a to-do: call mom tomorrow at 5" -> a task and a reminder.
   5. Edit order saved on This week -> the task takes that place's day, its reminder follows.
   6. Move a task -> a short plan, then the task on the day picked.
-  7. Evening review -> a plan with each open task; the Send moves one to tomorrow, drops one, keeps the day.
+  7. One more to-do today, then the evening review -> a plan with each open task; the Send moves one to tomorrow, drops one, keeps the day.
   8. None of it took a free turn or a model call.
 
 The account is deleted at the end. Does NOT touch native_enabled.
@@ -207,7 +207,10 @@ try:
     check("the Send moves it, and This week is drawn in day order", no_model(rep) and rows_of(penny, "tasks")["book-a-haircut"]["Due"] == day(5)
           and words(body) == f"Book a haircut is on {target} now." and ">3 clear" in fence(body), words(body))
 
-    # 7. Evening review
+    # 7. Evening review (one more thing on today first, so there are two to decide on)
+    since = now()
+    mid, s = send(penny, "Add a to-do: water the plants")
+    wait_reply(penny, since, mid)
     since = now()
     mid, s = send(penny, "Evening review")
     rep = wait_reply(penny, since, mid)
