@@ -27,6 +27,8 @@ export interface Profile {
   seeded?: boolean; // its starter tables were written (they are never kept in the saved profile)
   soulEdited?: boolean; // the person rewrote its personality in Controls: the shelf's soul never replaces it
   meals?: boolean; // logs meals from a photo in the background (YUI-103, meals.ts); base basil always does
+  home?: string; // its home (YUI-168, profiles/<name>/home.yui): shortcuts and starter screens, played once
+  home_at?: string; // when its home was written into the thread
 }
 
 /** One of this person's native agents. */

@@ -6,6 +6,7 @@
 // where it runs.
 import type { MemoryItem, NativeAgent, OwnKey, Profile, Routes, Row, ScheduleItem, SearchTake } from "./types.ts";
 import { DEFAULT_ROUTES } from "./types.ts";
+import { HOME_META, homeBody } from "./home.ts";
 import { type TableChange, type TableStore, emptyStore, fromSeeds } from "./tables.ts";
 import type { JobItem } from "./meals.ts";
 
@@ -135,6 +136,14 @@ export class LocalStore implements Store {
     const p = { ...p0, ...(seeds?.length ? { seeded: true } : {}) } as Profile;
     this.data.agents[id] = { userId, profile: p };
     if (seeds?.length) (this.data.tables ??= {})[id] = fromSeeds(seeds);
+    // Its home (YUI-168), then its hello. Agents it names ({arnold}) are the ones already here.
+    const ids = Object.fromEntries(Object.entries(this.data.agents).filter(([, a]) => a.userId === userId).map(([aid, a]) => [a.profile.base, aid]));
+    const home = homeBody(p, { ...ids, [p.base]: id });
+    if (home) {
+      p.home_at = new Date().toISOString();
+      this.data.rows.push({ id: this.id("row"), agent_id: id, sender: "agent", kind: "text", body: home, meta: { ...HOME_META },
+                            created_at: p.home_at });
+    }
     this.data.rows.push({ id: this.id("row"), agent_id: id, sender: "agent", kind: "text", body: p.first, meta: { native: "first" },
                           created_at: new Date().toISOString() });
     this.changed();

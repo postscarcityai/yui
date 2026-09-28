@@ -1,0 +1,10 @@
+# Penny's home (YUI-168, yuigui spec/HOME.md). Today and This week fill in as you tell her things.
+menu shortcut@plan "Plan my week" say="Plan my week"
+menu shortcut@todo "Add a to-do" say="Add a to-do: "
+>2
+list@today title=Today "Tell Penny what's on your mind this week" +check
+save today
+>3
+timeline@week "This week" mark=Today
+next@start "Your week goes here once you tell Penny what's on it" key=start
+save this week

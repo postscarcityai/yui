@@ -217,6 +217,10 @@ def cmd_pair(args) -> int:
         return 1
     print(f"paired: {show(r['agent'])} on {r['connector']['name']}")
     report_commands(_profile(args))  # the composer's / suggestions; the gateway repeats it on start
+    # Its home (YUI-168): the owner's home.yui beside SOUL.md, written once on first pair.
+    hs, hr = send_home(_profile(args))
+    if hs in (200, 201):
+        print(f"home: sent {home_file(_profile(args))}")
     prof = r["agent"].get("remote_ref")
     flag = "" if prof in (None, "default") else f" -p {prof}"
     print(f"next: start the gateway so it answers in the app: hermes{flag} gateway restart"
@@ -316,6 +320,74 @@ def cmd_media(args) -> int:
     return 0
 
 
+# -- An agent's home (YUI-168, yuigui spec/HOME.md) --------------------------
+
+def home_file(profile: str | None) -> Path:
+    """Where a profile keeps its home.yui: beside its SOUL.md."""
+    root = hermes_root()
+    return root / "home.yui" if profile in (None, "", "default") else root / "profiles" / profile / "home.yui"
+
+
+def home_body(text: str) -> str | None:
+    """home.yui as the thread gets it: its lines, less `#` comments, in one ```yui fence."""
+    lines = [ln.strip() for ln in (text or "").splitlines()]
+    lines = [ln for ln in lines if ln and not re.match(r"^#(\s|$)", ln)]
+    return "```yui\n" + "\n".join(lines) + "\n```" if lines else None
+
+
+def home_row(user_id: str, agent_id: str, body: str) -> dict:
+    """The home's row: an agent row marked native=home, so the app keeps it out of the
+    record, fills the chips and the pages from it and never brings a page forward."""
+    return {"user_id": user_id, "agent_id": agent_id, "sender": "agent", "kind": "text", "body": body,
+            "meta": {"native": "home"}}
+
+
+def send_home(profile: str) -> tuple[int, dict]:
+    """Writes this profile's home.yui into its own Yui thread, with no push.
+    (0, {error: no_home}) when the profile has none."""
+    path = home_file(profile)
+    body = home_body(path.read_text()) if path.exists() else None
+    if not body:
+        return 0, {"error": "no_home", "path": str(path)}
+    token = load().get("token")
+    if not token:
+        return 401, {"error": "not_paired"}
+    s, sess = call({"action": "session"}, token)
+    if s != 200:
+        return s, sess
+    mine = [a for a in sess.get("agents") or [] if a.get("remote_ref") == profile]
+    if not mine:
+        return 404, {"error": "no_agent", "profile": profile}
+    req = urllib.request.Request(f"{SUPABASE_URL}/rest/v1/yui_messages", method="POST",
+                                 data=json.dumps(home_row(sess["user_id"], mine[0]["id"], body)).encode(),
+                                 headers={"content-type": "application/json", "apikey": PUBLISHABLE,
+                                          "prefer": "return=representation",
+                                          "authorization": f"Bearer {sess['access_token']}"})
+    try:
+        with urllib.request.urlopen(req, timeout=20) as r:
+            return r.status, {"message_id": json.loads(r.read())[0]["id"], "agent": mine[0]["name"]}
+    except urllib.error.HTTPError as e:
+        return e.code, {"error": f"http_{e.code}"}
+
+
+def cmd_home(args) -> int:
+    """Print this profile's home as the thread gets it; --send writes it into the thread."""
+    prof = _profile(args)
+    path = home_file(prof)
+    body = home_body(path.read_text()) if path.exists() else None
+    if not args.send:
+        print(body or f"no home: write {path} (spec: https://www.yuigui.com/developers/home)")
+        return 0 if body else 1
+    s, r = send_home(prof)
+    if r.get("error") == "not_paired":
+        sys.exit(NOT_PAIRED)
+    if s != 200 and s != 201:
+        print(f"home failed: {r.get('error', s)}", file=sys.stderr)
+        return 1
+    print(f"home sent to {r['agent']}'s thread")
+    return 0
+
+
 def call_push(body: dict, token: str) -> tuple[int, dict]:
     req = urllib.request.Request(PUSH, data=json.dumps(body).encode(), method="POST", headers={
         "content-type": "application/json", "apikey": PUBLISHABLE, "authorization": f"Bearer {token}"})
@@ -352,13 +424,16 @@ def build_parser(ap: argparse.ArgumentParser, with_profile: bool = True) -> None
     m.add_argument("--text", help="chat text to send above it")
     m.add_argument("--to", help="which Yui agent's thread (default: this profile's)")
     m.set_defaults(fn=cmd_media)
+    ho = sub.add_parser("home", help="show this profile's home.yui (shortcuts + starter screens); --send writes it")
+    ho.add_argument("--send", action="store_true")
+    ho.set_defaults(fn=cmd_home)
     try:
         from . import talk
     except ImportError:  # run as a script
         import talk
     talk.add_cli(sub)
     if with_profile:
-        for sp in (p, a, c, m):
+        for sp in (p, a, c, m, ho):
             sp.add_argument("--profile", "-p", help="Hermes profile (default: the active one)")
 
 

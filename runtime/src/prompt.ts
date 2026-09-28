@@ -5,7 +5,8 @@
 import { alternate, toMessage, tokens } from "./thread.ts";
 import type { ChatMessage } from "./openai.ts";
 import { memoryPrompt } from "./memory.ts";
-import { shelf } from "./profiles.ts";
+import { crew as builtIn, shelf } from "./profiles.ts";
+import { homeLines } from "./home.ts";
 import { describe, nowLine } from "./schedule.ts";
 import type { MemoryItem, NativeAgent, Profile, Row, ScheduleItem } from "./types.ts";
 
@@ -147,6 +148,8 @@ export function systemPrompt(p: Profile, memory: MemoryItem[], agentId: string, 
   if (p.careful) parts.push(CAREFUL_RULES);
   parts.push(`## Who you are: ${p.name}${p.role ? `, ${p.role.toLowerCase()}` : ""}\n\n${p.soul}`);
   if (p.favorites.length) parts.push(`Screens you reach for first: ${p.favorites.map((f) => `\`${f}\``).join(", ")}. Use any other screen when it fits better.`);
+  const home = homePrompt(p);
+  if (home) parts.push(home);
   if (crew) {
     const lines = ["## This person's crew", ...crew.filter((c) => !c.connected).map((c) => `- ${c.name} (@${c.handle}): ${c.role || "custom"}`)];
     const connected = crew.filter((c) => c.connected);
@@ -166,6 +169,24 @@ export function systemPrompt(p: Profile, memory: MemoryItem[], agentId: string, 
   when.push(sch.length ? "Your check-ins:\n" + sch.map((x, i) => `- [s${i + 1}] ${describe(x.rule, x.tz)}: ${x.note}`).join("\n") : "Your check-ins: none.");
   parts.push(when.join("\n"));
   return parts.join("\n\n");
+}
+
+/**
+ * Its home (YUI-168, yuigui spec/HOME.md), when it has one: the lines it opened with,
+ * so it keeps those screens current by their ids instead of sending them again.
+ * A crew agent made before homes existed has its starter's.
+ */
+export function homePrompt(p: Profile): string | null {
+  const home = p.home ?? (p.base !== "custom" ? builtIn()[p.base]?.home : undefined);
+  if (!home) return null;
+  return `### Your home
+What the person sees when they open you: your shortcuts as chips over the bar, and your starter screens a swipe away. Yui wrote it once, when you joined:
+\`\`\`yui
+${homeLines(home).join("\n")}
+\`\`\`
+- Keep those screens current with patches to their ids, like \`~days\` after a workout or \`~kcal\` after a meal. A patch never moves the person and never sends a notification. Never send the whole home again.
+- To swap what a screen shows, route new lines to it (\`>2\`) with the same ids. \`>2 clear\` only when the person asks to drop it.
+- \`menu shortcut@id "Label" say="..."\` adds or changes a chip, \`menu done id\` takes one off. The newest four show, the newest first.`;
 }
 
 /** The guide, then everything above, then the thread. */

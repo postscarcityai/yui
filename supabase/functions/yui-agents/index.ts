@@ -31,6 +31,7 @@ import {
   verifyAccessToken,
 } from "../_shared/yui.ts";
 import { starters } from "../_native/profiles.ts";
+import { HOME_META, type HomeRow, homesToWrite } from "../_native/home.ts";
 import { type CrewOffer, crewOffer, crewRefusal, type DescribedRow, describeAgents, readdSort, starter } from "../_native/starters.ts";
 
 const PAIR_TTL_MINUTES = 10;
@@ -184,15 +185,40 @@ async function provisionNative(db: any, userId: string) {
 // The person's native profiles: base and what each says it does (YUI-165).
 // Null when this person has no native Yui (native_enabled off).
 // deno-lint-ignore no-explicit-any
-async function nativeRows(db: any, userId: string): Promise<DescribedRow[] | null> {
+async function nativeRows(db: any, userId: string): Promise<(DescribedRow & HomeRow)[] | null> {
   const { data: hosted } = await db.from("yui_connectors").select("id").eq("user_id", userId)
     .eq("kind", "hosted").is("revoked_at", null).limit(1);
   if (!hosted?.length) return null;
   const { data: rows, error } = await db.from("yui_native_profiles")
-    .select("agent_id, base:profile->>base, tagline:profile->>tagline, about:profile->>about, can:profile->can")
+    .select("agent_id, base:profile->>base, tagline:profile->>tagline, about:profile->>about, can:profile->can, home:profile->>home, home_at:profile->>home_at")
     .eq("user_id", userId);
   if (error) throw error;
-  return (rows ?? []).map((r: DescribedRow) => ({ ...r, can: Array.isArray(r.can) ? r.can : null }));
+  return (rows ?? []).map((r: DescribedRow & HomeRow) => ({ ...r, can: Array.isArray(r.can) ? r.can : null }));
+}
+
+// YUI-168: each native agent's home (its shortcuts and starter screens, spec/HOME.md),
+// written into its thread once. A crew agent made before homes existed gets its
+// starter's. Setting home_at first claims it, so two phones listing at once write
+// one row. It is an agent row with no push: the app keeps it out of the record.
+// A failure here never breaks the list.
+// deno-lint-ignore no-explicit-any
+async function writeHomes(db: any, userId: string, rows: HomeRow[]) {
+  for (const h of homesToWrite(rows, (base) => starter(base)?.home)) {
+    try {
+      const { data: row } = await db.from("yui_native_profiles").select("profile").eq("agent_id", h.agentId).single();
+      if (!row?.profile || row.profile.home_at) continue;
+      const { data: won, error } = await db.from("yui_native_profiles")
+        .update({ profile: { ...row.profile, home_at: new Date().toISOString() } })
+        .eq("agent_id", h.agentId).is("profile->>home_at", null).select("agent_id");
+      if (error) throw error;
+      if (!won?.length) continue;
+      const { error: e2 } = await db.from("yui_messages")
+        .insert({ user_id: userId, agent_id: h.agentId, sender: "agent", kind: "text", body: h.body, meta: HOME_META });
+      if (e2) throw e2;
+    } catch (e) {
+      console.error("home", h.agentId, e);
+    }
+  }
 }
 
 // YUI-145: the crew in Add agent, by name, with the agent each one is while it
@@ -227,6 +253,7 @@ const ACTIONS: Record<string, Action> = {
         .eq("claimed_user_id", userId).not("first_name", "is", null)
         .order("claimed_at", { ascending: false }).limit(1).maybeSingle();
       const rows = await nativeRows(db, userId).catch((e) => (console.error("crew", e), null));
+      if (rows) await writeHomes(db, userId, rows);
       // YUI-165: a native agent carries what it does (About, the picker); others get nothing new.
       const said = rows ? describeAgents(rows) : {};
       const listed = (agents ?? []).map((a: { id: string }) => said[a.id] ? { ...a, ...said[a.id] } : a);

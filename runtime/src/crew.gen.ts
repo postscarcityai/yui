@@ -25,8 +25,8 @@ export const CREW: Record<string, Profile> = {
       "plan"
     ],
     "model": "default",
-    "soul": "You are Arnold, a personal trainer in the Yui app. Big energy, short sentences, real plans.\n\n- You build workouts people can do today with what they have, and you run them: a `timer` for intervals and rests, a `list` with `+check` for sets, a `table` or `chart` for progress, a `stat` for a number that matters.\n- Before the first plan you ask about days a week, gear, and any injuries or conditions. Until they have answered about injuries and conditions, every plan screen asks it again with a `choose`. You write what you learn in your notes so you never ask twice.\n- You are a careful coach. You never diagnose, never give medical or drug advice, and you tell them to check with a doctor before starting when they mention pain, an injury, a heart or breathing condition, pregnancy, or a big change. Say it once, briefly, not on every message. When something is for their doctor, that is one sentence, then a screen with what you can do (a `choose` of next steps or the plan's questions), never words alone. Words go before the fence, nothing after it.\n- You cheer the work, not the body. No shaming, no crash plans.",
-    "first": "Arnold here. Let's build a week you'll actually do. Anything hurting or any health condition I should plan around? Check with your doctor before starting if so.\n```yui\nplan \"Your training week\"\nchoose \"How many days a week?\" 2|3|4|5|6\npick \"What do you have?\" \"Just me\"|Dumbbells|Barbell|Bands|\"Pull-up bar\"|\"A gym\" +other\nchoose \"Any injuries or conditions?\" None|\"Yes, I'll tell you\" +other\nend\n```",
+    "soul": "You are Arnold, a personal trainer in the Yui app. Big energy, short sentences, real plans.\n\n- You build workouts people can do today with what they have, and you run them: a `timer` for intervals and rests, a `list` with `+check` for sets, a `table` or `chart` for progress, a `stat` for a number that matters.\n- Before the first plan you ask about days a week, gear, and any injuries or conditions. Until they have answered about injuries and conditions, every plan screen asks it again with a `choose`. You write what you learn in your notes so you never ask twice.\n- You are a careful coach. You never diagnose, never give medical or drug advice, and you tell them to check with a doctor before starting when they mention pain, an injury, a heart or breathing condition, pregnancy, or a big change. Say it once, briefly, not on every message. When something is for their doctor, that is one sentence, then a screen with what you can do (a `choose` of next steps or the plan's questions), never words alone. Words go before the fence, nothing after it.\n- You cheer the work, not the body. No shaming, no crash plans.\n- Your split is the heart of it. When the kickoff plan comes back with \"Build my own\" or their own words, send one `plan \"Your days\"` with a `choose` per day they train (`choose Mon Push|Pull|Legs|Upper|Lower|\"Full body\"|Cardio +other`). Once every day has a focus: write the split in your notes (days, what each trains, gear, injuries), `put this_week` a row for every day (rest days too), then send your home's This week again on screen 2 with the same ids: `>2`, `stat@week-done \"0 of 4\" \"Workouts this week\"`, `list@days title=\"This week\" \"Mon Push\" \"Wed Pull\" +check`, `card@split \"Your split\" \"<one line>\" cta=\"Edit a day\"`. Patch screen 3 to today's session (`~today`, `~sets`).\n- \"Look at my split\", \"edit a day\" or Edit a day: a `choose` of their days, then that day's focus. Save it the same way and patch `~days`.",
+    "first": "Arnold here. Let's build a week you'll actually do. Anything hurting or any health condition I should plan around? Check with your doctor before starting if so.\n```yui\nplan \"Build your split\"\nchoose \"How many days a week?\" 2|3|4|5|6\npick \"Which days?\" Mon|Tue|Wed|Thu|Fri|Sat|Sun\nchoose \"How do you split it?\" \"Push, pull, legs\"|\"Upper, lower\"|\"Full body\"|\"Build my own\" +other\npick \"What do you have?\" \"Just me\"|Dumbbells|Barbell|Bands|\"Pull-up bar\"|\"A gym\" +other\nchoose \"Any injuries or conditions?\" None|\"Yes, I'll tell you\" +other\nend\n```",
     "shelf": true,
     "careful": true,
     "tables": [
@@ -321,7 +321,8 @@ export const CREW: Record<string, Profile> = {
         "next": 1,
         "rows": []
       }
-    ]
+    ],
+    "home": "# Arnold's home (YUI-168, yuigui spec/HOME.md). Played once when he joins; he patches it after.\n# Chips show newest first, so the most important one goes last.\nmenu shortcut@split \"My split\" show=\"this week\"\nmenu shortcut@workout \"Start a workout\" say=\"Start today's workout\"\n>2\nstat@week-done \"0 of 4\" \"Workouts this week\" sub=\"Build your split and this fills in\"\nlist@days title=\"This week\" \"Mon Full body A\" \"Tue Easy cardio\" \"Wed Full body B\" \"Fri Full body A\" \"Sat Long walk\" +check\ncard@split \"Make it yours\" \"Your days, your split, your gear. This week fills in from it.\" cta=\"Build my split\"\nsave this week\n>3\ncard@today \"Today's workout\" \"Full body A to start. About 40 minutes.\" sub=\"Starter week\" cta=\"Start\"\nlist@sets title=\"Full body A\" \"Goblet squat 3x10\" \"Push-up 3x8\" \"Dumbbell row 3x10\" \"Plank 3x30s\" +check\nsave today"
   },
   "basil": {
     "base": "basil",
@@ -915,7 +916,8 @@ export const CREW: Record<string, Profile> = {
         "next": 1,
         "rows": []
       }
-    ]
+    ],
+    "home": "# Basil's home (YUI-168, yuigui spec/HOME.md). Played once when he joins; he patches Today after every meal.\nmenu shortcut@groceries \"Grocery list\" show=groceries\nmenu shortcut@log \"Log a meal\" say=\"Log a meal: \"\n>2\nstat@kcal 0kcal \"Calories today\" sub=\"of 2,100. Log a meal to start.\"\nchart@macros bar \"Macros vs goal\" x=Protein|Carbs|Fat y=0|0|0 y2=140|210|70 names=Today|Goal unit=g\nsave today\n>3\nlist@groceries title=Groceries \"Greek yogurt\" Eggs Spinach \"Chicken thighs\" Rice Berries +check\nsave groceries"
   },
   "blank": {
     "base": "blank",
@@ -1116,7 +1118,8 @@ export const CREW: Record<string, Profile> = {
           }
         ]
       }
-    ]
+    ],
+    "home": "# Gouda's home (YUI-168, yuigui spec/HOME.md): the looper, the chords and the keys, ready to play.\nmenu shortcut@tune \"Tune up\" say=\"Tune my guitar\"\nmenu shortcut@jam \"Jam\" say=\"Make me a beat to jam on\"\n>2\nloop@looper 92 \"Looper\" p=x...x...|..x...x.|........|x.x.x.x. +inline\nsave looper\n>3\nchords@chords C I-V-vi-IV \"Chords\" +inline\nsave chords\n>4\nkeys@keys C major \"Keys\" +inline\nsave keys"
   },
   "penny": {
     "base": "penny",
@@ -1274,7 +1277,8 @@ export const CREW: Record<string, Profile> = {
           }
         ]
       }
-    ]
+    ],
+    "home": "# Penny's home (YUI-168, yuigui spec/HOME.md). Today and This week fill in as you tell her things.\nmenu shortcut@plan \"Plan my week\" say=\"Plan my week\"\nmenu shortcut@todo \"Add a to-do\" say=\"Add a to-do: \"\n>2\nlist@today title=Today \"Tell Penny what's on your mind this week\" +check\nsave today\n>3\ntimeline@week \"This week\" mark=Today\nnext@start \"Your week goes here once you tell Penny what's on it\" key=start\nsave this week"
   },
   "quill": {
     "base": "quill",
@@ -1435,7 +1439,8 @@ export const CREW: Record<string, Profile> = {
           }
         ]
       }
-    ]
+    ],
+    "home": "# Quill's home (YUI-168, yuigui spec/HOME.md). What you study and when the next review is.\nmenu shortcut@next \"What's next\" say=\"What should I review next?\"\nmenu shortcut@quiz \"Quiz me\" say=\"Quiz me\"\n>2\ncard@studying \"What you're studying\" \"World capitals. 8 cards, all new.\" sub=Geography cta=\"Quiz me\"\nsave studying\n>3\nstat@due 8 \"Cards to review\" sub=\"Next review: now\"\nsave next review"
   },
   "yui": {
     "base": "yui",
@@ -1601,6 +1606,7 @@ export const CREW: Record<string, Profile> = {
           }
         ]
       }
-    ]
+    ],
+    "home": "# Yui's home (YUI-168, yuigui spec/HOME.md): your crew, one tap each. {arnold} is that agent's id,\n# filled in when the home is played; a line naming an agent the person doesn't have is left out.\nmenu shortcut@new \"What's new\" say=\"What's new in Yui?\"\nmenu shortcut@add \"Add an agent\" say=\"Make me a new agent: \"\n>2\ncard@crew-arnold Arnold \"Workouts built around your week and body\" sub=Trainer url=yui://agent/{arnold}/thread cta=Open\ncard@crew-basil Basil \"Eat better without counting everything\" sub=Nutritionist url=yui://agent/{basil}/thread cta=Open\ncard@crew-gouda Gouda \"Beats, chords and practice, right on screen\" sub=Musician url=yui://agent/{gouda}/thread cta=Open\ncard@crew-penny Penny \"Get your week out of your head\" sub=Planner url=yui://agent/{penny}/thread cta=Open\ncard@crew-quill Quill \"Learn anything fast, then get quizzed\" sub=\"Study buddy\" url=yui://agent/{quill}/thread cta=Open\nsave your crew"
   }
 };

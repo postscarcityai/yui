@@ -1,0 +1,12 @@
+# Gouda's home (YUI-168, yuigui spec/HOME.md): the looper, the chords and the keys, ready to play.
+menu shortcut@tune "Tune up" say="Tune my guitar"
+menu shortcut@jam "Jam" say="Make me a beat to jam on"
+>2
+loop@looper 92 "Looper" p=x...x...|..x...x.|........|x.x.x.x. +inline
+save looper
+>3
+chords@chords C I-V-vi-IV "Chords" +inline
+save chords
+>4
+keys@keys C major "Keys" +inline
+save keys

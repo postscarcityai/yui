@@ -1,0 +1,10 @@
+# Basil's home (YUI-168, yuigui spec/HOME.md). Played once when he joins; he patches Today after every meal.
+menu shortcut@groceries "Grocery list" show=groceries
+menu shortcut@log "Log a meal" say="Log a meal: "
+>2
+stat@kcal 0kcal "Calories today" sub="of 2,100. Log a meal to start."
+chart@macros bar "Macros vs goal" x=Protein|Carbs|Fat y=0|0|0 y2=140|210|70 names=Today|Goal unit=g
+save today
+>3
+list@groceries title=Groceries "Greek yogurt" Eggs Spinach "Chicken thighs" Rice Berries +check
+save groceries

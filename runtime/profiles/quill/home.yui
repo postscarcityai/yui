@@ -1,0 +1,9 @@
+# Quill's home (YUI-168, yuigui spec/HOME.md). What you study and when the next review is.
+menu shortcut@next "What's next" say="What should I review next?"
+menu shortcut@quiz "Quiz me" say="Quiz me"
+>2
+card@studying "What you're studying" "World capitals. 8 cards, all new." sub=Geography cta="Quiz me"
+save studying
+>3
+stat@due 8 "Cards to review" sub="Next review: now"
+save next review

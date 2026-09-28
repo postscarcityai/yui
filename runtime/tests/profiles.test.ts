@@ -76,8 +76,9 @@ test("Yui answers a first turn locally, from her own folder", async () => {
   const { store, byHandle } = await freshYui();
   const yui = await byHandle("yui");
   const opened = store.data.rows.filter((r) => r.agent_id === yui.id);
-  assert.equal(opened.length, 1, "Yui opens the thread with her first answer");
-  assert.equal(opened[0].body, crew().yui.first);
+  assert.equal(opened.length, 2, "Yui opens the thread with her home, then her first answer");
+  assert.deepEqual(opened[0].meta, { native: "home" });
+  assert.equal(opened[1].body, crew().yui.first);
 
   store.say(yui.id, "[yui] q1 choose choice=\"Plan my week\"", "event");
   const m = fakeModel(() => "Let's plan it.\n```yui\nplan \"Your week\"\nlist \"Must do\" +check\nend\n```");
