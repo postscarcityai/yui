@@ -59,7 +59,10 @@ def now(): return sql("select now() as t")[0]["t"]
 def fence(body):
     m = re.search(r"```yui\n([\s\S]*?)\n```", body or "")
     return m.group(1) if m else ""
-def no_model(r): return r is not None and "model" not in ((r["meta"] or {}).get("native") or {})
+def native(r):
+    n = (r["meta"] or {}).get("native") if r else None
+    return n if isinstance(n, dict) else {}
+def no_model(r): return r is not None and "model" not in native(r)
 
 T = str(uuid.uuid4())
 sql(f"insert into yui_users(id, apple_sub, timezone) values ('{T}','test.{T}','America/New_York')")
@@ -142,7 +145,9 @@ try:
     w = rows_of(arnold, "workouts")
     y = [v for k, v in w.items() if k.endswith("-squat") and v.get("Source") == "logged"]
     check("their words are logged move by move on yesterday", bool(y) and y[0].get("Weight") == 135 and y[0].get("Sets") == 5 and y[0]["Day"] < day, y)
-    check("the reply only patches: nothing moves the person", no_model(rep) and "clear" not in fence(body) and "~best 135lb" in fence(body), fence(body)[:300])
+    f = fence(body)
+    check("This week and Today only patch; Progress is drawn again for the new lifts' charts", no_model(rep) and ">2" not in f and "~days" in f
+          and ">4 clear" in f and "stat@best 135lb" in f and "chart@lift-squat " in f, f[:400])
 
     # 4. Thursday tapped on This week.
     since = now()
@@ -159,7 +164,7 @@ try:
 
     # 5. No free turn and no model: every answer came from the runtime.
     ans = agent_rows(arnold, "2000-01-01")
-    modeled = [r["body"][:40] for r in ans if ((r["meta"] or {}).get("native") or {}).get("model")]
+    modeled = [r["body"][:40] for r in ans if native(r).get("model")]
     check("no answer in this run called a model", not modeled, modeled)
     turns1 = turns()
     check("no free turn was spent", turns1 == turns0, f"{turns0} -> {turns1}")
