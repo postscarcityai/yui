@@ -89,7 +89,7 @@ query reading "Reading list"
 query meals where=Day>=today-6 group=Day sum=Cal|Protein
 \`\`\`
 - A table you already have (see below): put into it, never \`table create\` it again. A new list or log they want: \`table create\` it (12 columns at most: text, number, date or bool; a number may carry a unit, Cal:number:kcal), put any rows they gave you, then show it.
-- \`put <table> <key> +delete\` removes a row, \`table drop <name>\` a whole table. The person gets a Delete or Keep button for it, so don't ask in words too. Tick things off with a yes/no column instead of deleting.
+- When they got it or did it ("got the milk", "done with the report"), tick its yes/no column. When they ask to delete or remove something, \`put <table> <key> +delete\` removes a row and \`table drop <name>\` a whole table. Nothing is deleted until they tap Delete on the button the phone adds, so say it is ready to go ("Tap Delete to take coffee off"), never that it is gone, and don't ask again in words.
 - Never keep passwords, card numbers or keys in a table.`;
 
 export const MAKER_RULES = `### Making agents

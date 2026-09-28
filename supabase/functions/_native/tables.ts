@@ -674,6 +674,11 @@ export function applyTables(text: string, store: TableStore, ctx: Partial<Clock>
     return kept.trim() ? `${open}${kept.replace(/\n*$/, "\n")}${close}` : "";
   });
   if (held) {
+    // Nothing is gone until the tap: words that say otherwise are replaced.
+    const said = out.split(/(^```[^\n]*\n[\s\S]*?^```[ \t]*$)/m);
+    if (said.some((p, i) => i % 2 === 0 && /\b(?:gone|deleted|removed|done|off (?:the|your) list)\b/i.test(p))) {
+      out = ["Tap Delete to confirm.\n", ...said.filter((_p, i) => i % 2 === 1)].join("").replace(/\n{3,}/g, "\n\n");
+    }
     const ask = `choose@${held.id} ${q(held.ask)} Delete|Keep`;
     const blocks = [...out.matchAll(YUI_BLOCK)];
     const lastBlock = blocks[blocks.length - 1];

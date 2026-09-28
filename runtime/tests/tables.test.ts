@@ -248,3 +248,11 @@ test("a write with words but no screen gets the table under the words", async ()
   const reply = store.data.rows.filter((r) => r.agent_id === arnold.id && r.sender === "agent").pop()!;
   assert.equal(reply.body, 'Bench logged. 3x8 at 135.\n```yui\ntable name="Sessions" Day|Exercise|Sets|Reps|Weight|Note "2026-09-27|Bench press|3|8|135|" units=||||lb|\n```');
 });
+
+test("a held delete never reads as done", () => {
+  const s = store(["table create groceries Item:text", "put groceries coffee Item=Coffee"]);
+  const a = applyTables("Gone.\n```yui\nput groceries coffee +delete\nquery groceries as list\n```", s, CTX, ids());
+  assert.equal(a.text, 'Tap Delete to confirm.\n```yui\nlist title="Groceries" "Coffee"\nchoose@del-id0 "Delete Coffee from groceries?" Delete|Keep\n```');
+  const b = applyTables("Tap Delete to take coffee off.\n```yui\nput groceries coffee +delete\n```", s, CTX, ids());
+  assert.match(b.text, /^Tap Delete to take coffee off\./);
+});
