@@ -132,7 +132,7 @@ try:
     check("ping", s == 200 and r["result"] == {}, r)
     s, r = rpc(ct, "tools/list")
     names = [t["name"] for t in r["result"]["tools"]]
-    check("tools/list: the five tools plus the app-only yui_tap", names == ["yui_show", "yui_answers", "yui_say", "yui_threads", "yui_library", "yui_tap"], names)
+    check("tools/list: the six tools plus the app-only yui_tap", names == ["yui_show", "yui_answers", "yui_say", "yui_threads", "yui_library", "yui_tables", "yui_tap"], names)
     tl = {t["name"]: t for t in r["result"]["tools"]}
     check("yui_show names the MCP App, yui_tap is app-only",
           tl["yui_show"].get("_meta", {}).get("ui", {}).get("resourceUri") == "ui://yui/screen"

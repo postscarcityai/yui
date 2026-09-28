@@ -30,6 +30,11 @@
 //                yuigui.com/api/library, the same search as the library page,
 //                so the ranking lives in one place. A flow hit carries its
 //                Mermaid. Read-only, writes nothing.
+//   yui_tables   Tables for any agent (YUI-171, yuigui spec/TABLES.md section
+//                8): table create, put, table drop and query lines on the
+//                person's tables this agent holds, the same server path as
+//                yui-connect /tables (_shared/tables.ts). Rows come back in
+//                the result; a delete puts Delete or Keep on the phone first.
 //   yui_tap      App-only (MCP Apps visibility ["app"]): a tap in the screen
 //                drawn inside the host, written as the same event row the
 //                phone writes.
@@ -51,6 +56,8 @@ import {
   Refused,
   take,
 } from "../_shared/yui.ts";
+import { tablesCall, TablesRefused, tablesSummary } from "../_shared/tables.ts";
+import { rowsText } from "../_native/tablecall.ts";
 import { parse } from "./yl.mjs";
 import SCREEN_HTML from "./screen_html.mjs";
 import { echoFor, eventLine, relays, valueOf } from "./app_events.mjs";
@@ -252,6 +259,8 @@ async function callTool(db: DB, c: Connector, name: string, a: Json): Promise<Js
         return await tap(db, c, a);
       case "yui_library":
         return await library(a);
+      case "yui_tables":
+        return await tablesTool(db, c, a);
       default:
         throw new RpcError(-32602, `Unknown tool: ${name}`);
     }
@@ -301,6 +310,22 @@ async function library(a: Json): Promise<Json> {
     ? `Top hit is the flow ${top.name}: send \`${top.yl}\` with yui_show to run it; its Mermaid is included.`
     : `Top hit is ${top.name}: adapt its yl and send it with yui_show.`;
   return ok(`${items.length} from the library for "${q}". ${how}`, { q, items });
+}
+
+// yui_tables: the one tables call (YUI-171), for the agent this token serves.
+async function tablesTool(db: DB, c: Connector, a: Json): Promise<Json> {
+  const lines = typeof a.lines === "string" ? a.lines : "";
+  const agent = await pick(db, c, a.agent);
+  let r: Json;
+  try {
+    r = await tablesCall(db, { id: agent.id, user_id: c.user_id, name: agent.name }, { lines, via: "mcp", token: c.token });
+  } catch (e) {
+    if (e instanceof TablesRefused) throw new ToolError(e.message);
+    throw e;
+  }
+  const rows = (r.results ?? []).map(rowsText).join("\n\n");
+  const text = [tablesSummary(r), rows].filter(Boolean).join("\n\n");
+  return { ...ok(text, r), ...((r.failed ?? []).length && !(r.ok ?? []).length && !r.held ? { isError: true } : {}) };
 }
 
 async function agents(db: DB, c: Connector): Promise<Agent[]> {
@@ -665,6 +690,33 @@ const TOOLS = [
       securitySchemes: SECURITY,
     },
     annotations: { title: "Find a ready-made screen or flow", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  },
+  {
+    name: "yui_tables",
+    title: "Keep a table in Yui",
+    description:
+      "The person's own little database in Yui: tables you make, rows you write and read, kept for them even if they switch agents. " +
+      "lines are Yui table words, one per line, run in order: `table create meals Day:date Food:text Cal:number:kcal` " +
+      "(types text, number, date, bool; a third part is the unit), `put meals Day=today Food=Oats Cal=300` (a bare word after the table " +
+      "name is the row key: put again with it to change that row), `query meals where=Day=today sort=-Cal limit=10` (where: = != < > <= >= " +
+      "and ~ contains; also cols=, sum=, avg=, group=Day:week), `put meals r3 +delete`, `table drop meals`. Queries hand the rows back to you; " +
+      "to show them, send `table`, `list` or `chart` lines with yui_show. Deletes never run on your say: the person gets Delete or Keep, " +
+      "and their tap settles on your next call. No lines: settle taps and list the tables you hold. Refused lines come back with why. " +
+      "Limits: 50 lines a call, 20 tables an agent, 100 a person, 5000 rows a table, 500 rows back from a query.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        lines: { type: "string", description: "Table words, one per line, no ``` fence. Empty: list what you hold." },
+        agent: agentArg,
+      },
+    },
+    securitySchemes: SECURITY,
+    _meta: {
+      "openai/toolInvocation/invoking": "Checking your tables",
+      "openai/toolInvocation/invoked": "Tables done",
+      securitySchemes: SECURITY,
+    },
+    annotations: { title: "Keep a table in Yui", readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
   },
   {
     name: "yui_tap",

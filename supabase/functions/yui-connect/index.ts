@@ -43,10 +43,17 @@
 //   {action: "guide"}                                    no auth
 //       The current channel guide {version, body}: the text any agent gets
 //       on the Yui channel (yuigui/spec/CHANNEL.md).
+//   POST .../yui-connect/tables {agent?, lines | reply}  Bearer yui_ct_...
+//       (or {action: "tables", ...}) Tables for any agent (YUI-171, yuigui
+//       spec/TABLES.md section 8): the agent's table words run on the same
+//       store native agents keep (_shared/tables.ts). agent is a remote_ref or
+//       handle this token serves (default: the only one). Takes from the
+//       agent's own `tables` bucket, not this host's `connect` one.
 //
 // Wrong codes are throttled per client address (10 per 10 minutes). Every
 // call with a connector token takes from that host's rate bucket, and a
 // suspended host or account gets 403 suspended (YUI-26).
+import { tablesCall, TablesRefused } from "../_shared/tables.ts";
 import {
   admin,
   AGENT_COLORS,
@@ -85,6 +92,7 @@ Deno.serve(async (req) => {
   } catch {
     return json({ error: "invalid_request" }, 400);
   }
+  if (new URL(req.url).pathname.replace(/\/+$/, "").endsWith("/tables")) body.action = "tables";
   try {
     switch (body.action) {
       case "pair":
@@ -103,6 +111,8 @@ Deno.serve(async (req) => {
         return await controls(req, body);
       case "guide":
         return json({ guide: await guide(admin()) });
+      case "tables":
+        return await tables(req, body);
       default:
         return json({ error: "unknown_action" }, 400);
     }
@@ -385,6 +395,37 @@ async function controls(req: Request, b: Body): Promise<Response> {
     .eq("connector_id", connector.id).eq("remote_ref", b.remote_ref).select("id");
   if (error) throw error;
   return json({ agents: (data ?? []).length, sections: Object.keys(report?.sections ?? {}), at: now });
+}
+
+// Tables (YUI-171). The connector is checked like connectorFor, but the call
+// takes from the agent's `tables` bucket (60 a minute), not the host's
+// `connect` bucket (6 a minute), which a turn's reads would empty.
+async function tables(req: Request, b: Body): Promise<Response> {
+  const db = admin();
+  const token = bearer(req);
+  if (!token.startsWith(CONNECTOR_PREFIX)) return json({ error: "unauthorized" }, 401);
+  const { data: c } = await db.from("yui_connectors").select("id, user_id, suspended_at")
+    .eq("token_hash", await sha256Hex(token)).is("revoked_at", null).maybeSingle();
+  if (!c) return json({ error: "unauthorized" }, 401);
+  const { data: owner } = await db.from("yui_users").select("suspended_at").eq("id", c.user_id).maybeSingle();
+  if (c.suspended_at || owner?.suspended_at) throw new Refused(403, "suspended");
+  const { data: list, error } = await db.from("yui_agents").select("id, user_id, name, handle, remote_ref")
+    .eq("connector_id", c.id).eq("user_id", c.user_id).order("sort");
+  if (error) throw error;
+  const want = typeof b.agent === "string" ? b.agent.trim().toLowerCase() : "";
+  const agent = want
+    ? (list ?? []).find((a: DB) => [a.remote_ref, a.handle].some((v) => (v ?? "").toLowerCase() === want))
+    : (list ?? []).length === 1 ? list[0] : null;
+  if (!agent) {
+    return json({ error: want ? "no_such_agent" : "agent_required",
+                  agents: (list ?? []).map((a: DB) => a.remote_ref ?? a.handle) }, want ? 404 : 400);
+  }
+  try {
+    return json(await tablesCall(db, agent, { lines: b.lines, reply: b.reply, via: "connect", token }));
+  } catch (e) {
+    if (e instanceof TablesRefused) return json({ error: e.code, message: e.message }, 400);
+    throw e;
+  }
 }
 
 // deno-lint-ignore no-explicit-any

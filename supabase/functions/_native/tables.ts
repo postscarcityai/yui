@@ -207,7 +207,7 @@ function put(store: TableStore, op: Extract<TableOp, { op: "put" }>, ctx: Partia
 }
 
 /** A key as written, or the same key in another case ("Milk" finds "milk"): models are loose with case. */
-function findKey(t: Table, k: string): string | null {
+export function findKey(t: Table, k: string): string | null {
   if (k in t.rows) return k;
   const low = k.toLowerCase();
   return t.order.find((x) => x.toLowerCase() === low) ?? null;
@@ -711,7 +711,7 @@ function boundLine(line: string, store: TableStore): Record<string, unknown> | n
   return null;
 }
 
-function deleteAsk(store: TableStore, ops: TableOp[]): string {
+export function deleteAsk(store: TableStore, ops: TableOp[]): string {
   const drops = ops.filter((o): o is Extract<TableOp, { op: "drop" }> => o.op === "drop");
   const puts = ops.filter((o): o is Extract<TableOp, { op: "put" }> => o.op === "put");
   if (drops.length && !puts.length) {

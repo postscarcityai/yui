@@ -1441,6 +1441,9 @@ def register(ctx) -> None:
     ctx.register_hook("pre_tool_call", doing.on_tool)  # a tool call becomes a few words in the working row
     ctx.register_tool(name="yui_propose", toolset="yui", schema=talk.SCHEMA, handler=talk.tool_handler,
                       description=talk.SCHEMA["description"], emoji="🐰")
+    from . import tables  # tables for any agent (YUI-171)
+    ctx.register_tool(name="yui_tables", toolset="yui", schema=tables.SCHEMA, handler=tables.tool_handler,
+                      description=tables.SCHEMA["description"], emoji="🐰")
     ctx.register_command("yui", handoff.slash_command,
                          description="Hand what we're doing to the Yui app, with a push to your phone",
                          args_hint="[note]")
