@@ -1444,6 +1444,9 @@ def register(ctx) -> None:
     from . import tables  # tables for any agent (YUI-171)
     ctx.register_tool(name="yui_tables", toolset="yui", schema=tables.SCHEMA, handler=tables.tool_handler,
                       description=tables.SCHEMA["description"], emoji="🐰")
+    from . import mail  # Yui's mailbox at yuigui.com (yui-mail)
+    ctx.register_tool(name="yui_mail", toolset="yui", schema=mail.SCHEMA, handler=mail.tool_handler,
+                      description=mail.SCHEMA["description"], emoji="🐰")
     ctx.register_command("yui", handoff.slash_command,
                          description="Hand what we're doing to the Yui app, with a push to your phone",
                          args_hint="[note]")
