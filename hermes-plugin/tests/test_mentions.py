@@ -152,7 +152,8 @@ class Handoffs(unittest.TestCase):
         self.assertEqual(mentions.handoffs_in(text, own=["yui"]), ["arnold"])
 
     def test_other_links_are_not_hand_offs(self):
-        text = '```yui\ncard "Docs" url=https://www.yuigui.com/agent/basil\ncard "S" url=yui://settings/search\n```'
+        text = ('```yui\ncard "Docs" url=https://www.yuigui.com/agent/basil\ncard "S" url=yui://settings/search\n'
+                'card@crew-basil Basil url=yui://agent/basil/thread cta=Open\n```')
         self.assertEqual(mentions.handoffs_in(text), [])
 
 

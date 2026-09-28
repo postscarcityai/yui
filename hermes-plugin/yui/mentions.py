@@ -43,7 +43,7 @@ def handles_in(text: str, own: Iterable[str] = ()) -> List[str]:
     return out
 
 
-HANDOFF_CARD = re.compile(r'^\s*card\b.*?\burl="?yui://agent/([a-z0-9][a-z0-9-]{0,31})', re.I | re.M)
+HANDOFF_CARD = re.compile(r'^\s*card\b.*?\burl="?yui://agent/([a-z0-9][a-z0-9-]{0,31})(?![a-z0-9-]|/thread)', re.I | re.M)
 YUI_FENCE = re.compile(r"```yui[^\n]*\n(.*?)(```|\Z)", re.S)
 
 

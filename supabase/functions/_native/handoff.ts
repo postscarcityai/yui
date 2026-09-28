@@ -15,7 +15,8 @@ export interface Target { handle: string; name: string }
 const HANDLE = /(?<![\w@.])@([a-z0-9][a-z0-9-]{0,31})\b/gi;
 const FENCE = /```[\s\S]*?(?:```|$)/g;
 const INLINE = /`[^`\n]*`/g;
-const CARD = /^card\b.*\burl=(?:"yui:\/\/agent\/([a-z0-9-]+)"|yui:\/\/agent\/([a-z0-9-]+))/i;
+// `yui://agent/<id>/thread` only opens an agent (Yui's crew page, YUI-168): not a hand-off.
+const CARD = /^card\b.*\burl=(?:"yui:\/\/agent\/([a-z0-9-]+)"|yui:\/\/agent\/([a-z0-9-]+)(?![a-z0-9-]|\/thread))/i;
 const BODY = /\bbody="((?:[^"\\]|\\.)*)"/;
 const MAX_MENTIONS = 3;
 

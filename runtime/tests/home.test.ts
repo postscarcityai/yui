@@ -5,6 +5,7 @@ import assert from "node:assert/strict";
 import { checkHome, homeBody, homesToWrite, homeLines } from "../src/home.ts";
 import { crew, loadProfile } from "../src/profiles.ts";
 import { homePrompt } from "../src/prompt.ts";
+import { cards } from "../src/handoff.ts";
 import { runAgent } from "../src/turn.ts";
 import { fakeModel, freshYui, provider, system } from "./helpers.ts";
 
@@ -111,4 +112,11 @@ test("Arnold's kickoff builds a split: days, which days, how to split them (or h
   assert.equal(screen[6], "end");
   assert.match(a.soul, /plan "Your days"/, "his own split: a choose per day");
   assert.match(a.soul, /list@days/, "and This week is drawn from it");
+});
+
+test("Yui's crew cards open an agent, they are not hand-offs (YUI-144)", () => {
+  const home = homeBody(crew().yui, { arnold: "a-1", basil: "b-2", gouda: "g-3", penny: "p-4", quill: "q-5" });
+  assert.match(home!, /yui:\/\/agent\/a-1\/thread/);
+  assert.deepEqual(cards(home!.includes("```yui") ? home! : "```yui\n" + home + "\n```"), []);
+  assert.deepEqual(cards('```yui\ncard "Basil" body="x" url=yui://agent/basil\n```').map((c) => c.target), ["basil"]);
 });
