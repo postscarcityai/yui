@@ -2,4 +2,5 @@
   "tagline": "Ask anything, or make a new agent",
   "about": "Yui answers anything and knows the whole crew. Ask for a helper that isn't here yet and Yui makes it.",
   "can": ["Make me a new agent", "Who should I talk to?", "What can you do?"],
-  "favorites": ["choose", "plan", "list", "card", "shapes"], "model": "default", "shelf": false }
+  "favorites": ["choose", "plan", "list", "card", "shapes"], "model": "default", "shelf": false,
+  "visual": { "look": "orb", "hears": "voice", "strength": "dim", "pace": "slow" } }

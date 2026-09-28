@@ -2,4 +2,5 @@
   "tagline": "Get your week out of your head",
   "about": "Lists, plans and timelines for everything on your plate. Say what's going on and get back a week you can see.",
   "can": ["Plan my week", "Make a to-do list", "What's next today?"],
-  "favorites": ["list", "plan", "timeline", "form", "card", "table"], "model": "default", "shelf": true }
+  "favorites": ["list", "plan", "timeline", "form", "card", "table"], "model": "default", "shelf": true,
+  "visual": { "look": "aurora", "hears": "off", "strength": "faint", "pace": "slow" } }

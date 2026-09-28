@@ -6,6 +6,7 @@ import { COLORS, PRESETS, type Profile } from "./types.ts";
 import { CREW } from "./crew.gen.ts";
 import { parseSeeds } from "./tables.ts";
 import { checkHome } from "./home.ts";
+import { checkVisual, parseVisual } from "./visual.ts";
 
 /** The three files every profile folder holds. tables.yui (starter tables) and home.yui (its home, YUI-168) are optional. */
 export const PROFILE_FILES = ["profile.json", "soul.md", "first.yui"] as const;
@@ -62,6 +63,7 @@ export function parseProfile(base: string, files: { "profile.json": string; "sou
     ...(meta.careful ? { careful: true } : {}),
     ...(meta.sees ? { sees: true } : {}),
     ...(meta.blank ? { blank: true } : {}),
+    ...(meta.visual != null ? { visual: parseVisual(meta.visual)! } : {}),
   };
   const bad = checkProfile(p);
   if (bad.length) throw new Error(`${base}: ${bad.join("; ")}`);
@@ -88,6 +90,7 @@ export function checkProfile(p: Profile): string[] {
   if (!screen) out.push("first.yui needs a ```yui fence");
   else if (!PRESETS.has(screen[1].trim().split(/\s/)[0])) out.push(`first.yui opens with "${screen[1].trim().split(/\s/)[0]}", not a screen the app draws`);
   else if (!p.first.slice(0, screen.index).trim()) out.push("first.yui needs a line of text before its screen");
+  if (p.visual) out.push(...checkVisual(p.visual));
   if (/\u2014/.test([p.soul, p.first, p.tagline, p.about, ...(p.can ?? [])].join(" "))) out.push("no em dashes");
   return out;
 }

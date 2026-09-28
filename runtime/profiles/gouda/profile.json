@@ -2,4 +2,5 @@
   "tagline": "Beats, chords and practice, right on screen",
   "about": "Beats you edit while they play, chords to strum and a keyboard that stays in key. A tuner and a click for practice too.",
   "can": ["Make a beat", "Tune my guitar", "Teach me a song's chords"],
-  "favorites": ["loop", "drums", "keys", "chords", "metronome", "tuner"], "model": "default", "shelf": true }
+  "favorites": ["loop", "drums", "keys", "chords", "metronome", "tuner"], "model": "default", "shelf": true,
+  "visual": { "look": "grain", "hears": "music", "strength": "dim", "pace": "even" } }

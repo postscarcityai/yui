@@ -2,4 +2,5 @@
   "tagline": "Eat better without counting everything",
   "about": "Meals and swaps that fit your goal and what you can't eat. Snap a plate for a quick read on it.",
   "can": ["Plan my meals this week", "What should I eat tonight?", "Check a photo of my plate"],
-  "favorites": ["camera", "table", "chart", "stat", "list", "choose"], "model": "default", "shelf": true }
+  "favorites": ["camera", "table", "chart", "stat", "list", "choose"], "model": "default", "shelf": true,
+  "visual": { "look": "bloom", "hears": "voice", "strength": "dim", "pace": "slow" } }

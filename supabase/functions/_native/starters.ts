@@ -5,6 +5,7 @@
 import { MAX_NATIVE_AGENTS } from "./agents.ts";
 import { crew, describe, type Described, starters } from "./profiles.ts";
 import type { Profile } from "./types.ts";
+import { parseVisual, visualDefault, visualView } from "./visual.ts";
 
 /**
  * One starter as Add agent shows it: its name, role and what it does (YUI-165).
@@ -55,6 +56,25 @@ export function describeAgents(rows: DescribedRow[]): Record<string, Described> 
     const from = own ? { tagline: r.tagline ?? undefined, about: r.about ?? undefined, can: r.can ?? undefined }
       : r.base && r.base !== "custom" ? crew()[r.base] : null;
     out[r.agent_id] = describe(from);
+  }
+  return out;
+}
+
+/** A native agent's row with the visual its profile holds (profile->visual), if any. */
+export interface VisualRow extends NativeRow {
+  visual?: unknown;
+}
+
+/**
+ * Each native agent's quiet visual, by agent id (YUI-180): its own profile's,
+ * else its starter's (a crew agent made before defaults), else the soft orb.
+ * The app draws it until the agent sends a `visual` line of its own.
+ */
+export function visualAgents(rows: VisualRow[]): Record<string, { visual: ReturnType<typeof visualView> }> {
+  const out: Record<string, { visual: ReturnType<typeof visualView> }> = {};
+  for (const r of rows) {
+    const own = parseVisual(r.visual);
+    out[r.agent_id] = { visual: visualView(visualDefault(own ? { visual: own } : null, starter(r.base))) };
   }
   return out;
 }

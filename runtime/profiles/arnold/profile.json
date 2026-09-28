@@ -2,4 +2,5 @@
   "tagline": "Workouts built around your week and body",
   "about": "A training week around your days, your gear and anything that hurts. Timers run on screen and every set gets logged.",
   "can": ["Build my training week", "Give me a 20 minute workout", "Log today's workout"],
-  "favorites": ["timer", "table", "chart", "stat", "list", "plan"], "model": "default", "shelf": true }
+  "favorites": ["timer", "table", "chart", "stat", "list", "plan"], "model": "default", "shelf": true,
+  "visual": { "look": "waves", "hears": "music", "strength": "dim", "pace": "even" } }

@@ -32,7 +32,7 @@ import {
 } from "../_shared/yui.ts";
 import { starters } from "../_native/profiles.ts";
 import { HOME_META, type HomeRow, homesToWrite } from "../_native/home.ts";
-import { type CrewOffer, crewOffer, crewRefusal, type DescribedRow, describeAgents, readdSort, starter } from "../_native/starters.ts";
+import { type CrewOffer, crewOffer, crewRefusal, type DescribedRow, describeAgents, readdSort, starter, visualAgents, type VisualRow } from "../_native/starters.ts";
 
 const PAIR_TTL_MINUTES = 10;
 
@@ -185,15 +185,15 @@ async function provisionNative(db: any, userId: string) {
 // The person's native profiles: base and what each says it does (YUI-165).
 // Null when this person has no native Yui (native_enabled off).
 // deno-lint-ignore no-explicit-any
-async function nativeRows(db: any, userId: string): Promise<(DescribedRow & HomeRow)[] | null> {
+async function nativeRows(db: any, userId: string): Promise<(DescribedRow & HomeRow & VisualRow)[] | null> {
   const { data: hosted } = await db.from("yui_connectors").select("id").eq("user_id", userId)
     .eq("kind", "hosted").is("revoked_at", null).limit(1);
   if (!hosted?.length) return null;
   const { data: rows, error } = await db.from("yui_native_profiles")
-    .select("agent_id, base:profile->>base, tagline:profile->>tagline, about:profile->>about, can:profile->can, home:profile->>home, home_at:profile->>home_at")
+    .select("agent_id, base:profile->>base, tagline:profile->>tagline, about:profile->>about, can:profile->can, home:profile->>home, home_at:profile->>home_at, visual:profile->visual")
     .eq("user_id", userId);
   if (error) throw error;
-  return (rows ?? []).map((r: DescribedRow & HomeRow) => ({ ...r, can: Array.isArray(r.can) ? r.can : null }));
+  return (rows ?? []).map((r: DescribedRow & HomeRow & VisualRow) => ({ ...r, can: Array.isArray(r.can) ? r.can : null }));
 }
 
 // YUI-168: each native agent's home (its shortcuts and starter screens, spec/HOME.md),
@@ -256,7 +256,9 @@ const ACTIONS: Record<string, Action> = {
       if (rows) await writeHomes(db, userId, rows);
       // YUI-165: a native agent carries what it does (About, the picker); others get nothing new.
       const said = rows ? describeAgents(rows) : {};
-      const listed = (agents ?? []).map((a: { id: string }) => said[a.id] ? { ...a, ...said[a.id] } : a);
+      // YUI-180: and its own quiet visual, drawn until it sends a `visual` line of its own.
+      const seen = rows ? visualAgents(rows) : {};
+      const listed = (agents ?? []).map((a: { id: string }) => said[a.id] ? { ...a, ...said[a.id], ...seen[a.id] } : a);
       return { agents: listed, connectors, first_name: invite?.first_name ?? null, crew: rows ? crewOffer(rows).map(crewView) : null };
     },
   },

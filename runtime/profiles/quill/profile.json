@@ -2,4 +2,5 @@
   "tagline": "Learn anything fast, then get quizzed",
   "about": "Five minute lessons with pictures, math and charts, one idea per page. A quick quiz at the end makes it stick.",
   "can": ["Teach me something new", "Quiz me on what I learned", "Walk me through a math problem"],
-  "favorites": ["deck", "page", "choose", "math", "step", "calc"], "model": "default", "shelf": true }
+  "favorites": ["deck", "page", "choose", "math", "step", "calc"], "model": "default", "shelf": true,
+  "visual": { "look": "orb", "hears": "voice", "strength": "faint", "pace": "slow" } }

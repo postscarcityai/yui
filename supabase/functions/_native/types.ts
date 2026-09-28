@@ -2,6 +2,7 @@
 // Native Yui (NATIVE-1, yuigui spec/NATIVE.md): the shapes every part of the
 // runtime shares. Runtime-neutral: no Node or Deno APIs anywhere in src/.
 import type { TableSeed } from "./tables.ts";
+import type { VisualDefault } from "./visual.ts";
 
 /** A profile as written in runtime/profiles/<name>/, or as a person's copy of one. */
 export interface Profile {
@@ -29,6 +30,7 @@ export interface Profile {
   meals?: boolean; // logs meals from a photo in the background (YUI-103, meals.ts); base basil always does
   home?: string; // its home (YUI-168, profiles/<name>/home.yui): shortcuts and starter screens, played once
   home_at?: string; // when its home was written into the thread
+  visual?: VisualDefault; // its own quiet visual on the stage (YUI-180, visual.ts): look, what it hears, strength, pace
 }
 
 /** One of this person's native agents. */
