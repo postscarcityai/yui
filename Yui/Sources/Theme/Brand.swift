@@ -1,16 +1,27 @@
 import SwiftUI
 
 /// Chris's bunny-ear Yui wordmark. A template image, so the theme's `brand` token sets its color.
+///
+/// Centered, it draws 5% of its width to the left: the Y's left arm leaves open space under it,
+/// so centered by its box it looks like it sits to the right (yuigui brand/README.md). The shift
+/// moves only the drawing, never the layout. Pass `centered: false` where it sits at a leading edge.
 struct Wordmark: View {
     var height: Double
+    var centered = true
     @Environment(\.yuiTheme) private var theme
     @Environment(\.colorScheme) private var scheme
+
+    /// Wordmark.imageset is 672 x 432, cropped tight.
+    static let aspect = 672.0 / 432.0
+    /// The optical shift, as a share of the wordmark's width.
+    static let opticalShift = 0.05
 
     var body: some View {
         Image("Wordmark")
             .resizable()
             .scaledToFit()
             .frame(height: height)
+            .offset(x: centered ? -Self.opticalShift * height * Self.aspect : 0)
             .foregroundStyle(theme.swatch(scheme).brand)
             .accessibilityLabel("Yui")
     }
