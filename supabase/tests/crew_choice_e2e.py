@@ -6,7 +6,8 @@ A throwaway account (never anyone's real one): the first list provisions Yui and
 crew, Yui answers a real turn, removing a crew member takes only that one out, Add agent
 offers it again, `crew_add` puts it back without touching anyone else, a second `crew_add`
 changes nothing, a paired agent stays where it was, and `crew_add_all` fills in everyone
-missing. The account is deleted at the end. Does NOT touch native_enabled.
+missing. Every crew agent arrives with its starter tables (YUI-170), and one put back with
+crew_add gets them again. The account is deleted at the end. Does NOT touch native_enabled.
 
     python3 supabase/tests/crew_choice_e2e.py
 """
@@ -46,6 +47,40 @@ try:
           bool(hello) and "p=x...x...|..x...x." in hello[0]["body"], (hello[0]["body"] if hello else "")[:90])
     before = ids(r)
 
+    # YUI-170: each starter arrives with its own tables and starter rows; the saved profile carries none of them.
+    SEEDS = {"Yui": {"todos": 3, "groceries": 6, "notes": 1}, "Basil": {"foods": 44, "meals": 0},
+             "Arnold": {"exercises": 16, "this_week": 7, "sessions": 0}, "Penny": {"tasks": 1, "errands": 2, "bills": 5},
+             "Quill": {"decks": 1, "review": 8}, "Gouda": {"loops": 5, "songs": 4}}
+    def tables_of(agent_id):
+        return {x["name"]: x["n"] for x in sql(f"select t.name, count(r.key) as n from yui_native_tables t left join yui_native_table_rows r "
+                                               f"on r.agent_id = t.agent_id and r.tname = t.name where t.agent_id = '{agent_id}' group by t.name")}
+    got = {n: tables_of(before[n]) for n in CREW}
+    check("every crew agent arrives with its starter tables and rows", got == SEEDS, f"{got}")
+    kept = sql(f"select count(*) as n from yui_native_profiles where user_id='{T}' and profile ? 'tables'")[0]["n"]
+    flagged = sql(f"select count(*) as n from yui_native_profiles where user_id='{T}' and profile->>'seeded' = 'true'")[0]["n"]
+    check("no saved profile carries its seeds; every crew profile says it was seeded", kept == 0 and flagged == 6, f"kept={kept} seeded={flagged}")
+    foods = sql(f"select vals from yui_native_table_rows where agent_id='{before['Basil']}' and tname='foods' and key='chicken-breast'")
+    check("Basil's foods carry calories and macros per portion", bool(foods) and foods[0]["vals"].get("Cal") == 165 and foods[0]["vals"].get("Protein") == 31,
+          f"{foods[0]['vals'] if foods else None}")
+
+    # Controls (native agents): the app asks for the tables section as a control row; yui-native lists each table
+    # with its row count, and a delete without confirmed is refused.
+    def control(agent_id, meta):
+        rid = str(uuid.uuid4())
+        s, _ = rest("POST", "yui_messages", tok(), {"id": rid, "user_id": T, "agent_id": agent_id, "sender": "user", "kind": "control",
+                    "body": "controls", "meta": {"v": 1, "req": "c-170", **meta}}, prefer="return=minimal")
+        end = time.time() + 60
+        while time.time() < end:
+            a = sql(f"select meta from yui_messages where agent_id='{agent_id}' and kind='control' and sender='agent' and meta->>'for'='{rid}'")
+            if a: return s, a[0]["meta"]
+            time.sleep(2)
+        return s, None
+    s, ans = control(before["Basil"], {"op": "list", "section": "tables"})
+    check("Controls list Basil's tables with their row counts", bool(ans) and [(i["id"], i["sub"]) for i in ans.get("items", [])] ==
+          [("foods", "44 rows"), ("meals", "0 rows")], f"{s} {ans and ans.get('items')}")
+    s, ans = control(before["Basil"], {"op": "delete", "section": "tables", "id": "meals", "rev": "x"})
+    check("a delete from Controls needs a confirm", bool(ans) and ans.get("error") == "confirm", f"{ans}")
+
     # A real turn: the person says hi, hosted Yui answers through the live runtime.
     yui = before["Yui"]
     s, m = rest("POST", "yui_messages", tok(), {"user_id": T, "agent_id": yui, "sender": "user",
@@ -81,6 +116,7 @@ try:
     check("Arnold is back with the crew, above the paired agent", names(r) == [n for n in CREW if n != "Arnold"] + ["Arnold", "Nova"],
           f"{names(r)}")
     check("nobody else was replaced (same ids)", all(after[n] == before[n] for n in CREW if n != "Arnold"))
+    check("Arnold put back comes with his starter tables again", tables_of(after["Arnold"]) == SEEDS["Arnold"], f"{tables_of(after['Arnold'])}")
     s, a2 = fn("yui-agents", {"action": "crew_add", "base": "arnold"}, tok())
     check("a second tap changes nothing", s == 200 and a2.get("added") is False and a2["agent"]["id"] == after["Arnold"], f"{s} added={a2.get('added')}")
     s, bad = fn("yui-agents", {"action": "crew_add", "base": "urza"}, tok())
@@ -102,7 +138,8 @@ try:
 finally:
     sql(f"delete from yui_users where id = '{T}'")
     left = sql("select " + " + ".join(f"(select count(*) from {t} where user_id = '{T}')" for t in
-               ["yui_agents", "yui_messages", "yui_connectors", "yui_native_profiles", "yui_sessions"]) + " as n")[0]["n"]
+               ["yui_agents", "yui_messages", "yui_connectors", "yui_native_profiles", "yui_sessions",
+                "yui_native_tables", "yui_native_table_rows"]) + " as n")[0]["n"]
     check("throwaway account deleted, zero rows left", left == 0, f"left={left}")
 
 print(f"\n{sum(results)}/{len(results)} passed")

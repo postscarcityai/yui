@@ -226,3 +226,25 @@ test("controls: the agent's tables with row counts, read one, delete one with a 
   assert.deepEqual(Object.keys((await store.tables(basil.id)).tables), ["foods"]);
   assert.equal((await ask({ op: "put", section: "tables", id: "foods", rev: got.rev, value: {} })).error, "not_allowed");
 });
+
+test("table words outside a yui block still land, and never reach the phone as text", () => {
+  const s = store(["table create sessions Day:date Exercise:text Sets:number"]);
+  const a = applyTables('```\nput sessions Day=today Exercise="Bench press" Sets=3\n```\nBench logged.', s, CTX, ids());
+  assert.equal(a.store.tables.sessions.order.length, 1);
+  assert.equal(a.text, "Bench logged.");
+  const b = applyTables('Logged.\nput sessions Day=today Exercise=Squat Sets=5\n```yui\nquery sessions as list\n```', s, CTX, ids());
+  assert.equal(b.store.tables.sessions.order.length, 1);
+  assert.equal(b.text, 'Logged.\n```yui\nlist title="Sessions" "2026-09-27 · Squat · 5"\n```');
+  const c = applyTables("Here's code:\n```\nconst x = 1;\n```", s, CTX, ids());
+  assert.equal(c.text, "Here's code:\n```\nconst x = 1;\n```", "other fences are left alone");
+});
+
+test("a write with words but no screen gets the table under the words", async () => {
+  const { store, byHandle } = await freshYui();
+  const arnold = await byHandle("arnold");
+  const m = fakeModel(() => "```\nput sessions Day=2026-09-27 Exercise=\"Bench press\" Sets=3 Reps=8 Weight=135\n```\nBench logged. 3x8 at 135.");
+  store.say(arnold.id, "log today's bench");
+  await runAgent(store, arnold.id, { provider, fetch: m.fetch });
+  const reply = store.data.rows.filter((r) => r.agent_id === arnold.id && r.sender === "agent").pop()!;
+  assert.equal(reply.body, 'Bench logged. 3x8 at 135.\n```yui\ntable name="Sessions" Day|Exercise|Sets|Reps|Weight|Note "2026-09-27|Bench press|3|8|135|" units=||||lb|\n```');
+});

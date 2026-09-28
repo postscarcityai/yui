@@ -602,12 +602,36 @@ export interface TablesApplied {
 const YUI_BLOCK = /(^```yui[^\n]*\n)([\s\S]*?)(^```[ \t]*$)/gm;
 
 /**
+ * Table words the model left outside a yui block: a fence with no tag (or yl, sql) holding them becomes a yui
+ * block, and loose `put` / `table create` / `table drop` / `query` lines in the words move into the answer's
+ * yui block, so they are applied and never reach the phone as text.
+ */
+export function gather(text: string): string {
+  const isTableLine = (l: string) => !!writeLine(l) || !!queryLine(l);
+  let out = text.replace(/^```(?:yl|sql|text)?[ \t]*\n([\s\S]*?)^```[ \t]*$/gm, (m, body: string) =>
+    body.split("\n").some(isTableLine) ? "```yui\n" + body + "```" : m);
+  const parts = out.split(/(^```[^\n]*\n[\s\S]*?^```[ \t]*$)/m);
+  const loose: string[] = [];
+  for (let i = 0; i < parts.length; i += 2) {
+    parts[i] = parts[i].split("\n").filter((l) => (isTableLine(l) ? (loose.push(l.trim()), false) : true)).join("\n");
+  }
+  out = parts.join("");
+  if (!loose.length) return out;
+  const blocks = [...out.matchAll(YUI_BLOCK)];
+  if (!blocks.length) return `${out.trim()}\n\`\`\`yui\n${loose.join("\n")}\n\`\`\``;
+  const b = blocks[0];
+  const at = b.index! + b[1].length;
+  return out.slice(0, at) + loose.join("\n") + "\n" + out.slice(at);
+}
+
+/**
  * Takes the table words out of every yui block in an answer: writes land in
  * the store (all or nothing per line), deletes wait for a tap, and each
  * `query` (or bare `table <name>`, or `chart data=<name>`) becomes a drawn
  * view of the store after every write.
  */
 export function applyTables(text: string, store: TableStore, ctx: Partial<Clock>, newId: () => string): TablesApplied {
+  text = gather(text);
   const problems: string[] = [];
   const deletes: TableOp[] = [];
   let wrote = 0;

@@ -291,10 +291,10 @@ async function oneTurn(store: Store, agent: NativeAgent, rows: Row[], opts: Turn
     await store.saveTables(agent, tchange, t.store);
     log(`${p.name}: tables: ${tchange.rows.length} row(s) written, ${tchange.dropRows.length} gone, ${tchange.tables.length} table(s) made or changed`);
   }
-  // Only writes and no view: say it's saved and show the table that changed.
-  if (!t.text.trim() && t.wrote && !out.agents.length) {
+  // Writes with no screen to show them: the table that changed, under the words (or "Saved.").
+  if (t.wrote && !out.agents.length && !/^```yui\b/m.test(t.text)) {
     const touched = tchange.rows[tchange.rows.length - 1]?.table ?? tchange.tables[0]?.name;
-    t.text = `Saved.${touched ? `\n\`\`\`yui\n${draw(t.store, { table: touched, limit: 12 }, clk).join("\n")}\n\`\`\`` : ""}`;
+    if (touched) t.text = `${t.text.trim() || "Saved."}\n\`\`\`yui\n${draw(t.store, { table: touched, limit: 12 }, clk).join("\n")}\n\`\`\``;
   }
   out.text = t.text;
   let body = unsprawl(unmark(undeck(unend(unbreak(undash(out.text))))));
