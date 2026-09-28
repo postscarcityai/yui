@@ -35,10 +35,10 @@ import {
   baseSubject, htmlToText, messageIds, parseAddress, parseAddressList, parseHeaders, replySubject, senderAddress, SITE,
   template, validAddress, verifyEventSignature,
 } from "./mail.ts";
+import { campaign, currentRules, listContacts, listThreads, readThread, setRules, UUID } from "./ops.ts";
 import { MailRefused, sendMail, type SentBy } from "./send.ts";
 
 const env = (n: string) => Deno.env.get(n) ?? "";
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 // deno-lint-ignore no-explicit-any
 type Db = any;
 // deno-lint-ignore no-explicit-any
@@ -154,6 +154,7 @@ async function inbound(req: Request, db: Db): Promise<Response> {
     id, threadId: thread.id, from: sender.email, fromName: sender.name, subject, text, headers: h,
     spamScore: Number.isFinite(spam) ? spam : null, messageId, refs: [...refs, ...(inReplyTo && !refs.includes(inReplyTo) ? [inReplyTo] : [])],
     attachments: attachments.map(({ name, type, size }) => ({ name, type, size })),
+    dkim: field("dkim") || null,
   };
   await later(handle(db, m));
   return json({ ok: true });
@@ -253,61 +254,13 @@ async function request(db: Db, b: Body, by: SentBy): Promise<Response> {
 
 // Yui's own tools ------------------------------------------------------------------
 
-async function signed(db: Db, atts: { name: string; path: string; type: string; size: number }[]) {
-  return await Promise.all((atts ?? []).map(async (a) => {
-    const { data } = await db.storage.from("yui-mail").createSignedUrl(a.path, 3600);
-    return { name: a.name, type: a.type, size: a.size, url: data?.signedUrl ?? null };
-  }));
-}
-
-async function campaign(db: Db, b: Body, by: SentBy): Promise<Response> {
-  const subject = str(b.subject, 200), text = str(b.text, 50_000);
-  if (!subject || !text) return json({ error: "subject_and_text_required" }, 400);
-  const max = Math.min(Math.max(Number(b.limit) || 5000, 1), 5000);
-  const { data: people, error } = await db.from("yui_mail_contacts").select("email, name")
-    .eq("promo", true).is("unsubscribed_at", null).is("unsubscribed_all_at", null).is("bounced_at", null).is("complained_at", null)
-    .order("email").limit(max);
-  if (error) throw error;
-  if (b.dry_run) return json({ ok: true, dry_run: true, would_send: people.length });
-  const results = { sent: 0, refused: {} as Record<string, number>, failed: 0 };
-  for (const p of people) {
-    try {
-      await sendMail(db, { to: p.email, toName: p.name, subject, text, html: str(b.html, 200_000) || null, from: senderAddress(b.from ?? "yui"), kind: "promo", sentBy: by });
-      results.sent++;
-    } catch (e) {
-      if (e instanceof MailRefused) {
-        results.refused[e.code] = (results.refused[e.code] ?? 0) + 1;
-        if (e.code === "daily_cap" || e.code === "mail_off" || e.code === "no_postal_address") break;
-      } else results.failed++;
-    }
-  }
-  return json({ ok: true, ...results, of: people.length });
-}
-
 async function agentAction(db: Db, b: Body, by: SentBy): Promise<Response | null> {
   switch (b.action) {
-    case "inbox": {
-      let q = db.from("yui_mail_threads").select("id, subject, counterpart, status, summary, last_at").order("last_at", { ascending: false })
-        .limit(Math.min(Math.max(Number(b.limit) || 30, 1), 200));
-      if (typeof b.status === "string" && b.status) q = q.eq("status", b.status);
-      if (typeof b.q === "string" && b.q.trim()) {
-        const s = b.q.trim().replace(/[%,()]/g, " ").slice(0, 80);
-        q = q.or(`subject.ilike.%${s}%,counterpart.ilike.%${s}%,summary.ilike.%${s}%`);
-      }
-      const { data, error } = await q;
-      if (error) throw error;
-      return json({ threads: data });
-    }
+    case "inbox":
+      return json({ threads: await listThreads(db, b) });
     case "thread": {
-      if (!UUID.test(String(b.id ?? ""))) return json({ error: "invalid_thread" }, 400);
-      const [{ data: t }, { data: msgs }] = await Promise.all([
-        db.from("yui_mail_threads").select("*").eq("id", b.id).maybeSingle(),
-        db.from("yui_mail_messages").select("id, direction, from_addr, from_name, to_addrs, cc_addrs, subject, text_body, attachments, spam_score, kind, sent_by, status, error, created_at")
-          .eq("thread_id", b.id).order("created_at"),
-      ]);
-      if (!t) return json({ error: "not_found" }, 404);
-      for (const m of msgs ?? []) m.attachments = await signed(db, m.attachments);
-      return json({ thread: t, messages: msgs });
+      const t = await readThread(db, String(b.id ?? ""));
+      return t ? json(t) : json({ error: "not_found" }, 404);
     }
     case "reply": {
       if (!UUID.test(String(b.thread_id ?? ""))) return json({ error: "invalid_thread" }, 400);
@@ -331,27 +284,12 @@ async function agentAction(db: Db, b: Body, by: SentBy): Promise<Response | null
       if (error) throw error;
       return json({ ok: true });
     }
-    case "rules": {
-      const { data } = await db.from("yui_mail_rules").select("id, body, note, written_by, created_at").order("id", { ascending: false }).limit(1).maybeSingle();
-      return json({ rules: data });
-    }
-    case "rules_set": {
-      const body = str(b.body, 20_000);
-      if (!body) return json({ error: "body_required" }, 400);
-      const { data, error } = await db.from("yui_mail_rules").insert({ body, note: str(b.note, 500) || null, written_by: by === "hermes" ? "yui" : "owner" })
-        .select("id").single();
-      if (error) throw error;
-      return json({ ok: true, id: data.id });
-    }
-    case "contacts": {
-      let q = db.from("yui_mail_contacts").select("email, name, promo, confirmed_at, unsubscribed_at, unsubscribed_all_at, bounced_at, complained_at, created_at")
-        .order("created_at", { ascending: false }).limit(Math.min(Math.max(Number(b.limit) || 50, 1), 500));
-      if (typeof b.q === "string" && b.q.trim()) q = q.ilike("email", `%${b.q.trim().replace(/[%_]/g, "").slice(0, 80)}%`);
-      if (typeof b.promo === "boolean") q = q.eq("promo", b.promo);
-      const { data, error } = await q;
-      if (error) throw error;
-      return json({ contacts: data });
-    }
+    case "rules":
+      return json({ rules: await currentRules(db) });
+    case "rules_set":
+      return json({ ok: true, id: await setRules(db, String(b.body ?? ""), String(b.note ?? ""), by === "hermes" ? "yui" : "owner") });
+    case "contacts":
+      return json({ contacts: await listContacts(db, b) });
     case "contact_set": {
       const email = str(b.email, 254).toLowerCase();
       if (!validAddress(email)) return json({ error: "invalid_email" }, 400);
@@ -365,7 +303,7 @@ async function agentAction(db: Db, b: Body, by: SentBy): Promise<Response | null
       return json({ ok: true });
     }
     case "campaign":
-      return await campaign(db, b, by);
+      return json(await campaign(db, b, by));
     default:
       return null;
   }

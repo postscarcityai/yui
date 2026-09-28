@@ -1,9 +1,10 @@
 // yui-mail's pure pieces, offline: deno test supabase/tests/mail_unit_test.ts
 import { assert, assertEquals } from "jsr:@std/assert@1";
 import {
-  baseSubject, derToRaw, firstJson, htmlToText, messageIds, newPart, noAnswerReason, parseAddress, parseAddressList,
-  parseHeaders, promoFooter, replySubject, senderAddress, template, textToHtml, verifyEventSignature,
+  baseSubject, derToRaw, firstJson, htmlToText, isOwnerMail, messageIds, newPart, noAnswerReason, parseAddress, parseAddressList,
+  parseHeaders, plainDashes, promoFooter, replySubject, senderAddress, template, textToHtml, verifyEventSignature,
 } from "../functions/yui-mail/mail.ts";
+import { entries, fetchAttachment, readPage, search, snapshot } from "../functions/yui-mail/brand.ts";
 
 Deno.test("addresses", () => {
   assertEquals(parseAddress('"Doe, Jane" <Jane@Example.com>'), { email: "jane@example.com", name: "Doe, Jane" });
@@ -98,4 +99,73 @@ Deno.test("SendGrid event signatures verify, and a changed body does not", async
   assert(await verifyEventSignature(pub, sig, ts, body));
   assert(!(await verifyEventSignature(pub, sig, ts, body + " ")));
   assert(!(await verifyEventSignature("", sig, ts, body)));
+});
+
+Deno.test("the owner is proven by his domain's DKIM, not by a From line", () => {
+  const owner = "chris@postscarcity.ai";
+  assert(isOwnerMail("chris@postscarcity.ai", "{@postscarcity.ai : pass}", owner));
+  assert(isOwnerMail("Chris@PostScarcity.ai", "{@gmail.com : pass}, {@postscarcity.ai : pass}", owner));
+  assert(!isOwnerMail("chris@postscarcity.ai", "{@postscarcity.ai : fail}", owner));
+  assert(!isOwnerMail("chris@postscarcity.ai", "{@evil.com : pass}", owner));
+  assert(!isOwnerMail("chris@postscarcity.ai", null, owner));
+  assert(!isOwnerMail("someone@postscarcity.ai", "{@postscarcity.ai : pass}", owner));
+  assert(!isOwnerMail("chris@postscarcity.ai", "{@postscarcity.ai.evil.com : pass}", owner));
+  assert(!isOwnerMail("chris@postscarcity.ai", "{@postscarcity.ai : pass}", ""));
+});
+
+Deno.test("no em dashes leave Yui", () => {
+  assertEquals(plainDashes("buttons, lists \u2014 not walls of text"), "buttons, lists, not walls of text");
+  assertEquals(plainDashes("a\u2014b"), "a, b");
+  assertEquals(plainDashes("2024\u20132026 stays"), "2024\u20132026 stays");
+});
+
+const KIT = {
+  about: { one_line: "Agents answer with screens.", stage: "Alpha.", links: { start: "https://www.yuigui.com/start" } },
+  voice: ["Plain words."],
+  colors: { coral: "#FF7E8A" },
+  posts: [{ title: "Why iPhone first", date: "2026-09-20", tag: "why", dek: "One platform done well.", url: "https://www.yuigui.com/thoughts/why-iphone-first" },
+          { title: "Build 64: screens get the whole phone", date: "2026-09-24", tag: "release", dek: "Full screen.", url: "https://www.yuigui.com/thoughts/build-64" }],
+  releases: [{ build: 208, date: "2026-09-27", changes: ["A tuner and a metronome in the app", "Record a take, plug in a keyboard"] }],
+  shipped: [{ date: "2026-09-27", title: "Your tables work with any agent", card: "YUI-171", short: "Hermes and Claude share tables.", url: "https://www.yuigui.com/progress#x" }],
+  building: [{ key: "YUI-137", title: "Yui makes agents", summary: "Create and fork agents from chat" }],
+  up_next: [], backlog: [{ key: "YUI-200", title: "Android", summary: "later" }], features: [{ title: "Music", lede: "Gouda plays", items: ["Tuner", "Metronome"] }],
+  pages: [{ title: "Roadmap", url: "https://www.yuigui.com/roadmap", about: "the MVP and after" }],
+  assets: [{ name: "yui-logo-square-coral-on-cream", url: "https://www.yuigui.com/brand/yui-logo-square-coral-on-cream.png", kind: "logo", shape: "square 2048", background: "cream" },
+           { name: "yui-logo-coral", url: "https://www.yuigui.com/brand/yui-logo-coral.png", kind: "logo", shape: "wide", background: "transparent" }],
+};
+
+Deno.test("brand search finds posts, releases, features and logos by their words", () => {
+  assertEquals(entries(KIT).length, 10);
+  assertEquals(search(KIT, "square logo")[0].url, "https://www.yuigui.com/brand/yui-logo-square-coral-on-cream.png");
+  assertEquals(search(KIT, "metronome")[0].kind, "release");
+  assertEquals(search(KIT, "musician tuner", "feature")[0].title, "Music");
+  assertEquals(search(KIT, "iphone")[0].title, "Why iPhone first");
+  assertEquals(search(KIT, "zebra"), []);
+});
+
+Deno.test("the snapshot leads with now: newest post, release, work, square logos", () => {
+  const s = snapshot(KIT, "");
+  assert(s.includes("Why iPhone first") && s.includes("build 208") && s.includes("Yui makes agents"));
+  assert(s.includes("yui-logo-square-coral-on-cream (cream)"));
+  assert(!s.includes("yui-logo-coral.png"), "only squares are listed up front");
+  assert(snapshot(null, "# Yui llms").includes("# Yui llms"));
+});
+
+Deno.test("read_page and attach only reach yuigui.com and the repos", async () => {
+  const seen: string[] = [];
+  const fake = ((url: string) => {
+    seen.push(url);
+    const png = new Uint8Array([137, 80, 78, 71, 1, 2, 3]);
+    return Promise.resolve(url.endsWith(".png") ? new Response(png) : new Response("<p>Hello</p>", { headers: { "content-type": "text/html" } }));
+  }) as unknown as typeof fetch;
+  assert((await readPage("https://evil.com/x", fake)).startsWith("Refused"));
+  assertEquals(await readPage("https://www.yuigui.com/roadmap", fake), "Hello");
+  assert(typeof (await fetchAttachment("https://evil.com/logo.png", fake)) === "string");
+  assert(typeof (await fetchAttachment("https://www.yuigui.com/brand/x.exe", fake)) === "string");
+  const f = await fetchAttachment("https://www.yuigui.com/brand/yui-logo-square-coral.png", fake);
+  assert(typeof f !== "string");
+  assertEquals(f.type, "image/png");
+  assertEquals(f.filename, "yui-logo-square-coral.png");
+  assertEquals(atob(f.content).length, 7);
+  assertEquals(seen, ["https://www.yuigui.com/roadmap", "https://www.yuigui.com/brand/yui-logo-square-coral.png"]);
 });

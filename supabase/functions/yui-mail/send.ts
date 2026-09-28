@@ -7,6 +7,15 @@ const env = (n: string) => Deno.env.get(n) ?? "";
 export type Kind = "reply" | "new" | "template" | "promo" | "owner";
 export type SentBy = "yui" | "hermes" | "site" | "app" | "server";
 
+/** A file sent with an email: base64 content, and where it came from. */
+export interface Attachment {
+  filename: string;
+  type: string;
+  content: string; // base64
+  size: number;
+  source?: string; // the URL it was fetched from
+}
+
 export interface Outgoing {
   to: string;
   toName?: string | null;
@@ -22,6 +31,7 @@ export interface Outgoing {
   threadId?: string;
   inReplyTo?: string | null;
   refs?: string[];
+  attachments?: Attachment[];
 }
 
 export class MailRefused extends Error {
@@ -114,7 +124,7 @@ export async function sendMail(db: Db, m: Outgoing): Promise<{ id: string; threa
   const row = {
     id, thread_id: threadId, direction: "out", message_id: messageId, in_reply_to: m.inReplyTo ?? null, refs,
     from_addr: from, from_name: m.fromName ?? "Yui", to_addrs: [to], subject: m.subject, text_body: text,
-    html_body: html, kind: m.kind, template: m.template ?? null, sent_by: m.sentBy, status: "sent",
+    html_body: html, attachments: (m.attachments ?? []).map((a) => ({ name: a.filename, type: a.type, size: a.size, url: a.source ?? null })), kind: m.kind, template: m.template ?? null, sent_by: m.sentBy, status: "sent",
   };
   const { error: insErr } = await db.from("yui_mail_messages").insert(row);
   if (insErr) throw insErr;
@@ -126,6 +136,7 @@ export async function sendMail(db: Db, m: Outgoing): Promise<{ id: string; threa
     subject: m.subject,
     content: [{ type: "text/plain", value: text }, { type: "text/html", value: html }],
     headers,
+    ...(m.attachments?.length ? { attachments: m.attachments.map((a) => ({ content: a.content, filename: a.filename, type: a.type, disposition: "attachment" })) } : {}),
     categories: ["yui", m.kind],
     // Links stay as written: a confirmation link must be the link, not a tracker.
     tracking_settings: { click_tracking: { enable: false, enable_text: false }, open_tracking: { enable: false }, subscription_tracking: { enable: false } },

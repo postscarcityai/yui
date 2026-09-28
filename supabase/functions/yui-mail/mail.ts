@@ -240,3 +240,21 @@ export function htmlToText(html: string): string {
     .replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'")
     .replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim();
 }
+
+/**
+ * The owner writing, proven: his address, and SendGrid saw his domain's DKIM
+ * signature pass (`{@postscarcity.ai : pass}`). A From line alone can be forged.
+ */
+export function isOwnerMail(from: string, dkim: string | null | undefined, ownerEmail: string): boolean {
+  const owner = ownerEmail.trim().toLowerCase();
+  if (!owner || from.toLowerCase() !== owner) return false;
+  const domain = owner.split("@")[1] ?? "";
+  if (!domain) return false;
+  const esc = domain.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`@${esc}\\s*:\\s*pass\\b`, "i").test(dkim ?? "");
+}
+
+/** Yui's house style has no em dashes; a model sometimes writes them anyway. */
+export function plainDashes(text: string): string {
+  return text.replace(/\s*—\s*/g, ", ").replace(/,\s*,/g, ",");
+}
