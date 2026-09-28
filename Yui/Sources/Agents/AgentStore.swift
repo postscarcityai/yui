@@ -66,14 +66,25 @@ struct YuiAgent: Codable, Identifiable, Equatable, Sendable {
     var shareWhy: [String]? = nil
     /// What its host lets the drawer's Controls tab do (YUI-70). Nil: the host shares no settings.
     var controls: AgentControls? = nil
+    /// What it does, as its profile says it (YUI-165): a line under its name, two sentences,
+    /// and three things to ask it, each sent as the person's message when tapped.
+    /// Nil or empty for an agent that never said (every paired one, for now).
+    var tagline: String? = nil
+    var about: String? = nil
+    var can: [String]? = nil
 
     enum CodingKeys: String, CodingKey {
         case id, name, handle, color, avatar, kind, status, sort, theme
         case connectorID = "connector_id", connectorName = "connector_name", remoteRef = "remote_ref"
         case lastSeenAt = "last_seen_at", isDefault = "is_default", pushMuted = "push_muted", presence, commands, shared
         case sharedBy = "shared_by", firstMessage = "first_message", clientSafe = "client_safe", shareWhy = "share_why"
-        case controls
+        case controls, tagline, about, can
     }
+
+    /// Its tagline, or nil when it has none worth showing.
+    var line: String? { tagline.flatMap { $0.trimmingCharacters(in: .whitespaces).isEmpty ? nil : $0 } }
+    /// Up to three starters, blanks dropped.
+    var starters: [String] { (can ?? []).map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }.prefix(3).map { $0 } }
 }
 
 /// One slash command an agent's host accepts: `/new [name]`, "Start a new session".
@@ -607,8 +618,31 @@ final class AgentStore {
     ].enumerated().map { i, s in
         YuiAgent(id: "demo-\(s.0)", name: s.1, handle: s.0, color: s.2, avatar: s.0 == "yui" ? "yui" : nil, kind: "hosted",
                  connectorName: "Yui", remoteRef: s.0, status: .connected, lastSeenAt: .now,
-                 isDefault: s.0 == "yui", sort: i - 7, presence: "online", controls: demoNativeReport)
+                 isDefault: s.0 == "yui", sort: i - 7, presence: "online", controls: demoNativeReport,
+                 tagline: demoSaid[s.0]?.tagline, about: demoSaid[s.0]?.about, can: demoSaid[s.0]?.can)
     }
+    /// What each starter says it does, verbatim from runtime/profiles/<name>/profile.json
+    /// (FirstLaunchDemoTests checks they still match).
+    static let demoSaid: [String: (tagline: String, about: String, can: [String])] = [
+        "yui": ("Ask anything, or make a new agent",
+                "Yui answers anything and knows the whole crew. Ask for a helper that isn't here yet and Yui makes it.",
+                ["Make me a new agent", "Who should I talk to?", "What can you do?"]),
+        "arnold": ("Workouts built around your week and body",
+                   "A training week around your days, your gear and anything that hurts. Timers run on screen and every set gets logged.",
+                   ["Build my training week", "Give me a 20 minute workout", "Log today's workout"]),
+        "basil": ("Eat better without counting everything",
+                  "Meals and swaps that fit your goal and what you can't eat. Snap a plate for a quick read on it.",
+                  ["Plan my meals this week", "What should I eat tonight?", "Check a photo of my plate"]),
+        "gouda": ("Beats, chords and practice, right on screen",
+                  "Beats you edit while they play, chords to strum and a keyboard that stays in key. A tuner and a click for practice too.",
+                  ["Make a beat", "Tune my guitar", "Teach me a song's chords"]),
+        "penny": ("Get your week out of your head",
+                  "Lists, plans and timelines for everything on your plate. Say what's going on and get back a week you can see.",
+                  ["Plan my week", "Make a to-do list", "What's next today?"]),
+        "quill": ("Learn anything fast, then get quizzed",
+                  "Five minute lessons with pictures, math and charts, one idea per page. A quick quiz at the end makes it stick.",
+                  ["Teach me something new", "Quiz me on what I learned", "Walk me through a math problem"]),
+    ]
     static let demoRoles = ["yui": "Helper and maker", "arnold": "Trainer", "basil": "Nutritionist",
                             "gouda": "Musician", "penny": "Planner", "quill": "Study buddy"]
     /// What yui-agents `list` says about the crew for this list.

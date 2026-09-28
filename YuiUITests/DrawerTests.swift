@@ -63,7 +63,7 @@ final class DrawerTests: XCTestCase {
         if !close.exists { return }
         waitHittable(close, "the drawer did not settle open")
         // It stops short: the drawer's right edge sits inside the screen.
-        XCTAssertLessThan(app.buttons["drawer-agent-bar"].frame.maxX, app.frame.maxX - 20, "the drawer covers the whole width")
+        XCTAssertLessThan(close.frame.maxX, app.frame.maxX - 20, "the drawer covers the whole width")
         XCTAssertTrue(app.buttons["drawer-pin-workout"].waitForExistence(timeout: 3), "no pinned workout on Home")
         XCTAssertTrue(app.buttons["drawer-next-up"].exists, "no next-up for the open question")
         sleep(1)
@@ -101,15 +101,11 @@ final class DrawerTests: XCTestCase {
         sleep(1)
         shot("5-about")
 
-        // The agent at the bottom: the switcher springs up; pick Coach.
-        app.buttons["drawer-agent-bar"].tap()
-        let coach = app.buttons["switch-Coach"]
-        XCTAssertTrue(coach.waitForExistence(timeout: 5), "the switcher did not open")
-        waitHittable(coach, "Coach is not tappable in the switcher")
-        sleep(1)
-        shot("6-switcher")
-        coach.tap()
-        waitGone(close, "picking an agent did not close the drawer")
+        // No agent picker in the drawer (YUI-167): the pill top left is the one way to switch.
+        XCTAssertFalse(app.buttons["drawer-agent-bar"].exists, "the drawer still has its own agent picker")
+        close.tap()
+        waitGone(close, "Close did not close the drawer")
+        XCTAssertTrue(app.pickAgent("Coach"), "the pill did not offer Coach")
         let header = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Talking to Coach")).firstMatch
         XCTAssertTrue(header.waitForExistence(timeout: 5), "the chat did not switch to Coach")
         sleep(1)

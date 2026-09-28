@@ -46,9 +46,52 @@ final class StageFirstModel {
     /// The reply just came in: the found beat plays until then, before the first chunk.
     var foundUntil: Date?
 
+    /// The agent's hello on show (YUI-167): the id of its first message. Nil: not playing it.
+    var hello: String?
+
+    /// What the stage plays: the turn the person started, the hello, or nothing (the greeting).
+    func turn(_ messages: [ChatMessage]) -> StageTurn? {
+        if let ask { return StageChunks.turn(messages, ask: ask) }
+        if hello != nil { return StageChunks.hello(messages) }
+        return nil
+    }
+
+    /// Hellos already played, by their first message's id. On the phone for a person;
+    /// in memory only for the demo account, so every test launch meets the crew fresh.
+    static let seenKey = "yuiHelloSeen"
+    var memory: Set<String>? = ProcessInfo.processInfo.arguments.contains("-yuiDemoAccount") ? [] : nil
+    private var met: Set<String> {
+        get { memory ?? Set(UserDefaults.standard.stringArray(forKey: Self.seenKey) ?? []) }
+        set {
+            if memory != nil { memory = newValue } else { UserDefaults.standard.set(Array(newValue).suffix(200), forKey: Self.seenKey) }
+        }
+    }
+
+    /// A thread opens (or its hello just arrived): an agent's hello nobody has seen plays on
+    /// the stage from its first chunk, instead of the blank greeting (Chris on build 244:
+    /// "when I got to his screen for the first time, all it showed me was a blank screen").
+    /// Once only: after that the thread opens as it always does. A thread the person
+    /// already talked in never plays it. True when it started.
+    @discardableResult
+    func meet(_ messages: [ChatMessage], agent: String?) -> Bool {
+        guard ask == nil, hello == nil, agent != nil, !messages.contains(where: \.fromUser),
+              let first = messages.first(where: \.hello), !met.contains(first.id),
+              StageChunks.hello(messages).pages > 0 else { return false }
+        met.insert(first.id)
+        hello = first.id
+        at = 0
+        back = false
+        typing = false
+        answers = [:]
+        open = true
+        opened += 1
+        return true
+    }
+
     /// The person said something: the stage comes up on it, working.
     func follow(_ ask: String?) {
         guard let ask else { return }
+        hello = nil
         self.ask = ask
         at = 0
         back = false
@@ -61,6 +104,7 @@ final class StageFirstModel {
     /// A new thread: the greeting.
     func home() {
         ask = nil
+        hello = nil
         at = 0
         typing = false
         answers = [:]
@@ -69,12 +113,15 @@ final class StageFirstModel {
     /// Opens the stage at the chunk a reply in the record drew. False when the
     /// reply has no turn to play in (nothing the person said came before it).
     func show(reply id: String, in messages: [ChatMessage]) -> Bool {
-        guard let i = messages.firstIndex(where: { $0.id == id }),
-              let start = messages[..<i].lastIndex(where: \.fromUser) else { return false }
-        let t = StageChunks.turn(messages, ask: messages[start].id)
+        guard let i = messages.firstIndex(where: { $0.id == id }) else { return false }
+        let start = messages[..<i].lastIndex(where: \.fromUser)
+        // The hello's pill, before anything was said, plays the hello again (YUI-167).
+        guard start != nil || messages[i].hello else { return false }
+        let t = start.map { StageChunks.turn(messages, ask: messages[$0].id) } ?? StageChunks.hello(messages)
         guard let at = t.chunks.firstIndex(where: { $0.scope == id })
                 ?? (t.questions.contains { $0.scope == id } ? t.chunks.count : nil) else { return false }
-        ask = messages[start].id
+        ask = start.map { messages[$0].id }
+        hello = start == nil ? messages.first(where: \.hello)?.id : nil
         self.at = at
         typing = false
         open = true
@@ -87,6 +134,8 @@ struct StageActions {
     /// The hamburger: the drawer, with Settings in it (YUI-122).
     var menu: () -> Void
     var pick: (String) -> Void
+    /// Add agent, from the picker. Nil for an invited account.
+    var add: (() -> Void)? = nil
     var manage: () -> Void
     var record: () -> Void
     /// + T and the mic (YUI-121). Its `type` is the stage's own; the view opens the field.
@@ -123,6 +172,7 @@ struct StageFirstView: View {
     let model: StageFirstModel
     let agent: YuiAgent?
     let agents: [YuiAgent]
+    var unshared: [String] = []
     let composer: ComposerModel
     var focus: FocusState<Bool>.Binding
     let photos: [ComposerPhoto]
@@ -159,7 +209,7 @@ struct StageFirstView: View {
 
     var body: some View {
         let c = theme.swatch(scheme)
-        let turn = model.ask.map { StageChunks.turn(store.messages, ask: $0) }
+        let turn = model.turn(store.messages)
         let (mood, _) = StageMotion.mood(facts(turn))
         VStack(spacing: 0) {
             topBar(c)
@@ -169,7 +219,7 @@ struct StageFirstView: View {
                 } else if screen > 1, screens.contains(screen) {
                     ScreenPage(number: screen, parts: store.onPage(screen), agent: agent, style: style) { store.openStage($0) }
                         .accessibilityIdentifier("stage-screen-\(screen)")
-                } else if let turn, turn.ask != nil {
+                } else if let turn, turn.ask != nil || turn.hello {
                     play(turn, c)
                 } else {
                     greeting(c, title: "Hi. \(showMic ? "Tap the mic and talk." : "Tap T and type.")",
@@ -304,7 +354,7 @@ struct StageFirstView: View {
             circle("line.3.horizontal", c, label: "Menu", id: "stage-menu", action: actions.menu)
                 .modifier(WaitingDot(waiting: waiting > 0, reduceMotion: reduceMotion, x: 1, y: 1))
                 .accessibilityValue(waiting > 0 ? "\(waiting) waiting on you" : "")
-            AgentPicker(agent: agent, agents: agents, pick: actions.pick, manage: actions.manage)
+            AgentPicker(agent: agent, agents: agents, unshared: unshared, pick: actions.pick, add: actions.add, manage: actions.manage)
                 .accessibilityIdentifier("stage-agents")
             Spacer(minLength: 0)
             circle("bubble.left", c, label: "Chat", id: "stage-record", action: actions.record)
@@ -488,7 +538,7 @@ struct StageFirstView: View {
     }
 
     private func step(_ by: Int) {
-        let t = model.ask.map { StageChunks.turn(store.messages, ask: $0) } ?? StageTurn()
+        let t = model.turn(store.messages) ?? StageTurn()
         let to = min(max(0, model.at + by), max(0, t.pages - 1))
         guard to != model.at else { return }
         model.back = to < model.at
@@ -497,7 +547,7 @@ struct StageFirstView: View {
 
     /// The agent is on it: their words up top, a mark in its color breathing, and what it is doing.
     private func working(_ c: Swatch) -> some View {
-        let (mood, flavor) = StageMotion.mood(facts(model.ask.map { StageChunks.turn(store.messages, ask: $0) }))
+        let (mood, flavor) = StageMotion.mood(facts(model.turn(store.messages)))
         return VStack(spacing: theme.spacing.xl) {
             // The orb visual sits where the mark lives: it is the mark then.
             StageMark(color: c.accent, mood: mood, flavor: flavor, look: look, since: moodSince)

@@ -101,24 +101,16 @@ final class SmoothnessTests: XCTestCase {
             let menu = app.buttons["Agent menu"]
             XCTAssertTrue(menu.waitForExistence(timeout: 5))
             menu.tap()
-            let bar = app.buttons["drawer-agent-bar"]
-            XCTAssertTrue(bar.waitForExistence(timeout: 5), "the drawer did not open")
+            XCTAssertTrue(app.buttons["drawer-close"].waitForExistence(timeout: 5), "the drawer did not open")
             sleep(1)
             shot("4-drawer")
             mark("drawer", "end")
             mark("open", "begin")
-            bar.tap()
-            let coach = app.buttons["switch-Coach"]
-            XCTAssertTrue(coach.waitForExistence(timeout: 5), "no Coach in the switcher")
-            coach.tap()
+            app.buttons["drawer-close"].tap()
+            XCTAssertTrue(app.pickAgent("Coach"), "no Coach in the picker")
             XCTAssertTrue(newest.waitForExistence(timeout: 10), "Coach's thread did not open")
             sleep(1)
-            menu.tap()
-            XCTAssertTrue(bar.waitForExistence(timeout: 5))
-            bar.tap()
-            let yui = app.buttons["switch-Yui"]
-            XCTAssertTrue(yui.waitForExistence(timeout: 5), "no Yui in the switcher")
-            yui.tap()
+            XCTAssertTrue(app.pickAgent("Yui"), "no Yui in the picker")
             XCTAssertTrue(newest.waitForExistence(timeout: 10), "Yui's thread did not open")
             sleep(1)
             mark("open", "end")

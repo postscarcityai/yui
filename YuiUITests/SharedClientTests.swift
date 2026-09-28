@@ -69,16 +69,13 @@ final class SharedClientTests: XCTestCase {
         // The line sits over the nav bar for a moment: let it go first.
         let gone = expectation(for: NSPredicate(format: "exists == false"), evaluatedWith: note)
         wait(for: [gone], timeout: 10)
-        // The thread fell back to Penny. The menu's drawer, then its agent bar: the switcher.
+        // The thread fell back to Penny. The pill's list says Basil went, and offers no Add.
         let penny = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Talking to Penny")).firstMatch
         XCTAssertTrue(penny.waitForExistence(timeout: 5), "the chat did not fall back to Penny")
-        app.buttons["Agent menu"].tap()
-        let bar = app.descendants(matching: .any)["drawer-agent-bar"]
-        XCTAssertTrue(bar.waitForExistence(timeout: 5))
-        bar.tap()
-        XCTAssertTrue(app.descendants(matching: .any)["switch-unshared"].waitForExistence(timeout: 5), "the switcher has no quiet line")
-        XCTAssertFalse(app.descendants(matching: .any)["switch-Basil"].exists, "Basil is still in the switcher")
-        XCTAssertFalse(app.descendants(matching: .any)["switch-add"].exists, "an invited account can add agents")
+        app.buttons["record-agents"].tap()
+        XCTAssertTrue(text("Basil is no longer shared with you.").waitForExistence(timeout: 5), "the picker has no quiet line")
+        XCTAssertFalse(app.buttons["Basil"].exists, "Basil is still in the picker")
+        XCTAssertFalse(app.buttons["Add an agent"].exists, "an invited account can add agents")
         sleep(1)
         shot("yui97-04-revoked-list")
     }

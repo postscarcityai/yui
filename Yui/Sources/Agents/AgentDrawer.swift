@@ -8,7 +8,8 @@ import YuiLines
 // so the chat stays in view, and a tap on that sliver or a drag back closes it.
 // Tabs: Home (pinned screens, what's next, the agent's backlog and screens,
 // shortcuts), Review (what's waiting on you, answered in place), Controls, About.
-// The agent sits at the bottom; a tap there opens the switcher, which springs up.
+// Switching agents is the top pill's job alone (YUI-167, Chris: "I like where you
+// have the agent picker in the main ... get rid of the agent picker from the left side bar").
 // The agent fills three lists itself with `menu` lines (YUI-86): review items
 // sit under the thread's asks in Review, backlog and shortcuts on Home.
 
@@ -117,16 +118,13 @@ struct AgentDrawer: View {
     /// Puts words in the composer (a shortcut that takes more after it).
     let compose: (String) -> Void
     let manage: () -> Void
-    let add: () -> Void
     let edit: (YuiAgent) -> Void
     /// The app's Settings: the drawer is the hamburger's, and Settings lives here (YUI-122).
     var settings: () -> Void = {}
     var reduceMotion = false
-    @Environment(AgentStore.self) private var agents
     @Environment(\.yuiTheme) private var theme
     @Environment(\.colorScheme) private var scheme
     @State private var tab = DrawerTab.home
-    @State private var switching = ProcessInfo.processInfo.arguments.contains("-yuiDrawerSwitcher")
     @Namespace private var tabs
 
     var body: some View {
@@ -143,7 +141,10 @@ struct AgentDrawer: View {
                     case .home: DrawerHome(store: store, waiting: waiting, close: close, compose: compose) { tab = .review }
                     case .review: DrawerReview(store: store, items: waiting, close: close, compose: compose)
                     case .controls: DrawerControls(store: store, close: close, edit: edit)
-                    case .about: DrawerAbout(agent: store.agent)
+                    case .about: DrawerAbout(agent: store.agent) { words in
+                        close()
+                        _ = store.send(words)
+                    }
                     }
                 }
                 .padding(.horizontal, theme.spacing.l)
@@ -152,26 +153,8 @@ struct AgentDrawer: View {
             }
             .scrollIndicators(.hidden)
             .animation(reduceMotion ? nil : theme.spring, value: tab)
-            AgentBar(agent: store.agent) { switching = true }
-                .padding(.horizontal, theme.spacing.m)
-                .padding(.bottom, theme.spacing.s)
         }
         .background(c.background)
-        .overlay {
-            if switching {
-                Switcher(current: store.agent, reduceMotion: reduceMotion, done: { switching = false },
-                         pick: { id in
-                             switching = false
-                             agents.selectedID = id
-                             close()
-                         },
-                         add: { switching = false; add() },
-                         manage: { switching = false; manage() })
-                    .transition(.opacity)
-            }
-        }
-        .animation(reduceMotion ? .easeInOut(duration: 0.2) : theme.spring, value: switching)
-        .sensoryFeedback(.selection, trigger: switching)
         .onChange(of: store.agent?.id, initial: true) {
             if !DrawerTab.shown(for: store.agent).contains(tab) { tab = .home }
         }
@@ -817,6 +800,8 @@ private struct ControlsAboutCard: View {
 
 private struct DrawerAbout: View {
     let agent: YuiAgent?
+    /// A starter tapped: it goes as the person's message.
+    let send: (String) -> Void
     @Environment(\.yuiTheme) private var theme
     @Environment(\.colorScheme) private var scheme
 
@@ -828,30 +813,64 @@ private struct DrawerAbout: View {
                     AgentBadge(agent: agent, size: 64)
                     VStack(alignment: .leading, spacing: 4) {
                         Text(agent.name).font(theme.font(theme.type.display, theme.strong)).foregroundStyle(c.ink)
+                        if let line = agent.line {
+                            Text(line)
+                                .font(theme.font(15, .semibold)).foregroundStyle(c.ink.opacity(0.8))
+                                .fixedSize(horizontal: false, vertical: true)
+                                .accessibilityIdentifier("about-tagline")
+                        }
                         StatusLine(agent: agent)
                     }
                 }
                 .padding(.top, theme.spacing.s)
+                if said(agent) {
+                    // What it does, in its own words (YUI-165/167), then three things to ask it.
+                    if let about = agent.about, !about.isEmpty {
+                        Text(about)
+                            .font(theme.font(theme.type.body)).foregroundStyle(c.ink)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .accessibilityIdentifier("about-what")
+                    }
+                    if !agent.starters.isEmpty {
+                        DrawerHeading(text: "Ask \(agent.name)")
+                        ForEach(Array(agent.starters.enumerated()), id: \.offset) { i, words in
+                            DrawerRow(icon: "bubble.left.fill", title: words, sub: nil, tint: c.accent.opacity(0.6), trailing: "arrow.right") {
+                                send(words)
+                            }
+                            .accessibilityHint("Sends it to \(agent.name)")
+                            .accessibilityIdentifier("about-can-\(i)")
+                        }
+                    }
+                } else {
+                    VStack(alignment: .leading, spacing: theme.spacing.s) {
+                        Text("What it does")
+                            .font(theme.font(theme.type.title, theme.strong)).foregroundStyle(c.ink)
+                        Text("Yui doesn't own your agent, so this comes from where it runs. Once its host shares a profile, what it does, what it can reach and which model it uses show here.")
+                            .font(theme.font(15)).foregroundStyle(c.inkSoft)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .padding(theme.spacing.l)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .overlay(RoundedRectangle(cornerRadius: 20).stroke(c.outline, style: StrokeStyle(lineWidth: 1.5, dash: [5, 4])))
+                    .accessibilityIdentifier("about-not-shared")
+                }
+                // Where it runs: lower and quieter than what it does.
                 VStack(alignment: .leading, spacing: 0) {
                     fact("Runs on", agent.connectorName ?? host(agent.kind))
                     if let ref = agent.remoteRef, !ref.isEmpty { fact("Profile", ref) }
                     if let n = agent.commands?.count, n > 0 { fact("Commands", "\(n)") }
                     if agent.isDefault { fact("Default", "Yes") }
                 }
-                .background(c.surface, in: .rect(cornerRadius: 20))
-                .overlay(RoundedRectangle(cornerRadius: 20).stroke(c.outline, lineWidth: 1))
+                .opacity(said(agent) ? 0.75 : 1)
+                .overlay(RoundedRectangle(cornerRadius: 16).stroke(c.outline, lineWidth: 1))
+                .padding(.top, theme.spacing.s)
             }
-            VStack(alignment: .leading, spacing: theme.spacing.s) {
-                Text("What it does")
-                    .font(theme.font(theme.type.title, theme.strong)).foregroundStyle(c.ink)
-                Text("Yui doesn't own your agent, so this comes from where it runs. Once its host shares a profile, what it does, what it can reach and which model it uses show here.")
-                    .font(theme.font(15)).foregroundStyle(c.inkSoft)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            .padding(theme.spacing.l)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .overlay(RoundedRectangle(cornerRadius: 20).stroke(c.outline, style: StrokeStyle(lineWidth: 1.5, dash: [5, 4])))
         }
+    }
+
+    /// The agent says what it does (a native agent's profile): a line, sentences or starters.
+    private func said(_ a: YuiAgent) -> Bool {
+        a.line != nil || !(a.about ?? "").isEmpty || !a.starters.isEmpty
     }
 
     private func host(_ kind: String) -> String {
@@ -868,168 +887,13 @@ private struct DrawerAbout: View {
     private func fact(_ label: String, _ value: String) -> some View {
         let c = theme.swatch(scheme)
         return HStack {
-            Text(label).font(theme.font(15)).foregroundStyle(c.inkSoft)
+            Text(label).font(theme.font(13)).foregroundStyle(c.inkSoft)
             Spacer()
-            Text(value).font(theme.font(15, .bold)).foregroundStyle(c.ink)
+            Text(value).font(theme.font(13, .semibold)).foregroundStyle(c.inkSoft)
         }
         .padding(.horizontal, theme.spacing.l)
-        .padding(.vertical, theme.spacing.m)
+        .padding(.vertical, theme.spacing.s)
         .accessibilityElement(children: .combine)
-    }
-}
-
-// MARK: The agent at the bottom, and the switcher
-
-private struct AgentBar: View {
-    let agent: YuiAgent?
-    let open: () -> Void
-    @Environment(\.yuiTheme) private var theme
-    @Environment(\.colorScheme) private var scheme
-
-    var body: some View {
-        let c = theme.swatch(scheme)
-        Button(action: open) {
-            HStack(spacing: theme.spacing.m) {
-                if let agent { AgentBadge(agent: agent, size: 42) } else { YuiAvatar(size: 42) }
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(agent?.name ?? "Yui").font(theme.font(theme.type.body, theme.strong)).foregroundStyle(c.ink)
-                    if let agent { StatusLine(agent: agent) }
-                }
-                Spacer(minLength: 0)
-                Image(systemName: "chevron.up")
-                    .font(theme.font(14, .heavy)).foregroundStyle(c.inkSoft)
-            }
-            .padding(theme.spacing.m)
-            .background(c.surface, in: .rect(cornerRadius: 24))
-            .overlay(RoundedRectangle(cornerRadius: 24).stroke(c.outline, lineWidth: 1))
-            .shadow(color: .black.opacity(0.06), radius: 10, y: 2)
-        }
-        .buttonStyle(BounceButtonStyle())
-        .accessibilityLabel("Talking to \(agent?.name ?? "Yui"). Switch agent")
-        .accessibilityIdentifier("drawer-agent-bar")
-    }
-}
-
-/// Every agent, rising from the bar one at a time. Search once there are many.
-private struct Switcher: View {
-    let current: YuiAgent?
-    let reduceMotion: Bool
-    let done: () -> Void
-    let pick: (String) -> Void
-    let add: () -> Void
-    let manage: () -> Void
-    @Environment(AgentStore.self) private var agents
-    @Environment(\.yuiTheme) private var theme
-    @Environment(\.colorScheme) private var scheme
-    @State private var shown = false
-    @State private var query = ""
-
-    private var list: [YuiAgent] {
-        let q = query.trimmingCharacters(in: .whitespaces)
-        return q.isEmpty ? agents.agents : agents.agents.filter { $0.name.localizedCaseInsensitiveContains(q) }
-    }
-
-    var body: some View {
-        let c = theme.swatch(scheme)
-        ZStack(alignment: .bottom) {
-            Rectangle().fill(.ultraThinMaterial)
-                .overlay(c.background.opacity(0.35))
-                .ignoresSafeArea()
-                .onTapGesture(perform: done)
-                .accessibilityLabel("Close the agent list")
-                .accessibilityAddTraits(.isButton)
-            ScrollView {
-                VStack(spacing: theme.spacing.s) {
-                    Spacer(minLength: 0)
-                    if agents.agents.count > 6 {
-                        HStack(spacing: theme.spacing.s) {
-                            Image(systemName: "magnifyingglass").foregroundStyle(c.inkSoft)
-                            TextField("Find an agent", text: $query)
-                                .font(theme.font(theme.type.body))
-                        }
-                        .padding(theme.spacing.m)
-                        .background(c.surface, in: Capsule())
-                        .overlay(Capsule().stroke(c.outline, lineWidth: 1))
-                        .rise(shown, 0, reduceMotion)
-                    }
-                    ForEach(Array(list.enumerated()), id: \.element.id) { i, a in
-                        Button { pick(a.id) } label: { row(a, c) }
-                            .buttonStyle(BounceButtonStyle())
-                            .accessibilityAddTraits(a.id == current?.id ? .isSelected : [])
-                            .accessibilityIdentifier("switch-\(a.name)")
-                            .rise(shown, list.count - i, reduceMotion)
-                    }
-                    // A shared agent gone since the app opened (YUI-97): one quiet line each.
-                    ForEach(agents.unshared, id: \.self) { name in
-                        Text(AgentStore.unsharedLine(name))
-                            .font(theme.font(theme.type.caption, .semibold)).foregroundStyle(c.inkSoft)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .accessibilityIdentifier("switch-unshared")
-                    }
-                    HStack(spacing: theme.spacing.s) {
-                        // An invited account starts with what it was given: no Add (YUI-97).
-                        if !agents.onlyShared {
-                            Button(action: add) {
-                                Label("Add an agent", systemImage: "plus")
-                                    .font(theme.font(15, .bold)).foregroundStyle(c.onAccent)
-                                    .frame(maxWidth: .infinity).padding(.vertical, 13)
-                                    .background(c.accent, in: Capsule())
-                            }
-                            .accessibilityIdentifier("switch-add")
-                        }
-                        Button(action: manage) {
-                            Label("Edit list", systemImage: "list.bullet")
-                                .font(theme.font(15, .bold)).foregroundStyle(c.ink)
-                                .frame(maxWidth: .infinity).padding(.vertical, 13)
-                                .background(c.surface, in: Capsule())
-                                .overlay(Capsule().stroke(c.outline, lineWidth: 1))
-                        }
-                        .accessibilityIdentifier("switch-manage")
-                    }
-                    .buttonStyle(BounceButtonStyle())
-                    .rise(shown, 0, reduceMotion)
-                }
-                .padding(.horizontal, theme.spacing.m)
-                .padding(.bottom, theme.spacing.s)
-                .frame(minHeight: 0, alignment: .bottom)
-            }
-            .defaultScrollAnchor(.bottom)
-            .scrollIndicators(.hidden)
-        }
-        .onAppear { shown = true }
-        .accessibilityIdentifier("agent-switcher")
-    }
-
-    private func row(_ a: YuiAgent, _ c: Swatch) -> some View {
-        HStack(spacing: theme.spacing.m) {
-            AgentBadge(agent: a, size: 40)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(a.name).font(theme.font(theme.type.body, theme.strong)).foregroundStyle(c.ink)
-                StatusLine(agent: a)
-            }
-            Spacer(minLength: 0)
-            if a.id == current?.id {
-                Image(systemName: "checkmark.circle.fill")
-                    .font(theme.font(22, .bold)).foregroundStyle(c.accent)
-            }
-        }
-        .padding(theme.spacing.m)
-        .background(c.surface, in: .rect(cornerRadius: 22))
-        .overlay(RoundedRectangle(cornerRadius: 22).stroke(a.id == current?.id ? c.accent.opacity(0.6) : c.outline,
-                                                           lineWidth: a.id == current?.id ? 2 : 1))
-    }
-}
-
-private extension View {
-    /// Rises into place after the ones below it (the nearest the bar go first), with a soft bounce.
-    /// Reduce Motion: a fade, all together.
-    func rise(_ shown: Bool, _ order: Int, _ reduceMotion: Bool) -> some View {
-        self
-            .opacity(shown ? 1 : 0)
-            .offset(y: shown || reduceMotion ? 0 : 60)
-            .scaleEffect(shown || reduceMotion ? 1 : 0.85, anchor: .bottom)
-            .animation(reduceMotion ? .easeOut(duration: 0.2)
-                       : .spring(response: 0.42, dampingFraction: 0.62).delay(Double(order) * 0.035), value: shown)
     }
 }
 

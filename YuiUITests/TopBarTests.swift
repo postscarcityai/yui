@@ -43,7 +43,7 @@ final class TopBarTests: XCTestCase {
         let settings = app.buttons["drawer-settings"], close = app.buttons["drawer-close"]
         XCTAssertTrue(settings.waitForExistence(timeout: 5), "the menu did not open the drawer")
         waitHittable(settings, "Settings in the drawer is not tappable over the stage")
-        XCTAssertTrue(app.buttons["drawer-agent-bar"].exists, "the drawer lost its agents")
+        XCTAssertFalse(app.buttons["drawer-agent-bar"].exists, "the drawer has its own agent picker again")
         sleep(1)
         shot("4-menu-on-stage", appearance)
         settings.tap()

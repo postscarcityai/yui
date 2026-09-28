@@ -238,8 +238,9 @@ struct ChatView: View {
             .toolbar {
                 menuItem(c)
                 ToolbarItem(placement: .topBarLeading) {
-                    AgentPicker(agent: store.agent, agents: agents.agents, framed: false,
-                                pick: { agents.selectedID = $0 }, manage: { showAgents = true })
+                    AgentPicker(agent: store.agent, agents: agents.agents, framed: false, unshared: agents.unshared,
+                                pick: { agents.selectedID = $0 }, add: agents.onlyShared ? nil : { addFirst = true },
+                                manage: { showAgents = true })
                         .accessibilityIdentifier("record-agents")
                 }
                 if stageFirstOn {
@@ -549,7 +550,6 @@ struct ChatView: View {
         AgentDrawer(store: store, close: closeDrawer,
                     compose: { composer.draft = $0; stageFirstOn && stageFirst.open ? typeOnStage() : typeHere() },
                     manage: { settleDrawer(open: false); showAgents = true },
-                    add: { settleDrawer(open: false); addFirst = true },
                     edit: { editingAgent = $0 },
                     settings: { settleDrawer(open: false); showSettings = true },
                     reduceMotion: reduceMotion)
@@ -1313,9 +1313,21 @@ struct ChatView: View {
                     stageFirst.follow(store.messages.last(where: \.fromUser)?.id)
                 }
             }
-            .onChange(of: store.agent?.id) {
-                stageFirst.home()
-                stageFirst.seen = store.shown.count
+            // A new thread starts at the greeting, unless its agent's hello is still unseen:
+            // then the hello plays (YUI-167). Keyed on the hello too, since it can land
+            // after the thread opens.
+            .onChange(of: [store.agent?.id, store.messages.first(where: \.hello)?.id], initial: true) { old, new in
+                // A hello already playing for this thread stays (SwiftUI can report the agent's
+                // change after the hello it opened on has started).
+                let playing = stageFirst.hello.map { id in store.messages.contains { $0.id == id } } ?? false
+                if old.first != new.first, !playing {
+                    stageFirst.home()
+                    stageFirst.seen = store.shown.count
+                }
+                guard stageFirstOn else { return }
+                withAnimation(reduceMotion ? .easeInOut(duration: 0.2) : theme.spring) {
+                    if stageFirst.meet(store.messages, agent: store.agent?.id) { focused = false }
+                }
             }
             .onChange(of: store.loaded) { if store.loaded { stageFirst.seen = store.shown.count } }
             // Hold to snap and say (YUI-166): the photo and the words go as one message.
@@ -1338,7 +1350,7 @@ struct ChatView: View {
 
     private var stageFirstLayer: some View {
         StageFirstView(
-            store: store, model: stageFirst, agent: store.agent, agents: agents.agents, composer: composer,
+            store: store, model: stageFirst, agent: store.agent, agents: agents.agents, unshared: agents.unshared, composer: composer,
             focus: $stageFocused, photos: photos, sending: sending, mic: stageMicState,
             showMic: stageMic || !stageType, showType: stageType || !stageMic, showAttach: stageAttach,
             unread: max(0, store.shown.count - stageFirst.seen), waiting: store.waitingCount, reduceMotion: reduceMotion,
@@ -1347,6 +1359,7 @@ struct ChatView: View {
             actions: StageActions(
                 menu: { settleDrawer(open: true) },
                 pick: { agents.selectedID = $0 },
+                add: agents.onlyShared ? nil : { addFirst = true },
                 manage: { showAgents = true },
                 record: closeStageFirst,
                 bar: barActions(tap: stageMicTap, type: {}) { withAnimation(theme.spring) { stageFirst.typing = true } },

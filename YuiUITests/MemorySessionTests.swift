@@ -46,16 +46,10 @@ final class MemorySessionTests: XCTestCase {
         let top = app.coordinate(withNormalizedOffset: CGVector(dx: 0.06, dy: 0.25))
         let bottom = app.coordinate(withNormalizedOffset: CGVector(dx: 0.06, dy: 0.8))
         let menu = app.buttons["Agent menu"]
-        let bar = app.buttons["drawer-agent-bar"]
 
         func open(_ agent: String) {
             XCTAssertTrue(menu.waitForExistence(timeout: 5), "no agent menu")
-            menu.tap()
-            XCTAssertTrue(bar.waitForExistence(timeout: 5), "the drawer did not open")
-            bar.tap()
-            let row = app.buttons["switch-\(agent)"]
-            XCTAssertTrue(row.waitForExistence(timeout: 5), "no \(agent) in the switcher")
-            row.tap()
+            XCTAssertTrue(app.pickAgent(agent), "no \(agent) in the picker")
             XCTAssertTrue(newest.waitForExistence(timeout: 10), "\(agent)'s thread did not open")
         }
 

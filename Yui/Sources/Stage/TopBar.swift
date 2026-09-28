@@ -13,7 +13,11 @@ struct AgentPicker: View {
     let agent: YuiAgent?
     let agents: [YuiAgent]
     var framed = true
+    /// Shared agents gone since the app opened (YUI-97): one quiet line each.
+    var unshared: [String] = []
     let pick: (String) -> Void
+    /// Nil for an invited account, which starts with what it was given (YUI-97).
+    var add: (() -> Void)? = nil
     let manage: () -> Void
     @Environment(\.yuiTheme) private var theme
     @Environment(\.colorScheme) private var scheme
@@ -21,12 +25,22 @@ struct AgentPicker: View {
     var body: some View {
         let c = theme.swatch(scheme)
         Menu {
+            // The one agent picker (YUI-167: the drawer lost its own). Each row says what the
+            // agent does under its name, when it says (a native agent's tagline).
             ForEach(agents) { a in
                 Button { pick(a.id) } label: {
-                    if a.id == agent?.id { Label(a.name, systemImage: "checkmark") } else { Text(a.name) }
+                    // A menu row reads its first Text as the title, the next as the line under it.
+                    if a.id == agent?.id { Image(systemName: "checkmark") }
+                    Text(a.name)
+                    if let line = a.line { Text(line) }
                 }
+                .accessibilityIdentifier("pick-\(a.handle)")
+            }
+            ForEach(unshared, id: \.self) { name in
+                Text(AgentStore.unsharedLine(name))
             }
             Divider()
+            if let add { Button(action: add) { Label("Add an agent", systemImage: "plus") } }
             Button(action: manage) { Label("Manage agents", systemImage: "person.2") }
         } label: {
             HStack(spacing: theme.spacing.s) {

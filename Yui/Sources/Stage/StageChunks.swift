@@ -36,6 +36,8 @@ struct StageQuestion: Identifiable, Equatable {
 /// of every reply after it, and the questions to ask at the end.
 struct StageTurn: Equatable {
     var ask: ChatMessage?
+    /// The agent's hello, before anything was said (YUI-167): it plays with no ask.
+    var hello = false
     var chunks: [StageChunk] = []
     var questions: [StageQuestion] = []
     /// The plan the questions came from: Send answers its questions as that plan,
@@ -131,22 +133,38 @@ enum StageChunks {
         var t = StageTurn(ask: messages[i])
         for m in messages[(i + 1)...] {
             if m.fromUser { break }
-            if let yl = m.yl {
-                if StageMotion.failed(yl) { t.failed = true }
-                let r = of(yl, scope: m.id)
-                guard !r.chunks.isEmpty || !r.questions.isEmpty else { continue }
-                t.replies += 1
-                t.chunks += r.chunks
-                t.questions += r.questions
-                if let p = r.plan { t.plan = StageQuestion(scope: m.id, c: p, all: yl.components)}
-            } else {
-                let parts = text(m.text)
-                guard !parts.isEmpty else { continue }
-                t.replies += 1
-                t.chunks += parts.enumerated().map { StageChunk(scope: m.id, id: "\(m.id)#p\($0.offset)", line: $0.element) }
-            }
+            add(m, to: &t)
         }
         return t
+    }
+
+    /// The agent's hello (YUI-167): the first messages of a thread marked as its hello,
+    /// up to the first thing the person said. Empty when there is none.
+    static func hello(_ messages: [ChatMessage]) -> StageTurn {
+        var t = StageTurn(hello: true)
+        for m in messages {
+            if m.fromUser { break }
+            if m.hello { add(m, to: &t) }
+        }
+        return t
+    }
+
+    /// One reply's chunks and questions onto the turn.
+    private static func add(_ m: ChatMessage, to t: inout StageTurn) {
+        if let yl = m.yl {
+            if StageMotion.failed(yl) { t.failed = true }
+            let r = of(yl, scope: m.id)
+            guard !r.chunks.isEmpty || !r.questions.isEmpty else { return }
+            t.replies += 1
+            t.chunks += r.chunks
+            t.questions += r.questions
+            if let p = r.plan { t.plan = StageQuestion(scope: m.id, c: p, all: yl.components)}
+        } else {
+            let parts = text(m.text)
+            guard !parts.isEmpty else { return }
+            t.replies += 1
+            t.chunks += parts.enumerated().map { StageChunk(scope: m.id, id: "\(m.id)#p\($0.offset)", line: $0.element) }
+        }
     }
 }
 

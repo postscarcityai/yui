@@ -104,14 +104,9 @@ final class StuckStageTests: XCTestCase {
         shot("4-drawer-closed-by-tap")
         assertFullSize("after a tap beside the drawer")
 
-        // Switch agent and back, from the drawer's switcher.
+        // Switch agent and back, from the pill (the drawer has no picker since YUI-167).
         for name in ["Coach", "Wizard"] {
-            app.buttons["Agent menu"].tap()
-            XCTAssertTrue(shut.waitForExistence(timeout: 5))
-            app.buttons["drawer-agent-bar"].tap()
-            let row = app.buttons["switch-\(name)"]
-            XCTAssertTrue(row.waitForExistence(timeout: 5))
-            row.tap()
+            XCTAssertTrue(app.pickAgent(name), "no \(name) in the picker")
             assertFullSize("after switching to \(name)")
         }
 
