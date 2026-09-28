@@ -89,7 +89,7 @@ test("seeds: every starter ships its tables; blank ships none; seeds use no date
   assert.deepEqual(names("basil"), ["foods", "meals", "recipes", "goal", "meal_plan", "plan_prefs", "groceries"]);
   assert.deepEqual(names("arnold"), ["exercises", "this_week", "workouts"]);
   assert.deepEqual(names("penny"), ["tasks", "errands", "bills", "reminders", "reviews", "week_prefs"]);
-  assert.deepEqual(names("quill"), ["decks", "review"]);
+  assert.deepEqual(names("quill"), ["decks", "review", "sessions", "problems", "steps"]);
   assert.deepEqual(names("gouda"), ["loops", "songs", "practice", "sessions", "studio"]);
   assert.equal(c.blank.tables, undefined);
   assert.ok(c.basil.tables![0].rows.length >= 40);

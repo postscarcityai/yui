@@ -2364,8 +2364,8 @@ export const CREW: Record<string, Profile> = {
       "calc"
     ],
     "model": "default",
-    "soul": "You are Quill, a study buddy in the Yui app. Curious, patient and a little funny.\n\n- You teach with short decks (`deck` and `page`), quiz with `choose ... answer=X`, and work problems step by step with `math`, `step` and `calc`.\n- You check understanding before moving on: one question, then the next thing.\n- You keep what they are studying, their level and what they keep missing in your notes.\n- You help people learn; you do not write their graded work for them to hand in. Saying no is one line, then a screen that gets them writing it themselves (a `choose` for the angle, `step`s for an outline), never words alone.",
-    "first": "Quill here. Pick a topic and I'll teach it in five minutes, then quiz you.\n```yui\nchoose \"What are we learning?\" Math|Science|History|Languages|\"Something else\" +other\n```",
+    "soul": "You are Quill, a study buddy in the Yui app. Curious, patient and a little funny.\n\n- You teach with short decks (`deck` and `page`), quiz with `choose ... answer=X`, and work problems step by step with `math`, `step` and `calc`.\n- Your tools run on their own: Learn a topic (a short lesson on the stage, a quiz, then cards), Review my cards (again, hard, good or easy), Walk me through a problem (one step a page, answered before the next) and What's due. Point people to them instead of redoing them in words.\n- Your pages: What you're studying (screen 2), Next review (3: cards due and Start), Progress (4: streak, cards reviewed, cards learned). Cards live in `review` (Front, Back, Deck, Box, Due; empty Due is new, due now); a card they ask for: `put review` with Box=1.\n- You check understanding before moving on: one question, then the next thing.\n- You keep what they are studying, their level and what they keep missing in your notes.\n- You help people learn; you do not write their graded work for them to hand in. Saying no is one line, then a screen that gets them writing it themselves (a `choose` for the angle, `step`s for an outline), never words alone.",
+    "first": "Quill here. Pick a topic and I'll teach it in five minutes, then quiz you.\n```yui\nchoose@learn-subject \"What are we learning?\" Math|Science|History|Languages|\"Something else\" +other\n```",
     "shelf": true,
     "visual": {
       "look": "orb",
@@ -2392,6 +2392,10 @@ export const CREW: Record<string, Profile> = {
           {
             "name": "Last",
             "type": "date"
+          },
+          {
+            "name": "Score",
+            "type": "text"
           }
         ],
         "next": 1,
@@ -2428,6 +2432,18 @@ export const CREW: Record<string, Profile> = {
           {
             "name": "Due",
             "type": "date"
+          },
+          {
+            "name": "Rated",
+            "type": "text"
+          },
+          {
+            "name": "Reviewed",
+            "type": "date"
+          },
+          {
+            "name": "Reps",
+            "type": "number"
           }
         ],
         "next": 1,
@@ -2505,9 +2521,130 @@ export const CREW: Record<string, Profile> = {
             }
           }
         ]
+      },
+      {
+        "name": "sessions",
+        "cols": [
+          {
+            "name": "Day",
+            "type": "date"
+          },
+          {
+            "name": "Kind",
+            "type": "text"
+          },
+          {
+            "name": "Deck",
+            "type": "text"
+          },
+          {
+            "name": "Cards",
+            "type": "number"
+          },
+          {
+            "name": "Right",
+            "type": "number"
+          },
+          {
+            "name": "Of",
+            "type": "number"
+          }
+        ],
+        "next": 1,
+        "rows": []
+      },
+      {
+        "name": "problems",
+        "cols": [
+          {
+            "name": "Problem",
+            "type": "text"
+          },
+          {
+            "name": "Subject",
+            "type": "text"
+          },
+          {
+            "name": "Steps",
+            "type": "number"
+          },
+          {
+            "name": "At",
+            "type": "number"
+          },
+          {
+            "name": "Right",
+            "type": "number"
+          },
+          {
+            "name": "Done",
+            "type": "bool"
+          },
+          {
+            "name": "Day",
+            "type": "date"
+          },
+          {
+            "name": "Result",
+            "type": "text"
+          }
+        ],
+        "next": 1,
+        "rows": []
+      },
+      {
+        "name": "steps",
+        "cols": [
+          {
+            "name": "Problem",
+            "type": "text"
+          },
+          {
+            "name": "N",
+            "type": "number"
+          },
+          {
+            "name": "Title",
+            "type": "text"
+          },
+          {
+            "name": "Body",
+            "type": "text"
+          },
+          {
+            "name": "Tex",
+            "type": "text"
+          },
+          {
+            "name": "Ask",
+            "type": "text"
+          },
+          {
+            "name": "Options",
+            "type": "text"
+          },
+          {
+            "name": "Answer",
+            "type": "text"
+          },
+          {
+            "name": "Why",
+            "type": "text"
+          },
+          {
+            "name": "Given",
+            "type": "text"
+          },
+          {
+            "name": "Right",
+            "type": "bool"
+          }
+        ],
+        "next": 1,
+        "rows": []
       }
     ],
-    "home": "# Quill's home (YUI-168, yuigui spec/HOME.md). What you study and when the next review is.\nmenu shortcut@next \"What's next\" say=\"What should I review next?\"\nmenu shortcut@quiz \"Quiz me\" say=\"Quiz me\"\n>2\ncard@studying \"What you're studying\" \"World capitals. 8 cards, all new.\" sub=Geography cta=\"Quiz me\"\nsave studying\n>3\nstat@due 8 \"Cards to review\" sub=\"Next review: now\"\nsave next review"
+    "home": "# Quill's home (YUI-168, yuigui spec/HOME.md). Played once when he joins; the runtime patches it after (YUI-186, src/study.ts).\n# Chips show newest first, so the most important one goes last.\nmenu shortcut@next \"What's due?\" say=\"What should I review next?\"\nmenu shortcut@problem \"Walk me through a problem\" say=\"Walk me through a problem\"\nmenu shortcut@learn \"Learn something new\" say=\"Teach me something new\"\nmenu shortcut@review \"Review my cards\" say=\"Review my cards\"\n>2\ncard@studying \"World capitals\" \"8 cards. 8 due today.\" sub=\"Geography\" cta=\"Review now\"\nlist@decks title=\"Your decks\" \"World capitals, 8 cards\"\ncard@learn-new \"Learn something new\" \"A topic, how long you have, what you know. A short lesson, then a quiz.\" cta=\"Learn a topic\"\ncard@walk \"Stuck on a problem?\" \"I'll break it into steps. You answer each one before the next.\" cta=\"Walk me through it\"\nsave studying\n>3\nstat@due 8 \"Cards due today\" sub=\"World capitals\"\ncard@review-start \"Review 8 cards\" \"Think of the answer, then tap again, hard, good or easy.\" cta=\"Start review\"\nsave next review\n>4\nstat@streak 0 \"Day streak\" sub=\"Review today to start one\"\nchart@studied bar \"Cards reviewed\" x=Mon|Tue|Wed|Thu|Fri|Sat|Sun y=0|0|0|0|0|0|0\nstat@learned 0 \"Cards learned\" sub=\"of 8 cards, box 4 or higher\"\nstat@last-quiz \"None\" \"Last quiz\" sub=\"Finish a lesson's quiz\"\nsave progress"
   },
   "yui": {
     "base": "yui",

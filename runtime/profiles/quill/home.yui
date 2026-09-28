@@ -1,9 +1,22 @@
-# Quill's home (YUI-168, yuigui spec/HOME.md). What you study and when the next review is.
-menu shortcut@next "What's next" say="What should I review next?"
-menu shortcut@quiz "Quiz me" say="Quiz me"
+# Quill's home (YUI-168, yuigui spec/HOME.md). Played once when he joins; the runtime patches it after (YUI-186, src/study.ts).
+# Chips show newest first, so the most important one goes last.
+menu shortcut@next "What's due?" say="What should I review next?"
+menu shortcut@problem "Walk me through a problem" say="Walk me through a problem"
+menu shortcut@learn "Learn something new" say="Teach me something new"
+menu shortcut@review "Review my cards" say="Review my cards"
 >2
-card@studying "What you're studying" "World capitals. 8 cards, all new." sub=Geography cta="Quiz me"
+card@studying "World capitals" "8 cards. 8 due today." sub="Geography" cta="Review now"
+list@decks title="Your decks" "World capitals, 8 cards"
+card@learn-new "Learn something new" "A topic, how long you have, what you know. A short lesson, then a quiz." cta="Learn a topic"
+card@walk "Stuck on a problem?" "I'll break it into steps. You answer each one before the next." cta="Walk me through it"
 save studying
 >3
-stat@due 8 "Cards to review" sub="Next review: now"
+stat@due 8 "Cards due today" sub="World capitals"
+card@review-start "Review 8 cards" "Think of the answer, then tap again, hard, good or easy." cta="Start review"
 save next review
+>4
+stat@streak 0 "Day streak" sub="Review today to start one"
+chart@studied bar "Cards reviewed" x=Mon|Tue|Wed|Thu|Fri|Sat|Sun y=0|0|0|0|0|0|0
+stat@learned 0 "Cards learned" sub="of 8 cards, box 4 or higher"
+stat@last-quiz "None" "Last quiz" sub="Finish a lesson's quiz"
+save progress

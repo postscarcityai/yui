@@ -87,7 +87,7 @@ export function checkProfile(p: Profile): string[] {
   if (p.soul.length > 4000) out.push("soul.md is over 4000 characters");
   const screen = p.first.match(/```yui\n([\s\S]+?)\n```/);
   if (!screen) out.push("first.yui needs a ```yui fence");
-  else if (!PRESETS.has(screen[1].trim().split(/\s/)[0])) out.push(`first.yui opens with "${screen[1].trim().split(/\s/)[0]}", not a screen the app draws`);
+  else if (!PRESETS.has(screen[1].trim().split(/\s/)[0].split("@")[0])) out.push(`first.yui opens with "${screen[1].trim().split(/\s/)[0]}", not a screen the app draws`);
   else if (!p.first.slice(0, screen.index).trim()) out.push("first.yui needs a line of text before its screen");
   if (p.visual) out.push(...checkVisual(p.visual));
   if (/\u2014/.test([p.soul, p.first, p.tagline, p.about, ...(p.can ?? [])].join(" "))) out.push("no em dashes");

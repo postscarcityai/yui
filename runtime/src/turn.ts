@@ -34,6 +34,10 @@ import { ADD_BODY as TODO_BODY, TASKS, addTasks, applyMove, applyOrder, applyPla
          ensureTools as ensurePlanner, moveBody, nextText, nextTask, planAsks, planBody as weekPlanBody, plansWeeks, remindLead, reminderMeta, reviewBody,
          screenLines as plannerScreenLines, syncReminders, tickTask, type Page as PlannerPage, type PlanAsk } from "./planner.ts";
 import { card as handoffCard, cards as handoffCards, handedIn, handlesIn, oneThread, threadOf, withCard } from "./handoff.ts";
+import { LESSON_PROMPT, PROBLEM_PROMPT, answerStep, applyQuiz, applyReview as applyCardReview, drawnShape as studyShape,
+         ensureTools as ensureStudy, keepLesson, keepProblem, learnBody as lessonPlanBody, lessonAsk, lessonBody, nextText as dueText, parseLesson, parseProblem,
+         problemAsk, problemBody, problems as problemRows, readLearn, readProblem, reviewBody as cardReviewBody, screenLines as studyScreenLines,
+         stepLines, stepsOf, studies, studyAsks, studyPages, dueCards, type Page as StudyPage, type StudyAsk } from "./study.ts";
 
 export interface Provider {
   url: string; // an OpenAI-compatible base URL
@@ -236,6 +240,18 @@ async function oneTurn(store: Store, agent: NativeAgent, rows: Row[], opts: Turn
     }
   }
 
+  // Quill's tools (YUI-186): learn a topic, review cards, walk through a problem. The model writes a lesson or a problem's steps; the rest is his tables.
+  if (studies(agent)) {
+    const { asks, rest } = studyAsks(rows);
+    if (asks.length) {
+      await studyTools(store, agent, asks, now, say, log, opts);
+      const done = asks.map((a) => a.row.id).filter((id) => !id.startsWith(SYNTHETIC));
+      if (done.length) await store.markHandled(done);
+      if (!rest.length) return { handled: true };
+      return oneTurn(store, agent, rest, opts, log, result, depth);
+    }
+  }
+
   // Arnold's tools (YUI-182): Start, the runner's Send, the log and a changed day are answered here, with no model turn.
   if (trains(agent)) {
     const { asks, rest } = workoutAsks(rows);
@@ -284,6 +300,8 @@ async function oneTurn(store: Store, agent: NativeAgent, rows: Row[], opts: Turn
   if (playsMusic(agent)) tables = await ensureMusicTools(store, agent, tables);
   // Penny from before YUI-185 gets her reminders, reviews and week tables and the new task columns, once.
   if (plansWeeks(agent)) tables = await ensurePlannerTools(store, agent, tables);
+  // Quill from before YUI-186 gets his sessions, problems and steps tables and the new card columns, once.
+  if (studies(agent)) tables = await ensureStudyTools(store, agent, tables);
   // A Delete or Keep tap on deletes held last turn: done here, and the agent hears what happened.
   let turnRows = rows;
   ({ tables, rows: turnRows } = await heldTaps(store, agent, rows, history, tables, clk, log));
@@ -418,6 +436,9 @@ async function oneTurn(store: Store, agent: NativeAgent, rows: Row[], opts: Turn
   if (mpages.length && body.trim()) body = await withMusicScreens(store, agent, body, t.store, clk, mpages);
   // Penny's pages follow what the answer wrote to her tasks (YUI-185).
   if (reminded && body.trim()) body = await withPlannerScreens(store, agent, body, t.store, clk, ["today", "week"]);
+  // Quill's pages follow what the answer wrote to his decks, cards or sessions (YUI-186).
+  const spages = studies(agent) ? studyPages(tchange) : [];
+  if (spages.length && body.trim()) body = await withStudyScreens(store, agent, body, t.store, clk, spages);
   // Hand-offs (YUI-144): one a turn, never from a turn another agent started, never inside a group.
   // The card goes under the answer, so the phone jumps to that agent once it has been read.
   const passes = depth === 0 && !handedIn(rows) && !thread;
@@ -870,6 +891,194 @@ async function plannerTools(store: Store, agent: NativeAgent, asks: PlanAsk[], n
   }
   const ch = diff(start, tables);
   if (changed(ch)) await store.saveTables(agent, ch, tables);
+}
+
+/** Quill's tool tables, made once for a Quill from before YUI-186 (from his starter seeds), and saved. */
+async function ensureStudyTools(store: Store, agent: NativeAgent, tables: TableStore): Promise<TableStore> {
+  const out = ensureStudy(tables, crew().quill?.tables);
+  const ch = diff(tables, out);
+  if (changed(ch)) await store.saveTables(agent, ch, out);
+  return out;
+}
+
+/** A reply with Quill's page lines added, inside its last yui fence or in a new one. Keeps the shape in his profile. */
+async function withStudyScreens(store: Store, agent: NativeAgent, body: string, tables: TableStore, clk: Clock, only: StudyPage[]): Promise<string> {
+  const { lines, shape } = studyScreenLines(tables, clk, studyShape(agent.profile), only);
+  if (!lines.length) return body;
+  if (agent.profile.studyScreens !== shape) {
+    agent.profile = { ...agent.profile, studyScreens: shape };
+    await store.updateAgent(agent.id, agent.profile);
+  }
+  const at = body.lastIndexOf("\n```");
+  if (/```yui\n/.test(body) && at > body.lastIndexOf("```yui\n")) return `${body.slice(0, at)}\n${lines.join("\n")}${body.slice(at)}`;
+  return `${body.trim()}\n\`\`\`yui\n${lines.join("\n")}\n\`\`\``;
+}
+
+/**
+ * The one model call behind a lesson or a problem: JSON, no thinking budget, one more try when it isn't JSON. Takes a
+ * free turn (a person's own key takes none). Null with the words to say when there is no answer to draw.
+ */
+async function studyModel<T>(store: Store, agent: NativeAgent, opts: TurnOptions, system: string, user: string, read: (text: string) => T | null,
+                             log: (m: string) => void): Promise<{ value?: T; model?: string; say?: string }> {
+  const p = agent.profile;
+  const own = await store.ownKey(agent.userId);
+  const provider = own ? ownProvider(own) : opts.provider;
+  const budget = own ? { ok: true, limit: 0 } : await store.takeTurn(agent.userId);
+  if (!budget.ok) return { say: outOfTurns(budget.limit) };
+  const routes = await store.routes();
+  const model = provider.model ?? (p.model && p.model !== "default" ? p.model : routes.text);
+  let messages: any[] = [{ role: "system", content: system }, { role: "user", content: user }];
+  try {
+    for (let i = 0; i < 2; i++) {
+      const req = { model, messages, max_tokens: 3000 };
+      const a = await ask(opts, provider, provider.reasoning ? { ...req, reasoning: { enabled: false } } : req);
+      const value = read(a.text);
+      if (value) return { value, model };
+      log(`${p.name}: the model's answer wasn't the JSON${i ? ", giving up" : ", asking again"}`);
+      messages = [...messages, { role: "assistant", content: a.text }, { role: "user", content: "That wasn't the JSON. Answer with the JSON object only." }];
+    }
+  } catch (e: any) {
+    if (e instanceof ModelUnavailable) return { say: `${p.name} can't reach its model right now. Send that again in a minute.` };
+    if (!(e instanceof ModelError)) throw e;
+    return { say: `${p.name} couldn't answer that: ${own ? `${e.message} (this is your own ${own.provider} key)` : e.message}` };
+  }
+  return { say: "I couldn't put that together. Try it again, maybe in fewer words?", model };
+}
+
+/** Quill's tools: flows opened, a lesson written and kept, cards reviewed, a problem walked step by step; his pages patched after. */
+async function studyTools(store: Store, agent: NativeAgent, asks: StudyAsk[], now: number,
+                          say: (body: string, meta: Record<string, unknown>) => Promise<string>, log: (m: string) => void, opts: TurnOptions): Promise<void> {
+  const p = agent.profile;
+  const clk = clock(now, validZone(await store.timezone(agent.userId)));
+  const start = await seedOnce(store, agent, await store.tables(agent.id), log);
+  let tables = ensureStudy(start, crew().quill?.tables, true);
+  const pages = async (text: string, only: StudyPage[], native: Record<string, unknown>, turn: Record<string, unknown>) => {
+    const sl = studyScreenLines(tables, clk, studyShape(agent.profile), only);
+    const at = text.lastIndexOf("\n```");
+    const body = !sl.lines.length ? text
+      : /```yui\n/.test(text) && at > text.lastIndexOf("```yui\n") ? `${text.slice(0, at)}\n${sl.lines.join("\n")}${text.slice(at)}`
+      : `${text.trim()}\n\`\`\`yui\n${sl.lines.join("\n")}\n\`\`\``;
+    await say(body.trim(), { ...turn, native });
+    if (agent.profile.studyScreens !== sl.shape) {
+      agent.profile = { ...agent.profile, studyScreens: sl.shape };
+      await store.updateAgent(agent.id, agent.profile);
+    }
+  };
+  // Saved as it goes: a lesson or a problem is kept before the next ask's model call.
+  let saved = start;
+  const save = async () => {
+    const ch = diff(saved, tables);
+    if (changed(ch)) await store.saveTables(agent, ch, tables);
+    saved = tables;
+  };
+  for (const a of asks) {
+    const turn = a.row.id.startsWith(SYNTHETIC) ? {} : { turn: [a.row.id] };
+    const doing = (w: string) => (a.row.id.startsWith(SYNTHETIC) ? Promise.resolve() : store.doing(a.row.id, w));
+    if (a.kind === "quiet") continue;
+    if (a.kind === "learn") {
+      // A topic they named rides on the reply, so the plan's Send (which then has no topic question) finds it.
+      await say(lessonPlanBody(tables, a.topic), { ...turn, ...(a.topic ? { native: { studytool: "learn", topic: a.topic } } : {}) });
+      log(`${p.name}: learn${a.topic ? ` (${a.topic})` : ""}`);
+      continue;
+    }
+    if (a.kind === "problem" && !a.words) {
+      await say(problemBody(), turn);
+      log(`${p.name}: problem`);
+      continue;
+    }
+    if (a.kind === "review" || a.kind === "next") {
+      // What's due: the answer in one line, and the review under it when there is one to do.
+      const due = dueCards(tables, clk).length;
+      await say(a.kind === "review" ? cardReviewBody(tables, clk) : due ? `${dueText(tables, clk)}\n${cardReviewBody(tables, clk)}` : dueText(tables, clk), turn);
+      log(`${p.name}: ${a.kind}`);
+      continue;
+    }
+    if (a.kind === "reviewed") {
+      const r = applyCardReview(tables, a.answers, clk);
+      tables = r.store;
+      await save();
+      if (!r.rated) {
+        await say("Nothing rated, so nothing moved. Open the review again when you're ready.", turn);
+        continue;
+      }
+      const text = `Saved: ${r.rated} ${r.rated === 1 ? "card" : "cards"} reviewed${r.again ? `, ${r.again} to see again today` : ""}.`
+        + `${r.left ? ` ${r.left} still due.` : " All caught up."}`;
+      await pages(text, ["studying", "review", "progress"], { studytool: a.kind }, turn);
+      log(`${p.name}: reviewed ${r.rated}`);
+      continue;
+    }
+    if (a.kind === "quizdone") {
+      const r = applyQuiz(tables, a.deck, a.score, a.of, clk);
+      tables = r.store;
+      await save();
+      if (!r.deck) continue;
+      const text = `${a.score} of ${a.of}${a.score === a.of ? ". Every one right." : a.score * 2 >= a.of ? ". Nice." : ". The cards will help."}`
+        + ` ${r.deck.deck} is in your review, first cards tomorrow.`;
+      await pages(text, ["studying", "progress"], { studytool: a.kind }, turn);
+      log(`${p.name}: quiz ${a.score}/${a.of}`);
+      continue;
+    }
+    if (a.kind === "step") {
+      const r = answerStep(tables, a.problem, a.n, a.choice, clk);
+      if (!r.p || !r.step || r.stale) continue; // an answer changed on a step already passed: nothing to do
+      tables = r.store;
+      await save();
+      const said = r.right ? "Right." : `Not quite: it's ${r.step.answer}.${r.step.why ? ` ${r.step.why}` : ""}`;
+      if (r.next) {
+        await say(`${said}\n\`\`\`yui\n${stepLines(r.p, r.next).join("\n")}\n\`\`\``, { ...turn, native: { studytool: "step", step: r.next.n } });
+      } else {
+        const text = `${said} Solved${r.p.result ? `: ${r.p.result}` : ""}. You got ${r.p.right} of ${r.p.steps} steps.`;
+        await pages(text, ["progress"], { studytool: "solved" }, turn);
+      }
+      log(`${p.name}: step ${a.n} ${r.right ? "right" : "wrong"}`);
+      continue;
+    }
+    if (a.kind === "learned") {
+      let l = readLearn(a.answers);
+      if (!l.topic) {
+        const hist = await store.history(agent.id, a.row.created_at, 20);
+        const named = [...hist].reverse().find((h) => h.sender === "agent" && h.meta?.native?.studytool === "learn");
+        if (named?.meta?.native?.topic) l = { ...l, topic: String(named.meta.native.topic) };
+      }
+      if (!l.topic) {
+        await say(lessonPlanBody(tables), turn);
+        continue;
+      }
+      await doing(`Writing your lesson on ${l.topic}`);
+      const got = await studyModel(store, agent, opts, LESSON_PROMPT, lessonAsk(l), (t) => parseLesson(t, l.time), log);
+      if (!got.value) {
+        await say(got.say!, turn);
+        continue;
+      }
+      const k = keepLesson(tables, got.value, clk);
+      tables = k.store;
+      await save();
+      await pages(lessonBody(got.value, k.key, k.added, l.time), ["studying", "review"], { studytool: a.kind, model: got.model }, turn);
+      log(`${p.name}: lesson "${got.value.title}", ${got.value.pages.length} pages, ${got.value.quiz.length} questions, ${k.added} cards`);
+      continue;
+    }
+    // A problem: from the plan's Send, or said in words.
+    const pr = a.kind === "posed" ? readProblem(a.answers) : { problem: a.words, small: true };
+    if (!pr.problem) {
+      await say(problemBody(), turn);
+      continue;
+    }
+    await doing("Breaking it into steps");
+    const got = await studyModel(store, agent, opts, PROBLEM_PROMPT, problemAsk(pr), parseProblem, log);
+    if (!got.value) {
+      await say(got.say!, turn);
+      continue;
+    }
+    const k = keepProblem(tables, got.value, pr.problem, clk);
+    tables = k.store;
+    await save();
+    const row = problemRows(tables).find((x) => x.key === k.key)!;
+    const first = stepsOf(tables, k.key)[0];
+    await say(`${got.value.title}, in ${row.steps} ${row.steps === 1 ? "step" : "steps"}. Answer each one and the next shows.\n\`\`\`yui\n${stepLines(row, first).join("\n")}\n\`\`\``,
+              { ...turn, native: { studytool: "problem", model: got.model, step: 1 } });
+    log(`${p.name}: problem "${got.value.title}", ${row.steps} steps`);
+  }
+  await save();
 }
 
 const joinWords = (xs: string[]) => (xs.length < 2 ? xs.join("") : `${xs.slice(0, -1).join(", ")} and ${xs[xs.length - 1]}`);

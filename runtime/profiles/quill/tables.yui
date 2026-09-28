@@ -1,7 +1,9 @@
-# Quill's starter tables (YUI-170). A small first deck to try the review queue with; Box goes up as you get a card right.
-table create decks Deck:text Subject:text Cards:number Last:date
+# Quill's starter tables (YUI-170, YUI-186). A small first deck to try the review queue with.
+# review: Box 1 to 6 moves up as a card is rated good or easy (src/study.ts); Due is the day it comes back, empty is new.
+# sessions, problems and steps are kept by the runtime: every review, quiz and problem walked through.
+table create decks Deck:text Subject:text Cards:number Last:date Score:text
 put decks capitals Deck="World capitals" Subject=Geography Cards=8
-table create review Front:text Back:text Deck:text Box:number Due:date
+table create review Front:text Back:text Deck:text Box:number Due:date Rated:text Reviewed:date Reps:number
 put review c1 Front="Capital of Japan?" Back=Tokyo Deck="World capitals" Box=1
 put review c2 Front="Capital of Canada?" Back=Ottawa Deck="World capitals" Box=1
 put review c3 Front="Capital of Australia?" Back=Canberra Deck="World capitals" Box=1
@@ -10,3 +12,6 @@ put review c5 Front="Capital of Kenya?" Back=Nairobi Deck="World capitals" Box=1
 put review c6 Front="Capital of Turkey?" Back=Ankara Deck="World capitals" Box=1
 put review c7 Front="Capital of New Zealand?" Back=Wellington Deck="World capitals" Box=1
 put review c8 Front="Capital of Egypt?" Back=Cairo Deck="World capitals" Box=1
+table create sessions Day:date Kind:text Deck:text Cards:number Right:number Of:number
+table create problems Problem:text Subject:text Steps:number At:number Right:number Done:bool Day:date Result:text
+table create steps Problem:text N:number Title:text Body:text Tex:text Ask:text Options:text Answer:text Why:text Given:text Right:bool

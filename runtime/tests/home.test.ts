@@ -18,7 +18,7 @@ test("every starter has a home: its shortcuts in chip order and its starter scre
     basil: { chips: ["Plan my meals", "Log a meal", "This week", "Grocery list"], pages: ["2", "3", "4"] },
     gouda: { chips: ["Learn a song", "Log practice", "Jam", "Tune up"], pages: ["2", "3", "4", "5"] },
     penny: { chips: ["Plan my week", "Add a to-do", "What's next?", "Evening review"], pages: ["2", "3"] },
-    quill: { chips: ["Quiz me", "What's next"], pages: ["2", "3"] },
+    quill: { chips: ["Review my cards", "Learn something new", "Walk me through a problem", "What's due?"], pages: ["2", "3", "4"] },
     yui: { chips: ["Add an agent", "What's new"], pages: ["2"] },
   };
   for (const [b, w] of Object.entries(want)) {
