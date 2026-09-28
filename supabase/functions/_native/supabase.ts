@@ -4,6 +4,7 @@
 // PostgREST and Storage with the service key, so it runs in the edge function
 // and, for a check, from a laptop. Never ship the service key to a client.
 import type { Store } from "./store.ts";
+import type { JobItem } from "./meals.ts";
 import { type Cell, type TableChange, type TableStore, emptyStore } from "./tables.ts";
 import { DEFAULT_ROUTES, type MemoryItem, type NativeAgent, type OwnKey, type Profile, type Routes, type Row, type ScheduleItem, type SearchTake } from "./types.ts";
 
@@ -275,6 +276,23 @@ export class SupabaseStore implements Store {
                         "resolution=merge-duplicates,return=minimal");
       }
     }
+  }
+
+  async addJob(job: Omit<JobItem, "id" | "status" | "tries" | "createdAt">) {
+    const [x] = await this.rest("POST", "yui_native_jobs?select=id", { user_id: job.userId, agent_id: job.agentId, kind: job.kind, input: job.input },
+                                "return=representation");
+    return x.id as string;
+  }
+
+  async claimJob(id: string) {
+    const [x] = await this.rpc("yui_native_claim_job", { jid: id });
+    if (!x?.id) return null;
+    return { id: x.id, userId: x.user_id, agentId: x.agent_id, kind: x.kind, input: x.input, status: x.status, tries: x.tries,
+             createdAt: x.created_at } as JobItem;
+  }
+
+  async finishJob(id: string, status: "done" | "failed" | "queued", result?: Record<string, unknown>) {
+    await this.rest("PATCH", `yui_native_jobs?id=eq.${id}`, { status, result: result ?? null, finished_at: new Date().toISOString() }, "return=minimal");
   }
 
   async dropSchedule(id: string) {

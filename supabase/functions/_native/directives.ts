@@ -30,6 +30,10 @@
 //   ```tables                  (YUI-170: reads the agent's own tables before it answers)
 //   query meals where=Day>=today-6 group=Day sum=Cal
 //   ```
+//
+//   ```meal                    (YUI-103: works out a meal's macros behind the scenes, meals.ts)
+//   log "two eggs, toast with butter"
+//   ```
 
 export type MemoryOp =
   | { op: "note"; body: string }
@@ -55,17 +59,32 @@ export interface Extracted {
   fetch: string | null; // one page per block
   handoff: Handoff[];
   tables: string[]; // query lines to read before answering
+  meal: string[]; // meals to work out in the background, in the person's words
 }
 
-const FENCE = /```(remember|agents|schedule|search|fetch|handoff|tables)[ \t]*\n([\s\S]*?)(?:\n```|$)/g;
+const FENCE = /```(remember|agents|schedule|search|fetch|handoff|tables|meal)[ \t]*\n([\s\S]*?)(?:\n```|$)/g;
 // GLM sometimes drops the fence on a block that ends the reply ("remember" alone on a
 // line, then its lines): taken the same way, never shown to the person (YUI-141).
-const BARE_TAIL = /(^|\n)(remember|agents|schedule|search|fetch|handoff|tables)[ \t]*\n(?![\s\S]*```)([\s\S]*)$/;
+const BARE_TAIL = /(^|\n)(remember|agents|schedule|search|fetch|handoff|tables|meal)[ \t]*\n(?![\s\S]*```)([\s\S]*)$/;
+
+// GLM puts the meal block inside its yui fence (`meal` then `log "..."` lines): `log` is no Yui Lines word, so those
+// lines move to a meal block of their own.
+const LOG_LINE = /^\s*log\s+"/;
+
+function mealInYui(reply: string): string {
+  return reply.replace(/```yui[ \t]*\n([\s\S]*?)\n```/g, (m, body: string) => {
+    const lines = body.split("\n");
+    const logs = lines.filter((l) => LOG_LINE.test(l));
+    if (!logs.length) return m;
+    const rest = lines.filter((l) => !LOG_LINE.test(l) && l.trim() !== "meal");
+    return `${rest.some((l) => l.trim()) ? `\`\`\`yui\n${rest.join("\n")}\n\`\`\`\n` : ""}\`\`\`meal\n${logs.map((l) => l.trim()).join("\n")}\n\`\`\``;
+  });
+}
 
 /** Splits a reply into what the person sees and what the runtime does. */
 export function extract(reply: string): Extracted {
-  const out: Extracted = { text: "", memory: [], agents: [], schedule: [], search: null, fetch: null, handoff: [], tables: [] };
-  const fenced = reply.replace(BARE_TAIL, (_m, lead: string, kind: string, body: string) => `${lead}\`\`\`${kind}\n${body.trimEnd()}\n\`\`\``);
+  const out: Extracted = { text: "", memory: [], agents: [], schedule: [], search: null, fetch: null, handoff: [], tables: [], meal: [] };
+  const fenced = mealInYui(reply).replace(BARE_TAIL, (_m, lead: string, kind: string, body: string) => `${lead}\`\`\`${kind}\n${body.trimEnd()}\n\`\`\``);
   out.text = fenced.replace(FENCE, (_m, kind: string, body: string) => {
     for (const line of body.split("\n")) {
       const l = line.trim();
@@ -84,6 +103,9 @@ export function extract(reply: string): Extracted {
         out.fetch ??= l.slice(0, 500);
       } else if (kind === "tables") {
         out.tables.push(l.slice(0, 500));
+      } else if (kind === "meal") {
+        const m = l.match(/^(?:log\s+)?"((?:[^"\\]|\\.)*)"$/i) ?? l.match(/^log\s+(.+)$/i);
+        if (m && out.meal.length < 3) out.meal.push(m[1].replace(/\\(.)/g, "$1").trim().slice(0, 600));
       } else {
         const h = l.match(/^@?([a-z0-9-]+)\s+"((?:[^"\\]|\\.)*)"$/i);
         if (h) out.handoff.push({ target: h[1].toLowerCase(), note: h[2].replace(/\\(.)/g, "$1").slice(0, 500) });

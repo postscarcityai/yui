@@ -7,6 +7,7 @@
 import type { MemoryItem, NativeAgent, OwnKey, Profile, Routes, Row, ScheduleItem, SearchTake } from "./types.ts";
 import { DEFAULT_ROUTES } from "./types.ts";
 import { type TableChange, type TableStore, emptyStore, fromSeeds } from "./tables.ts";
+import type { JobItem } from "./meals.ts";
 
 export interface Store {
   agent(agentId: string): Promise<NativeAgent | null>;
@@ -57,6 +58,11 @@ export interface Store {
   tables(agentId: string): Promise<TableStore>;
   /** Writes what changed (tables.ts diff). */
   saveTables(agent: NativeAgent, change: TableChange, after: TableStore): Promise<void>;
+  /** Work that runs behind the scenes after the answer (YUI-103: a meal's macros). */
+  addJob(job: Omit<JobItem, "id" | "status" | "tries" | "createdAt">): Promise<string>;
+  /** Takes a queued job (or one whose run died) to run it; null when another run has it, it is done, or it failed 3 times. */
+  claimJob(id: string): Promise<JobItem | null>;
+  finishJob(id: string, status: "done" | "failed" | "queued", result?: Record<string, unknown>): Promise<void>;
 }
 
 /** Everything in one plain object: `JSON.stringify(store.data)` saves it. */
@@ -72,6 +78,7 @@ export interface LocalData {
   searches?: Record<string, number>; // "<user>:<day>" and "<user>:<month>" -> count
   searchKeys?: Record<string, string>; // a person's own Firecrawl key
   tables?: Record<string, TableStore>; // by agent id
+  jobs?: (JobItem & { claimedAt?: string })[];
 }
 
 export class LocalStore implements Store {
@@ -235,6 +242,25 @@ export class LocalStore implements Store {
   }
   async saveTables(agent: NativeAgent, _change: TableChange, after: TableStore) {
     (this.data.tables ??= {})[agent.id] = after;
+    this.changed();
+  }
+  async addJob(job: Omit<JobItem, "id" | "status" | "tries" | "createdAt">) {
+    const id = this.id("job");
+    (this.data.jobs ??= []).push({ ...job, id, status: "queued", tries: 0, createdAt: new Date().toISOString() });
+    this.changed();
+    return id;
+  }
+  async claimJob(id: string) {
+    const j = (this.data.jobs ?? []).find((x) => x.id === id);
+    const stale = j?.status === "running" && Date.now() - Date.parse(j.claimedAt ?? "") > 5 * 60_000;
+    if (!j || !(j.status === "queued" || stale) || j.tries >= 3) return null;
+    Object.assign(j, { status: "running", tries: j.tries + 1, claimedAt: new Date().toISOString() });
+    this.changed();
+    return { ...j };
+  }
+  async finishJob(id: string, status: "done" | "failed" | "queued", result?: Record<string, unknown>) {
+    const j = (this.data.jobs ?? []).find((x) => x.id === id);
+    if (j) Object.assign(j, { status, ...(result ? { result } : {}) });
     this.changed();
   }
   async dropSchedule(id: string) {

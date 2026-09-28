@@ -7,6 +7,8 @@
 //                           (trigger yui_native_wake): run that agent's turns,
 //                           or answer it at once when it is a Controls request.
 //   {schedule_id}           a check-in is due (pg_cron, yui_native_tick).
+//   {job_id}                work queued behind an answer that no run finished (yui_native_tick):
+//                           a meal's macros (YUI-103). Jobs a turn queues run right after its answer.
 // The work runs after the answer (202), so pg_net's short timeout never cuts it.
 //
 // The app, with the person's Yui access token:
@@ -27,7 +29,7 @@
 // YUI_OPENROUTER_KEY (Yui's own key, with a spend ceiling on OpenRouter),
 // YUI_FIRECRAWL_KEY (Yui's own Firecrawl key for web search; free lookups a month per person in yui_limits).
 // The runtime lives in runtime/ and is copied to ../_native by runtime/scripts/build.mjs.
-import { openRouter, runAgent, runScheduled, type TurnResult } from "../_native/turn.ts";
+import { openRouter, runAgent, runJob, runScheduled, type TurnResult } from "../_native/turn.ts";
 import { SupabaseStore } from "../_native/supabase.ts";
 import { MODELS, PROVIDERS } from "../_native/models.ts";
 import { answerControl } from "../_native/controls.ts";
@@ -67,17 +69,22 @@ function later(work: Promise<unknown>) {
   return rt?.waitUntil ? Promise.resolve() : work;
 }
 
-async function fromDatabase(body: { agent_id?: string; schedule_id?: string; message_id?: string }): Promise<Response> {
+async function fromDatabase(body: { agent_id?: string; schedule_id?: string; message_id?: string; job_id?: string }): Promise<Response> {
   const key = env("YUI_OPENROUTER_KEY");
   const store = new SupabaseStore(env("SUPABASE_URL"), env("SUPABASE_SERVICE_ROLE_KEY"));
-  const id = body.schedule_id ?? body.agent_id ?? "";
+  const id = body.job_id ?? body.schedule_id ?? body.agent_id ?? "";
   if (!UUID.test(id)) return new Response("invalid request", { status: 400 });
   // A Controls request: answered now (the app waits 5 seconds), never a turn.
   if (body.message_id && UUID.test(body.message_id) && await answerControl(store, body.message_id)) return json({ ok: true, control: true });
   const opts = { provider: openRouter(key), search: { key: env("YUI_FIRECRAWL_KEY") || undefined }, log: (m: string) => console.log(`yui-native ${id.slice(0, 8)}: ${m}`) };
-  const run: Promise<TurnResult> = body.schedule_id ? runScheduled(store, id, opts) : runAgent(store, id, opts);
+  const run: Promise<TurnResult> = body.job_id ? runJob(store, id, opts) : body.schedule_id ? runScheduled(store, id, opts) : runAgent(store, id, opts);
   await later(run.then(async (r) => {
     for (const m of r.replies) await push(m);
+    // The answer is out ("Got it, working out the macros"): now the work behind it, and its own push.
+    for (const j of r.jobs) {
+      const done = await runJob(store, j, opts);
+      for (const m of done.replies) await push(m);
+    }
   }).catch((e) => console.error("yui-native", id.slice(0, 8), e)));
   return json({ ok: true }, 202);
 }

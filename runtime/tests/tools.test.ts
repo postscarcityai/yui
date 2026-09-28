@@ -105,7 +105,7 @@ test("a person's own key: their provider, their model, no monthly cap", async ()
 test("an own OpenRouter key keeps Yui's routes", async () => {
   const { store, byHandle } = await freshYui();
   store.data.keys = { [USER]: { provider: "openrouter", baseUrl: "https://openrouter.ai/api/v1", model: null, key: "sk-own" } };
-  const basil = await byHandle("basil");
+  const basil = await byHandle("arnold");
   const m = fakeModel(() => "ok");
   store.say(basil.id, "[yui] c1 camera photo=https://img.test/p.jpg", "event");
   await runAgent(store, basil.id, { provider, fetch: m.fetch });

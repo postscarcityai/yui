@@ -24,6 +24,8 @@ export interface Profile {
   blank?: boolean; // runs the setup flow on its first turns
   tables?: TableSeed[]; // starter tables written when the agent is added (YUI-170, profiles/<name>/tables.yui)
   seeded?: boolean; // its starter tables were written (they are never kept in the saved profile)
+  soulEdited?: boolean; // the person rewrote its personality in Controls: the shelf's soul never replaces it
+  meals?: boolean; // logs meals from a photo in the background (YUI-103, meals.ts); base basil always does
 }
 
 /** One of this person's native agents. */

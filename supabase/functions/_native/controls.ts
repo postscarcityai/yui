@@ -152,7 +152,7 @@ const soul: Section = {
     const text = textOf(req);
     if (!text.trim()) throw new Refused("empty");
     if (text.length > MAX_TEXT) throw new Refused("too_big");
-    ctx.agent.profile = { ...ctx.agent.profile, soul: text.trim() };
+    ctx.agent.profile = { ...ctx.agent.profile, soul: text.trim(), soulEdited: true }; // theirs now: the shelf's never replaces it
     await ctx.store.updateAgent(ctx.agent.id, ctx.agent.profile);
     return soul.get(ctx, id);
   },

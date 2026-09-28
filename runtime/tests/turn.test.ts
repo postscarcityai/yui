@@ -3,7 +3,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { LocalStore } from "../src/store.ts";
-import { openRouter, runAgent, unend } from "../src/turn.ts";
+import { openRouter, runAgent, runJob, unend } from "../src/turn.ts";
 import { fakeModel, freshYui, lastUser, provider, system, USER } from "./helpers.ts";
 
 test("a turn answers, keeps what it learned out of sight, and marks the rows", async () => {
@@ -133,7 +133,7 @@ test("start blank: the new agent sets itself up", async () => {
 
 test("a photo goes to the model that sees, as an image part", async () => {
   const { store, byHandle } = await freshYui();
-  const basil = await byHandle("basil");
+  const basil = await byHandle("arnold"); // Basil logs a meal photo behind the scenes (meals.test.ts)
   const m = fakeModel(() => "About 600 kcal, I'm fairly sure.");
   store.say(basil.id, "[yui] c1 camera photo=https://img.test/plate.jpg", "event");
   await runAgent(store, basil.id, { provider, fetch: m.fetch });
@@ -145,7 +145,7 @@ test("a photo goes to the model that sees, as an image part", async () => {
 
 test("one photo per turn: the newest goes, and the model hears it missed the rest", async () => {
   const { store, byHandle } = await freshYui();
-  const basil = await byHandle("basil");
+  const basil = await byHandle("arnold"); // Basil logs a meal photo behind the scenes (meals.test.ts)
   const m = fakeModel(() => "The second plate, about 500 kcal.");
   store.say(basil.id, "[yui] c1 camera photo=https://img.test/one.jpg", "event");
   store.say(basil.id, "and these", "text");
@@ -159,7 +159,7 @@ test("one photo per turn: the newest goes, and the model hears it missed the res
 
 test("a composer photo (meta.photos, as the app sends it) reaches the model that sees", async () => {
   const { store, byHandle } = await freshYui();
-  const basil = await byHandle("basil");
+  const basil = await byHandle("arnold"); // Basil logs a meal photo behind the scenes (meals.test.ts)
   const m = fakeModel(() => "Salmon and greens, about 550 kcal.");
   store.say(basil.id, "Lunch", "text");
   store.data.rows.at(-1)!.meta = { photos: ["https://img.test/salmon.jpg"] };
@@ -168,33 +168,37 @@ test("a composer photo (meta.photos, as the app sends it) reaches the model that
   assert.deepEqual(parts.filter((p: any) => p.type === "image_url"), [{ type: "image_url", image_url: { url: "https://img.test/salmon.jpg" } }]);
 });
 
-test("snap and say (YUI-166): the spoken words and the photo reach the model in one turn", async () => {
+test("snap and say (YUI-166): the spoken words and the photo reach the meal job in one call (YUI-103)", async () => {
   const { store, byHandle } = await freshYui();
   const basil = await byHandle("basil");
-  const m = fakeModel(() => "Two eggs and the butter: about 250 kcal.");
+  const m = fakeModel(() => JSON.stringify({ food: true, title: "Eggs", sure: "Clear.", question: null,
+    items: [{ food: "Eggs, fried in butter", portion: "2 eggs", cal: 250, protein: 12, carbs: 1, fat: 22 }] }));
   store.say(basil.id, "Two eggs in a lot of butter", "text");
   store.data.rows.at(-1)!.meta = { photos: ["https://img.test/eggs.jpg"] };
-  await runAgent(store, basil.id, { provider, fetch: m.fetch });
-  assert.equal(m.calls.length, 1, "one turn, not one for the photo and one for the words");
+  const r = await runAgent(store, basil.id, { provider, fetch: m.fetch });
+  await runJob(store, r.jobs[0], { provider, fetch: m.fetch });
+  assert.equal(m.calls.length, 1, "one call, not one for the photo and one for the words");
   const parts = lastUser(m.calls[0]).content;
-  assert.match(parts.find((p: any) => p.type === "text").text, /a lot of butter/);
+  assert.match(parts.find((p: any) => p.type === "text").text, /They said: "Two eggs in a lot of butter"/);
   assert.deepEqual(parts.filter((p: any) => p.type === "image_url"), [{ type: "image_url", image_url: { url: "https://img.test/eggs.jpg" } }]);
 });
 
-test("snap and say from an agent's camera +say: the words ride the event with the photo", async () => {
+test("snap and say from an agent's camera +say: the words ride the event with the photo to the meal job", async () => {
   const { store, byHandle } = await freshYui();
   const basil = await byHandle("basil");
-  const m = fakeModel(() => "Noted, the butter too.");
+  const m = fakeModel(() => JSON.stringify({ food: true, title: "Eggs", sure: "Clear.", question: null,
+    items: [{ food: "Eggs", portion: "2 eggs", cal: 250, protein: 12, carbs: 1, fat: 22 }] }));
   store.say(basil.id, '[yui] c1 camera photo=https://img.test/eggs.jpg words="Two eggs in a lot of butter"', "event");
-  await runAgent(store, basil.id, { provider, fetch: m.fetch });
+  const r = await runAgent(store, basil.id, { provider, fetch: m.fetch });
+  await runJob(store, r.jobs[0], { provider, fetch: m.fetch });
   const parts = lastUser(m.calls[0]).content;
-  assert.match(parts.find((p: any) => p.type === "text").text, /words="Two eggs in a lot of butter"/);
+  assert.match(parts.find((p: any) => p.type === "text").text, /They said: "Two eggs in a lot of butter"/);
   assert.deepEqual(parts.filter((p: any) => p.type === "image_url"), [{ type: "image_url", image_url: { url: "https://img.test/eggs.jpg" } }]);
 });
 
 test("a photo the model can't fetch goes again as bytes, once", async () => {
   const { store, byHandle } = await freshYui();
-  const basil = await byHandle("basil");
+  const basil = await byHandle("arnold"); // Basil logs a meal photo behind the scenes (meals.test.ts)
   const m = fakeModel((c) => (JSON.stringify(c.messages).includes('"url":"https://img.test/') ? 400 : "A margherita, about 800 kcal."));
   const fetchMedia = (async () => new Response(new Uint8Array([255, 216, 255]), { headers: { "content-type": "image/jpeg" } })) as unknown as typeof fetch;
   store.say(basil.id, "[yui] c1 camera photo=https://img.test/pizza.jpg", "event");

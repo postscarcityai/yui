@@ -19,7 +19,7 @@ import { parseArgs } from "node:util";
 import { fileURLToPath } from "node:url";
 import { LocalStore, type LocalData } from "./src/store.ts";
 import { crew, starters, checkProfile } from "./src/profiles.ts";
-import { runAgent, runScheduled, openRouter, type Provider } from "./src/turn.ts";
+import { runAgent, runJob, runScheduled, openRouter, type Provider } from "./src/turn.ts";
 import { aboutOf, notesOf } from "./src/memory.ts";
 import { extract } from "./src/directives.ts";
 import type { NativeAgent } from "./src/types.ts";
@@ -115,7 +115,10 @@ async function dueCheckins(store: LocalStore, pv: Provider) {
 async function turn(store: LocalStore, agent: NativeAgent, text: string, pv: Provider): Promise<void> {
   store.say(agent.id, text);
   const before = new Set(store.data.rows.map((r) => r.id));
-  const r = await runAgent(store, agent.id, { provider: pv, search, log: opt.verbose ? (m) => console.error(`  · ${m}`) : undefined });
+  const o = { provider: pv, search, log: opt.verbose ? (m: string) => console.error(`  · ${m}`) : undefined };
+  const r = await runAgent(store, agent.id, o);
+  // Work queued by the answer (a meal's macros) runs right after it, as on the server.
+  for (const j of r.jobs) await runJob(store, j, o);
   const fresh = store.data.rows.filter((row) => !before.has(row.id) && row.sender === "agent");
   for (const row of fresh) {
     const who = (await store.agent(row.agent_id))?.profile.name ?? "Agent";

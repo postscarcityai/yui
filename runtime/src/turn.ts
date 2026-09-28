@@ -21,6 +21,7 @@ import { crew } from "./profiles.ts";
 import { type Clock, type TableStore, applyHeld, applyTables, asText, changed, clock, diff, draw, emptyStore, fromSeeds, readQueries,
          tablesPrompt } from "./tables.ts";
 import type { NativeAgent, OwnKey, Row, ScheduleItem } from "./types.ts";
+import { ACK, type MealFix, applyFix, fixTaps, logsMeals, mealTurn, runMealJob } from "./meals.ts";
 
 export interface Provider {
   url: string; // an OpenAI-compatible base URL
@@ -77,6 +78,7 @@ export interface TurnResult {
   turns: number;
   replies: string[]; // row ids written, in any thread (hand-offs write in another)
   busy?: boolean;
+  jobs: string[]; // work queued to run after the answer (runJob): a meal's macros
 }
 
 const HISTORY_ROWS = 60;
@@ -85,7 +87,7 @@ const SYNTHETIC = "synthetic:";
 /** Runs every turn waiting for this agent, one at a time. Safe to call twice: the second sees the lock. */
 export async function runAgent(store: Store, agentId: string, opts: TurnOptions): Promise<TurnResult> {
   const log = opts.log ?? (() => {});
-  const result: TurnResult = { turns: 0, replies: [] };
+  const result: TurnResult = { turns: 0, replies: [], jobs: [] };
   if (!(await store.lock(agentId, 300))) return { ...result, busy: true };
   try {
     for (let i = 0; i < (opts.maxTurns ?? 3); i++) {
@@ -106,7 +108,7 @@ export async function runAgent(store: Store, agentId: string, opts: TurnOptions)
 /** A check-in fires: set its next time first, then the agent opens with it. */
 export async function runScheduled(store: Store, scheduleId: string, opts: TurnOptions): Promise<TurnResult> {
   const log = opts.log ?? (() => {});
-  const result: TurnResult = { turns: 0, replies: [] };
+  const result: TurnResult = { turns: 0, replies: [], jobs: [] };
   const s = await store.schedule(scheduleId);
   if (!s || s.paused) return result;
   const agent = await store.agent(s.agentId);
@@ -151,6 +153,7 @@ async function synthetic(store: Store, agent: NativeAgent, line: string, opts: T
 
 async function oneTurn(store: Store, agent: NativeAgent, rows: Row[], opts: TurnOptions, log: (m: string) => void,
                        result: TurnResult, depth: number): Promise<{ handled: boolean }> {
+  agent = shelfSoul(agent);
   const real = rows.filter((r) => !r.id.startsWith(SYNTHETIC)).map((r) => r.id);
   const last = real[real.length - 1];
   const p = agent.profile;
@@ -161,6 +164,28 @@ async function oneTurn(store: Store, agent: NativeAgent, rows: Row[], opts: Turn
     return id;
   };
   if (real.length) await store.markDelivered(real);
+
+  // Meals (YUI-103): a tap on a meal's one question is applied here, with no model turn.
+  if (logsMeals(agent)) {
+    const { taps, rest } = fixTaps(rows);
+    if (taps.length) {
+      await mealFixes(store, agent, taps, rows[0].created_at, now, say, log);
+      const tapped = taps.map((t) => t.row.id).filter((id) => !id.startsWith(SYNTHETIC));
+      if (tapped.length) await store.markHandled(tapped);
+      if (!rest.length) return { handled: true };
+      return oneTurn(store, agent, rest, opts, log, result, depth);
+    }
+    // A photo of a meal is answered at once; its macros are worked out behind the scenes (runJob).
+    const meal = mealTurn(agent, rows, photoPaths(rows));
+    if (meal) {
+      const job = await store.addJob({ userId: agent.userId, agentId: agent.id, kind: "meal", input: meal });
+      result.jobs.push(job);
+      await say(ACK, { ...(real.length ? { turn: real } : {}), native: { meal: job, queued: true } });
+      if (real.length) await store.markHandled(real);
+      log(`${p.name}: meal queued (${job})`);
+      return { handled: true };
+    }
+  }
 
   // A person's own key: their model, no monthly cap. Otherwise Yui's key and free turns.
   const own = await store.ownKey(agent.userId);
@@ -278,6 +303,14 @@ async function oneTurn(store: Store, agent: NativeAgent, rows: Row[], opts: Turn
     for (const r of results) if (!r.ok) notes.push(r.why);
     if (!out.text.trim()) out.text = results.filter((r) => r.ok).map((r) => `Done: ${(r as { did: string }).did}.`).join("\n");
   }
+  // Meals said in words (or a photo the agent chose to log): worked out behind the scenes, the breakdown follows.
+  for (const words of logsMeals(agent) ? out.meal : []) {
+    const job = await store.addJob({ userId: agent.userId, agentId: agent.id, kind: "meal",
+                                     input: { words, ...(photos.length ? { photo: photos[photos.length - 1] } : {}), ...(last ? { rowId: last } : {}) } });
+    result.jobs.push(job);
+    log(`${p.name}: meal queued from its answer (${job})`);
+  }
+  if (out.meal.length && logsMeals(agent) && !out.text.trim()) out.text = ACK;
   if (out.schedule.length) notes.push(...await applySchedules(store, agent, out.schedule, schedules, tzRaw ? tz : "UTC", now, log));
   // Table writes land, deletes wait for a tap, and every query is drawn with real rows.
   const t = applyTables(out.text, tables, clk, opts.newId ?? uuid);
@@ -332,6 +365,72 @@ async function oneTurn(store: Store, agent: NativeAgent, rows: Row[], opts: Turn
   return { handled: true };
 }
 
+/** Runs a queued job (a meal's macros) and writes its answer. Safe to call twice: the second finds it taken. */
+export async function runJob(store: Store, jobId: string, opts: TurnOptions): Promise<TurnResult> {
+  const log = opts.log ?? (() => {});
+  const result: TurnResult = { turns: 0, replies: [], jobs: [] };
+  const job = await store.claimJob(jobId);
+  if (!job) return result;
+  const agent = await store.agent(job.agentId);
+  if (!agent) {
+    await store.finishJob(job.id, "failed", { gone: true });
+    return result;
+  }
+  const own = await store.ownKey(agent.userId);
+  const provider = own ? ownProvider(own) : opts.provider;
+  const routes = await store.routes();
+  try {
+    const done = await runMealJob(store, job, {
+      // The job answers JSON: no thinking budget, the answer's room is enough.
+      ask: (req) => ask(opts, provider, provider.reasoning ? { ...req, reasoning: { enabled: false } } : req),
+      route: (photo) => provider.model ?? (photo ? routes.vision : routes.text),
+      inline: (messages) => inlineImages(messages, opts.fetchMedia ?? fetch),
+      log: (m) => log(`${agent.profile.name}: ${m}`),
+      now: opts.now ?? Date.now,
+      say: async (a, body, meta) => {
+        const id = await store.reply(a, body, meta);
+        result.replies.push(id);
+        return id;
+      },
+      budget: async (userId) => (own ? true : (await store.takeTurn(userId)).ok),
+    });
+    await store.finishJob(job.id, "done", done.result);
+    result.turns++;
+  } catch (e: any) {
+    log(`${agent.profile.name}: meal job ${job.id} failed: ${e?.message ?? e}`);
+    // A model that is away gets another go from the tick; the third try tells the person.
+    if (e instanceof ModelUnavailable && job.tries < 3) {
+      await store.finishJob(job.id, "queued", { error: String(e.message).slice(0, 200) });
+      return result;
+    }
+    await store.finishJob(job.id, "failed", { error: String(e?.message ?? e).slice(0, 200) });
+    result.replies.push(await store.reply(agent, `${agent.profile.name} couldn't work out that meal: ${e?.message ?? "something went wrong"}. Send the photo again?`,
+                                          { native: { meal: job.id, failed: true } }));
+  }
+  return result;
+}
+
+/** Meal-question taps: each finds its question in the thread and the log is updated, no model turn. */
+async function mealFixes(store: Store, agent: NativeAgent, taps: { row: Row; id: string; choice: string }[], before: string, now: number,
+                         say: (body: string, meta: Record<string, unknown>) => Promise<string>, log: (m: string) => void): Promise<void> {
+  const history = await store.history(agent.id, before, HISTORY_ROWS);
+  const clk = clock(now, validZone(await store.timezone(agent.userId)));
+  let tables = await store.tables(agent.id);
+  for (const t of taps) {
+    const fix: MealFix | undefined = [...history].reverse().find((h) => h.sender === "agent" && h.meta?.native?.mealfix?.id === t.id)?.meta.native.mealfix;
+    if (!fix) {
+      await say("That question isn't waiting any more. Tell me what to fix and I'll update the log.", { turn: [t.row.id] });
+      continue;
+    }
+    const done = applyFix(tables, fix, t.choice, clk);
+    const ch = diff(tables, done.store);
+    if (changed(ch)) await store.saveTables(agent, ch, done.store);
+    tables = done.store;
+    await say(done.body, { ...(t.row.id.startsWith(SYNTHETIC) ? {} : { turn: [t.row.id] }), native: { mealfixed: t.id } });
+    log(`${agent.profile.name}: meal ${t.id} fixed: ${t.choice}`);
+  }
+}
+
 async function applySchedules(store: Store, agent: NativeAgent, lines: string[], current: ScheduleItem[], tz: string, now: number,
                               log: (m: string) => void): Promise<string[]> {
   const problems: string[] = [];
@@ -357,6 +456,18 @@ async function applySchedules(store: Store, agent: NativeAgent, lines: string[],
     else log(`${agent.profile.name}: check-in set for ${new Date(at).toISOString()}`);
   }
   return problems;
+}
+
+/** A crew agent as it came off the shelf (same version, not forked, its personality never rewritten) reads the
+ *  shelf's soul as it is now, so what a starter learns (Basil's meal logging, YUI-103) reaches the ones already on
+ *  people's phones. A soul edited before `soulEdited` existed keeps its own when its first line changed. Never saved. */
+export function shelfSoul(agent: NativeAgent): NativeAgent {
+  const p = agent.profile;
+  const shelf = p.base && p.base !== "custom" ? crew()[p.base] : undefined;
+  if (!shelf || p.soulEdited || shelf.version !== p.version || shelf.soul === p.soul) return agent;
+  const opener = (s: string) => s.trim().split("\n")[0].trim();
+  if (opener(shelf.soul) !== opener(p.soul)) return agent;
+  return { ...agent, profile: { ...p, soul: shelf.soul } };
 }
 
 /** A starter agent from before tables (no `seeded` in its profile) gets its starter tables once, if it has none. */
@@ -447,7 +558,7 @@ const SILENT_NOTE = "[yui] Your last try had nothing the person can see. Answer 
  *  so a search or fetch block still in it answers nothing. */
 export function silent(text: string): boolean {
   const e = extract(text);
-  return !e.text.trim() && !e.agents.length && !e.handoff.length;
+  return !e.text.trim() && !e.agents.length && !e.handoff.length && !e.meal.length;
 }
 
 interface Looked {
