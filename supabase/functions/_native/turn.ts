@@ -890,8 +890,10 @@ async function plannerTools(store: Store, agent: NativeAgent, asks: PlanAsk[], n
       text = `Day wrapped${bits.length ? `: ${joinWords(bits)}` : ""}.${r.felt === "Rough" ? " Tomorrow's a fresh start." : r.felt === "Great" ? " Good day." : ""}`
         + `${first ? ` First up tomorrow: ${first.task.toLowerCase()}.` : ""}`;
     }
-    // A moved task changes its place in the week: This week is drawn again so the rows read in day order.
-    const sl = plannerScreenLines(tables, clk, plannerShape(agent.profile), only, a.kind === "moved");
+    // A moved task or a saved order changes places in the week: This week is drawn again in the saved order, so
+    // another device, or the app after a reinstall, reads the same week (YUI-185b; patches in place kept the order
+    // on one phone only).
+    const sl = plannerScreenLines(tables, clk, plannerShape(agent.profile), only, a.kind === "moved" || a.kind === "order");
     const after = reminderMeta(tables);
     const native: Record<string, unknown> = { plannertool: a.kind, ...(JSON.stringify(after) !== before ? { reminders: after } : {}) };
     await say(text ? `${text}\n\`\`\`yui\n${sl.lines.join("\n")}\n\`\`\`` : `\`\`\`yui\n${sl.lines.join("\n")}\n\`\`\``, { ...turn, native });

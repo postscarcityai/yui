@@ -235,6 +235,11 @@ test("Edit order on This week: a task dragged up takes that place's day; its rem
   assert.ok(r.meta.native.reminders.some((x: any) => x.key === "gym" && x.at === "2026-09-28T17:50"), "the reminder moved with it");
   assert.equal(before.length, after.length);
   lines(r.body, pageIds(store, penny.id));
+  // This week is drawn again in the saved order (YUI-185b), so another device reads the same week.
+  assert.match(r.body, />3 clear\n>3\ntimeline@week "This week"/, "This week drawn again, not patched");
+  const drawn = r.body.split("\n").filter((l: string) => l.startsWith("next@")).map((l: string) => l.match(/key=(\S+)/)![1]);
+  assert.deepEqual(drawn, order, "the rows in the saved order");
+  assert.ok(!/^~wk-/m.test(r.body), "no row patches");
 });
 
 test("Move a task: a card opens a short plan, which one then which day, one Send", async () => {
