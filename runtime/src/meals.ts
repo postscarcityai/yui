@@ -30,6 +30,7 @@ export interface MealInput {
   photo?: string;
   words: string;
   rowId?: string; // the person's row it came from
+  said?: string; // the person's own words, when the agent's log line is shorter (the meal they named: "for breakfast")
 }
 
 /** A job the runtime runs behind the scenes (yui_native_jobs). */
@@ -99,7 +100,9 @@ export function spoken(rows: Row[]): string {
       const said = b.match(/\b(?:note|said|text|words|transcript)="((?:[^"\\]|\\.)*)"/)?.[1];
       b = said ?? "";
     }
-    return b.replace(/\bphotos?=("[^"]*"|\S+)/g, "").trim();
+    b = b.replace(/\bphotos?=("[^"]*"|\S+)/g, "").trim();
+    // A photo with no caption comes as the body "Photo" (Attachments.swift): no words.
+    return r.meta?.photos?.length && /^photos?$/i.test(b) ? "" : b;
   }).filter(Boolean).join(" ").replace(/\s+/g, " ").trim().slice(0, 600);
 }
 
@@ -217,8 +220,14 @@ export function saidNo(words: string): string[] {
   return out;
 }
 
-/** The estimate without what they said no to: those items go, and a question about one of them too. */
+// What cooks add and people mention: a question about one they already named asks what they told us.
+const EXTRAS = /\b(butter|ghee|oil|olive|lard|sauce|dressing|mayo|mayonnaise|aioli|syrup|honey|sugar|cream|cheese|gravy|ketchup|glaze)\b/gi;
+
+/** The estimate without what they said no to (those items go, and a question about one of them), and without a
+ *  question about something they already named ("cooked in a little butter" -> no "Cooked in butter?"). */
 export function honour(est: MealEstimate, words: string): MealEstimate {
+  const named = new Set([...words.matchAll(EXTRAS)].map((m) => m[1].toLowerCase()));
+  if (est.question && [...est.question.text.matchAll(EXTRAS)].some((m) => named.has(m[1].toLowerCase()))) est = { ...est, question: null };
   const no = saidNo(words);
   if (!no.length) return est;
   const hit = (t: string) => no.some((w) => new RegExp(`\\b${w}`, "i").test(t));
@@ -322,16 +331,28 @@ const tr = (...cells: (string | number)[]) => `"${cells.map((c) => String(c).rep
 export function breakdown(est: MealEstimate, id: string, meal: string, day: Totals & { meals: number }): string {
   const sum = total(est.items);
   const head = `${est.title}, about ${kcal(sum.cal)} kcal. ${est.sure}`.trim();
-  const rows = est.items.map((it) => tr(`${it.food}, ${it.portion}`, it.cal, it.protein, it.carbs, it.fat));
+  // Five columns on a phone: the food's name only (its portion stays in the log), cut short, so every macro shows.
+  const rows = est.items.map((it) => tr(short(it.food), it.cal, it.protein, it.carbs, it.fat));
   rows.push(tr("Total", sum.cal, sum.protein, sum.carbs, sum.fat));
   const lines = [
     `say ${q(head)}`,
-    `table@meal-${id} name=${q(`${meal}: ${est.title}`)} Item|Kcal|Protein|Carbs|Fat ${rows.join(" ")} units=|kcal|g|g|g`,
+    `table@meal-${id} name=${q(`${meal}: ${est.title}`)} Food|Cal|Prot|Carb|Fat ${rows.join(" ")} units=|kcal|g|g|g`,
     `say ${q(`Today so far: ${kcal(day.cal)} kcal, ${day.protein} g protein, ${day.carbs} g carbs, ${day.fat} g fat.`)}`,
     `chart donut "Today's macros, grams" x=Protein|Carbs|Fat y=${day.protein}|${day.carbs}|${day.fat}`,
   ];
   if (est.question) lines.push(`choose@fix-${id} ${q(est.question.text)} ${est.question.options.map((o) => q(o.label)).join("|")}`);
   return `${"```yui"}\n${lines.join("\n")}\n${"```"}`;
+}
+
+/** A food's name for a narrow table, 12 characters at most so every macro column shows: before any comma, bracket,
+ *  slash, "and" or "with"; then the last words, where the food's own name sits ("Whole wheat toast" -> "Wheat toast",
+ *  "Cherry tomatoes" -> "Tomatoes"), never a word cut in half unless one word is all there is. */
+export function short(food: string): string {
+  const head = food.split(/[,(/]|\s+(?:and|with|&)\s+/i)[0].trim() || food.trim();
+  const words = head.split(/\s+/);
+  while (words.length > 1 && words.join(" ").length > 12) words.shift();
+  const name = words.join(" ");
+  return (name.length > 12 ? name.slice(0, 12) : name).replace(/^./, (c) => c.toUpperCase());
 }
 
 /** Not a meal: say so, and offer the camera again. */
@@ -369,7 +390,7 @@ export function applyFix(store: TableStore, fix: MealFix, choice: string, clk: C
   const said = o.cal ? `${o.label}: ${o.cal > 0 ? "+" : ""}${o.cal} kcal.` : `${o.label}. Nothing to add.`;
   const body = "```yui\n" + [
     `say ${q(`${said} ${fix.title} is ${kcal(sum.cal)} kcal.`)}`,
-    `table@meal-${fix.id} name=${q(`${fix.meal}: ${fix.title}`)} Item|Kcal|Protein|Carbs|Fat ${tr("Meal", sum.cal, sum.protein, sum.carbs, sum.fat)} ${tr("Today", day.cal, day.protein, day.carbs, day.fat)} units=|kcal|g|g|g`,
+    `table@meal-${fix.id} name=${q(`${fix.meal}: ${fix.title}`)} Food|Cal|Prot|Carb|Fat ${tr("Meal", sum.cal, sum.protein, sum.carbs, sum.fat)} ${tr("Today", day.cal, day.protein, day.carbs, day.fat)} units=|kcal|g|g|g`,
   ].join("\n") + "\n```";
   return { store: s, body };
 }
@@ -411,7 +432,11 @@ export async function runMealJob(store: Store, job: JobItem, deps: JobDeps): Pro
                                 { native: { meal: job.id, limit: true } }));
     return { replies, result: { limit: true } };
   }
+  const ms: Record<string, number> = {};
+  let t = deps.now();
+  const lap = (k: string) => { const n = deps.now(); ms[k] = (ms[k] ?? 0) + n - t; t = n; };
   const image = job.input.photo ? await store.signMedia(job.input.photo) : null;
+  lap("sign");
   const words = job.input.words ? `They said: "${job.input.words.replace(/"/g, "'")}"` : "They said nothing with it.";
   const user: any = image
     ? [{ type: "text", text: `The meal is in the photo. ${words}` }, { type: "image_url", image_url: { url: image } }]
@@ -429,20 +454,22 @@ export async function runMealJob(store: Store, job: JobItem, deps: JobDeps): Pro
     } catch (e) {
       const inlined = image && deps.inline ? await deps.inline(msgs) : null;
       if (!inlined) throw e;
-      deps.log("meal: the model couldn't fetch the photo, sending it inline");
+      deps.log(`meal: the model couldn't fetch the photo (${(e as Error)?.message ?? e}), sending it inline`);
+      ms.inline = 1;
       msgs = inlined;
       text = (await deps.ask({ model, messages: msgs, max_tokens: 1200 })).text;
     }
+    lap(`model${tries}`);
     est = parseEstimate(text);
     if (!est) msgs = [...msgs, { role: "assistant", content: text }, { role: "user", content: "That wasn't the JSON. Answer with the JSON object only." }];
   }
   if (!est || !est.food) {
     replies.push(await deps.say(agent, notFood(est), { native: { meal: job.id, model, food: false } }));
-    return { replies, result: { food: false } };
+    return { replies, result: { food: false, ms } };
   }
   est = honour({ ...est, items: remembered(est.items, tables0) }, job.input.words);
   const id = job.id.replace(/[^A-Za-z0-9]/g, "").slice(-10); // the random end of the id: meal row keys never collide
-  const logged = logMeal(tables0, est, id, clk, job.input.words);
+  const logged = logMeal(tables0, est, id, clk, `${job.input.words} ${job.input.said ?? ""}`);
   const ch = diff(tables0, logged.store);
   if (changed(ch)) await store.saveTables(agent, ch, logged.store);
   const day = today(logged.store, clk);
@@ -453,5 +480,6 @@ export async function runMealJob(store: Store, job: JobItem, deps: JobDeps): Pro
                                              ...(job.input.rowId ? { turn: [job.input.rowId] } : {}) }));
   const sum = total(est.items);
   deps.log(`meal ${id}: ${est.items.length} item(s), ${sum.cal} kcal, ${est.question ? "one question" : "no question"}`);
-  return { replies, result: { items: est.items.length, cal: sum.cal, question: !!est.question } };
+  lap("write");
+  return { replies, result: { items: est.items.length, cal: sum.cal, question: !!est.question, ms } };
 }

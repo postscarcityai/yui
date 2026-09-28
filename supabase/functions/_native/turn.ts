@@ -22,7 +22,7 @@ import { crew } from "./profiles.ts";
 import { type Clock, type TableStore, applyHeld, applyTables, asText, changed, clock, diff, draw, emptyStore, fromSeeds, readQueries,
          tablesPrompt } from "./tables.ts";
 import type { NativeAgent, OwnKey, Row, ScheduleItem } from "./types.ts";
-import { ACK, type MealFix, applyFix, fixTaps, logsMeals, mealTurn, runMealJob } from "./meals.ts";
+import { ACK, type MealFix, applyFix, fixTaps, logsMeals, mealTurn, runMealJob, spoken } from "./meals.ts";
 
 export interface Provider {
   url: string; // an OpenAI-compatible base URL
@@ -307,7 +307,7 @@ async function oneTurn(store: Store, agent: NativeAgent, rows: Row[], opts: Turn
   // Meals said in words (or a photo the agent chose to log): worked out behind the scenes, the breakdown follows.
   for (const words of logsMeals(agent) ? out.meal : []) {
     const job = await store.addJob({ userId: agent.userId, agentId: agent.id, kind: "meal",
-                                     input: { words, ...(photos.length ? { photo: photos[photos.length - 1] } : {}), ...(last ? { rowId: last } : {}) } });
+                                     input: { words, said: spoken(rows), ...(photos.length ? { photo: photos[photos.length - 1] } : {}), ...(last ? { rowId: last } : {}) } });
     result.jobs.push(job);
     log(`${p.name}: meal queued from its answer (${job})`);
   }

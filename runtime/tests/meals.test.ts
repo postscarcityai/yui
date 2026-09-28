@@ -3,7 +3,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { runAgent, runJob } from "../src/turn.ts";
-import { ACK, breakdown, clip, honour, saidNo, mealName, mealTurn, parseEstimate, plainPortion, spoken } from "../src/meals.ts";
+import { ACK, breakdown, clip, honour, saidNo, mealName, mealTurn, parseEstimate, plainPortion, short, spoken } from "../src/meals.ts";
 import { extract } from "../src/directives.ts";
 import { fakeModel, freshYui, provider, type Call } from "./helpers.ts";
 
@@ -42,7 +42,7 @@ test("a meal photo to Basil is answered at once, with no model call; the macros 
 
   const body = store.data.rows.at(-1)!.body as string;
   assert.match(body, /say "Salmon bowl, about 635 kcal\. Sure on the salmon and rice\. Less sure on the dressing\."/);
-  assert.match(body, /table@meal-\w+ name="Lunch: Salmon bowl" Item\|Kcal\|Protein\|Carbs\|Fat "Salmon, grilled, 1 fillet\|310\|33\|0\|19"/);
+  assert.match(body, /table@meal-\w+ name="Lunch: Salmon bowl" Food\|Cal\|Prot\|Carb\|Fat "Salmon\|310\|33\|0\|19"/);
   assert.match(body, /"Total\|635\|39\|51\|30" units=\|kcal\|g\|g\|g/);
   assert.match(body, /chart donut "Today's macros, grams" x=Protein\|Carbs\|Fat y=39\|51\|30/);
   assert.doesNotMatch(body, /^stat/m, "no page per number");
@@ -170,6 +170,13 @@ test("a meal said in words: Basil's answer queues it with a meal block, the job 
   assert.match(job.messages[1].content, /No photo: the meal is in their words\. They said: "two eggs and toast with butter"/);
   const meals = store.data.tables![basil.id].tables.meals;
   assert.equal(meals.rows[meals.order[0]].Cal, 144, "2 of the starter egg (72)");
+  store.data.jobs = [];
+  const m2 = fakeModel((c) => (isJob(c) ? JSON.stringify({ food: true, title: "Eggs", sure: "ok", question: null,
+    items: [{ food: "Egg", portion: "2", cal: 144, protein: 12, carbs: 1, fat: 10 }] }) : "Logging it.\n```meal\nlog \"two eggs\"\n```"));
+  store.say(basil.id, "two eggs for breakfast");
+  const r2 = await runAgent(store, basil.id, { provider, fetch: m2.fetch, now: () => Date.parse("2026-09-27T23:00:00Z") });
+  await runJob(store, r2.jobs[0], { provider, fetch: m2.fetch, now: () => Date.parse("2026-09-27T23:00:00Z") });
+  assert.match(store.data.rows.at(-1)!.body, /name="Breakfast: Eggs"/, "the meal they named, even when the log line drops it");
   // A meal block alone still says something.
   assert.equal(extract("```meal\nlog \"a banana\"\n```").meal[0], "a banana");
   // GLM writes it inside its yui fence too (live eval): taken the same way, and the fence goes when nothing is left.
@@ -219,6 +226,11 @@ test("a Basil added before this reads the shelf's soul as it is now; a fork keep
 test("pieces: spoken words, meal names, the estimate read loosely, and the breakdown's shape", () => {
   assert.equal(spoken([{ id: "1", sender: "user", kind: "event", body: '[yui] c1 camera photo=/p.jpg note="with butter"', created_at: "" }]), "with butter");
   assert.equal(spoken([{ id: "1", sender: "user", kind: "text", body: "lunch, half the rice", created_at: "" }]), "lunch, half the rice");
+  assert.equal(spoken([{ id: "1", sender: "user", kind: "text", body: "Photo", meta: { photos: ["a/b/user/c.jpg"] }, created_at: "" }]), "", "no caption is no words");
+  // Food names that fit five columns on a phone (sim run: "Sauce/dressing" pushed Fat off the edge, "Lettuce and").
+  assert.deepEqual(["Salmon, grilled", "Sauce/dressing", "Lettuce and greens", "Cherry tomatoes", "Whole wheat toast", "Egg", "avocado"].map(short),
+                   ["Salmon", "Sauce", "Lettuce", "Tomatoes", "Wheat toast", "Egg", "Avocado"]);
+  assert.equal(short("Worcestershire"), "Worcestershi");
   const agent: any = { profile: { base: "basil" } };
   const row = (body: string): any => ({ id: "r", sender: "user", kind: "text", body, created_at: "" });
   assert.ok(mealTurn(agent, [row("lunch")], ["p.jpg"]));
@@ -244,6 +256,9 @@ test("pieces: spoken words, meal names, the estimate read loosely, and the break
   const kept = honour(bowl, "no mayo on mine");
   assert.deepEqual(kept.items.map((i) => i.food), ["Rice"]);
   assert.equal(kept.question, null);
+  const asked = { ...bowl, question: { text: "Cooked in butter?", options: bowl.question.options } };
+  assert.equal(honour(asked, "lunch, cooked in a little butter").question, null, "never ask what they said");
+  assert.ok(honour(asked, "lunch").question);
   assert.equal(parseEstimate(JSON.stringify({ food: true, title: "Bowl", sure: "ok", items: [{ food: "Rice", portion: "1 cup", cal: 200 }],
     question: { text: "Is the sauce spicy mayo? (You said no mayo on yours)", options: [{ label: "None" }, { label: "A little" }] } }))!.question!.text,
     "Is the sauce spicy mayo?", "an aside after the question comes off");
