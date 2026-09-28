@@ -294,6 +294,9 @@ struct YLEvent: Sendable {
     var value: [String: YLValue]
     /// What the chat shows as the user's reply, or nil for quiet events (timer ticks, checklist taps).
     var echo: String?
+    /// A quiet tick on a checklist an agent keeps on one of its pages (YUI-185, Penny's Today):
+    /// a native agent's runtime gets it, with no working row, so the page and its tables follow.
+    var keepsPage = false
 
     var json: String {
         var o = value

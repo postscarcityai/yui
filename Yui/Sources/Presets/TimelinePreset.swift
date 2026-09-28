@@ -7,6 +7,9 @@ import YuiLines
 /// "N earlier" button. A lone row (no timeline above it) is a one-row track.
 /// `+reorder` (YUI-66): Edit order gives each queued row a drag handle; Save
 /// sends `{order: [key...], board}` once. Done and running rows never move.
+/// A named timeline in an agent's thread keeps its saved order on the phone (YUI-185,
+/// Penny's This week): the runtime patches the rows in place, so a kill, a relaunch or
+/// another agent and back still reads the week in the order it was saved.
 struct TimelinePreset: View {
     let c: YLComponent
     @State private var unfolded = false
@@ -17,6 +20,7 @@ struct TimelinePreset: View {
     @State private var anchor: CGFloat = 0
     @State private var heights: [Int: CGFloat] = [:]
     @Environment(\.ylComponents) private var all
+    @Environment(\.ylAgent) private var agent
     @Environment(\.ylEmit) private var emit
     @Environment(\.yuiTheme) private var theme
     @Environment(\.colorScheme) private var scheme
@@ -110,7 +114,7 @@ struct TimelinePreset: View {
     /// Rows a later patch added go at the end; rows that left drop out.
     private func ordered(_ queue: [YLComponent], _ from: [Int]? = nil) -> [Int] {
         let ids = queue.map(\.serial)
-        let base = (from ?? draft ?? savedOrder ?? ids).filter(ids.contains)
+        let base = (from ?? draft ?? savedOrder ?? kept(queue) ?? ids).filter(ids.contains)
         return base + ids.filter { !base.contains($0) }
     }
 
@@ -180,7 +184,18 @@ struct TimelinePreset: View {
         if let board = c.string("board"), !board.isEmpty { value["board"] = .string(board) }
         let names = rows.map { $0.string("tag") ?? $0.string("text") ?? "" }
         emit(c.event(value, echo: "New order: " + names.joined(separator: ", ")))
+        let line = byID.values.sorted { $0.serial < $1.serial }.map(Self.key)
+        TimelineOrders.shared.save(agent, c.ylID, line: line, order: keys)
         withAnimation(.snappy) { savedOrder = order; draft = nil }
+    }
+
+    private static func key(_ r: YLComponent) -> String { r.string("key") ?? r.string("tag") ?? r.string("text") ?? "" }
+
+    /// The order saved on the phone for this drawing of the timeline, as serials.
+    private func kept(_ queue: [YLComponent]) -> [Int]? {
+        guard !lone, let keys = TimelineOrders.shared.order(agent, c.ylID, line: queue.map(Self.key)) else { return nil }
+        let byKey = Dictionary(queue.map { (Self.key($0), $0.serial) }, uniquingKeysWith: { a, _ in a })
+        return keys.compactMap { byKey[$0] }
     }
 }
 
@@ -328,5 +343,44 @@ struct TimelineRow: View {
                 .frame(width: 14, height: 14)
                 .padding(.top, 4)
         }
+    }
+}
+
+/// A timeline's saved order, kept on the phone per agent and timeline id (YUI-185).
+/// Kept with the rows' line order when it was saved: while the rows the agent draws
+/// still come in that order (patches re-kind or rename rows in place, some leave, some
+/// join), the saved order stands. A timeline drawn again in another order (the agent
+/// moved something) drops it.
+@MainActor
+final class TimelineOrders {
+    static let shared = TimelineOrders()
+    private let defaults: UserDefaults
+
+    init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("-yuiTicksReset") {
+            for k in defaults.dictionaryRepresentation().keys where k.hasPrefix("yui.order.") { defaults.removeObject(forKey: k) }
+        }
+        #endif
+    }
+
+    nonisolated static func key(_ agent: String, _ timeline: String) -> String { "yui.order.\(agent).\(timeline)" }
+
+    func save(_ agent: String, _ timeline: String, line: [String], order: [String]) {
+        guard ListTicks.keeps(agent, timeline) else { return }
+        defaults.set(["line": line, "order": order], forKey: Self.key(agent, timeline))
+    }
+
+    /// The saved order when `line` (the queue's keys in line order now) is still the drawing it was saved on.
+    func order(_ agent: String, _ timeline: String, line: [String]) -> [String]? {
+        guard ListTicks.keeps(agent, timeline), let d = defaults.dictionary(forKey: Self.key(agent, timeline)),
+              let was = d["line"] as? [String], let order = d["order"] as? [String] else { return nil }
+        let both = Set(was).intersection(line)
+        guard was.filter(both.contains) == line.filter(both.contains) else {
+            defaults.removeObject(forKey: Self.key(agent, timeline))
+            return nil
+        }
+        return order
     }
 }

@@ -441,6 +441,9 @@ final class ChatStore {
         if let echo = e.echo {
             withAnimation(spring) { messages.append(ChatMessage(id: id, text: echo, fromUser: true)) }
         }
+        // A tick on a page a native agent keeps goes to its runtime quietly (YUI-185): Penny marks the
+        // task done in her tables and patches Today and This week. No working row: nothing is owed.
+        let quietTick = !e.relays && e.keepsPage && agent?.kind == "hosted"
         #if DEBUG
         // -yuiDemoReplyTaps: a tap the agent would get is answered with -yuiDemoReply too (YUI-145).
         if client == nil, e.relays, e.echo != nil, ProcessInfo.processInfo.arguments.contains("-yuiDemoReplyTaps"),
@@ -448,7 +451,14 @@ final class ChatStore {
             demoAnswer(reply)
             return
         }
+        // -yuiDemoReplyTicks: a quiet tick is answered too, with no working row (YUI-185).
+        if client == nil, quietTick, ProcessInfo.processInfo.arguments.contains("-yuiDemoReplyTicks"),
+           let reply = ChatStore.demoText("yuiDemoReply") {
+            demoAnswer(reply, quiet: true)
+            return
+        }
         #endif
+        if client != nil, quietTick { post(id: id, body: e.line, kind: "event", meta: e.meta, answers: false); return }
         guard client != nil, e.relays else { return }
         post(id: id, body: e.line, kind: "event", meta: e.meta)
     }
@@ -914,6 +924,8 @@ final class ChatStore {
             }
         } else {
             if let r = row.reaction { reactions[id] = r }
+            // Reminders the agent keeps (YUI-185): the phone schedules them as local notifications.
+            if let a = agent { Reminders.shared.take(meta: row.meta, agent: a.id, name: a.name, createdAt: row.createdAt, live: loaded) }
             let hello = row.meta?.object?["native"]?.string == "first"
             let home = row.meta?.object?["native"]?.string == "home"
             for (i, seg) in YuiFence.split(row.body).enumerated() {
@@ -985,21 +997,29 @@ final class ChatStore {
     /// runtime reply as it is, apostrophes and all (a launch arg is read as a plist, where `'` quotes).
     /// A `.json` file is an array of replies, one per turn, the last one kept (YUI-183: Plan my
     /// meals, then its Send, then a swap, each answered as the runtime answers it).
-    nonisolated static func demoText(_ key: String) -> String? {
+    nonisolated static func demoText(_ key: String) -> String? { demoTurnRow(key)?.body }
+
+    /// A demo turn as the row it becomes: its words, and a `.json` file's `{body, meta}` entry's meta
+    /// (YUI-185: Penny's plan lands with `meta.native.reminders`, as the runtime writes it).
+    nonisolated static func demoTurnRow(_ key: String) -> (body: String, meta: YLValue?)? {
         let d = UserDefaults.standard
-        if let text = d.string(forKey: key) { return text }
+        if let text = d.string(forKey: key) { return (text, nil) }
         guard let path = d.string(forKey: key + "File"), let data = FileManager.default.contents(atPath: path) else { return nil }
-        guard path.hasSuffix(".json") else { return String(data: data, encoding: .utf8) }
-        guard let turns = try? JSONDecoder().decode([String].self, from: data), !turns.isEmpty else { return nil }
-        return turns[min(demoTurn.withLock { $0 }, turns.count - 1)]
+        guard path.hasSuffix(".json") else { return String(data: data, encoding: .utf8).map { ($0, nil) } }
+        guard let turns = try? JSONDecoder().decode([YLValue].self, from: data), !turns.isEmpty else { return nil }
+        let turn = turns[min(demoTurn.withLock { $0 }, turns.count - 1)]
+        if let body = turn.string { return (body, nil) }
+        guard let body = turn.object?["body"]?.string else { return nil }
+        return (body, turn.object?["meta"])
     }
     /// Which of a `.json` file's replies is next: each demo answer moves it on.
     nonisolated static let demoTurn = Mutex(0)
 
     /// The demo account's scripted answer (-yuiDemoReply), after a working row. A reply
     /// with a ```yui fence lands as a real agent row does (YUI-141: a native agent's answer, verbatim).
-    func demoAnswer(_ reply: String) {
-        owe()
+    func demoAnswer(_ reply: String, quiet: Bool = false) {
+        if !quiet { owe() }
+        let meta = Self.demoTurnRow("yuiDemoReply")?.meta
         Self.demoTurn.withLock { $0 += 1 }
         // -yuiDemoPickupAfter / -yuiDemoReplyAfter <seconds>: stretch the turn so the working row can be watched (YUI-63).
         let d = UserDefaults.standard
@@ -1012,7 +1032,7 @@ final class ChatStore {
         }
         Task {
             try? await Task.sleep(for: .seconds(pickup))
-            pickedUpAt = .now
+            if !quiet { pickedUpAt = .now }
             let gap = (answer - pickup) / Double(steps.count + 1)
             for step in steps {
                 try? await Task.sleep(for: .seconds(gap))
@@ -1024,7 +1044,7 @@ final class ChatStore {
             doing = nil
             let text = reply.replacingOccurrences(of: "\\n", with: "\n")
             if text.contains("```yui") {
-                add(ThreadRow(id: UUID().uuidString.lowercased(), sender: "agent", body: text, kind: "text", meta: nil,
+                add(ThreadRow(id: UUID().uuidString.lowercased(), sender: "agent", body: text, kind: "text", meta: meta,
                               createdAt: ISO8601DateFormatter().string(from: .now)))
             } else {
                 stream(text)

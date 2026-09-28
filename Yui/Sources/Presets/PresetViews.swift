@@ -74,6 +74,7 @@ struct PresetView: View {
         case "image": ImagePreset(c: component)
         case "video": VideoPreset(c: component)
         case "camera": CameraPreset(c: component)
+        case "mic": MicPreset(c: component)
         case "card": CardPreset(c: component)
         case "table": TablePreset(c: component)
         case "gallery": GalleryPreset(c: component)
@@ -503,7 +504,10 @@ struct ListPreset: View {
                                 if kept { ListTicks.shared.set(agent, c.ylID, item: item, on: !done) }
                                 else if done { checked.remove(item) } else { checked.insert(item) }
                             }
-                            emit(c.event(["item": .string(item), "checked": .bool(!done)]))
+                            var e = c.event(["item": .string(item), "checked": .bool(!done)])
+                            // On a page the agent keeps (Today), the tick goes to it quietly (YUI-185).
+                            e.keepsPage = kept && YuiLines.page(of: c.screen) > 1
+                            emit(e)
                         } label: { row.contentShape(Rectangle()) }
                         .buttonStyle(.plain)
                         .accessibilityAddTraits(done ? .isSelected : [])
