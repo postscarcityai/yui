@@ -1,10 +1,23 @@
-# Basil's home (YUI-168, yuigui spec/HOME.md). Played once when he joins; he patches Today after every meal.
+# Basil's home (YUI-168, yuigui spec/HOME.md). Played once when he joins; the runtime patches it after (YUI-183, src/mealplan.ts).
+# Chips show newest first, so the most important one goes last.
 menu shortcut@groceries "Grocery list" show=groceries
+menu shortcut@week "This week" show="this week"
 menu shortcut@log "Log a meal" say="Log a meal: "
+menu shortcut@plan "Plan my meals" say="Plan my meals"
 >2
 stat@kcal 0kcal "Calories today" sub="of 2,100. Log a meal to start."
 chart@macros bar "Macros vs goal" x=Protein|Carbs|Fat y=0|0|0 y2=140|210|70 names=Today|Goal unit=g
+card@next-meal "No plan yet" "Tell me what you like and I'll plan your week." cta="Plan my meals"
+choose@eaten "Tap a meal to fix it" "Log a meal" body="Nothing logged yet today."
 save today
 >3
-list@groceries title=Groceries "Greek yogurt" Eggs Spinach "Chicken thighs" Rice Berries +check
+card@week-plan "This week's meals" "Tell me what you like and I'll plan your week, with a grocery list." cta="Plan my meals"
+save this week
+>4
+stat@groc-left "6 to get" "Grocery list" sub="Plan your meals and this fills in"
+list@aisle-produce title="Produce" "Spinach"|"Berries" +check
+list@aisle-meat-and-fish title="Meat and fish" "Chicken thighs" +check
+list@aisle-dairy-and-eggs title="Dairy and eggs" "Greek yogurt"|"Eggs" +check
+list@aisle-pantry title="Pantry" "Rice" +check
+card@groc-add "Need something else?" "Say it or type it, like: add oat milk to my groceries." cta="Add to the list"
 save groceries

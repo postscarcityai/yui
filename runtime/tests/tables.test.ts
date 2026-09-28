@@ -86,7 +86,7 @@ test("seeds: every starter ships its tables; blank ships none; seeds use no date
   const c = crew();
   const names = (b: string) => (c[b].tables ?? []).map((t) => t.name);
   assert.deepEqual(names("yui"), ["todos", "groceries", "notes"]);
-  assert.deepEqual(names("basil"), ["foods", "meals"]);
+  assert.deepEqual(names("basil"), ["foods", "meals", "recipes", "goal", "meal_plan", "plan_prefs", "groceries"]);
   assert.deepEqual(names("arnold"), ["exercises", "this_week", "workouts"]);
   assert.deepEqual(names("penny"), ["tasks", "errands", "bills"]);
   assert.deepEqual(names("quill"), ["decks", "review"]);
@@ -217,13 +217,14 @@ test("controls: the agent's tables with row counts, read one, delete one with a 
     return store.data.rows.filter((r: any) => r.kind === "control" && r.sender === "agent").pop()!.meta;
   };
   const list = await ask({ op: "list", section: "tables" });
-  assert.deepEqual(list.items.map((i: any) => [i.id, i.sub]), [["foods", "44 rows"], ["meals", "0 rows"]]);
+  assert.deepEqual(list.items.map((i: any) => [i.id, i.sub]), [["foods", "44 rows"], ["meals", "0 rows"], ["recipes", "38 rows"], ["goal", "1 row"],
+                                                               ["meal_plan", "0 rows"], ["plan_prefs", "0 rows"], ["groceries", "6 rows"]]);
   const got = await ask({ op: "get", section: "tables", id: "foods" });
   assert.match(got.item.text, /Chicken breast, cooked \| 100 g \| 165 \| 31/);
   assert.equal((await ask({ op: "delete", section: "tables", id: "meals", rev: got.rev })).error, "confirm");
   const meals = await ask({ op: "get", section: "tables", id: "meals" });
   assert.equal((await ask({ op: "delete", section: "tables", id: "meals", rev: meals.rev, confirmed: true })).ok, true);
-  assert.deepEqual(Object.keys((await store.tables(basil.id)).tables), ["foods"]);
+  assert.deepEqual(Object.keys((await store.tables(basil.id)).tables), ["foods", "recipes", "goal", "meal_plan", "plan_prefs", "groceries"]);
   assert.equal((await ask({ op: "put", section: "tables", id: "foods", rev: got.rev, value: {} })).error, "not_allowed");
 });
 

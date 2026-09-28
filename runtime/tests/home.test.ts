@@ -15,7 +15,7 @@ const shortcuts = (home: string) => homeLines(home).filter((l) => l.startsWith("
 test("every starter has a home: its shortcuts in chip order and its starter screens (card YUI-168)", () => {
   const want: Record<string, { chips: string[]; pages: string[] }> = {
     arnold: { chips: ["Start a workout", "My split", "Log a workout", "Progress"], pages: ["2", "3", "4"] },
-    basil: { chips: ["Log a meal", "Grocery list"], pages: ["2", "3"] },
+    basil: { chips: ["Plan my meals", "Log a meal", "This week", "Grocery list"], pages: ["2", "3", "4"] },
     gouda: { chips: ["Jam", "Tune up"], pages: ["2", "3", "4"] },
     penny: { chips: ["Add a to-do", "Plan my week"], pages: ["2", "3"] },
     quill: { chips: ["Quiz me", "What's next"], pages: ["2", "3"] },
@@ -73,7 +73,7 @@ test("homes to write: each native agent once, a crew agent from before homes get
   const out = homesToWrite(rows, (b) => crew()[b]?.home);
   assert.deepEqual(out.map((h) => h.agentId), ["y", "b", "l"], "Arnold's is written, a custom agent without one gets none");
   assert.match(out[0].body, /yui:\/\/agent\/a\/thread/, "Yui's crew page opens the person's own Arnold");
-  assert.match(out[1].body, /list@groceries/);
+  assert.match(out[1].body, /list@aisle-produce title="Produce" "Spinach"\|"Berries" \+check/);
 });
 
 test("a new agent's thread opens on its home, then its hello; the model sees its home to keep it current", async () => {

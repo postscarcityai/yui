@@ -1,5 +1,5 @@
 # Basil's starter tables (YUI-170). Foods: common foods, one usual portion each, rounded from USDA FoodData Central.
-# Meals starts empty; it is the log (YUI-103's food memory builds on Foods).
+# Meals starts empty; it is the log (YUI-103's food memory builds on Foods). The rest are his tools (YUI-183, src/mealplan.ts).
 table create foods Food:text Portion:text Cal:number:kcal Protein:number:g Carbs:number:g Fat:number:g
 put foods egg Food=Egg Portion="1 large" Cal=72 Protein=6.3 Carbs=0.4 Fat=4.8
 put foods egg-white Food="Egg white" Portion="1 large" Cal=17 Protein=3.6 Carbs=0.2 Fat=0.1
@@ -46,3 +46,60 @@ put foods orange-juice Food="Orange juice" Portion="1 cup" Cal=112 Protein=1.7 C
 put foods dark-chocolate Food="Dark chocolate 70-85%" Portion="28 g" Cal=170 Protein=2.2 Carbs=13 Fat=12
 put foods pizza Food="Cheese pizza, 14 inch" Portion="1 slice" Cal=285 Protein=12 Carbs=36 Fat=10
 table create meals Day:date Meal:text Food:text Portion:text Cal:number:kcal Protein:number:g Carbs:number:g Fat:number:g
+
+# Recipes (YUI-183): what Plan my meals builds a week from. Tags say what a meal holds (the no-gos leave it out) and
+# what it is (the likes pull it in). Minutes to cook, Cost 1 cheap to 3 treat, macros per serving, and each
+# ingredient with its amount for one serving, which the grocery list adds up by aisle.
+table create recipes Name:text Meal:text Tags:text Minutes:number Cost:number Cal:number:kcal Protein:number:g Carbs:number:g Fat:number:g Ingredients:text
+put recipes yogurt-bowl Name="Greek yogurt bowl" Meal=Breakfast Tags="dairy, gluten, veggie, quick" Minutes=5 Cost=2 Cal=420 Protein=30 Carbs=60 Fat=7 Ingredients="Greek yogurt:1 cup; Blueberries:1 cup; Granola:1/2 cup; Honey:1 tbsp"
+put recipes pb-oats Name="Peanut butter oats" Meal=Breakfast Tags="dairy, nuts, veggie, quick" Minutes=10 Cost=1 Cal=505 Protein=18 Carbs=68 Fat=20 Ingredients="Oats:1/2 cup; Peanut butter:2 tbsp; Banana:1; Milk:1/2 cup"
+put recipes egg-scramble Name="Spinach egg scramble and toast" Meal=Breakfast Tags="eggs, gluten, dairy, veggie, quick" Minutes=10 Cost=1 Cal=430 Protein=27 Carbs=30 Fat=22 Ingredients="Eggs:3; Spinach:1 cup; Whole wheat bread:2 slices; Butter:1 tsp"
+put recipes avocado-toast Name="Avocado toast with eggs" Meal=Breakfast Tags="eggs, gluten, veggie, quick" Minutes=10 Cost=2 Cal=424 Protein=20 Carbs=32 Fat=24 Ingredients="Whole wheat bread:2 slices; Avocado:1/2; Eggs:2"
+put recipes breakfast-burrito Name="Breakfast burrito" Meal=Breakfast Tags="eggs, dairy, gluten, veggie, mexican" Minutes=15 Cost=1 Cal=528 Protein=28 Carbs=48 Fat=24 Ingredients="Flour tortillas:1; Eggs:2; Black beans:1/2 can; Cheddar:1/4 cup; Salsa:2 tbsp"
+put recipes berry-smoothie Name="Berry protein smoothie" Meal=Breakfast Tags="dairy, veggie, quick" Minutes=5 Cost=2 Cal=417 Protein=34 Carbs=56 Fat=7 Ingredients="Whey protein:1 scoop; Frozen berries:1 cup; Banana:1; Milk:1 cup"
+put recipes cottage-bowl Name="Cottage cheese, peaches and almonds" Meal=Breakfast Tags="dairy, nuts, veggie, quick" Minutes=5 Cost=2 Cal=408 Protein=30 Carbs=24 Fat=21 Ingredients="Cottage cheese:1 cup; Peaches:1; Almonds:1/4 cup"
+put recipes tofu-scramble Name="Tofu scramble" Meal=Breakfast Tags="soy, gluten, veggie" Minutes=15 Cost=1 Cal=430 Protein=35 Carbs=22 Fat=22 Ingredients="Firm tofu:1 block; Bell peppers:1; Spinach:1 cup; Whole wheat bread:1 slice; Olive oil:1 tsp"
+put recipes overnight-oats Name="Overnight oats with chia" Meal=Breakfast Tags="veggie, quick" Minutes=5 Cost=1 Cal=422 Protein=10 Carbs=70 Fat=11 Ingredients="Oats:1/2 cup; Oat milk:1 cup; Chia seeds:1 tbsp; Blueberries:1/2 cup; Maple syrup:1 tbsp"
+put recipes chicken-rice-bowl Name="Teriyaki chicken rice bowl" Meal=Lunch Tags="chicken, rice, bowl, asian, soy, gluten" Minutes=25 Cost=2 Cal=650 Protein=45 Carbs=70 Fat=18 Ingredients="Chicken thighs:2; Rice:1/2 cup; Broccoli:1 cup; Teriyaki sauce:2 tbsp"
+put recipes turkey-wrap Name="Turkey hummus wrap" Meal=Lunch Tags="turkey, gluten, dairy, quick" Minutes=10 Cost=1 Cal=570 Protein=33 Carbs=70 Fat=20 Ingredients="Flour tortillas:1; Deli turkey:4 slices; Hummus:2 tbsp; Spinach:1 cup; Cheddar:1/4 cup; Apples:1"
+put recipes tuna-sandwich Name="Tuna salad sandwich" Meal=Lunch Tags="fish, gluten, dairy, quick" Minutes=10 Cost=1 Cal=560 Protein=40 Carbs=55 Fat=18 Ingredients="Tuna:1 can; Whole wheat bread:2 slices; Greek yogurt:2 tbsp; Celery:1 stalk; Apples:1"
+put recipes lentil-soup Name="Lentil soup and bread" Meal=Lunch Tags="veggie, gluten" Minutes=40 Cost=1 Cal=480 Protein=20 Carbs=62 Fat=16 Ingredients="Lentils:1/2 cup; Carrots:2; Celery:1 stalk; Onion:1/2; Olive oil:1 tbsp; Whole wheat bread:1 slice"
+put recipes burrito-bowl Name="Chicken burrito bowl" Meal=Lunch Tags="chicken, rice, bowl, mexican" Minutes=25 Cost=2 Cal=700 Protein=55 Carbs=75 Fat=18 Ingredients="Chicken breasts:1; Rice:1/2 cup; Black beans:1/2 can; Salsa:2 tbsp; Avocado:1/2"
+put recipes chickpea-salad Name="Greek chickpea salad with pita" Meal=Lunch Tags="veggie, dairy, gluten, quick" Minutes=15 Cost=1 Cal=640 Protein=24 Carbs=80 Fat=26 Ingredients="Chickpeas:1 can; Cucumber:1; Cherry tomatoes:1 cup; Feta:1/4 cup; Olive oil:1 tbsp; Pita:1"
+put recipes pesto-pasta Name="Pesto pasta salad" Meal=Lunch Tags="veggie, pasta, italian, dairy, gluten, nuts" Minutes=20 Cost=2 Cal=600 Protein=22 Carbs=70 Fat=26 Ingredients="Pasta:1/4 box; Pesto:2 tbsp; Cherry tomatoes:1 cup; Mozzarella:1/4 cup"
+put recipes fried-rice Name="Egg fried rice" Meal=Lunch Tags="eggs, rice, asian, soy, gluten, veggie, quick" Minutes=15 Cost=1 Cal=640 Protein=20 Carbs=85 Fat=22 Ingredients="Rice:1/2 cup; Eggs:2; Frozen peas:1/2 cup; Soy sauce:1 tbsp; Olive oil:1 tbsp"
+put recipes quinoa-bowl Name="Quinoa black bean bowl" Meal=Lunch Tags="veggie, bowl, mexican" Minutes=20 Cost=1 Cal=540 Protein=19 Carbs=80 Fat=17 Ingredients="Quinoa:1/2 cup; Black beans:1/2 can; Frozen corn:1/2 cup; Avocado:1/2; Limes:1"
+put recipes salmon-rice Name="Salmon, rice and green beans" Meal=Dinner Tags="fish, rice" Minutes=25 Cost=3 Cal=640 Protein=40 Carbs=55 Fat=24 Ingredients="Salmon fillets:1; Rice:1/2 cup; Green beans:1 cup; Olive oil:1 tsp; Lemons:1"
+put recipes beef-tacos Name="Beef tacos" Meal=Dinner Tags="beef, mexican, dairy" Minutes=20 Cost=2 Cal=620 Protein=42 Carbs=40 Fat=32 Ingredients="Ground beef:1/3 lb; Corn tortillas:3; Lettuce:1 cup; Cheddar:1/4 cup; Salsa:2 tbsp"
+put recipes chicken-stir-fry Name="Chicken stir-fry" Meal=Dinner Tags="chicken, rice, asian, soy, gluten" Minutes=25 Cost=2 Cal=680 Protein=48 Carbs=62 Fat=22 Ingredients="Chicken breasts:1; Stir-fry vegetables:2 cups; Rice:1/2 cup; Soy sauce:1 tbsp; Olive oil:1 tbsp"
+put recipes spaghetti Name="Spaghetti with meat sauce" Meal=Dinner Tags="beef, pasta, italian, dairy, gluten" Minutes=30 Cost=1 Cal=660 Protein=40 Carbs=78 Fat=20 Ingredients="Pasta:1/4 box; Ground beef:1/4 lb; Marinara:1/2 cup; Parmesan:2 tbsp"
+put recipes sheet-chicken Name="Sheet pan chicken and potatoes" Meal=Dinner Tags="chicken" Minutes=45 Cost=1 Cal=700 Protein=45 Carbs=50 Fat=30 Ingredients="Chicken thighs:2; Potatoes:2; Broccoli:1 cup; Olive oil:1 tbsp"
+put recipes shrimp-tacos Name="Shrimp tacos with slaw" Meal=Dinner Tags="shellfish, mexican, dairy" Minutes=20 Cost=3 Cal=560 Protein=35 Carbs=60 Fat=18 Ingredients="Shrimp:1/3 lb; Corn tortillas:3; Cabbage:1 cup; Avocado:1/2; Greek yogurt:2 tbsp; Limes:1"
+put recipes veggie-chili Name="Three bean chili" Meal=Dinner Tags="veggie, mexican, dairy" Minutes=45 Cost=1 Cal=680 Protein=33 Carbs=95 Fat=20 Ingredients="Kidney beans:1/2 can; Black beans:1/2 can; Crushed tomatoes:1/2 can; Bell peppers:1; Onion:1/2; Cheddar:1/4 cup"
+put recipes tofu-curry Name="Tofu coconut curry" Meal=Dinner Tags="veggie, asian, soy, rice" Minutes=30 Cost=2 Cal=700 Protein=25 Carbs=70 Fat=36 Ingredients="Firm tofu:1/2 block; Coconut milk:1/2 can; Stir-fry vegetables:1 cup; Curry paste:1 tbsp; Rice:1/2 cup"
+put recipes pork-chops Name="Pork chops, sweet potato and green beans" Meal=Dinner Tags="pork, dairy" Minutes=30 Cost=2 Cal=560 Protein=40 Carbs=34 Fat=26 Ingredients="Pork chops:1; Sweet potatoes:1; Green beans:1 cup; Butter:1 tbsp"
+put recipes steak-dinner Name="Steak, potatoes and salad" Meal=Dinner Tags="beef" Minutes=30 Cost=3 Cal=690 Protein=55 Carbs=38 Fat=34 Ingredients="Sirloin steak:1; Potatoes:1; Mixed greens:2 cups; Olive oil:1 tbsp"
+put recipes pasta-primavera Name="Pasta primavera with white beans" Meal=Dinner Tags="veggie, pasta, italian, dairy, gluten" Minutes=25 Cost=1 Cal=616 Protein=27 Carbs=98 Fat=16 Ingredients="Pasta:1/4 box; Zucchini:1; Bell peppers:1; White beans:1/2 can; Olive oil:1 tbsp; Parmesan:2 tbsp"
+put recipes baked-cod Name="Baked cod with quinoa" Meal=Dinner Tags="fish, dairy" Minutes=25 Cost=2 Cal=560 Protein=45 Carbs=45 Fat=16 Ingredients="Cod fillets:1; Quinoa:1/2 cup; Asparagus:1 bunch; Butter:1 tbsp; Lemons:1"
+put recipes turkey-meatballs Name="Turkey meatballs and rice" Meal=Dinner Tags="turkey, italian, eggs, gluten, rice" Minutes=35 Cost=2 Cal=640 Protein=42 Carbs=70 Fat=18 Ingredients="Ground turkey:1/3 lb; Eggs:1; Breadcrumbs:1/4 cup; Marinara:1/2 cup; Rice:1/2 cup"
+put recipes apple-pb Name="Apple and peanut butter" Meal=Snack Tags="nuts, veggie, quick" Minutes=2 Cost=1 Cal=285 Protein=7 Carbs=33 Fat=16 Ingredients="Apples:1; Peanut butter:2 tbsp"
+put recipes hummus-veg Name="Hummus and carrots" Meal=Snack Tags="veggie, quick" Minutes=5 Cost=1 Cal=200 Protein=6 Carbs=20 Fat=10 Ingredients="Hummus:4 tbsp; Carrots:2"
+put recipes yogurt-honey Name="Greek yogurt and honey" Meal=Snack Tags="dairy, veggie, quick" Minutes=2 Cost=1 Cal=160 Protein=17 Carbs=20 Fat=1 Ingredients="Greek yogurt:1 cup; Honey:1 tsp"
+put recipes trail-mix Name="Trail mix" Meal=Snack Tags="nuts, veggie, quick" Minutes=1 Cost=2 Cal=210 Protein=6 Carbs=18 Fat=14 Ingredients="Trail mix:1/4 cup"
+put recipes cheese-crackers Name="Cheese and crackers" Meal=Snack Tags="dairy, gluten, veggie, quick" Minutes=2 Cost=1 Cal=230 Protein=9 Carbs=18 Fat=13 Ingredients="Cheddar:1/4 cup; Crackers:8"
+put recipes boiled-eggs Name="Two boiled eggs" Meal=Snack Tags="eggs, quick" Minutes=12 Cost=1 Cal=144 Protein=13 Carbs=1 Fat=10 Ingredients="Eggs:2"
+put recipes edamame Name="Edamame" Meal=Snack Tags="soy, veggie, quick" Minutes=5 Cost=1 Cal=190 Protein=17 Carbs=14 Fat=8 Ingredients="Frozen edamame:1 cup"
+# The day's goal: the Today board reads it. Basil changes it when they set a goal.
+table create goal Cal:number:kcal Protein:number:g Carbs:number:g Fat:number:g
+put goal daily Cal=2100 Protein=140 Carbs=210 Fat=70
+# The week Plan my meals made (one row a meal), and what they asked for last time.
+table create meal_plan Day:date Slot:text Recipe:text Name:text Cal:number:kcal Protein:number:g Carbs:number:g Fat:number:g Minutes:number
+table create plan_prefs Days:number Meals:text Likes:text Avoid:text Budget:text Cook:text
+# The grocery list, by aisle: the plan fills it (From=plan), they add to it (From=you), a tick sets Got.
+table create groceries Item:text Qty:text Aisle:text Got:bool From:text
+put groceries greek-yogurt Item="Greek yogurt" Aisle="Dairy and eggs" From=you
+put groceries egg Item=Eggs Aisle="Dairy and eggs" From=you
+put groceries spinach Item=Spinach Aisle=Produce From=you
+put groceries chicken-thigh Item="Chicken thighs" Aisle="Meat and fish" From=you
+put groceries rice Item=Rice Aisle=Pantry From=you
+put groceries berry Item=Berries Aisle=Produce From=you

@@ -352,11 +352,11 @@ export const CREW: Record<string, Profile> = {
     "handle": "basil",
     "role": "Nutritionist",
     "tagline": "Eat better without counting everything",
-    "about": "Meals and swaps that fit your goal and what you can't eat. Snap a plate for a quick read on it.",
+    "about": "Plans your week of meals around your goal and what you can't eat, with the grocery list by aisle. Snap a plate and today's macros fill in.",
     "can": [
-      "Plan my meals this week",
+      "Plan my meals",
       "What should I eat tonight?",
-      "Check a photo of my plate"
+      "Add oat milk to my groceries"
     ],
     "version": 1,
     "color": "mint",
@@ -369,7 +369,7 @@ export const CREW: Record<string, Profile> = {
       "choose"
     ],
     "model": "default",
-    "soul": "You are Basil, a nutritionist in the Yui app. Calm, kind and practical, never preachy.\n\n- You turn goals into food people like: simple meals, swaps, grocery lists (`list` with `+check`), and macros in one `table`.\n- Logging food never means weighing it. A photo of a plate is logged for you before you see it: Yui answers \"Got it, working out the macros\" and draws the breakdown itself (one table of every item, today so far, at most one short question). You never write that breakdown.\n- A meal said in words (\"had two eggs and toast with butter\") is logged the same way: one short line, then a `meal` block with their words, and nothing else. Never ask for grams.\n  ```meal\n  log \"two eggs and toast with butter\"\n  ```\n- Your `myfoods` table is their food memory: every food logged once, with its calories and macros per portion. \"My usual oatmeal is a cup of oats with a scoop of whey\": write it there (`put myfoods usual-oatmeal Food=\"Usual oatmeal\" Portion=\"1 bowl\" Cal=270 Protein=29 Carbs=30 Fat=4.5`), say so in one line. A fix to a meal just logged (\"that was half the rice\") is a `put meals <its key> ...` with the new numbers, then `query meals where=Day=today sum=Cal|Protein|Carbs|Fat as table \"Today so far\"`.\n- Ask for a photo with `camera@plate \"Snap your meal\" +inline`. No judging a meal unless they ask. Macros are one `table`, never a `stat` per number: the stage plays each tile as its own page. Put all your words before the fence, nothing after it.\n- Before the first plan you ask the goal and any allergies, intolerances or conditions, and keep them in what you know about the person. Until they have answered, every plan screen asks it again with a `pick` or `choose`.\n- You are a careful coach. You never diagnose, never treat a condition, and never suggest very low calorie plans. For diabetes, kidney disease, pregnancy, an eating disorder or medication questions, you say once, briefly, to check with their doctor or a dietitian, and stay gentle. When something is for their doctor, that is one sentence, then a screen with what you can do (a `choose` of next steps or the plan's questions), never words alone. Words go before the fence, nothing after it.",
+    "soul": "You are Basil, a nutritionist in the Yui app. Calm, kind and practical, never preachy.\n\n- You turn goals into food people like: simple meals, swaps, grocery lists, and macros in one `table`.\n- Your tools run themselves, from your tables, before you see the turn: \"Plan my meals\" (one full-screen flow, then a week as a deck where a tap swaps a meal), adding to the grocery list in words (\"add oat milk to my groceries\"), ticks on it, and fixing a meal from Today. Your pages stay current on their own: Today (calories and macros against `goal`), This week's meals, and Groceries by aisle. Never draw those pages yourself; to offer a plan, put `card \"Plan my meals\" \"<why>\" cta=\"Plan my meals\"`.\n- When they set a goal, `put goal daily Cal=... Protein=... Carbs=... Fat=...`. Their own recipe goes in `recipes` (Name, Meal, Tags with what it holds, Minutes, Cost 1 to 3, macros, Ingredients as \"Item:amount; Item:amount\"), so the planner can pick it.\n- Logging food never means weighing it. A photo of a plate is logged for you before you see it: Yui answers \"Got it, working out the macros\" and draws the breakdown itself (one table of every item, today so far, at most one short question). You never write that breakdown.\n- A meal said in words (\"had two eggs and toast with butter\") is logged the same way: one short line, then a `meal` block with their words, and nothing else. Never ask for grams.\n  ```meal\n  log \"two eggs and toast with butter\"\n  ```\n- Your `myfoods` table is their food memory: every food logged once, with its calories and macros per portion. \"My usual oatmeal is a cup of oats with a scoop of whey\": write it there (`put myfoods usual-oatmeal Food=\"Usual oatmeal\" Portion=\"1 bowl\" Cal=270 Protein=29 Carbs=30 Fat=4.5`), say so in one line. A fix to a meal just logged (\"that was half the rice\") is a `put meals <its key> ...` with the new numbers, then `query meals where=Day=today sum=Cal|Protein|Carbs|Fat as table \"Today so far\"`.\n- Ask for a photo with `camera@plate \"Snap your meal\" +inline`. No judging a meal unless they ask. Macros are one `table`, never a `stat` per number: the stage plays each tile as its own page. Put all your words before the fence, nothing after it.\n- Before the first plan you ask the goal and any allergies, intolerances or conditions, and keep them in what you know about the person. Until they have answered, every plan screen asks it again with a `pick` or `choose`.\n- You are a careful coach. You never diagnose, never treat a condition, and never suggest very low calorie plans. For diabetes, kidney disease, pregnancy, an eating disorder or medication questions, you say once, briefly, to check with their doctor or a dietitian, and stay gentle. When something is for their doctor, that is one sentence, then a screen with what you can do (a `choose` of next steps or the plan's questions), never words alone. Words go before the fence, nothing after it.",
     "first": "I'm Basil. Tell me what you're after and anything you can't eat, and I'll keep it in mind every time. On medication or managing a condition? Check with your doctor before big changes.\n```yui\nplan \"Eating well\"\nchoose \"Main goal?\" \"More energy\"|\"Lose a little\"|\"Build muscle\"|\"Eat healthier\"|\"Just curious\" +other\npick \"Anything to avoid?\" None|Nuts|Dairy|Gluten|Shellfish|Meat +other\nchoose \"Any condition I should plan around?\" None|\"Yes, I'll tell you\" +other\nend\n```",
     "shelf": true,
     "careful": true,
@@ -943,9 +943,822 @@ export const CREW: Record<string, Profile> = {
         ],
         "next": 1,
         "rows": []
+      },
+      {
+        "name": "recipes",
+        "cols": [
+          {
+            "name": "Name",
+            "type": "text"
+          },
+          {
+            "name": "Meal",
+            "type": "text"
+          },
+          {
+            "name": "Tags",
+            "type": "text"
+          },
+          {
+            "name": "Minutes",
+            "type": "number"
+          },
+          {
+            "name": "Cost",
+            "type": "number"
+          },
+          {
+            "name": "Cal",
+            "type": "number",
+            "unit": "kcal"
+          },
+          {
+            "name": "Protein",
+            "type": "number",
+            "unit": "g"
+          },
+          {
+            "name": "Carbs",
+            "type": "number",
+            "unit": "g"
+          },
+          {
+            "name": "Fat",
+            "type": "number",
+            "unit": "g"
+          },
+          {
+            "name": "Ingredients",
+            "type": "text"
+          }
+        ],
+        "next": 1,
+        "rows": [
+          {
+            "key": "yogurt-bowl",
+            "values": {
+              "Name": "Greek yogurt bowl",
+              "Meal": "Breakfast",
+              "Tags": "dairy, gluten, veggie, quick",
+              "Minutes": 5,
+              "Cost": 2,
+              "Cal": 420,
+              "Protein": 30,
+              "Carbs": 60,
+              "Fat": 7,
+              "Ingredients": "Greek yogurt:1 cup; Blueberries:1 cup; Granola:1/2 cup; Honey:1 tbsp"
+            }
+          },
+          {
+            "key": "pb-oats",
+            "values": {
+              "Name": "Peanut butter oats",
+              "Meal": "Breakfast",
+              "Tags": "dairy, nuts, veggie, quick",
+              "Minutes": 10,
+              "Cost": 1,
+              "Cal": 505,
+              "Protein": 18,
+              "Carbs": 68,
+              "Fat": 20,
+              "Ingredients": "Oats:1/2 cup; Peanut butter:2 tbsp; Banana:1; Milk:1/2 cup"
+            }
+          },
+          {
+            "key": "egg-scramble",
+            "values": {
+              "Name": "Spinach egg scramble and toast",
+              "Meal": "Breakfast",
+              "Tags": "eggs, gluten, dairy, veggie, quick",
+              "Minutes": 10,
+              "Cost": 1,
+              "Cal": 430,
+              "Protein": 27,
+              "Carbs": 30,
+              "Fat": 22,
+              "Ingredients": "Eggs:3; Spinach:1 cup; Whole wheat bread:2 slices; Butter:1 tsp"
+            }
+          },
+          {
+            "key": "avocado-toast",
+            "values": {
+              "Name": "Avocado toast with eggs",
+              "Meal": "Breakfast",
+              "Tags": "eggs, gluten, veggie, quick",
+              "Minutes": 10,
+              "Cost": 2,
+              "Cal": 424,
+              "Protein": 20,
+              "Carbs": 32,
+              "Fat": 24,
+              "Ingredients": "Whole wheat bread:2 slices; Avocado:1/2; Eggs:2"
+            }
+          },
+          {
+            "key": "breakfast-burrito",
+            "values": {
+              "Name": "Breakfast burrito",
+              "Meal": "Breakfast",
+              "Tags": "eggs, dairy, gluten, veggie, mexican",
+              "Minutes": 15,
+              "Cost": 1,
+              "Cal": 528,
+              "Protein": 28,
+              "Carbs": 48,
+              "Fat": 24,
+              "Ingredients": "Flour tortillas:1; Eggs:2; Black beans:1/2 can; Cheddar:1/4 cup; Salsa:2 tbsp"
+            }
+          },
+          {
+            "key": "berry-smoothie",
+            "values": {
+              "Name": "Berry protein smoothie",
+              "Meal": "Breakfast",
+              "Tags": "dairy, veggie, quick",
+              "Minutes": 5,
+              "Cost": 2,
+              "Cal": 417,
+              "Protein": 34,
+              "Carbs": 56,
+              "Fat": 7,
+              "Ingredients": "Whey protein:1 scoop; Frozen berries:1 cup; Banana:1; Milk:1 cup"
+            }
+          },
+          {
+            "key": "cottage-bowl",
+            "values": {
+              "Name": "Cottage cheese, peaches and almonds",
+              "Meal": "Breakfast",
+              "Tags": "dairy, nuts, veggie, quick",
+              "Minutes": 5,
+              "Cost": 2,
+              "Cal": 408,
+              "Protein": 30,
+              "Carbs": 24,
+              "Fat": 21,
+              "Ingredients": "Cottage cheese:1 cup; Peaches:1; Almonds:1/4 cup"
+            }
+          },
+          {
+            "key": "tofu-scramble",
+            "values": {
+              "Name": "Tofu scramble",
+              "Meal": "Breakfast",
+              "Tags": "soy, gluten, veggie",
+              "Minutes": 15,
+              "Cost": 1,
+              "Cal": 430,
+              "Protein": 35,
+              "Carbs": 22,
+              "Fat": 22,
+              "Ingredients": "Firm tofu:1 block; Bell peppers:1; Spinach:1 cup; Whole wheat bread:1 slice; Olive oil:1 tsp"
+            }
+          },
+          {
+            "key": "overnight-oats",
+            "values": {
+              "Name": "Overnight oats with chia",
+              "Meal": "Breakfast",
+              "Tags": "veggie, quick",
+              "Minutes": 5,
+              "Cost": 1,
+              "Cal": 422,
+              "Protein": 10,
+              "Carbs": 70,
+              "Fat": 11,
+              "Ingredients": "Oats:1/2 cup; Oat milk:1 cup; Chia seeds:1 tbsp; Blueberries:1/2 cup; Maple syrup:1 tbsp"
+            }
+          },
+          {
+            "key": "chicken-rice-bowl",
+            "values": {
+              "Name": "Teriyaki chicken rice bowl",
+              "Meal": "Lunch",
+              "Tags": "chicken, rice, bowl, asian, soy, gluten",
+              "Minutes": 25,
+              "Cost": 2,
+              "Cal": 650,
+              "Protein": 45,
+              "Carbs": 70,
+              "Fat": 18,
+              "Ingredients": "Chicken thighs:2; Rice:1/2 cup; Broccoli:1 cup; Teriyaki sauce:2 tbsp"
+            }
+          },
+          {
+            "key": "turkey-wrap",
+            "values": {
+              "Name": "Turkey hummus wrap",
+              "Meal": "Lunch",
+              "Tags": "turkey, gluten, dairy, quick",
+              "Minutes": 10,
+              "Cost": 1,
+              "Cal": 570,
+              "Protein": 33,
+              "Carbs": 70,
+              "Fat": 20,
+              "Ingredients": "Flour tortillas:1; Deli turkey:4 slices; Hummus:2 tbsp; Spinach:1 cup; Cheddar:1/4 cup; Apples:1"
+            }
+          },
+          {
+            "key": "tuna-sandwich",
+            "values": {
+              "Name": "Tuna salad sandwich",
+              "Meal": "Lunch",
+              "Tags": "fish, gluten, dairy, quick",
+              "Minutes": 10,
+              "Cost": 1,
+              "Cal": 560,
+              "Protein": 40,
+              "Carbs": 55,
+              "Fat": 18,
+              "Ingredients": "Tuna:1 can; Whole wheat bread:2 slices; Greek yogurt:2 tbsp; Celery:1 stalk; Apples:1"
+            }
+          },
+          {
+            "key": "lentil-soup",
+            "values": {
+              "Name": "Lentil soup and bread",
+              "Meal": "Lunch",
+              "Tags": "veggie, gluten",
+              "Minutes": 40,
+              "Cost": 1,
+              "Cal": 480,
+              "Protein": 20,
+              "Carbs": 62,
+              "Fat": 16,
+              "Ingredients": "Lentils:1/2 cup; Carrots:2; Celery:1 stalk; Onion:1/2; Olive oil:1 tbsp; Whole wheat bread:1 slice"
+            }
+          },
+          {
+            "key": "burrito-bowl",
+            "values": {
+              "Name": "Chicken burrito bowl",
+              "Meal": "Lunch",
+              "Tags": "chicken, rice, bowl, mexican",
+              "Minutes": 25,
+              "Cost": 2,
+              "Cal": 700,
+              "Protein": 55,
+              "Carbs": 75,
+              "Fat": 18,
+              "Ingredients": "Chicken breasts:1; Rice:1/2 cup; Black beans:1/2 can; Salsa:2 tbsp; Avocado:1/2"
+            }
+          },
+          {
+            "key": "chickpea-salad",
+            "values": {
+              "Name": "Greek chickpea salad with pita",
+              "Meal": "Lunch",
+              "Tags": "veggie, dairy, gluten, quick",
+              "Minutes": 15,
+              "Cost": 1,
+              "Cal": 640,
+              "Protein": 24,
+              "Carbs": 80,
+              "Fat": 26,
+              "Ingredients": "Chickpeas:1 can; Cucumber:1; Cherry tomatoes:1 cup; Feta:1/4 cup; Olive oil:1 tbsp; Pita:1"
+            }
+          },
+          {
+            "key": "pesto-pasta",
+            "values": {
+              "Name": "Pesto pasta salad",
+              "Meal": "Lunch",
+              "Tags": "veggie, pasta, italian, dairy, gluten, nuts",
+              "Minutes": 20,
+              "Cost": 2,
+              "Cal": 600,
+              "Protein": 22,
+              "Carbs": 70,
+              "Fat": 26,
+              "Ingredients": "Pasta:1/4 box; Pesto:2 tbsp; Cherry tomatoes:1 cup; Mozzarella:1/4 cup"
+            }
+          },
+          {
+            "key": "fried-rice",
+            "values": {
+              "Name": "Egg fried rice",
+              "Meal": "Lunch",
+              "Tags": "eggs, rice, asian, soy, gluten, veggie, quick",
+              "Minutes": 15,
+              "Cost": 1,
+              "Cal": 640,
+              "Protein": 20,
+              "Carbs": 85,
+              "Fat": 22,
+              "Ingredients": "Rice:1/2 cup; Eggs:2; Frozen peas:1/2 cup; Soy sauce:1 tbsp; Olive oil:1 tbsp"
+            }
+          },
+          {
+            "key": "quinoa-bowl",
+            "values": {
+              "Name": "Quinoa black bean bowl",
+              "Meal": "Lunch",
+              "Tags": "veggie, bowl, mexican",
+              "Minutes": 20,
+              "Cost": 1,
+              "Cal": 540,
+              "Protein": 19,
+              "Carbs": 80,
+              "Fat": 17,
+              "Ingredients": "Quinoa:1/2 cup; Black beans:1/2 can; Frozen corn:1/2 cup; Avocado:1/2; Limes:1"
+            }
+          },
+          {
+            "key": "salmon-rice",
+            "values": {
+              "Name": "Salmon, rice and green beans",
+              "Meal": "Dinner",
+              "Tags": "fish, rice",
+              "Minutes": 25,
+              "Cost": 3,
+              "Cal": 640,
+              "Protein": 40,
+              "Carbs": 55,
+              "Fat": 24,
+              "Ingredients": "Salmon fillets:1; Rice:1/2 cup; Green beans:1 cup; Olive oil:1 tsp; Lemons:1"
+            }
+          },
+          {
+            "key": "beef-tacos",
+            "values": {
+              "Name": "Beef tacos",
+              "Meal": "Dinner",
+              "Tags": "beef, mexican, dairy",
+              "Minutes": 20,
+              "Cost": 2,
+              "Cal": 620,
+              "Protein": 42,
+              "Carbs": 40,
+              "Fat": 32,
+              "Ingredients": "Ground beef:1/3 lb; Corn tortillas:3; Lettuce:1 cup; Cheddar:1/4 cup; Salsa:2 tbsp"
+            }
+          },
+          {
+            "key": "chicken-stir-fry",
+            "values": {
+              "Name": "Chicken stir-fry",
+              "Meal": "Dinner",
+              "Tags": "chicken, rice, asian, soy, gluten",
+              "Minutes": 25,
+              "Cost": 2,
+              "Cal": 680,
+              "Protein": 48,
+              "Carbs": 62,
+              "Fat": 22,
+              "Ingredients": "Chicken breasts:1; Stir-fry vegetables:2 cups; Rice:1/2 cup; Soy sauce:1 tbsp; Olive oil:1 tbsp"
+            }
+          },
+          {
+            "key": "spaghetti",
+            "values": {
+              "Name": "Spaghetti with meat sauce",
+              "Meal": "Dinner",
+              "Tags": "beef, pasta, italian, dairy, gluten",
+              "Minutes": 30,
+              "Cost": 1,
+              "Cal": 660,
+              "Protein": 40,
+              "Carbs": 78,
+              "Fat": 20,
+              "Ingredients": "Pasta:1/4 box; Ground beef:1/4 lb; Marinara:1/2 cup; Parmesan:2 tbsp"
+            }
+          },
+          {
+            "key": "sheet-chicken",
+            "values": {
+              "Name": "Sheet pan chicken and potatoes",
+              "Meal": "Dinner",
+              "Tags": "chicken",
+              "Minutes": 45,
+              "Cost": 1,
+              "Cal": 700,
+              "Protein": 45,
+              "Carbs": 50,
+              "Fat": 30,
+              "Ingredients": "Chicken thighs:2; Potatoes:2; Broccoli:1 cup; Olive oil:1 tbsp"
+            }
+          },
+          {
+            "key": "shrimp-tacos",
+            "values": {
+              "Name": "Shrimp tacos with slaw",
+              "Meal": "Dinner",
+              "Tags": "shellfish, mexican, dairy",
+              "Minutes": 20,
+              "Cost": 3,
+              "Cal": 560,
+              "Protein": 35,
+              "Carbs": 60,
+              "Fat": 18,
+              "Ingredients": "Shrimp:1/3 lb; Corn tortillas:3; Cabbage:1 cup; Avocado:1/2; Greek yogurt:2 tbsp; Limes:1"
+            }
+          },
+          {
+            "key": "veggie-chili",
+            "values": {
+              "Name": "Three bean chili",
+              "Meal": "Dinner",
+              "Tags": "veggie, mexican, dairy",
+              "Minutes": 45,
+              "Cost": 1,
+              "Cal": 680,
+              "Protein": 33,
+              "Carbs": 95,
+              "Fat": 20,
+              "Ingredients": "Kidney beans:1/2 can; Black beans:1/2 can; Crushed tomatoes:1/2 can; Bell peppers:1; Onion:1/2; Cheddar:1/4 cup"
+            }
+          },
+          {
+            "key": "tofu-curry",
+            "values": {
+              "Name": "Tofu coconut curry",
+              "Meal": "Dinner",
+              "Tags": "veggie, asian, soy, rice",
+              "Minutes": 30,
+              "Cost": 2,
+              "Cal": 700,
+              "Protein": 25,
+              "Carbs": 70,
+              "Fat": 36,
+              "Ingredients": "Firm tofu:1/2 block; Coconut milk:1/2 can; Stir-fry vegetables:1 cup; Curry paste:1 tbsp; Rice:1/2 cup"
+            }
+          },
+          {
+            "key": "pork-chops",
+            "values": {
+              "Name": "Pork chops, sweet potato and green beans",
+              "Meal": "Dinner",
+              "Tags": "pork, dairy",
+              "Minutes": 30,
+              "Cost": 2,
+              "Cal": 560,
+              "Protein": 40,
+              "Carbs": 34,
+              "Fat": 26,
+              "Ingredients": "Pork chops:1; Sweet potatoes:1; Green beans:1 cup; Butter:1 tbsp"
+            }
+          },
+          {
+            "key": "steak-dinner",
+            "values": {
+              "Name": "Steak, potatoes and salad",
+              "Meal": "Dinner",
+              "Tags": "beef",
+              "Minutes": 30,
+              "Cost": 3,
+              "Cal": 690,
+              "Protein": 55,
+              "Carbs": 38,
+              "Fat": 34,
+              "Ingredients": "Sirloin steak:1; Potatoes:1; Mixed greens:2 cups; Olive oil:1 tbsp"
+            }
+          },
+          {
+            "key": "pasta-primavera",
+            "values": {
+              "Name": "Pasta primavera with white beans",
+              "Meal": "Dinner",
+              "Tags": "veggie, pasta, italian, dairy, gluten",
+              "Minutes": 25,
+              "Cost": 1,
+              "Cal": 616,
+              "Protein": 27,
+              "Carbs": 98,
+              "Fat": 16,
+              "Ingredients": "Pasta:1/4 box; Zucchini:1; Bell peppers:1; White beans:1/2 can; Olive oil:1 tbsp; Parmesan:2 tbsp"
+            }
+          },
+          {
+            "key": "baked-cod",
+            "values": {
+              "Name": "Baked cod with quinoa",
+              "Meal": "Dinner",
+              "Tags": "fish, dairy",
+              "Minutes": 25,
+              "Cost": 2,
+              "Cal": 560,
+              "Protein": 45,
+              "Carbs": 45,
+              "Fat": 16,
+              "Ingredients": "Cod fillets:1; Quinoa:1/2 cup; Asparagus:1 bunch; Butter:1 tbsp; Lemons:1"
+            }
+          },
+          {
+            "key": "turkey-meatballs",
+            "values": {
+              "Name": "Turkey meatballs and rice",
+              "Meal": "Dinner",
+              "Tags": "turkey, italian, eggs, gluten, rice",
+              "Minutes": 35,
+              "Cost": 2,
+              "Cal": 640,
+              "Protein": 42,
+              "Carbs": 70,
+              "Fat": 18,
+              "Ingredients": "Ground turkey:1/3 lb; Eggs:1; Breadcrumbs:1/4 cup; Marinara:1/2 cup; Rice:1/2 cup"
+            }
+          },
+          {
+            "key": "apple-pb",
+            "values": {
+              "Name": "Apple and peanut butter",
+              "Meal": "Snack",
+              "Tags": "nuts, veggie, quick",
+              "Minutes": 2,
+              "Cost": 1,
+              "Cal": 285,
+              "Protein": 7,
+              "Carbs": 33,
+              "Fat": 16,
+              "Ingredients": "Apples:1; Peanut butter:2 tbsp"
+            }
+          },
+          {
+            "key": "hummus-veg",
+            "values": {
+              "Name": "Hummus and carrots",
+              "Meal": "Snack",
+              "Tags": "veggie, quick",
+              "Minutes": 5,
+              "Cost": 1,
+              "Cal": 200,
+              "Protein": 6,
+              "Carbs": 20,
+              "Fat": 10,
+              "Ingredients": "Hummus:4 tbsp; Carrots:2"
+            }
+          },
+          {
+            "key": "yogurt-honey",
+            "values": {
+              "Name": "Greek yogurt and honey",
+              "Meal": "Snack",
+              "Tags": "dairy, veggie, quick",
+              "Minutes": 2,
+              "Cost": 1,
+              "Cal": 160,
+              "Protein": 17,
+              "Carbs": 20,
+              "Fat": 1,
+              "Ingredients": "Greek yogurt:1 cup; Honey:1 tsp"
+            }
+          },
+          {
+            "key": "trail-mix",
+            "values": {
+              "Name": "Trail mix",
+              "Meal": "Snack",
+              "Tags": "nuts, veggie, quick",
+              "Minutes": 1,
+              "Cost": 2,
+              "Cal": 210,
+              "Protein": 6,
+              "Carbs": 18,
+              "Fat": 14,
+              "Ingredients": "Trail mix:1/4 cup"
+            }
+          },
+          {
+            "key": "cheese-crackers",
+            "values": {
+              "Name": "Cheese and crackers",
+              "Meal": "Snack",
+              "Tags": "dairy, gluten, veggie, quick",
+              "Minutes": 2,
+              "Cost": 1,
+              "Cal": 230,
+              "Protein": 9,
+              "Carbs": 18,
+              "Fat": 13,
+              "Ingredients": "Cheddar:1/4 cup; Crackers:8"
+            }
+          },
+          {
+            "key": "boiled-eggs",
+            "values": {
+              "Name": "Two boiled eggs",
+              "Meal": "Snack",
+              "Tags": "eggs, quick",
+              "Minutes": 12,
+              "Cost": 1,
+              "Cal": 144,
+              "Protein": 13,
+              "Carbs": 1,
+              "Fat": 10,
+              "Ingredients": "Eggs:2"
+            }
+          },
+          {
+            "key": "edamame",
+            "values": {
+              "Name": "Edamame",
+              "Meal": "Snack",
+              "Tags": "soy, veggie, quick",
+              "Minutes": 5,
+              "Cost": 1,
+              "Cal": 190,
+              "Protein": 17,
+              "Carbs": 14,
+              "Fat": 8,
+              "Ingredients": "Frozen edamame:1 cup"
+            }
+          }
+        ]
+      },
+      {
+        "name": "goal",
+        "cols": [
+          {
+            "name": "Cal",
+            "type": "number",
+            "unit": "kcal"
+          },
+          {
+            "name": "Protein",
+            "type": "number",
+            "unit": "g"
+          },
+          {
+            "name": "Carbs",
+            "type": "number",
+            "unit": "g"
+          },
+          {
+            "name": "Fat",
+            "type": "number",
+            "unit": "g"
+          }
+        ],
+        "next": 1,
+        "rows": [
+          {
+            "key": "daily",
+            "values": {
+              "Cal": 2100,
+              "Protein": 140,
+              "Carbs": 210,
+              "Fat": 70
+            }
+          }
+        ]
+      },
+      {
+        "name": "meal_plan",
+        "cols": [
+          {
+            "name": "Day",
+            "type": "date"
+          },
+          {
+            "name": "Slot",
+            "type": "text"
+          },
+          {
+            "name": "Recipe",
+            "type": "text"
+          },
+          {
+            "name": "Name",
+            "type": "text"
+          },
+          {
+            "name": "Cal",
+            "type": "number",
+            "unit": "kcal"
+          },
+          {
+            "name": "Protein",
+            "type": "number",
+            "unit": "g"
+          },
+          {
+            "name": "Carbs",
+            "type": "number",
+            "unit": "g"
+          },
+          {
+            "name": "Fat",
+            "type": "number",
+            "unit": "g"
+          },
+          {
+            "name": "Minutes",
+            "type": "number"
+          }
+        ],
+        "next": 1,
+        "rows": []
+      },
+      {
+        "name": "plan_prefs",
+        "cols": [
+          {
+            "name": "Days",
+            "type": "number"
+          },
+          {
+            "name": "Meals",
+            "type": "text"
+          },
+          {
+            "name": "Likes",
+            "type": "text"
+          },
+          {
+            "name": "Avoid",
+            "type": "text"
+          },
+          {
+            "name": "Budget",
+            "type": "text"
+          },
+          {
+            "name": "Cook",
+            "type": "text"
+          }
+        ],
+        "next": 1,
+        "rows": []
+      },
+      {
+        "name": "groceries",
+        "cols": [
+          {
+            "name": "Item",
+            "type": "text"
+          },
+          {
+            "name": "Qty",
+            "type": "text"
+          },
+          {
+            "name": "Aisle",
+            "type": "text"
+          },
+          {
+            "name": "Got",
+            "type": "bool"
+          },
+          {
+            "name": "From",
+            "type": "text"
+          }
+        ],
+        "next": 1,
+        "rows": [
+          {
+            "key": "greek-yogurt",
+            "values": {
+              "Item": "Greek yogurt",
+              "Aisle": "Dairy and eggs",
+              "From": "you"
+            }
+          },
+          {
+            "key": "egg",
+            "values": {
+              "Item": "Eggs",
+              "Aisle": "Dairy and eggs",
+              "From": "you"
+            }
+          },
+          {
+            "key": "spinach",
+            "values": {
+              "Item": "Spinach",
+              "Aisle": "Produce",
+              "From": "you"
+            }
+          },
+          {
+            "key": "chicken-thigh",
+            "values": {
+              "Item": "Chicken thighs",
+              "Aisle": "Meat and fish",
+              "From": "you"
+            }
+          },
+          {
+            "key": "rice",
+            "values": {
+              "Item": "Rice",
+              "Aisle": "Pantry",
+              "From": "you"
+            }
+          },
+          {
+            "key": "berry",
+            "values": {
+              "Item": "Berries",
+              "Aisle": "Produce",
+              "From": "you"
+            }
+          }
+        ]
       }
     ],
-    "home": "# Basil's home (YUI-168, yuigui spec/HOME.md). Played once when he joins; he patches Today after every meal.\nmenu shortcut@groceries \"Grocery list\" show=groceries\nmenu shortcut@log \"Log a meal\" say=\"Log a meal: \"\n>2\nstat@kcal 0kcal \"Calories today\" sub=\"of 2,100. Log a meal to start.\"\nchart@macros bar \"Macros vs goal\" x=Protein|Carbs|Fat y=0|0|0 y2=140|210|70 names=Today|Goal unit=g\nsave today\n>3\nlist@groceries title=Groceries \"Greek yogurt\" Eggs Spinach \"Chicken thighs\" Rice Berries +check\nsave groceries"
+    "home": "# Basil's home (YUI-168, yuigui spec/HOME.md). Played once when he joins; the runtime patches it after (YUI-183, src/mealplan.ts).\n# Chips show newest first, so the most important one goes last.\nmenu shortcut@groceries \"Grocery list\" show=groceries\nmenu shortcut@week \"This week\" show=\"this week\"\nmenu shortcut@log \"Log a meal\" say=\"Log a meal: \"\nmenu shortcut@plan \"Plan my meals\" say=\"Plan my meals\"\n>2\nstat@kcal 0kcal \"Calories today\" sub=\"of 2,100. Log a meal to start.\"\nchart@macros bar \"Macros vs goal\" x=Protein|Carbs|Fat y=0|0|0 y2=140|210|70 names=Today|Goal unit=g\ncard@next-meal \"No plan yet\" \"Tell me what you like and I'll plan your week.\" cta=\"Plan my meals\"\nchoose@eaten \"Tap a meal to fix it\" \"Log a meal\" body=\"Nothing logged yet today.\"\nsave today\n>3\ncard@week-plan \"This week's meals\" \"Tell me what you like and I'll plan your week, with a grocery list.\" cta=\"Plan my meals\"\nsave this week\n>4\nstat@groc-left \"6 to get\" \"Grocery list\" sub=\"Plan your meals and this fills in\"\nlist@aisle-produce title=\"Produce\" \"Spinach\"|\"Berries\" +check\nlist@aisle-meat-and-fish title=\"Meat and fish\" \"Chicken thighs\" +check\nlist@aisle-dairy-and-eggs title=\"Dairy and eggs\" \"Greek yogurt\"|\"Eggs\" +check\nlist@aisle-pantry title=\"Pantry\" \"Rice\" +check\ncard@groc-add \"Need something else?\" \"Say it or type it, like: add oat milk to my groceries.\" cta=\"Add to the list\"\nsave groceries"
   },
   "blank": {
     "base": "blank",

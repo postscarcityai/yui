@@ -24,6 +24,9 @@ import type { NativeAgent, OwnKey, Row, ScheduleItem } from "./types.ts";
 import { applyDay, applyLogged, applyRunner, editDayBody, logBody, loggedLine, progressShape, screenLines, session, splitDays, startReply,
          trains, workoutAsks, type Session, type WorkoutAsk } from "./workouts.ts";
 import { ACK, type MealFix, applyFix, fixTaps, logsMeals, mealTurn, runMealJob, spoken } from "./meals.ts";
+import { ADD_BODY, GOAL, GROCERIES, LOG_BODY, MEALS as MEAL_LOG, PLAN as MEAL_PLAN, addGroceries, applyMealFix, applyPlan, applySwap, ensureTools,
+         drawnShape, fixBody, groceryText, lastPrefs, logPlanned, mealAsks, nextPlanned, planBody, plansMeals, readItems, screenLines as mealScreenLines, tickGrocery,
+         weekDeck, type MealAsk } from "./mealplan.ts";
 import { card as handoffCard, cards as handoffCards, handedIn, handlesIn, oneThread, threadOf, withCard } from "./handoff.ts";
 
 export interface Provider {
@@ -191,6 +194,18 @@ async function oneTurn(store: Store, agent: NativeAgent, rows: Row[], opts: Turn
     }
   }
 
+  // Basil's tools (YUI-183): Plan my meals, a swap, the grocery list and a meal fixed from Today, with no model turn.
+  if (plansMeals(agent)) {
+    const { asks, rest } = mealAsks(rows);
+    if (asks.length) {
+      await mealTools(store, agent, asks, now, say, log);
+      const done = asks.map((a) => a.row.id).filter((id) => !id.startsWith(SYNTHETIC));
+      if (done.length) await store.markHandled(done);
+      if (!rest.length) return { handled: true };
+      return oneTurn(store, agent, rest, opts, log, result, depth);
+    }
+  }
+
   // Arnold's tools (YUI-182): Start, the runner's Send, the log and a changed day are answered here, with no model turn.
   if (trains(agent)) {
     const { asks, rest } = workoutAsks(rows);
@@ -233,6 +248,8 @@ async function oneTurn(store: Store, agent: NativeAgent, rows: Row[], opts: Turn
   const clk = clock(now, tz);
   // Tables (YUI-170): a starter agent added before tables existed gets its starter tables now, once.
   let tables = await seedOnce(store, agent, tables0, log);
+  // Basil from before YUI-183 gets his recipes, goal, plan and grocery tables, once.
+  if (plansMeals(agent)) tables = await ensureMealTools(store, agent, tables);
   // A Delete or Keep tap on deletes held last turn: done here, and the agent hears what happened.
   let turnRows = rows;
   ({ tables, rows: turnRows } = await heldTaps(store, agent, rows, history, tables, clk, log));
@@ -353,6 +370,9 @@ async function oneTurn(store: Store, agent: NativeAgent, rows: Row[], opts: Turn
   // Sources the answer didn't link, and the invite to add a Firecrawl key when the free lookups ran out.
   const cards = [...sourceCards(body, looked.sources), ...(looked.capped ? [searchInvite(looked.capped.why, looked.capped.limit)] : [])];
   if (cards.length && body.trim()) body = `${body.trim()}\n\`\`\`yui\n${cards.join("\n")}\n\`\`\``;
+  // Basil's pages follow what the answer wrote to his log, plan, goal or grocery list (YUI-183): patches under it.
+  const pages = plansMeals(agent) ? mealPages(tchange) : [];
+  if (pages.length && body.trim()) body = await withMealScreens(store, agent, body, t.store, clk, pages);
   // Hand-offs (YUI-144): one a turn, never from a turn another agent started, never inside a group.
   // The card goes under the answer, so the phone jumps to that agent once it has been read.
   const passes = depth === 0 && !handedIn(rows) && !thread;
@@ -413,6 +433,11 @@ export async function runJob(store: Store, jobId: string, opts: TurnOptions): Pr
       log: (m) => log(`${agent.profile.name}: ${m}`),
       now: opts.now ?? Date.now,
       say: async (a, body, meta) => {
+        // A meal logged patches Basil's Today (YUI-183) in the same reply: the breakdown and the board move together.
+        const n = (meta.native ?? {}) as Record<string, unknown>;
+        if (plansMeals(a) && !n.limit && n.food !== false) {
+          body = await withMealScreens(store, a, body, await store.tables(a.id), clock((opts.now ?? Date.now)(), validZone(await store.timezone(a.userId))), ["today"]);
+        }
         const id = await store.reply(a, body, meta);
         result.replies.push(id);
         return id;
@@ -451,10 +476,121 @@ async function mealFixes(store: Store, agent: NativeAgent, taps: { row: Row; id:
     const ch = diff(tables, done.store);
     if (changed(ch)) await store.saveTables(agent, ch, done.store);
     tables = done.store;
-    await say(done.body, { ...(t.row.id.startsWith(SYNTHETIC) ? {} : { turn: [t.row.id] }), native: { mealfixed: t.id } });
+    const body = plansMeals(agent) ? await withMealScreens(store, agent, done.body, tables, clk, ["today"]) : done.body;
+    await say(body, { ...(t.row.id.startsWith(SYNTHETIC) ? {} : { turn: [t.row.id] }), native: { mealfixed: t.id } });
     log(`${agent.profile.name}: meal ${t.id} fixed: ${t.choice}`);
   }
 }
+
+/** Basil's tool tables, made once for a Basil from before YUI-183 (from his starter seeds), and saved. */
+async function ensureMealTools(store: Store, agent: NativeAgent, tables: TableStore): Promise<TableStore> {
+  const out = ensureTools(tables, crew().basil?.tables);
+  const ch = diff(tables, out);
+  if (changed(ch)) await store.saveTables(agent, ch, out);
+  return out;
+}
+
+/** Which of Basil's pages a table change touches. */
+function mealPages(ch: { rows: { table: string }[]; dropRows: { table: string }[]; tables: { name: string }[] }): ("today" | "week" | "groceries")[] {
+  const names = new Set([...ch.rows.map((r) => r.table), ...ch.dropRows.map((r) => r.table), ...ch.tables.map((t) => t.name)]);
+  const out: ("today" | "week" | "groceries")[] = [];
+  if (names.has(MEAL_LOG) || names.has(GOAL) || names.has(MEAL_PLAN)) out.push("today");
+  if (names.has(MEAL_PLAN)) out.push("week");
+  if (names.has(GROCERIES) || names.has(MEAL_PLAN)) out.push("groceries");
+  return out;
+}
+
+/** A reply with Basil's page lines added: inside its last yui fence, or in a new one. Keeps the shape in his profile. */
+async function withMealScreens(store: Store, agent: NativeAgent, body: string, tables: TableStore, clk: Clock,
+                               only: ("today" | "week" | "groceries")[]): Promise<string> {
+  const { lines, shape } = mealScreenLines(tables, clk, drawnShape(agent.profile), only);
+  if (!lines.length) return body;
+  if (agent.profile.mealScreens !== shape) {
+    agent.profile = { ...agent.profile, mealScreens: shape };
+    await store.updateAgent(agent.id, agent.profile);
+  }
+  const at = body.lastIndexOf("\n```");
+  if (/```yui\n/.test(body) && at > body.lastIndexOf("```yui\n")) return `${body.slice(0, at)}\n${lines.join("\n")}${body.slice(at)}`;
+  return `${body.trim()}\n\`\`\`yui\n${lines.join("\n")}\n\`\`\``;
+}
+
+/** Basil's tools, answered from his tables: the plan, a swap, the grocery list, a meal fixed; his pages patched after. */
+async function mealTools(store: Store, agent: NativeAgent, asks: MealAsk[], now: number,
+                         say: (body: string, meta: Record<string, unknown>) => Promise<string>, log: (m: string) => void): Promise<void> {
+  const p = agent.profile;
+  const clk = clock(now, validZone(await store.timezone(agent.userId)));
+  const start = await seedOnce(store, agent, await store.tables(agent.id), log);
+  let tables = ensureTools(start, crew().basil?.tables);
+  for (const a of asks) {
+    const turn = a.row.id.startsWith(SYNTHETIC) ? {} : { turn: [a.row.id] };
+    // The ones that open a flow or answer in words: nothing written yet.
+    const opens: Partial<Record<MealAsk["kind"], () => string>> = {
+      plan: () => planBody(tables), add: () => ADD_BODY, share: () => groceryText(tables), logmeal: () => LOG_BODY,
+      fix: () => fixBody(tables, (a as Extract<MealAsk, { kind: "fix" }>).choice, clk),
+    };
+    if (opens[a.kind]) {
+      await say(opens[a.kind]!(), turn);
+      log(`${p.name}: ${a.kind}`);
+      continue;
+    }
+    if (a.kind === "tick") {
+      // A tick says nothing: the phone already shows it, and the item leaves the list the next time it is drawn.
+      tables = tickGrocery(tables, a.item, a.got, clk).store;
+      log(`${p.name}: ${a.got ? "got" : "unticked"} ${a.item}`);
+      continue;
+    }
+    let text = "";
+    let extra: string[] = [];
+    let only: ("today" | "week" | "groceries")[] = ["today", "week", "groceries"];
+    if (a.kind === "planned") {
+      const r = applyPlan(tables, a.answers, clk);
+      tables = r.store;
+      if (!r.planned.length) {
+        await say("Nothing in my recipes fits all of that. Leave out fewer things, or tell me a few meals you like and I'll add them.", turn);
+        continue;
+      }
+      const days = new Set(r.planned.map((x) => x.day)).size;
+      text = `Your ${days} ${days === 1 ? "day is" : "days are"} planned. Tap any meal to swap it.${r.missing.length ? ` Nothing fit for ${r.missing.join(" or ").toLowerCase()}, so I left it out.` : ""}`;
+      extra = weekDeck(tables, clk, r.prefs);
+    } else if (a.kind === "swap") {
+      const r = applySwap(tables, a.day, a.choice, clk);
+      if (!r.to) {
+        await say(r.slot ? `Nothing else fits your ${r.slot.toLowerCase()} that day. Plan again to change what I pick from.` : "That meal isn't on your plan any more.", turn);
+        continue;
+      }
+      tables = r.store;
+      text = `${r.slot} is ${r.to.name} now, ${r.to.cal.toLocaleString("en-US")} kcal. Your list follows.`;
+      // The deck's page for that day, when it is still in the thread.
+      const d = weekDeck(tables, clk, lastPrefs(tables)).find((l) => l.startsWith(`choose@swap-${a.day.replace(/-/g, "")} `));
+      if (d) extra = [d.replace(/^choose@/, "~")];
+    } else if (a.kind === "added") {
+      const r = addGroceries(tables, readItems(a.words), clk);
+      tables = r.store;
+      text = r.added.length ? `Added ${joinWords(r.added.map((x) => x.toLowerCase()))}.` : "I didn't catch an item. Try: add oat milk to my groceries.";
+      only = ["groceries"];
+    } else if (a.kind === "ate") {
+      const next = nextPlanned(tables, clk);
+      const r = next ? logPlanned(tables, next.key, clk) : { store: tables };
+      tables = r.store;
+      text = "name" in r && r.name ? `Logged ${String(r.slot).toLowerCase()}: ${r.name}, ${(r.cal ?? 0).toLocaleString("en-US")} kcal.` : "Nothing planned is left today. Snap or say anything else you eat.";
+      only = ["today"];
+    } else if (a.kind === "fixed") {
+      const r = applyMealFix(tables, a.day, a.meal, a.answers, clk);
+      tables = r.store;
+      text = r.text;
+      only = ["today"];
+    }
+    const sl = mealScreenLines(tables, clk, drawnShape(agent.profile), only);
+    await say(`${text}\n\`\`\`yui\n${[...extra, ...sl.lines].join("\n")}\n\`\`\``, { ...turn, native: { mealtool: a.kind } });
+    agent.profile = { ...agent.profile, mealScreens: sl.shape };
+    await store.updateAgent(agent.id, agent.profile);
+    log(`${p.name}: ${a.kind}, ${sl.lines.some((l) => /^>\d clear$/.test(l)) ? "a page drawn again" : "pages patched"}`);
+  }
+  const ch = diff(start, tables);
+  if (changed(ch)) await store.saveTables(agent, ch, tables);
+}
+
+const joinWords = (xs: string[]) => (xs.length < 2 ? xs.join("") : `${xs.slice(0, -1).join(", ")} and ${xs[xs.length - 1]}`);
 
 /** Arnold's tools, answered from his tables: the runner, the log, a day changed, and the screens patched after. */
 async function workoutTools(store: Store, agent: NativeAgent, asks: WorkoutAsk[], before: string, now: number,
