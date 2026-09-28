@@ -14,7 +14,7 @@ const shortcuts = (home: string) => homeLines(home).filter((l) => l.startsWith("
 
 test("every starter has a home: its shortcuts in chip order and its starter screens (card YUI-168)", () => {
   const want: Record<string, { chips: string[]; pages: string[] }> = {
-    arnold: { chips: ["Start a workout", "My split"], pages: ["2", "3"] },
+    arnold: { chips: ["Start a workout", "My split", "Log a workout", "Progress"], pages: ["2", "3", "4"] },
     basil: { chips: ["Log a meal", "Grocery list"], pages: ["2", "3"] },
     gouda: { chips: ["Jam", "Tune up"], pages: ["2", "3", "4"] },
     penny: { chips: ["Add a to-do", "Plan my week"], pages: ["2", "3"] },
@@ -81,7 +81,7 @@ test("a new agent's thread opens on its home, then its hello; the model sees its
   const arnold = await byHandle("arnold");
   const rows = store.data.rows.filter((r) => r.agent_id === arnold.id);
   assert.deepEqual(rows.map((r) => r.meta?.native), ["home", "first"]);
-  assert.match(rows[0].body, /^```yui\nmenu shortcut@split "My split" show="this week"/);
+  assert.match(rows[0].body, /^```yui\nmenu shortcut@progress "Progress" show="progress"\n[\s\S]*menu shortcut@split "My split" show="this week"/);
   assert.ok(arnold.profile.home_at, "written once");
 
   store.say(arnold.id, "I did legs today", "text");
@@ -111,7 +111,7 @@ test("Arnold's kickoff builds a split: days, which days, how to split them (or h
   assert.match(screen[5], /^choose "Any injuries or conditions\?"/);
   assert.equal(screen[6], "end");
   assert.match(a.soul, /plan "Your days"/, "his own split: a choose per day");
-  assert.match(a.soul, /list@days/, "and This week is drawn from it");
+  assert.match(a.soul, /~days "Mon Push" "Wed Pull"/, "and This week is patched from it");
 });
 
 test("Yui's crew cards open an agent, they are not hand-offs (YUI-144)", () => {

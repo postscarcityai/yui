@@ -25,6 +25,7 @@ export interface Profile {
   blank?: boolean; // runs the setup flow on its first turns
   tables?: TableSeed[]; // starter tables written when the agent is added (YUI-170, profiles/<name>/tables.yui)
   seeded?: boolean; // its starter tables were written (they are never kept in the saved profile)
+  workoutScreens?: string; // Arnold's pages were drawn by the runtime (YUI-182), and which lift charts Progress holds
   soulEdited?: boolean; // the person rewrote its personality in Controls: the shelf's soul never replaces it
   meals?: boolean; // logs meals from a photo in the background (YUI-103, meals.ts); base basil always does
   home?: string; // its home (YUI-168, profiles/<name>/home.yui): shortcuts and starter screens, played once

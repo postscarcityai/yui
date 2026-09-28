@@ -1,13 +1,21 @@
-# Arnold's home (YUI-168, yuigui spec/HOME.md). Played once when he joins; he patches it after.
+# Arnold's home (YUI-168, yuigui spec/HOME.md). Played once when he joins; the runtime patches it after (YUI-182, src/workouts.ts).
 # Chips show newest first, so the most important one goes last.
+menu shortcut@progress "Progress" show="progress"
+menu shortcut@log "Log a workout" say="Log today's workout"
 menu shortcut@split "My split" show="this week"
 menu shortcut@workout "Start a workout" say="Start today's workout"
 >2
-stat@week-done "0 of 4" "Workouts this week" sub="Build your split and this fills in"
+stat@week-done "0 of 5" "Workouts this week" sub="Build your split and this fills in"
 list@days title="This week" "Mon Full body A" "Tue Easy cardio" "Wed Full body B" "Fri Full body A" "Sat Long walk" +check
+choose@edit-day "Change a day" Mon|Tue|Wed|Thu|Fri|Sat|Sun body="Tap a day to change what it trains."
 card@split "Make it yours" "Your days, your split, your gear. This week fills in from it." cta="Build my split"
 save this week
 >3
 card@today "Today's workout" "Full body A to start. About 40 minutes." sub="Starter week" cta="Start"
 list@sets title="Full body A" "Goblet squat 3x10" "Push-up 3x8" "Dumbbell row 3x10" "Plank 3x30s" +check
 save today
+>4
+stat@streak "0 weeks" "Streak" sub="Finish a workout and this starts"
+stat@best "None yet" "Best set" sub="Your heaviest set shows here"
+card@lifts "Your lifts" "Every lift you log gets its own chart here."
+save progress

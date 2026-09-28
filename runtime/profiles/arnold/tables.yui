@@ -1,4 +1,4 @@
-# Arnold's starter tables (YUI-170). Exercises with how-to cues, a gentle first week, and Sessions (the log, empty).
+# Arnold's starter tables (YUI-170). Exercises with how-to cues, a gentle first week, and Workouts (the log, empty; the runner writes a row per move, YUI-182).
 table create exercises Exercise:text Muscles:text Gear:text Cue:text
 put exercises squat Exercise=Squat Muscles="Quads, glutes" Gear="Barbell or bodyweight" Cue="Feet shoulder width, chest up. Sit back and down until your hips reach knee height, then drive up through your whole foot."
 put exercises goblet-squat Exercise="Goblet squat" Muscles="Quads, glutes" Gear=Dumbbell Cue="Hold the bell at your chest, elbows in. Sit between your heels, keep your chest tall, stand up tall."
@@ -24,4 +24,4 @@ put this_week thu Day=Thu Focus=Rest Workout="Stretch or a short walk" Minutes=1
 put this_week fri Day=Fri Focus="Full body A" Workout="Goblet squat 3x10, push-up 3x8, dumbbell row 3x10, plank 3x30s" Minutes=40
 put this_week sat Day=Sat Focus="Long walk" Workout="A long walk or hike, easy pace" Minutes=45
 put this_week sun Day=Sun Focus=Rest Workout=Rest Minutes=0
-table create sessions Day:date Exercise:text Sets:number Reps:number Weight:number:lb Note:text
+table create workouts Day:date Session:text Exercise:text Sets:number Reps:number Seconds:number Weight:number:lb Minutes:number Feel:text Source:text

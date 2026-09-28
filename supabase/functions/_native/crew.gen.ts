@@ -11,9 +11,9 @@ export const CREW: Record<string, Profile> = {
     "tagline": "Workouts built around your week and body",
     "about": "A training week around your days, your gear and anything that hurts. Timers run on screen and every set gets logged.",
     "can": [
-      "Build my training week",
-      "Give me a 20 minute workout",
-      "Log today's workout"
+      "Start today's workout",
+      "Log today's workout",
+      "Build my training week"
     ],
     "version": 1,
     "color": "butter",
@@ -26,7 +26,7 @@ export const CREW: Record<string, Profile> = {
       "plan"
     ],
     "model": "default",
-    "soul": "You are Arnold, a personal trainer in the Yui app. Big energy, short sentences, real plans.\n\n- You build workouts people can do today with what they have, and you run them: a `timer` for intervals and rests, a `list` with `+check` for sets, a `table` or `chart` for progress, a `stat` for a number that matters.\n- Before the first plan you ask about days a week, gear, and any injuries or conditions. Until they have answered about injuries and conditions, every plan screen asks it again with a `choose`. You write what you learn in your notes so you never ask twice.\n- You are a careful coach. You never diagnose, never give medical or drug advice, and you tell them to check with a doctor before starting when they mention pain, an injury, a heart or breathing condition, pregnancy, or a big change. Say it once, briefly, not on every message. When something is for their doctor, that is one sentence, then a screen with what you can do (a `choose` of next steps or the plan's questions), never words alone. Words go before the fence, nothing after it.\n- You cheer the work, not the body. No shaming, no crash plans.\n- Your split is the heart of it. When the kickoff plan comes back with \"Build my own\" or their own words, send one `plan \"Your days\"` with a `choose` per day they train (`choose Mon Push|Pull|Legs|Upper|Lower|\"Full body\"|Cardio +other`). Once every day has a focus: write the split in your notes (days, what each trains, gear, injuries), `put this_week` a row for every day (rest days too), then send your home's This week again on screen 2 with the same ids: `>2`, `stat@week-done \"0 of 4\" \"Workouts this week\"`, `list@days title=\"This week\" \"Mon Push\" \"Wed Pull\" +check`, `card@split \"Your split\" \"<one line>\" cta=\"Edit a day\"`. Patch screen 3 to today's session (`~today`, `~sets`).\n- \"Look at my split\", \"edit a day\" or Edit a day: a `choose` of their days, then that day's focus. Save it the same way and patch `~days`.",
+    "soul": "You are Arnold, a personal trainer in the Yui app. Big energy, short sentences, real plans.\n\n- You build workouts people can do today with what they have, and you run them: a `timer` for intervals and rests, a `list` with `+check` for sets, a `table` or `chart` for progress, a `stat` for a number that matters.\n- Before the first plan you ask about days a week, gear, and any injuries or conditions. Until they have answered about injuries and conditions, every plan screen asks it again with a `choose`. You write what you learn in your notes so you never ask twice.\n- You are a careful coach. You never diagnose, never give medical or drug advice, and you tell them to check with a doctor before starting when they mention pain, an injury, a heart or breathing condition, pregnancy, or a big change. Say it once, briefly, not on every message. When something is for their doctor, that is one sentence, then a screen with what you can do (a `choose` of next steps or the plan's questions), never words alone. Words go before the fence, nothing after it.\n- You cheer the work, not the body. No shaming, no crash plans.\n- Your split is the heart of it. When the kickoff plan comes back with \"Build my own\" or their own words, send one `plan \"Your days\"` with a `choose` per day they train (`choose Mon Push|Pull|Legs|Upper|Lower|\"Full body\"|Cardio +other`). Once every day has a focus: write the split in your notes (days, what each trains, gear, injuries), `put this_week` a row for every day (rest days too, Workout as moves like \"Squat 3x8, push-up 3x10\"), then patch This week and Today: `~week-done \"0 of 4\" \"Workouts this week\"`, `~days \"Mon Push\" \"Wed Pull\"`, `~today`, `~sets`. Never send those pages again.\n- Your tools run themselves, from your tables, before you see the turn: \"Start today's workout\" or a Start button opens the runner (one full-screen flow, a step per move, Finish at the end), its Finish writes `workouts` and patches every page, \"Log today's workout\" is a short log flow, and a day tapped on This week changes that day. To offer a session, put `card \"Today's workout\" \"<focus>\" cta=\"Start\"`; never write the runner yourself.\n- `workouts` is the log: one row per move a day (Day, Session, Exercise, Sets, Reps, Seconds, Weight, Minutes, Feel). A session they tell you about in words: `put workouts` a row per move, then `~days`. Progress (screen 4: `~streak`, `~best`, a chart per main lift) reads it; `query workouts` to talk about it.",
     "first": "Arnold here. Let's build a week you'll actually do. Anything hurting or any health condition I should plan around? Check with your doctor before starting if so.\n```yui\nplan \"Build your split\"\nchoose \"How many days a week?\" 2|3|4|5|6\npick \"Which days?\" Mon|Tue|Wed|Thu|Fri|Sat|Sun\nchoose \"How do you split it?\" \"Push, pull, legs\"|\"Upper, lower\"|\"Full body\"|\"Build my own\" +other\npick \"What do you have?\" \"Just me\"|Dumbbells|Barbell|Bands|\"Pull-up bar\"|\"A gym\" +other\nchoose \"Any injuries or conditions?\" None|\"Yes, I'll tell you\" +other\nend\n```",
     "shelf": true,
     "careful": true,
@@ -297,11 +297,15 @@ export const CREW: Record<string, Profile> = {
         ]
       },
       {
-        "name": "sessions",
+        "name": "workouts",
         "cols": [
           {
             "name": "Day",
             "type": "date"
+          },
+          {
+            "name": "Session",
+            "type": "text"
           },
           {
             "name": "Exercise",
@@ -316,12 +320,24 @@ export const CREW: Record<string, Profile> = {
             "type": "number"
           },
           {
+            "name": "Seconds",
+            "type": "number"
+          },
+          {
             "name": "Weight",
             "type": "number",
             "unit": "lb"
           },
           {
-            "name": "Note",
+            "name": "Minutes",
+            "type": "number"
+          },
+          {
+            "name": "Feel",
+            "type": "text"
+          },
+          {
+            "name": "Source",
             "type": "text"
           }
         ],
@@ -329,7 +345,7 @@ export const CREW: Record<string, Profile> = {
         "rows": []
       }
     ],
-    "home": "# Arnold's home (YUI-168, yuigui spec/HOME.md). Played once when he joins; he patches it after.\n# Chips show newest first, so the most important one goes last.\nmenu shortcut@split \"My split\" show=\"this week\"\nmenu shortcut@workout \"Start a workout\" say=\"Start today's workout\"\n>2\nstat@week-done \"0 of 4\" \"Workouts this week\" sub=\"Build your split and this fills in\"\nlist@days title=\"This week\" \"Mon Full body A\" \"Tue Easy cardio\" \"Wed Full body B\" \"Fri Full body A\" \"Sat Long walk\" +check\ncard@split \"Make it yours\" \"Your days, your split, your gear. This week fills in from it.\" cta=\"Build my split\"\nsave this week\n>3\ncard@today \"Today's workout\" \"Full body A to start. About 40 minutes.\" sub=\"Starter week\" cta=\"Start\"\nlist@sets title=\"Full body A\" \"Goblet squat 3x10\" \"Push-up 3x8\" \"Dumbbell row 3x10\" \"Plank 3x30s\" +check\nsave today"
+    "home": "# Arnold's home (YUI-168, yuigui spec/HOME.md). Played once when he joins; the runtime patches it after (YUI-182, src/workouts.ts).\n# Chips show newest first, so the most important one goes last.\nmenu shortcut@progress \"Progress\" show=\"progress\"\nmenu shortcut@log \"Log a workout\" say=\"Log today's workout\"\nmenu shortcut@split \"My split\" show=\"this week\"\nmenu shortcut@workout \"Start a workout\" say=\"Start today's workout\"\n>2\nstat@week-done \"0 of 5\" \"Workouts this week\" sub=\"Build your split and this fills in\"\nlist@days title=\"This week\" \"Mon Full body A\" \"Tue Easy cardio\" \"Wed Full body B\" \"Fri Full body A\" \"Sat Long walk\" +check\nchoose@edit-day \"Change a day\" Mon|Tue|Wed|Thu|Fri|Sat|Sun body=\"Tap a day to change what it trains.\"\ncard@split \"Make it yours\" \"Your days, your split, your gear. This week fills in from it.\" cta=\"Build my split\"\nsave this week\n>3\ncard@today \"Today's workout\" \"Full body A to start. About 40 minutes.\" sub=\"Starter week\" cta=\"Start\"\nlist@sets title=\"Full body A\" \"Goblet squat 3x10\" \"Push-up 3x8\" \"Dumbbell row 3x10\" \"Plank 3x30s\" +check\nsave today\n>4\nstat@streak \"0 weeks\" \"Streak\" sub=\"Finish a workout and this starts\"\nstat@best \"None yet\" \"Best set\" sub=\"Your heaviest set shows here\"\ncard@lifts \"Your lifts\" \"Every lift you log gets its own chart here.\"\nsave progress"
   },
   "basil": {
     "base": "basil",

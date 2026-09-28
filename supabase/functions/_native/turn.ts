@@ -22,6 +22,8 @@ import { crew } from "./profiles.ts";
 import { type Clock, type TableStore, applyHeld, applyTables, asText, changed, clock, diff, draw, emptyStore, fromSeeds, readQueries,
          tablesPrompt } from "./tables.ts";
 import type { NativeAgent, OwnKey, Row, ScheduleItem } from "./types.ts";
+import { applyDay, applyLogged, applyRunner, editDayBody, logBody, loggedLine, progressShape, screenLines, session, splitDays, startReply,
+         trains, workoutAsks, type Session, type WorkoutAsk } from "./workouts.ts";
 import { ACK, type MealFix, applyFix, fixTaps, logsMeals, mealTurn, runMealJob, spoken } from "./meals.ts";
 import { card as handoffCard, cards as handoffCards, handedIn, handlesIn, oneThread, threadOf, withCard } from "./handoff.ts";
 
@@ -187,6 +189,18 @@ async function oneTurn(store: Store, agent: NativeAgent, rows: Row[], opts: Turn
       if (real.length) await store.markHandled(real);
       log(`${p.name}: meal queued (${job})`);
       return { handled: true };
+    }
+  }
+
+  // Arnold's tools (YUI-182): Start, the runner's Send, the log and a changed day are answered here, with no model turn.
+  if (trains(agent)) {
+    const { asks, rest } = workoutAsks(rows);
+    if (asks.length) {
+      await workoutTools(store, agent, asks, rows[0].created_at, now, say, log);
+      const done = asks.map((a) => a.row.id).filter((id) => !id.startsWith(SYNTHETIC));
+      if (done.length) await store.markHandled(done);
+      if (!rest.length) return { handled: true };
+      return oneTurn(store, agent, rest, opts, log, result, depth);
     }
   }
 
@@ -441,6 +455,77 @@ async function mealFixes(store: Store, agent: NativeAgent, taps: { row: Row; id:
     await say(done.body, { ...(t.row.id.startsWith(SYNTHETIC) ? {} : { turn: [t.row.id] }), native: { mealfixed: t.id } });
     log(`${agent.profile.name}: meal ${t.id} fixed: ${t.choice}`);
   }
+}
+
+/** Arnold's tools, answered from his tables: the runner, the log, a day changed, and the screens patched after. */
+async function workoutTools(store: Store, agent: NativeAgent, asks: WorkoutAsk[], before: string, now: number,
+                            say: (body: string, meta: Record<string, unknown>) => Promise<string>, log: (m: string) => void): Promise<void> {
+  const p = agent.profile;
+  const clk = clock(now, validZone(await store.timezone(agent.userId)));
+  const start = await seedOnce(store, agent, await store.tables(agent.id), log);
+  let tables = start;
+  let history: Row[] | null = null;
+  for (const a of asks) {
+    const turn = a.row.id.startsWith(SYNTHETIC) ? {} : { turn: [a.row.id] };
+    if (a.kind === "start") {
+      const r = startReply(tables, clk, a.from);
+      await say(r.body, { ...turn, native: r.session ? { workout: r.session } : { workout: null } });
+      log(`${p.name}: ${r.session ? `runner for ${r.session.focus}` : "no session to run today"}`);
+      continue;
+    }
+    if (a.kind === "rest") {
+      await say("Rest it is. See you next session.", turn);
+      continue;
+    }
+    if (a.kind === "log") {
+      await say(logBody(tables, clk), turn);
+      continue;
+    }
+    if (a.kind === "edit") {
+      await say(editDayBody(tables, a.day), turn);
+      continue;
+    }
+    let text: string;
+    if (a.kind === "runner") {
+      history ??= await store.history(agent.id, before, HISTORY_ROWS);
+      let s: Session | undefined = [...history].reverse().find((h) => h.sender === "agent" && h.meta?.native?.workout?.id === a.id)?.meta.native.workout;
+      if (!s) {
+        // Not in the thread any more: the same session again from the id (wk-<yyyymmdd>-<day>).
+        const d = splitDays(tables).find((x) => x.key === a.id.slice(-3));
+        const ymd = a.id.slice(3, 11);
+        if (d) s = session(tables, d, `${ymd.slice(0, 4)}-${ymd.slice(4, 6)}-${ymd.slice(6, 8)}`);
+      }
+      if (!s) {
+        await say("That workout isn't on your split any more. Tell me what you did and I'll log it.", turn);
+        continue;
+      }
+      const r = applyRunner(tables, s, a.answers, clk);
+      tables = r.store;
+      text = loggedLine(s.focus, r.items);
+      if (r.feel === "Hard") text += " Felt hard? Next time we keep the weight and own the reps.";
+      else if (r.feel === "Easy") text += " Felt easy? Add 5 lb next time.";
+    } else if (a.kind === "logged") {
+      const r = applyLogged(tables, a.answers, clk);
+      tables = r.store;
+      text = loggedLine(r.name, r.items);
+    } else {
+      const r = applyDay(tables, a.day, a.answers, clk);
+      tables = r.store;
+      const name = ({ mon: "Monday", tue: "Tuesday", wed: "Wednesday", thu: "Thursday", fri: "Friday", sat: "Saturday", sun: "Sunday" } as Record<string, string>)[a.day];
+      text = r.known ? `${name} is ${r.focus} now.` : `${name} is ${r.focus} now. Tell me what goes in it and I'll fill it in.`;
+    }
+    // The pages stay current with patches; the first time (or a new lift's chart) they are drawn again.
+    const shape = progressShape(tables);
+    const first = !p.workoutScreens;
+    const lines = screenLines(tables, clk, { week: first, progress: first || p.workoutScreens !== shape });
+    await say(`${text}\n\`\`\`yui\n${lines.join("\n")}\n\`\`\``, { ...turn, native: { workoutlog: a.kind } });
+    agent.profile = { ...agent.profile, workoutScreens: shape };
+    p.workoutScreens = shape;
+    await store.updateAgent(agent.id, agent.profile);
+    log(`${p.name}: ${a.kind} logged, screens ${first ? "drawn" : "patched"}`);
+  }
+  const ch = diff(start, tables);
+  if (changed(ch)) await store.saveTables(agent, ch, tables);
 }
 
 async function applySchedules(store: Store, agent: NativeAgent, lines: string[], current: ScheduleItem[], tz: string, now: number,

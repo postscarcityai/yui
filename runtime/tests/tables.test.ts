@@ -87,7 +87,7 @@ test("seeds: every starter ships its tables; blank ships none; seeds use no date
   const names = (b: string) => (c[b].tables ?? []).map((t) => t.name);
   assert.deepEqual(names("yui"), ["todos", "groceries", "notes"]);
   assert.deepEqual(names("basil"), ["foods", "meals"]);
-  assert.deepEqual(names("arnold"), ["exercises", "this_week", "sessions"]);
+  assert.deepEqual(names("arnold"), ["exercises", "this_week", "workouts"]);
   assert.deepEqual(names("penny"), ["tasks", "errands", "bills"]);
   assert.deepEqual(names("quill"), ["decks", "review"]);
   assert.deepEqual(names("gouda"), ["loops", "songs"]);
@@ -184,10 +184,10 @@ test("log today's bench: Arnold's session lands with today's date in the person'
   const { store, byHandle } = await freshYui();
   const arnold = await byHandle("arnold");
   store.data.timezones = { [USER]: "Pacific/Kiritimati" }; // UTC+14: never UTC's date late in the UTC day
-  const m = fakeModel(() => "Logged.\n```yui\nput sessions Day=today Exercise=\"Bench press\" Sets=3 Reps=8 Weight=135\nquery sessions where=Exercise~bench sort=-Day limit=5\n```");
+  const m = fakeModel(() => "Logged.\n```yui\nput workouts Day=today Exercise=\"Bench press\" Sets=3 Reps=8 Weight=135\nquery workouts where=Exercise~bench sort=-Day limit=5\n```");
   store.say(arnold.id, "log today's bench: 3x8 at 135");
   await runAgent(store, arnold.id, { provider, fetch: m.fetch });
-  const s = (await store.tables(arnold.id)).tables.sessions;
+  const s = (await store.tables(arnold.id)).tables.workouts;
   assert.equal(s.rows.r1.Day, clock(Date.now(), "Pacific/Kiritimati").today);
 });
 
@@ -242,11 +242,11 @@ test("table words outside a yui block still land, and never reach the phone as t
 test("a write with words but no screen gets the table under the words", async () => {
   const { store, byHandle } = await freshYui();
   const arnold = await byHandle("arnold");
-  const m = fakeModel(() => "```\nput sessions Day=2026-09-27 Exercise=\"Bench press\" Sets=3 Reps=8 Weight=135\n```\nBench logged. 3x8 at 135.");
+  const m = fakeModel(() => "```\nput workouts Day=2026-09-27 Exercise=\"Bench press\" Sets=3 Reps=8 Weight=135\n```\nBench logged. 3x8 at 135.");
   store.say(arnold.id, "log today's bench");
   await runAgent(store, arnold.id, { provider, fetch: m.fetch });
   const reply = store.data.rows.filter((r) => r.agent_id === arnold.id && r.sender === "agent").pop()!;
-  assert.equal(reply.body, 'Bench logged. 3x8 at 135.\n```yui\ntable name="Sessions" Day|Exercise|Sets|Reps|Weight|Note "2026-09-27|Bench press|3|8|135|" units=||||lb|\n```');
+  assert.equal(reply.body, 'Bench logged. 3x8 at 135.\n```yui\ntable name="Workouts" Day|Session|Exercise|Sets|Reps|Seconds|Weight|Minutes|Feel|Source "2026-09-27||Bench press|3|8||135|||" units=||||||lb|||\n```');
 });
 
 test("a held delete never reads as done", () => {
