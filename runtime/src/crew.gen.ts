@@ -28,7 +28,300 @@ export const CREW: Record<string, Profile> = {
     "soul": "You are Arnold, a personal trainer in the Yui app. Big energy, short sentences, real plans.\n\n- You build workouts people can do today with what they have, and you run them: a `timer` for intervals and rests, a `list` with `+check` for sets, a `table` or `chart` for progress, a `stat` for a number that matters.\n- Before the first plan you ask about days a week, gear, and any injuries or conditions. Until they have answered about injuries and conditions, every plan screen asks it again with a `choose`. You write what you learn in your notes so you never ask twice.\n- You are a careful coach. You never diagnose, never give medical or drug advice, and you tell them to check with a doctor before starting when they mention pain, an injury, a heart or breathing condition, pregnancy, or a big change. Say it once, briefly, not on every message. When something is for their doctor, that is one sentence, then a screen with what you can do (a `choose` of next steps or the plan's questions), never words alone. Words go before the fence, nothing after it.\n- You cheer the work, not the body. No shaming, no crash plans.",
     "first": "Arnold here. Let's build a week you'll actually do. Anything hurting or any health condition I should plan around? Check with your doctor before starting if so.\n```yui\nplan \"Your training week\"\nchoose \"How many days a week?\" 2|3|4|5|6\npick \"What do you have?\" \"Just me\"|Dumbbells|Barbell|Bands|\"Pull-up bar\"|\"A gym\" +other\nchoose \"Any injuries or conditions?\" None|\"Yes, I'll tell you\" +other\nend\n```",
     "shelf": true,
-    "careful": true
+    "careful": true,
+    "tables": [
+      {
+        "name": "exercises",
+        "cols": [
+          {
+            "name": "Exercise",
+            "type": "text"
+          },
+          {
+            "name": "Muscles",
+            "type": "text"
+          },
+          {
+            "name": "Gear",
+            "type": "text"
+          },
+          {
+            "name": "Cue",
+            "type": "text"
+          }
+        ],
+        "next": 1,
+        "rows": [
+          {
+            "key": "squat",
+            "values": {
+              "Exercise": "Squat",
+              "Muscles": "Quads, glutes",
+              "Gear": "Barbell or bodyweight",
+              "Cue": "Feet shoulder width, chest up. Sit back and down until your hips reach knee height, then drive up through your whole foot."
+            }
+          },
+          {
+            "key": "goblet-squat",
+            "values": {
+              "Exercise": "Goblet squat",
+              "Muscles": "Quads, glutes",
+              "Gear": "Dumbbell",
+              "Cue": "Hold the bell at your chest, elbows in. Sit between your heels, keep your chest tall, stand up tall."
+            }
+          },
+          {
+            "key": "push-up",
+            "values": {
+              "Exercise": "Push-up",
+              "Muscles": "Chest, triceps, shoulders",
+              "Gear": "None",
+              "Cue": "Hands under shoulders, body in one line. Lower until your chest is a fist from the floor, then press away."
+            }
+          },
+          {
+            "key": "bench",
+            "values": {
+              "Exercise": "Bench press",
+              "Muscles": "Chest, triceps",
+              "Gear": "Barbell, bench",
+              "Cue": "Shoulder blades pinched, feet planted. Lower to mid chest with elbows at about 45 degrees, press up and slightly back."
+            }
+          },
+          {
+            "key": "deadlift",
+            "values": {
+              "Exercise": "Deadlift",
+              "Muscles": "Hamstrings, glutes, back",
+              "Gear": "Barbell",
+              "Cue": "Bar over mid foot, flat back. Push the floor away and keep the bar against your legs, stand tall, lower the same way."
+            }
+          },
+          {
+            "key": "rdl",
+            "values": {
+              "Exercise": "Romanian deadlift",
+              "Muscles": "Hamstrings, glutes",
+              "Gear": "Barbell or dumbbells",
+              "Cue": "Soft knees, hinge at the hips and slide the weight down your thighs until you feel your hamstrings, then squeeze your glutes to stand."
+            }
+          },
+          {
+            "key": "ohp",
+            "values": {
+              "Exercise": "Overhead press",
+              "Muscles": "Shoulders, triceps",
+              "Gear": "Barbell or dumbbells",
+              "Cue": "Squeeze glutes and brace. Press straight up, move your head back then through, lock out over your midfoot."
+            }
+          },
+          {
+            "key": "row",
+            "values": {
+              "Exercise": "Dumbbell row",
+              "Muscles": "Upper back, lats",
+              "Gear": "Dumbbell, bench",
+              "Cue": "One hand and knee on the bench, flat back. Pull the bell to your hip, pause, lower slow."
+            }
+          },
+          {
+            "key": "pull-up",
+            "values": {
+              "Exercise": "Pull-up",
+              "Muscles": "Lats, biceps",
+              "Gear": "Pull-up bar",
+              "Cue": "Hang with straight arms, pull your chest to the bar, lead with your elbows. A band helps until you can do five."
+            }
+          },
+          {
+            "key": "lat-pulldown",
+            "values": {
+              "Exercise": "Lat pulldown",
+              "Muscles": "Lats, biceps",
+              "Gear": "Cable machine",
+              "Cue": "Chest up, pull the bar to your upper chest, elbows down and back. Control it up."
+            }
+          },
+          {
+            "key": "lunge",
+            "values": {
+              "Exercise": "Reverse lunge",
+              "Muscles": "Quads, glutes",
+              "Gear": "Bodyweight or dumbbells",
+              "Cue": "Step back, drop your back knee toward the floor, front knee over the ankle. Push through the front heel to stand."
+            }
+          },
+          {
+            "key": "step-up",
+            "values": {
+              "Exercise": "Step-up",
+              "Muscles": "Quads, glutes",
+              "Gear": "Box or bench",
+              "Cue": "Whole foot on the box, stand up through that leg without pushing off the back foot, step down slow."
+            }
+          },
+          {
+            "key": "bridge",
+            "values": {
+              "Exercise": "Glute bridge",
+              "Muscles": "Glutes",
+              "Gear": "None",
+              "Cue": "On your back, knees bent. Squeeze your glutes and lift your hips until knees, hips and shoulders line up. Hold a second."
+            }
+          },
+          {
+            "key": "plank",
+            "values": {
+              "Exercise": "Plank",
+              "Muscles": "Core",
+              "Gear": "None",
+              "Cue": "Elbows under shoulders, squeeze glutes and brace like you are about to be poked. Straight line, breathe."
+            }
+          },
+          {
+            "key": "dead-bug",
+            "values": {
+              "Exercise": "Dead bug",
+              "Muscles": "Core",
+              "Gear": "None",
+              "Cue": "On your back, arms up, knees over hips. Lower the opposite arm and leg slowly while your low back stays on the floor."
+            }
+          },
+          {
+            "key": "farmer-carry",
+            "values": {
+              "Exercise": "Farmer carry",
+              "Muscles": "Grip, core, traps",
+              "Gear": "Dumbbells or kettlebells",
+              "Cue": "Heavy weight in each hand, stand tall, shoulders down. Walk with short steps and do not lean."
+            }
+          }
+        ]
+      },
+      {
+        "name": "this_week",
+        "cols": [
+          {
+            "name": "Day",
+            "type": "text"
+          },
+          {
+            "name": "Focus",
+            "type": "text"
+          },
+          {
+            "name": "Workout",
+            "type": "text"
+          },
+          {
+            "name": "Minutes",
+            "type": "number"
+          },
+          {
+            "name": "Done",
+            "type": "bool"
+          }
+        ],
+        "next": 1,
+        "rows": [
+          {
+            "key": "mon",
+            "values": {
+              "Day": "Mon",
+              "Focus": "Full body A",
+              "Workout": "Goblet squat 3x10, push-up 3x8, dumbbell row 3x10, plank 3x30s",
+              "Minutes": 40
+            }
+          },
+          {
+            "key": "tue",
+            "values": {
+              "Day": "Tue",
+              "Focus": "Easy cardio",
+              "Workout": "Brisk walk or easy bike",
+              "Minutes": 30
+            }
+          },
+          {
+            "key": "wed",
+            "values": {
+              "Day": "Wed",
+              "Focus": "Full body B",
+              "Workout": "Romanian deadlift 3x10, overhead press 3x8, reverse lunge 3x8 each, dead bug 3x10",
+              "Minutes": 40
+            }
+          },
+          {
+            "key": "thu",
+            "values": {
+              "Day": "Thu",
+              "Focus": "Rest",
+              "Workout": "Stretch or a short walk",
+              "Minutes": 10
+            }
+          },
+          {
+            "key": "fri",
+            "values": {
+              "Day": "Fri",
+              "Focus": "Full body A",
+              "Workout": "Goblet squat 3x10, push-up 3x8, dumbbell row 3x10, plank 3x30s",
+              "Minutes": 40
+            }
+          },
+          {
+            "key": "sat",
+            "values": {
+              "Day": "Sat",
+              "Focus": "Long walk",
+              "Workout": "A long walk or hike, easy pace",
+              "Minutes": 45
+            }
+          },
+          {
+            "key": "sun",
+            "values": {
+              "Day": "Sun",
+              "Focus": "Rest",
+              "Workout": "Rest",
+              "Minutes": 0
+            }
+          }
+        ]
+      },
+      {
+        "name": "sessions",
+        "cols": [
+          {
+            "name": "Day",
+            "type": "date"
+          },
+          {
+            "name": "Exercise",
+            "type": "text"
+          },
+          {
+            "name": "Sets",
+            "type": "number"
+          },
+          {
+            "name": "Reps",
+            "type": "number"
+          },
+          {
+            "name": "Weight",
+            "type": "number",
+            "unit": "lb"
+          },
+          {
+            "name": "Note",
+            "type": "text"
+          }
+        ],
+        "next": 1,
+        "rows": []
+      }
+    ]
   },
   "basil": {
     "base": "basil",
@@ -57,7 +350,572 @@ export const CREW: Record<string, Profile> = {
     "first": "I'm Basil. Tell me what you're after and anything you can't eat, and I'll keep it in mind every time. On medication or managing a condition? Check with your doctor before big changes.\n```yui\nplan \"Eating well\"\nchoose \"Main goal?\" \"More energy\"|\"Lose a little\"|\"Build muscle\"|\"Eat healthier\"|\"Just curious\" +other\npick \"Anything to avoid?\" None|Nuts|Dairy|Gluten|Shellfish|Meat +other\nchoose \"Any condition I should plan around?\" None|\"Yes, I'll tell you\" +other\nend\n```",
     "shelf": true,
     "careful": true,
-    "sees": true
+    "sees": true,
+    "tables": [
+      {
+        "name": "foods",
+        "cols": [
+          {
+            "name": "Food",
+            "type": "text"
+          },
+          {
+            "name": "Portion",
+            "type": "text"
+          },
+          {
+            "name": "Cal",
+            "type": "number",
+            "unit": "kcal"
+          },
+          {
+            "name": "Protein",
+            "type": "number",
+            "unit": "g"
+          },
+          {
+            "name": "Carbs",
+            "type": "number",
+            "unit": "g"
+          },
+          {
+            "name": "Fat",
+            "type": "number",
+            "unit": "g"
+          }
+        ],
+        "next": 1,
+        "rows": [
+          {
+            "key": "egg",
+            "values": {
+              "Food": "Egg",
+              "Portion": "1 large",
+              "Cal": 72,
+              "Protein": 6.3,
+              "Carbs": 0.4,
+              "Fat": 4.8
+            }
+          },
+          {
+            "key": "egg-white",
+            "values": {
+              "Food": "Egg white",
+              "Portion": "1 large",
+              "Cal": 17,
+              "Protein": 3.6,
+              "Carbs": 0.2,
+              "Fat": 0.1
+            }
+          },
+          {
+            "key": "chicken-breast",
+            "values": {
+              "Food": "Chicken breast, cooked",
+              "Portion": "100 g",
+              "Cal": 165,
+              "Protein": 31,
+              "Carbs": 0,
+              "Fat": 3.6
+            }
+          },
+          {
+            "key": "salmon",
+            "values": {
+              "Food": "Salmon, cooked",
+              "Portion": "100 g",
+              "Cal": 206,
+              "Protein": 22,
+              "Carbs": 0,
+              "Fat": 12
+            }
+          },
+          {
+            "key": "beef-90",
+            "values": {
+              "Food": "Ground beef 90% lean, cooked",
+              "Portion": "100 g",
+              "Cal": 217,
+              "Protein": 26,
+              "Carbs": 0,
+              "Fat": 12
+            }
+          },
+          {
+            "key": "tuna",
+            "values": {
+              "Food": "Tuna in water",
+              "Portion": "100 g",
+              "Cal": 116,
+              "Protein": 26,
+              "Carbs": 0,
+              "Fat": 1
+            }
+          },
+          {
+            "key": "shrimp",
+            "values": {
+              "Food": "Shrimp, cooked",
+              "Portion": "100 g",
+              "Cal": 99,
+              "Protein": 24,
+              "Carbs": 0.2,
+              "Fat": 0.3
+            }
+          },
+          {
+            "key": "turkey-deli",
+            "values": {
+              "Food": "Turkey, deli sliced",
+              "Portion": "56 g",
+              "Cal": 60,
+              "Protein": 10,
+              "Carbs": 2,
+              "Fat": 1
+            }
+          },
+          {
+            "key": "tofu",
+            "values": {
+              "Food": "Tofu, firm",
+              "Portion": "100 g",
+              "Cal": 144,
+              "Protein": 16,
+              "Carbs": 3,
+              "Fat": 9
+            }
+          },
+          {
+            "key": "greek-yogurt",
+            "values": {
+              "Food": "Greek yogurt, plain nonfat",
+              "Portion": "170 g",
+              "Cal": 100,
+              "Protein": 17,
+              "Carbs": 6,
+              "Fat": 0.7
+            }
+          },
+          {
+            "key": "milk-2",
+            "values": {
+              "Food": "Milk 2%",
+              "Portion": "1 cup",
+              "Cal": 122,
+              "Protein": 8,
+              "Carbs": 12,
+              "Fat": 5
+            }
+          },
+          {
+            "key": "cheddar",
+            "values": {
+              "Food": "Cheddar cheese",
+              "Portion": "28 g",
+              "Cal": 114,
+              "Protein": 7,
+              "Carbs": 0.4,
+              "Fat": 9.4
+            }
+          },
+          {
+            "key": "cottage-cheese",
+            "values": {
+              "Food": "Cottage cheese 2%",
+              "Portion": "1/2 cup",
+              "Cal": 92,
+              "Protein": 12,
+              "Carbs": 5,
+              "Fat": 2.5
+            }
+          },
+          {
+            "key": "whey",
+            "values": {
+              "Food": "Whey protein",
+              "Portion": "1 scoop",
+              "Cal": 120,
+              "Protein": 24,
+              "Carbs": 3,
+              "Fat": 1.5
+            }
+          },
+          {
+            "key": "butter",
+            "values": {
+              "Food": "Butter",
+              "Portion": "1 tbsp",
+              "Cal": 102,
+              "Protein": 0.1,
+              "Carbs": 0,
+              "Fat": 11.5
+            }
+          },
+          {
+            "key": "olive-oil",
+            "values": {
+              "Food": "Olive oil",
+              "Portion": "1 tbsp",
+              "Cal": 119,
+              "Protein": 0,
+              "Carbs": 0,
+              "Fat": 13.5
+            }
+          },
+          {
+            "key": "peanut-butter",
+            "values": {
+              "Food": "Peanut butter",
+              "Portion": "2 tbsp",
+              "Cal": 190,
+              "Protein": 7,
+              "Carbs": 8,
+              "Fat": 16
+            }
+          },
+          {
+            "key": "almonds",
+            "values": {
+              "Food": "Almonds",
+              "Portion": "28 g",
+              "Cal": 164,
+              "Protein": 6,
+              "Carbs": 6,
+              "Fat": 14
+            }
+          },
+          {
+            "key": "avocado",
+            "values": {
+              "Food": "Avocado",
+              "Portion": "1/2 medium",
+              "Cal": 120,
+              "Protein": 1.5,
+              "Carbs": 6,
+              "Fat": 11
+            }
+          },
+          {
+            "key": "hummus",
+            "values": {
+              "Food": "Hummus",
+              "Portion": "2 tbsp",
+              "Cal": 70,
+              "Protein": 2,
+              "Carbs": 4,
+              "Fat": 5
+            }
+          },
+          {
+            "key": "oats",
+            "values": {
+              "Food": "Oats, dry",
+              "Portion": "1/2 cup",
+              "Cal": 150,
+              "Protein": 5,
+              "Carbs": 27,
+              "Fat": 3
+            }
+          },
+          {
+            "key": "white-rice",
+            "values": {
+              "Food": "White rice, cooked",
+              "Portion": "1 cup",
+              "Cal": 205,
+              "Protein": 4.3,
+              "Carbs": 45,
+              "Fat": 0.4
+            }
+          },
+          {
+            "key": "brown-rice",
+            "values": {
+              "Food": "Brown rice, cooked",
+              "Portion": "1 cup",
+              "Cal": 218,
+              "Protein": 4.5,
+              "Carbs": 46,
+              "Fat": 1.6
+            }
+          },
+          {
+            "key": "quinoa",
+            "values": {
+              "Food": "Quinoa, cooked",
+              "Portion": "1 cup",
+              "Cal": 222,
+              "Protein": 8,
+              "Carbs": 39,
+              "Fat": 3.6
+            }
+          },
+          {
+            "key": "pasta",
+            "values": {
+              "Food": "Pasta, cooked",
+              "Portion": "1 cup",
+              "Cal": 220,
+              "Protein": 8,
+              "Carbs": 43,
+              "Fat": 1.3
+            }
+          },
+          {
+            "key": "wheat-bread",
+            "values": {
+              "Food": "Whole wheat bread",
+              "Portion": "1 slice",
+              "Cal": 80,
+              "Protein": 4,
+              "Carbs": 14,
+              "Fat": 1
+            }
+          },
+          {
+            "key": "white-bread",
+            "values": {
+              "Food": "White bread",
+              "Portion": "1 slice",
+              "Cal": 75,
+              "Protein": 2.6,
+              "Carbs": 14,
+              "Fat": 1
+            }
+          },
+          {
+            "key": "tortilla",
+            "values": {
+              "Food": "Flour tortilla, 8 inch",
+              "Portion": "1 tortilla",
+              "Cal": 146,
+              "Protein": 4,
+              "Carbs": 25,
+              "Fat": 3.5
+            }
+          },
+          {
+            "key": "potato",
+            "values": {
+              "Food": "Potato, baked",
+              "Portion": "1 medium",
+              "Cal": 161,
+              "Protein": 4.3,
+              "Carbs": 37,
+              "Fat": 0.2
+            }
+          },
+          {
+            "key": "sweet-potato",
+            "values": {
+              "Food": "Sweet potato, baked",
+              "Portion": "1 medium",
+              "Cal": 103,
+              "Protein": 2.3,
+              "Carbs": 24,
+              "Fat": 0.2
+            }
+          },
+          {
+            "key": "black-beans",
+            "values": {
+              "Food": "Black beans, cooked",
+              "Portion": "1/2 cup",
+              "Cal": 114,
+              "Protein": 7.6,
+              "Carbs": 20,
+              "Fat": 0.5
+            }
+          },
+          {
+            "key": "chickpeas",
+            "values": {
+              "Food": "Chickpeas, cooked",
+              "Portion": "1/2 cup",
+              "Cal": 134,
+              "Protein": 7.3,
+              "Carbs": 22.5,
+              "Fat": 2.1
+            }
+          },
+          {
+            "key": "lentils",
+            "values": {
+              "Food": "Lentils, cooked",
+              "Portion": "1/2 cup",
+              "Cal": 115,
+              "Protein": 9,
+              "Carbs": 20,
+              "Fat": 0.4
+            }
+          },
+          {
+            "key": "broccoli",
+            "values": {
+              "Food": "Broccoli, cooked",
+              "Portion": "1 cup",
+              "Cal": 55,
+              "Protein": 3.7,
+              "Carbs": 11,
+              "Fat": 0.6
+            }
+          },
+          {
+            "key": "spinach",
+            "values": {
+              "Food": "Spinach, raw",
+              "Portion": "2 cups",
+              "Cal": 14,
+              "Protein": 1.7,
+              "Carbs": 2.2,
+              "Fat": 0.2
+            }
+          },
+          {
+            "key": "carrot",
+            "values": {
+              "Food": "Carrot",
+              "Portion": "1 medium",
+              "Cal": 25,
+              "Protein": 0.6,
+              "Carbs": 6,
+              "Fat": 0.1
+            }
+          },
+          {
+            "key": "banana",
+            "values": {
+              "Food": "Banana",
+              "Portion": "1 medium",
+              "Cal": 105,
+              "Protein": 1.3,
+              "Carbs": 27,
+              "Fat": 0.4
+            }
+          },
+          {
+            "key": "apple",
+            "values": {
+              "Food": "Apple",
+              "Portion": "1 medium",
+              "Cal": 95,
+              "Protein": 0.5,
+              "Carbs": 25,
+              "Fat": 0.3
+            }
+          },
+          {
+            "key": "orange",
+            "values": {
+              "Food": "Orange",
+              "Portion": "1 medium",
+              "Cal": 62,
+              "Protein": 1.2,
+              "Carbs": 15,
+              "Fat": 0.2
+            }
+          },
+          {
+            "key": "blueberries",
+            "values": {
+              "Food": "Blueberries",
+              "Portion": "1 cup",
+              "Cal": 84,
+              "Protein": 1.1,
+              "Carbs": 21,
+              "Fat": 0.5
+            }
+          },
+          {
+            "key": "strawberries",
+            "values": {
+              "Food": "Strawberries",
+              "Portion": "1 cup",
+              "Cal": 49,
+              "Protein": 1,
+              "Carbs": 12,
+              "Fat": 0.5
+            }
+          },
+          {
+            "key": "orange-juice",
+            "values": {
+              "Food": "Orange juice",
+              "Portion": "1 cup",
+              "Cal": 112,
+              "Protein": 1.7,
+              "Carbs": 26,
+              "Fat": 0.5
+            }
+          },
+          {
+            "key": "dark-chocolate",
+            "values": {
+              "Food": "Dark chocolate 70-85%",
+              "Portion": "28 g",
+              "Cal": 170,
+              "Protein": 2.2,
+              "Carbs": 13,
+              "Fat": 12
+            }
+          },
+          {
+            "key": "pizza",
+            "values": {
+              "Food": "Cheese pizza, 14 inch",
+              "Portion": "1 slice",
+              "Cal": 285,
+              "Protein": 12,
+              "Carbs": 36,
+              "Fat": 10
+            }
+          }
+        ]
+      },
+      {
+        "name": "meals",
+        "cols": [
+          {
+            "name": "Day",
+            "type": "date"
+          },
+          {
+            "name": "Meal",
+            "type": "text"
+          },
+          {
+            "name": "Food",
+            "type": "text"
+          },
+          {
+            "name": "Portion",
+            "type": "text"
+          },
+          {
+            "name": "Cal",
+            "type": "number",
+            "unit": "kcal"
+          },
+          {
+            "name": "Protein",
+            "type": "number",
+            "unit": "g"
+          },
+          {
+            "name": "Carbs",
+            "type": "number",
+            "unit": "g"
+          },
+          {
+            "name": "Fat",
+            "type": "number",
+            "unit": "g"
+          }
+        ],
+        "next": 1,
+        "rows": []
+      }
+    ]
   },
   "blank": {
     "base": "blank",
@@ -110,7 +968,155 @@ export const CREW: Record<string, Profile> = {
     "model": "default",
     "soul": "You are Gouda, a musician in the Yui app. Easygoing, playful, a little nerdy about sound.\n\n- Music gets an instrument, not advice. Make beats with a `loop` and `drums`, teach with `keys` and `chords`, keep time with `metronome`, tune with `tuner`. Patch what is playing instead of starting over.\n- You do four jobs: make beats with them, teach theory (scales, chords, ear training, a short quiz), write songs (lyrics, structure, a playable progression), and coach practice (a plan, a tempo, a streak).\n- Keep what they play, their level and their taste in your notes: instruments, genres, what they are working on.\n- You never claim a song or a riff you know is someone else's as new.",
     "first": "Gouda here. Let's make some noise. Here's a beat to start; tell me what you play and I'll build from there.\n```yui\nloop 92 \"Lazy Sunday\" p=x...x...|..x...x.|........|x.x.x.x.\nchoose \"What are we doing?\" \"Make a beat\"|\"Learn theory\"|\"Write a song\"|\"Practice plan\" +other\n```",
-    "shelf": true
+    "shelf": true,
+    "tables": [
+      {
+        "name": "loops",
+        "cols": [
+          {
+            "name": "Name",
+            "type": "text"
+          },
+          {
+            "name": "Bpm",
+            "type": "number"
+          },
+          {
+            "name": "Scale",
+            "type": "text"
+          },
+          {
+            "name": "Style",
+            "type": "text"
+          },
+          {
+            "name": "Pattern",
+            "type": "text"
+          }
+        ],
+        "next": 1,
+        "rows": [
+          {
+            "key": "lazy-sunday",
+            "values": {
+              "Name": "Lazy Sunday",
+              "Bpm": 92,
+              "Scale": "C minor",
+              "Style": "Lo-fi",
+              "Pattern": "x...x...|..x...x.|........|x.x.x.x."
+            }
+          },
+          {
+            "key": "boom-bap",
+            "values": {
+              "Name": "Boom bap",
+              "Bpm": 90,
+              "Scale": "A minor",
+              "Style": "Hip hop",
+              "Pattern": "x...x.x.|..x...x.|........|xxxxxxxx"
+            }
+          },
+          {
+            "key": "four-floor",
+            "values": {
+              "Name": "Four on the floor",
+              "Bpm": 124,
+              "Scale": "F minor",
+              "Style": "House",
+              "Pattern": "x.x.x.x.|..x...x.|........|.x.x.x.x"
+            }
+          },
+          {
+            "key": "backbeat",
+            "values": {
+              "Name": "Rock backbeat",
+              "Bpm": 110,
+              "Scale": "E",
+              "Style": "Rock",
+              "Pattern": "x...xx..|..x...x.|........|x.x.x.x."
+            }
+          },
+          {
+            "key": "one-drop",
+            "values": {
+              "Name": "One drop",
+              "Bpm": 76,
+              "Scale": "G",
+              "Style": "Reggae",
+              "Pattern": "....x...|....x...|........|x.x.x.x."
+            }
+          }
+        ]
+      },
+      {
+        "name": "songs",
+        "cols": [
+          {
+            "name": "Title",
+            "type": "text"
+          },
+          {
+            "name": "Artist",
+            "type": "text"
+          },
+          {
+            "name": "Scale",
+            "type": "text"
+          },
+          {
+            "name": "Bpm",
+            "type": "number"
+          },
+          {
+            "name": "Status",
+            "type": "text"
+          }
+        ],
+        "next": 1,
+        "rows": [
+          {
+            "key": "stand-by-me",
+            "values": {
+              "Title": "Stand By Me",
+              "Artist": "Ben E. King",
+              "Scale": "A",
+              "Bpm": 118,
+              "Status": "Want to learn"
+            }
+          },
+          {
+            "key": "three-little-birds",
+            "values": {
+              "Title": "Three Little Birds",
+              "Artist": "Bob Marley",
+              "Scale": "A",
+              "Bpm": 74,
+              "Status": "Want to learn"
+            }
+          },
+          {
+            "key": "let-it-be",
+            "values": {
+              "Title": "Let It Be",
+              "Artist": "The Beatles",
+              "Scale": "C",
+              "Bpm": 72,
+              "Status": "Want to learn"
+            }
+          },
+          {
+            "key": "heavens-door",
+            "values": {
+              "Title": "Knockin' on Heaven's Door",
+              "Artist": "Bob Dylan",
+              "Scale": "G",
+              "Bpm": 69,
+              "Status": "Want to learn"
+            }
+          }
+        ]
+      }
+    ]
   },
   "penny": {
     "base": "penny",
@@ -137,7 +1143,138 @@ export const CREW: Record<string, Profile> = {
     "model": "default",
     "soul": "You are Penny, a planner in the Yui app. Organized, cheerful, allergic to clutter.\n\n- You keep lists (`list` with `+check`), plan weeks and projects (`timeline`, `plan`), and turn a messy brain dump into three things to do today.\n- You remember recurring things in your notes: routines, people, deadlines they told you about.\n- You cannot send reminders or messages to anyone yet. When they ask, say so in one line and give them a list or a timer instead.",
     "first": "Penny here. Let's get this week out of your head. What's on it?\n```yui\nform \"This week\" must:voice maybe:voice\n```",
-    "shelf": true
+    "shelf": true,
+    "tables": [
+      {
+        "name": "tasks",
+        "cols": [
+          {
+            "name": "Task",
+            "type": "text"
+          },
+          {
+            "name": "Due",
+            "type": "date"
+          },
+          {
+            "name": "Priority",
+            "type": "text"
+          },
+          {
+            "name": "Done",
+            "type": "bool"
+          }
+        ],
+        "next": 1,
+        "rows": [
+          {
+            "key": "t1",
+            "values": {
+              "Task": "Tell Penny what's on your mind this week",
+              "Priority": "High"
+            }
+          }
+        ]
+      },
+      {
+        "name": "errands",
+        "cols": [
+          {
+            "name": "Errand",
+            "type": "text"
+          },
+          {
+            "name": "Where",
+            "type": "text"
+          },
+          {
+            "name": "Done",
+            "type": "bool"
+          }
+        ],
+        "next": 1,
+        "rows": [
+          {
+            "key": "e1",
+            "values": {
+              "Errand": "Pick up a prescription",
+              "Where": "Pharmacy"
+            }
+          },
+          {
+            "key": "e2",
+            "values": {
+              "Errand": "Drop off returns",
+              "Where": "Post office"
+            }
+          }
+        ]
+      },
+      {
+        "name": "bills",
+        "cols": [
+          {
+            "name": "Bill",
+            "type": "text"
+          },
+          {
+            "name": "Amount",
+            "type": "number",
+            "unit": "$"
+          },
+          {
+            "name": "Due",
+            "type": "number"
+          },
+          {
+            "name": "Autopay",
+            "type": "bool"
+          },
+          {
+            "name": "Paid",
+            "type": "bool"
+          }
+        ],
+        "next": 1,
+        "rows": [
+          {
+            "key": "rent",
+            "values": {
+              "Bill": "Rent",
+              "Due": 1
+            }
+          },
+          {
+            "key": "phone",
+            "values": {
+              "Bill": "Phone",
+              "Due": 15
+            }
+          },
+          {
+            "key": "internet",
+            "values": {
+              "Bill": "Internet",
+              "Due": 20
+            }
+          },
+          {
+            "key": "electric",
+            "values": {
+              "Bill": "Electric",
+              "Due": 25
+            }
+          },
+          {
+            "key": "streaming",
+            "values": {
+              "Bill": "Streaming",
+              "Due": 5
+            }
+          }
+        ]
+      }
+    ]
   },
   "quill": {
     "base": "quill",
@@ -164,7 +1301,141 @@ export const CREW: Record<string, Profile> = {
     "model": "default",
     "soul": "You are Quill, a study buddy in the Yui app. Curious, patient and a little funny.\n\n- You teach with short decks (`deck` and `page`), quiz with `choose ... answer=X`, and work problems step by step with `math`, `step` and `calc`.\n- You check understanding before moving on: one question, then the next thing.\n- You keep what they are studying, their level and what they keep missing in your notes.\n- You help people learn; you do not write their graded work for them to hand in. Saying no is one line, then a screen that gets them writing it themselves (a `choose` for the angle, `step`s for an outline), never words alone.",
     "first": "Quill here. Pick a topic and I'll teach it in five minutes, then quiz you.\n```yui\nchoose \"What are we learning?\" Math|Science|History|Languages|\"Something else\" +other\n```",
-    "shelf": true
+    "shelf": true,
+    "tables": [
+      {
+        "name": "decks",
+        "cols": [
+          {
+            "name": "Deck",
+            "type": "text"
+          },
+          {
+            "name": "Subject",
+            "type": "text"
+          },
+          {
+            "name": "Cards",
+            "type": "number"
+          },
+          {
+            "name": "Last",
+            "type": "date"
+          }
+        ],
+        "next": 1,
+        "rows": [
+          {
+            "key": "capitals",
+            "values": {
+              "Deck": "World capitals",
+              "Subject": "Geography",
+              "Cards": 8
+            }
+          }
+        ]
+      },
+      {
+        "name": "review",
+        "cols": [
+          {
+            "name": "Front",
+            "type": "text"
+          },
+          {
+            "name": "Back",
+            "type": "text"
+          },
+          {
+            "name": "Deck",
+            "type": "text"
+          },
+          {
+            "name": "Box",
+            "type": "number"
+          },
+          {
+            "name": "Due",
+            "type": "date"
+          }
+        ],
+        "next": 1,
+        "rows": [
+          {
+            "key": "c1",
+            "values": {
+              "Front": "Capital of Japan?",
+              "Back": "Tokyo",
+              "Deck": "World capitals",
+              "Box": 1
+            }
+          },
+          {
+            "key": "c2",
+            "values": {
+              "Front": "Capital of Canada?",
+              "Back": "Ottawa",
+              "Deck": "World capitals",
+              "Box": 1
+            }
+          },
+          {
+            "key": "c3",
+            "values": {
+              "Front": "Capital of Australia?",
+              "Back": "Canberra",
+              "Deck": "World capitals",
+              "Box": 1
+            }
+          },
+          {
+            "key": "c4",
+            "values": {
+              "Front": "Capital of Brazil?",
+              "Back": "Brasilia",
+              "Deck": "World capitals",
+              "Box": 1
+            }
+          },
+          {
+            "key": "c5",
+            "values": {
+              "Front": "Capital of Kenya?",
+              "Back": "Nairobi",
+              "Deck": "World capitals",
+              "Box": 1
+            }
+          },
+          {
+            "key": "c6",
+            "values": {
+              "Front": "Capital of Turkey?",
+              "Back": "Ankara",
+              "Deck": "World capitals",
+              "Box": 1
+            }
+          },
+          {
+            "key": "c7",
+            "values": {
+              "Front": "Capital of New Zealand?",
+              "Back": "Wellington",
+              "Deck": "World capitals",
+              "Box": 1
+            }
+          },
+          {
+            "key": "c8",
+            "values": {
+              "Front": "Capital of Egypt?",
+              "Back": "Cairo",
+              "Deck": "World capitals",
+              "Box": 1
+            }
+          }
+        ]
+      }
+    ]
   },
   "yui": {
     "base": "yui",
@@ -190,6 +1461,146 @@ export const CREW: Record<string, Profile> = {
     "model": "default",
     "soul": "You are Yui, the first agent a person meets in the Yui app. You are their helper and their maker.\n\n- Helper: you do real work yourself. Answer questions, plan a week, explain how something works, think a problem through with them. Short answers first, a screen when a screen is better than words.\n- Maker: you know every agent on this person's Yui and you make new ones. When a job belongs to someone on the crew, say who and why in one line and let the person go there (\"Gouda is your musician; tap Gouda and ask for a beat\"). That one line is the whole answer. When nobody fits and they want one, make one.\n- Warm, quick and plain. No filler, no \"Great question\". You never pretend to be another agent.\n- You never ask for a password, a card number or a key.\n\nMaking an agent: ask at most two quick things on one screen (what it is for, how it should talk), then make it with an `agents` block. Offer the shelf first when a shelf agent fits.",
     "first": "Hi, I'm Yui. Your crew is here: Arnold trains, Basil feeds you, Gouda makes music, Penny keeps your lists and Quill helps you study. Or ask me anything.\n```yui\nchoose \"Where do you want to start?\" \"Get fit\"|\"Eat better\"|\"Make music\"|\"Plan my week\"|\"Learn something\" +other\n```",
-    "maker": true
+    "maker": true,
+    "tables": [
+      {
+        "name": "todos",
+        "cols": [
+          {
+            "name": "Task",
+            "type": "text"
+          },
+          {
+            "name": "Due",
+            "type": "date"
+          },
+          {
+            "name": "Done",
+            "type": "bool"
+          }
+        ],
+        "next": 1,
+        "rows": [
+          {
+            "key": "t1",
+            "values": {
+              "Task": "Ask Arnold for a 20 minute workout"
+            }
+          },
+          {
+            "key": "t2",
+            "values": {
+              "Task": "Snap your lunch and send it to Basil"
+            }
+          },
+          {
+            "key": "t3",
+            "values": {
+              "Task": "Tell me one thing to remember about you"
+            }
+          }
+        ]
+      },
+      {
+        "name": "groceries",
+        "cols": [
+          {
+            "name": "Item",
+            "type": "text"
+          },
+          {
+            "name": "Qty",
+            "type": "text"
+          },
+          {
+            "name": "Aisle",
+            "type": "text"
+          },
+          {
+            "name": "Got",
+            "type": "bool"
+          }
+        ],
+        "next": 1,
+        "rows": [
+          {
+            "key": "milk",
+            "values": {
+              "Item": "Milk",
+              "Qty": "1 gallon",
+              "Aisle": "Dairy"
+            }
+          },
+          {
+            "key": "eggs",
+            "values": {
+              "Item": "Eggs",
+              "Qty": "1 dozen",
+              "Aisle": "Dairy"
+            }
+          },
+          {
+            "key": "bread",
+            "values": {
+              "Item": "Bread",
+              "Qty": "1 loaf",
+              "Aisle": "Bakery"
+            }
+          },
+          {
+            "key": "bananas",
+            "values": {
+              "Item": "Bananas",
+              "Qty": "6",
+              "Aisle": "Produce"
+            }
+          },
+          {
+            "key": "spinach",
+            "values": {
+              "Item": "Spinach",
+              "Qty": "1 bag",
+              "Aisle": "Produce"
+            }
+          },
+          {
+            "key": "coffee",
+            "values": {
+              "Item": "Coffee",
+              "Qty": "1 bag",
+              "Aisle": "Pantry"
+            }
+          }
+        ]
+      },
+      {
+        "name": "notes",
+        "cols": [
+          {
+            "name": "Title",
+            "type": "text"
+          },
+          {
+            "name": "Note",
+            "type": "text"
+          },
+          {
+            "name": "Tag",
+            "type": "text"
+          }
+        ],
+        "next": 1,
+        "rows": [
+          {
+            "key": "n1",
+            "values": {
+              "Title": "How your tables work",
+              "Note": "Say add milk to my groceries, what's on my list, or make me a table for my reading list. I keep them here, between chats.",
+              "Tag": "Yui"
+            }
+          }
+        ]
+      }
+    ]
   }
 };

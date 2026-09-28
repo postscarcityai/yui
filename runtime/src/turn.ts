@@ -17,6 +17,9 @@ import { buildTurn, photoPaths, type CrewEntry } from "./prompt.ts";
 import { next, parseLine, validZone } from "./schedule.ts";
 import { Firecrawl, LookupError, searchInvite, sourceCards, type Source } from "./search.ts";
 import type { Store } from "./store.ts";
+import { crew } from "./profiles.ts";
+import { type Clock, type TableStore, applyHeld, applyTables, asText, changed, clock, diff, draw, emptyStore, fromSeeds, readQueries,
+         tablesPrompt } from "./tables.ts";
 import type { NativeAgent, OwnKey, Row, ScheduleItem } from "./types.ts";
 
 export interface Provider {
@@ -173,7 +176,7 @@ async function oneTurn(store: Store, agent: NativeAgent, rows: Row[], opts: Turn
   }
 
   if (last) await store.doing(last, "Thinking");
-  const [history, memory, guide, routes, tzRaw, schedules, mine] = await Promise.all([
+  const [history, memory, guide, routes, tzRaw, schedules, mine, tables0] = await Promise.all([
     store.history(agent.id, rows[0].created_at, opts.historyRows ?? HISTORY_ROWS),
     store.memory(agent.userId, agent.id),
     store.guide(),
@@ -181,8 +184,15 @@ async function oneTurn(store: Store, agent: NativeAgent, rows: Row[], opts: Turn
     store.timezone(agent.userId),
     store.schedules(agent.id),
     store.agents(agent.userId),
+    store.tables(agent.id),
   ]);
   const tz = validZone(tzRaw);
+  const clk = clock(now, tz);
+  // Tables (YUI-170): a starter agent added before tables existed gets its starter tables now, once.
+  let tables = await seedOnce(store, agent, tables0, log);
+  // A Delete or Keep tap on deletes held last turn: done here, and the agent hears what happened.
+  let turnRows = rows;
+  ({ tables, rows: turnRows } = await heldTaps(store, agent, rows, history, tables, clk, log));
   const crew: CrewEntry[] = mine.map((a) => ({ handle: a.profile.handle, name: a.profile.name, role: a.profile.role }));
 
   // One photo per turn, the newest (spec/NATIVE.md, limits); the model hears how many it missed.
@@ -191,8 +201,9 @@ async function oneTurn(store: Store, agent: NativeAgent, rows: Row[], opts: Turn
   // A turn with a picture goes to the model that sees (spec/NATIVE.md section 6).
   const model = provider.model ?? (images.length ? routes.vision : p.model && p.model !== "default" ? p.model : routes.text);
   const { messages } = buildTurn({
-    guide, agent, memory, crew, history: history.filter((h) => !real.includes(h.id)), turn: rows, images, photosLeftOut: Math.max(photos.length - 1, 0),
+    guide, agent, memory, crew, history: history.filter((h) => !real.includes(h.id)), turn: turnRows, images, photosLeftOut: Math.max(photos.length - 1, 0),
     context: opts.context, reserve: (opts.maxTokens ?? 2000) + (provider.reasoning ?? 0), now, tz: tzRaw ? tz : undefined, schedules,
+    tables: tablesPrompt(tables, clk),
   });
   const room = opts.maxTokens ?? 2000;
   const req: { model: string; messages: any[]; max_tokens: number; reasoning?: Record<string, unknown> } = provider.reasoning
@@ -214,6 +225,13 @@ async function oneTurn(store: Store, agent: NativeAgent, rows: Row[], opts: Turn
       log(`${p.name}: the model couldn't fetch the photo, sending it inline`);
       sent = { ...req, messages: inlined };
       answer = await ask(opts, provider, sent);
+    }
+    // A tables block alone: read the rows, then ask again with them (before any lookup).
+    if (extract(answer.text).tables.length) {
+      const read = await readTables(opts, provider, sent, answer, tables, clk, last, store, log, p.name);
+      answer = read.answer;
+      sent = { ...sent, messages: read.messages };
+      looked.messages = read.messages;
     }
     // A search or fetch block alone: look it up, then ask again with what came back.
     if (hasLookup(answer.text)) {
@@ -261,6 +279,23 @@ async function oneTurn(store: Store, agent: NativeAgent, rows: Row[], opts: Turn
     if (!out.text.trim()) out.text = results.filter((r) => r.ok).map((r) => `Done: ${(r as { did: string }).did}.`).join("\n");
   }
   if (out.schedule.length) notes.push(...await applySchedules(store, agent, out.schedule, schedules, tzRaw ? tz : "UTC", now, log));
+  // Table writes land, deletes wait for a tap, and every query is drawn with real rows.
+  const t = applyTables(out.text, tables, clk, opts.newId ?? uuid);
+  if (t.problems.length) {
+    log(`${p.name}: table writes refused: ${t.problems.join("; ")}`);
+    notes.push(...t.problems.slice(0, 3).map((x) => `a table change didn't fit (${x})`));
+  }
+  const tchange = diff(tables, t.store);
+  if (changed(tchange)) {
+    await store.saveTables(agent, tchange, t.store);
+    log(`${p.name}: tables: ${tchange.rows.length} row(s) written, ${tchange.dropRows.length} gone, ${tchange.tables.length} table(s) made or changed`);
+  }
+  // Only writes and no view: say it's saved and show the table that changed.
+  if (!t.text.trim() && t.wrote && !out.agents.length) {
+    const touched = tchange.rows[tchange.rows.length - 1]?.table ?? tchange.tables[0]?.name;
+    t.text = `Saved.${touched ? `\n\`\`\`yui\n${draw(t.store, { table: touched, limit: 12 }, clk).join("\n")}\n\`\`\`` : ""}`;
+  }
+  out.text = t.text;
   let body = unsprawl(unmark(undeck(unend(unbreak(undash(out.text))))));
   if (notes.length) body += `\n\n(I couldn't do all of that: ${notes.join("; ")}.)`;
   // Sources the answer didn't link, and the invite to add a Firecrawl key when the free lookups ran out.
@@ -275,7 +310,8 @@ async function oneTurn(store: Store, agent: NativeAgent, rows: Row[], opts: Turn
     await say(body.trim(), {
       ...(real.length ? { turn: real } : {}),
       native: { model, ...(answer.usage ? { usage: answer.usage } : {}), ...(budget.left <= 10 ? { left: budget.left } : {}),
-                ...(looked.sources.length ? { sources: looked.sources.slice(0, 8) } : {}), ...(looked.capped ? { search_capped: looked.capped.why } : {}) },
+                ...(looked.sources.length ? { sources: looked.sources.slice(0, 8) } : {}), ...(looked.capped ? { search_capped: looked.capped.why } : {}),
+                ...(t.held ? { held: t.held } : {}) },
       ...(depth === 0 && !real.length && rows[0]?.body.startsWith("[yui] check-in") ? { checkin: true } : {}),
     });
   }
@@ -321,6 +357,75 @@ async function applySchedules(store: Store, agent: NativeAgent, lines: string[],
     else log(`${agent.profile.name}: check-in set for ${new Date(at).toISOString()}`);
   }
   return problems;
+}
+
+/** A starter agent from before tables (no `seeded` in its profile) gets its starter tables once, if it has none. */
+async function seedOnce(store: Store, agent: NativeAgent, tables: TableStore, log: (m: string) => void): Promise<TableStore> {
+  const p = agent.profile;
+  const seeds = p.seeded || p.base === "custom" ? undefined : crew()[p.base]?.tables;
+  if (!seeds?.length) return tables;
+  let out = tables;
+  if (!Object.keys(tables.tables).length) {
+    out = fromSeeds(seeds);
+    await store.saveTables(agent, diff(emptyStore(), out), out);
+    log(`${p.name}: wrote its ${seeds.length} starter table(s)`);
+  }
+  agent.profile = { ...p, seeded: true };
+  await store.updateAgent(agent.id, agent.profile);
+  return out;
+}
+
+const HELD_TAP = /^\[yui\]\s+(del-[A-Za-z0-9]+)\s+choose\b.*?\bchoice=("?)(Delete|Keep)\2/i;
+
+/** Delete or Keep, tapped on deletes an earlier answer held: applied, and the tap's row tells the agent what was done. */
+async function heldTaps(store: Store, agent: NativeAgent, rows: Row[], history: Row[], tables: TableStore, clk: Clock,
+                        log: (m: string) => void): Promise<{ tables: TableStore; rows: Row[] }> {
+  let out = tables;
+  const seen = new Set<string>();
+  const next = [];
+  for (const r of rows) {
+    const m = (r.body ?? "").match(HELD_TAP);
+    if (!m || seen.has(m[1])) {
+      next.push(r);
+      continue;
+    }
+    seen.add(m[1]);
+    const held = [...history].reverse().find((h) => h.sender === "agent" && h.meta?.native?.held?.id === m[1])?.meta.native.held;
+    let note: string;
+    if (!held) note = "[yui] That delete isn't waiting any more; nothing changed.";
+    else if (m[3].toLowerCase() === "keep") note = "[yui] They kept it: nothing was deleted.";
+    else {
+      const done = applyHeld(out, held.lines, clk);
+      const ch = diff(out, done.store);
+      if (changed(ch)) await store.saveTables(agent, ch, done.store);
+      out = done.store;
+      note = `[yui] Deleted, as they asked: ${held.lines.join("; ")}. Say so in a few words and show what is left.`;
+      log(`${agent.profile.name}: held delete ${m[1]} done (${done.done})`);
+    }
+    next.push({ ...r, body: `${r.body}\n${note}` });
+  }
+  return { tables: out, rows: next };
+}
+
+/** Reads the agent's tables for it (a ```tables block alone), then asks again, twice a turn at most. */
+async function readTables(opts: TurnOptions, provider: Provider, req: { messages: any[] } & Record<string, unknown>, first: Completion,
+                          tables: TableStore, clk: Clock, last: string | undefined, store: Store, log: (m: string) => void,
+                          name: string): Promise<{ answer: Completion; messages: any[] }> {
+  let messages = req.messages;
+  let answer = first;
+  for (let n = 0; n < 2; n++) {
+    const x = extract(answer.text);
+    if (!x.tables.length) break;
+    if (last) await store.doing(last, "Checking your tables");
+    const qs = readQueries(x.tables.join("\n"));
+    const found = qs.map((q) => `query ${q.table}${Object.entries(q).filter(([k]) => k !== "table").map(([k, v]) => ` ${k}=${Array.isArray(v) ? v.join("|") : v}`).join("")}\n${asText(tables, q, clk)}`);
+    log(`${name}: read ${qs.length} table quer${qs.length === 1 ? "y" : "ies"}`);
+    const note = qs.length ? `[yui] Your tables:\n\n${found.join("\n\n")}\n\n[yui] Answer the person now: a line, then a screen. A query line in your yui block draws these rows for them.`
+      : "[yui] That tables block had no query lines. Answer the person now.";
+    messages = [...messages, { role: "assistant", content: answer.text }, { role: "user", content: note }];
+    answer = await ask(opts, provider, { ...req, messages });
+  }
+  return { answer, messages };
 }
 
 /**

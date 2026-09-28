@@ -3,8 +3,9 @@
 // bakes every folder into crew.gen.ts, so the edge function needs no files.
 import { COLORS, PRESETS, type Profile } from "./types.ts";
 import { CREW } from "./crew.gen.ts";
+import { parseSeeds } from "./tables.ts";
 
-/** The three files every profile folder holds. */
+/** The three files every profile folder holds. tables.yui (starter tables) is optional. */
 export const PROFILE_FILES = ["profile.json", "soul.md", "first.yui"] as const;
 
 /** One profile folder -> a Profile. read(file) gives a file's text, or null when it is missing. */
@@ -17,7 +18,13 @@ export function loadProfile(base: string, read: (file: string) => string | null)
     else files[f] = text;
   }
   if (missing.length) throw new Error(`${base}: missing ${missing.join(", ")}`);
-  return parseProfile(base, files as { "profile.json": string; "soul.md": string; "first.yui": string });
+  const p = parseProfile(base, files as { "profile.json": string; "soul.md": string; "first.yui": string });
+  const seeds = read("tables.yui");
+  if (seeds != null) {
+    const tables = parseSeeds(base, seeds);
+    if (tables.length) p.tables = tables;
+  }
+  return p;
 }
 
 /** The files of one profile folder -> a Profile. Throws with what is wrong. */

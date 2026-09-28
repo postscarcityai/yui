@@ -1,0 +1,14 @@
+# Yui's starter tables (YUI-170): written when she is added. Lines are Yui Lines (yuigui spec/TABLES.md).
+table create todos Task:text Due:date Done:bool
+put todos t1 Task="Ask Arnold for a 20 minute workout"
+put todos t2 Task="Snap your lunch and send it to Basil"
+put todos t3 Task="Tell me one thing to remember about you"
+table create groceries Item:text Qty:text Aisle:text Got:bool
+put groceries milk Item=Milk Qty="1 gallon" Aisle=Dairy
+put groceries eggs Item=Eggs Qty="1 dozen" Aisle=Dairy
+put groceries bread Item=Bread Qty="1 loaf" Aisle=Bakery
+put groceries bananas Item=Bananas Qty=6 Aisle=Produce
+put groceries spinach Item=Spinach Qty="1 bag" Aisle=Produce
+put groceries coffee Item=Coffee Qty="1 bag" Aisle=Pantry
+table create notes Title:text Note:text Tag:text
+put notes n1 Title="How your tables work" Note="Say add milk to my groceries, what's on my list, or make me a table for my reading list. I keep them here, between chats." Tag=Yui

@@ -2,14 +2,16 @@
 // yuigui spec/CONTROLS.md): the same control rows the Hermes plugin answers
 // (hermes-plugin/yui/controls.py), served from the person's native Yui.
 // Personality (the soul), Memory (the about-you card and the agent's notes),
-// Schedules (check-ins) and Model (read only). No turn, no model call.
+// Schedules (check-ins), Tables (YUI-170: the agent's own tables with their
+// row counts, read and delete) and Model (read only). No turn, no model call.
 import { MODELS } from "./models.ts";
 import type { Store } from "./store.ts";
 import { describe, next, parseLine } from "./schedule.ts";
 import type { MemoryItem, NativeAgent, ScheduleItem } from "./types.ts";
+import { asText, diff, write } from "./tables.ts";
 
 export const V = 1;
-export const SECTIONS: Record<string, string> = { soul: "rw", memory: "rwd", schedules: "rwd", model: "r" };
+export const SECTIONS: Record<string, string> = { soul: "rw", memory: "rwd", schedules: "rwd", tables: "rd", model: "r" };
 /** What provisioning writes to yui_agents.controls, so the app shows the tab. */
 export const REPORT = { v: V, sections: SECTIONS };
 const OPS = ["list", "get", "put", "act", "delete"];
@@ -253,6 +255,35 @@ const schedules: Section = {
   },
 };
 
+// -- tables (read, delete) ----------------------------------------------------------------------
+
+async function tableRow(t: { name: string; cols: { name: string; type: string; unit?: string }[]; order: string[] }) {
+  const n = t.order.length;
+  return { id: t.name, title: t.name.replace(/[_-]+/g, " ").replace(/^./, (c) => c.toUpperCase()), sub: `${n} row${n === 1 ? "" : "s"}`,
+           rows: n, cols: t.cols.map((c) => c.name), rev: await rev({ cols: t.cols, n, last: t.order[n - 1] ?? null }) };
+}
+
+const tables: Section = {
+  async list(ctx) {
+    const s = await ctx.store.tables(ctx.agent.id);
+    return Promise.all(Object.values(s.tables).map(tableRow));
+  },
+  async get(ctx, id) {
+    const s = await ctx.store.tables(ctx.agent.id);
+    const t = s.tables[id];
+    if (!t) throw new Refused("not_found");
+    const row = await tableRow(t);
+    return [row.rev, { ...row, text: asText(s, { table: id, limit: 100 }), read_only: true,
+                       columns: t.cols.map((c) => `${c.name}: ${c.type}${c.unit ? ` (${c.unit})` : ""}`) }];
+  },
+  async delete(ctx, id) {
+    const s = await ctx.store.tables(ctx.agent.id);
+    if (!s.tables[id]) throw new Refused("not_found");
+    const after = write(s, { op: "drop", name: id }).store;
+    await ctx.store.saveTables(ctx.agent, diff(s, after), after);
+  },
+};
+
 // -- model (read only) ------------------------------------------------------------------------
 
 /** The model's name from the eval list (models.ts MODELS), or its id when it isn't there. */
@@ -267,7 +298,7 @@ function modelInfo(ctx: ControlContext) {
            // Which profile it runs, and its version (YUI-145): "Basil" v1.
            profile: p.name, version: p.version ?? 1,
            toolsets: [{ name: "Every Yui screen", on: true }, { name: "Memory", on: true }, { name: "Check-ins", on: true },
-                      { name: ctx.searchKey ? "Web search, your Firecrawl key" : "Web search", on: true }, { name: "Hand-offs", on: true },
+                      { name: ctx.searchKey ? "Web search, your Firecrawl key" : "Web search", on: true }, { name: "Hand-offs", on: true }, { name: "Its own tables", on: true },
                       ...(ctx.agent.profile.maker ? [{ name: "Makes agents", on: true }] : [])] };
 }
 
@@ -283,4 +314,4 @@ const model: Section = {
   },
 };
 
-const sections: Record<string, Section> = { soul, memory, schedules, model };
+const sections: Record<string, Section> = { soul, memory, schedules, tables, model };

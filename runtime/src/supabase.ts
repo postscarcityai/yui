@@ -3,6 +3,7 @@
 // PostgREST and Storage with the service key, so it runs in the edge function
 // and, for a check, from a laptop. Never ship the service key to a client.
 import type { Store } from "./store.ts";
+import { type Cell, type TableChange, type TableStore, emptyStore } from "./tables.ts";
 import { DEFAULT_ROUTES, type MemoryItem, type NativeAgent, type OwnKey, type Profile, type Routes, type Row, type ScheduleItem, type SearchTake } from "./types.ts";
 
 export class SupabaseStore implements Store {
@@ -82,7 +83,8 @@ export class SupabaseStore implements Store {
   }
 
   async updateAgent(agentId: string, profile: Profile) {
-    await this.rest("PATCH", `yui_native_profiles?agent_id=eq.${agentId}`, { profile, updated_at: new Date().toISOString() }, "return=minimal");
+    const { tables: _seeds, ...kept } = profile; // starter tables are rows of their own, never part of the profile
+    await this.rest("PATCH", `yui_native_profiles?agent_id=eq.${agentId}`, { profile: kept, updated_at: new Date().toISOString() }, "return=minimal");
     await this.rest("PATCH", `yui_agents?id=eq.${agentId}&kind=eq.hosted`, { name: profile.name, color: profile.color }, "return=minimal");
   }
 
@@ -225,6 +227,53 @@ export class SupabaseStore implements Store {
                                                kind: "control", body: body.slice(0, 300), meta: { ...meta, for: requestId } }, "return=minimal");
     await this.rest("PATCH", `yui_messages?id=eq.${requestId}`, { delivered_at: new Date().toISOString(), handled_at: new Date().toISOString() },
                     "return=minimal");
+  }
+
+  // Tables (YUI-170): yui_native_tables holds each table's columns, yui_native_table_rows its rows as jsonb.
+  async tables(agentId: string): Promise<TableStore> {
+    const out = emptyStore();
+    const defs = await this.rest("GET", `yui_native_tables?select=name,cols,next&agent_id=eq.${agentId}&order=created_at,name`);
+    if (!defs.length) return out;
+    for (const d of defs) out.tables[d.name] = { name: d.name, cols: d.cols, next: d.next, rows: {}, order: [] };
+    // PostgREST hands back 1000 rows a request at most.
+    for (let from = 0; ; from += 1000) {
+      const rows = await this.rest("GET", `yui_native_table_rows?select=tname,key,vals&agent_id=eq.${agentId}`
+        + `&order=tname,pos,created_at,key&limit=1000&offset=${from}`);
+      for (const r of rows) {
+        const t = out.tables[r.tname];
+        if (!t) continue;
+        t.rows[r.key] = r.vals as Record<string, Cell>;
+        t.order.push(r.key);
+      }
+      if (rows.length < 1000) break;
+    }
+    return out;
+  }
+
+  async saveTables(agent: NativeAgent, ch: TableChange, _after: TableStore) {
+    const a = agent.id, u = agent.userId, now = new Date().toISOString();
+    const enc = encodeURIComponent;
+    for (const name of ch.dropTables) {
+      await this.rest("DELETE", `yui_native_tables?agent_id=eq.${a}&name=eq.${enc(name)}`, undefined, "return=minimal");
+    }
+    if (ch.tables.length) {
+      await this.rest("POST", "yui_native_tables?on_conflict=agent_id,name", ch.tables.map((t) => ({
+        agent_id: a, user_id: u, name: t.name, cols: t.cols, next: t.next, updated_at: now,
+      })), "resolution=merge-duplicates,return=minimal");
+    }
+    for (const r of ch.dropRows) {
+      await this.rest("DELETE", `yui_native_table_rows?agent_id=eq.${a}&tname=eq.${enc(r.table)}&key=eq.${enc(r.key)}`, undefined, "return=minimal");
+    }
+    // New rows get a place after every row there is; a changed row keeps its place.
+    const base = Date.now() * 1000;
+    const added = ch.rows.filter((r) => r.isNew).map((r, i) => ({ agent_id: a, user_id: u, tname: r.table, key: r.key, vals: r.values, pos: base + i }));
+    const edited = ch.rows.filter((r) => !r.isNew).map((r) => ({ agent_id: a, user_id: u, tname: r.table, key: r.key, vals: r.values, updated_at: now }));
+    for (const batch of [added, edited]) {
+      for (let i = 0; i < batch.length; i += 500) {
+        await this.rest("POST", "yui_native_table_rows?on_conflict=agent_id,tname,key", batch.slice(i, i + 500),
+                        "resolution=merge-duplicates,return=minimal");
+      }
+    }
   }
 
   async dropSchedule(id: string) {

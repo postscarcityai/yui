@@ -5,6 +5,7 @@
 // where it runs.
 import type { MemoryItem, NativeAgent, OwnKey, Profile, Routes, Row, ScheduleItem, SearchTake } from "./types.ts";
 import { DEFAULT_ROUTES } from "./types.ts";
+import { type TableChange, type TableStore, emptyStore, fromSeeds } from "./tables.ts";
 
 export interface Store {
   agent(agentId: string): Promise<NativeAgent | null>;
@@ -51,6 +52,10 @@ export interface Store {
   row(id: string): Promise<(Row & { agent_id: string; user_id: string }) | null>;
   /** A control answer (kind control, no push); marks the request handled. */
   controlAnswer(agent: NativeAgent, requestId: string, body: string, meta: Record<string, unknown>): Promise<void>;
+  /** This agent's own tables (YUI-170), every row, in the order they were written. */
+  tables(agentId: string): Promise<TableStore>;
+  /** Writes what changed (tables.ts diff). */
+  saveTables(agent: NativeAgent, change: TableChange, after: TableStore): Promise<void>;
 }
 
 /** Everything in one plain object: `JSON.stringify(store.data)` saves it. */
@@ -65,6 +70,7 @@ export interface LocalData {
   keys?: Record<string, OwnKey>;
   searches?: Record<string, number>; // "<user>:<day>" and "<user>:<month>" -> count
   searchKeys?: Record<string, string>; // a person's own Firecrawl key
+  tables?: Record<string, TableStore>; // by agent id
 }
 
 export class LocalStore implements Store {
@@ -115,8 +121,10 @@ export class LocalStore implements Store {
     let handle = profile.handle;
     for (let i = 2; taken.has(handle); i++) handle = `${profile.handle}-${i}`;
     const id = this.id("agent");
-    const p = { ...profile, handle };
+    const { tables: seeds, ...p0 } = { ...profile, handle };
+    const p = { ...p0, ...(seeds?.length ? { seeded: true } : {}) } as Profile;
     this.data.agents[id] = { userId, profile: p };
+    if (seeds?.length) (this.data.tables ??= {})[id] = fromSeeds(seeds);
     this.data.rows.push({ id: this.id("row"), agent_id: id, sender: "agent", kind: "text", body: p.first, meta: { native: "first" },
                           created_at: new Date().toISOString() });
     this.changed();
@@ -128,6 +136,7 @@ export class LocalStore implements Store {
   }
   async removeAgent(agentId: string) {
     delete this.data.agents[agentId];
+    if (this.data.tables) delete this.data.tables[agentId];
     this.data.rows = this.data.rows.filter((r) => r.agent_id !== agentId);
     this.data.memory = this.data.memory.filter((m) => m.agentId !== agentId);
     this.changed();
@@ -219,6 +228,13 @@ export class LocalStore implements Store {
     this.data.rows.push({ id: this.id("row"), agent_id: agent.id, sender: "agent", kind: "control", body, meta: { ...meta, for: requestId },
                           created_at: new Date().toISOString() });
     await this.markHandled([requestId]);
+  }
+  async tables(agentId: string) {
+    return this.data.tables?.[agentId] ?? emptyStore();
+  }
+  async saveTables(agent: NativeAgent, _change: TableChange, after: TableStore) {
+    (this.data.tables ??= {})[agent.id] = after;
+    this.changed();
   }
   async dropSchedule(id: string) {
     this.data.schedules = (this.data.schedules ?? []).filter((x) => x.id !== id);

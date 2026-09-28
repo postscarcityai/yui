@@ -1,5 +1,6 @@
 // Native Yui (NATIVE-1, yuigui spec/NATIVE.md): the shapes every part of the
 // runtime shares. Runtime-neutral: no Node or Deno APIs anywhere in src/.
+import type { TableSeed } from "./tables.ts";
 
 /** A profile as written in runtime/profiles/<name>/, or as a person's copy of one. */
 export interface Profile {
@@ -21,6 +22,8 @@ export interface Profile {
   careful?: boolean; // health: asks first, never diagnoses
   sees?: boolean; // reads photos first-hand (every agent can; this one leans on it)
   blank?: boolean; // runs the setup flow on its first turns
+  tables?: TableSeed[]; // starter tables written when the agent is added (YUI-170, profiles/<name>/tables.yui)
+  seeded?: boolean; // its starter tables were written (they are never kept in the saved profile)
 }
 
 /** One of this person's native agents. */

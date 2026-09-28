@@ -65,6 +65,25 @@ When another agent on their Yui fits the job better, say so in one line and hand
 gouda "Wants a lo-fi beat at 80 bpm to practice bass over"
 \`\`\``;
 
+export const TABLE_RULES = `### Your tables
+You keep small tables for this person: their lists, logs and plans. They stay between chats and are yours alone. Write them as lines in your yui block; the person never sees those lines, only the views you draw.
+\`\`\`yui
+table create groceries Item:text Qty:text Aisle:text Got:bool
+put groceries milk Item=Milk Qty="1 gallon" Aisle=Dairy
+put groceries milk +Got
+put sessions Day=today Exercise="Bench press" Sets=3 Reps=8 Weight=135
+query groceries where=Got=off sort=Aisle as list "Still to get"
+\`\`\`
+- \`put <table> <key> Col=value\` adds or changes one row by its key (a short word, like milk); only the columns you name change. With no key it adds a new row, which is what a log wants. Dates: today, today-1, now. \`+Col\` turns a yes/no column on, \`Col=off\` off.
+- After a write, show it: a \`query\` draws the rows on the screen. \`as table\` (the default), \`as list\`, \`as chart\` with x= and y=, or \`as stat\` with y=. \`where=Day>=today-6|Got=off\`, \`sort=-Cal\`, \`limit=10\`, \`cols=Item|Qty\`, \`group=Day sum=Cal\`, \`group=Day:week avg=Weight\`, \`+count\`. Quoted text after it is the title.
+- To look before you answer ("what did I eat this week", "how is my bench going"), write only a \`tables\` block of query lines and nothing else. The rows come back, then you answer with a line and a screen.
+\`\`\`tables
+query meals where=Day>=today-6 group=Day sum=Cal|Protein
+\`\`\`
+- A new list or log they want: \`table create\` it (12 columns at most: text, number, date or bool; a number may carry a unit, Cal:number:kcal), put its rows, then show it.
+- \`put <table> <key> +delete\` removes a row, \`table drop <name>\` a whole table. The person gets a Delete or Keep button for it, so don't ask in words too. Tick things off with a yes/no column instead of deleting.
+- Never keep passwords, card numbers or keys in a table.`;
+
 export const MAKER_RULES = `### Making agents
 You can make, change and remove the agents on this person's Yui with an \`agents\` block at the end of your reply. The person never sees it; tell them in words what you did.
 \`\`\`agents
@@ -103,13 +122,14 @@ export interface PromptInput {
   now?: number; // ms; the prompt says the time in the person's zone
   tz?: string;
   schedules?: ScheduleItem[];
+  tables?: string; // tables.ts tablesPrompt
   context?: number; // tokens the model takes (default 32768)
   reserve?: number; // tokens kept for the answer (default 2048)
 }
 
 export function systemPrompt(p: Profile, memory: MemoryItem[], agentId: string, crew?: CrewEntry[],
-                             extra: { now?: number; tz?: string; schedules?: ScheduleItem[] } = {}): string {
-  const parts = [RULES, TOOL_RULES];
+                             extra: { now?: number; tz?: string; schedules?: ScheduleItem[]; tables?: string } = {}): string {
+  const parts = [RULES, TOOL_RULES, TABLE_RULES];
   if (p.maker) parts.push(MAKER_RULES);
   if (p.blank) parts.push(SELF_RULES);
   if (p.careful) parts.push(CAREFUL_RULES);
@@ -125,6 +145,7 @@ export function systemPrompt(p: Profile, memory: MemoryItem[], agentId: string, 
     parts.push(lines.join("\n"));
   }
   parts.push(memoryPrompt(memory, agentId));
+  if (extra.tables) parts.push(extra.tables);
   const tz = extra.tz ?? "UTC";
   const when = [`## Now\n${nowLine(extra.now ?? Date.now(), tz)}${extra.tz ? "" : ". Their time zone is not known yet; UTC until the phone says."}`];
   const sch = extra.schedules ?? [];
@@ -136,7 +157,7 @@ export function systemPrompt(p: Profile, memory: MemoryItem[], agentId: string, 
 /** The guide, then everything above, then the thread. */
 export function buildTurn(input: PromptInput): { messages: ChatMessage[]; dropped: number } {
   const system = `${input.guide.trim()}\n\n${systemPrompt(input.agent.profile, input.memory, input.agent.id, input.crew,
-                                                           { now: input.now, tz: input.tz, schedules: input.schedules })}`;
+                                                           { now: input.now, tz: input.tz, schedules: input.schedules, tables: input.tables })}`;
   const now = alternate(input.turn.map(toMessage).filter((m): m is ChatMessage => !!m));
   let budget = (input.context ?? 32768) - (input.reserve ?? 2048) - tokens(system)
     - now.reduce((n, m) => n + tokens(String(m.content)), 0) - (input.images?.length ?? 0) * 1200;

@@ -16,7 +16,7 @@ async function ask(store: any, agentId: string, req: Record<string, unknown>) {
 }
 
 test("the report matches what is served", () => {
-  assert.deepEqual(REPORT, { v: 1, sections: { soul: "rw", memory: "rwd", schedules: "rwd", model: "r" } });
+  assert.deepEqual(REPORT, { v: 1, sections: { soul: "rw", memory: "rwd", schedules: "rwd", tables: "rd", model: "r" } });
 });
 
 test("personality: read, edit with the current rev, conflict on a stale one, never delete", async () => {

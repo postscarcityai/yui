@@ -1,0 +1,27 @@
+# Arnold's starter tables (YUI-170). Exercises with how-to cues, a gentle first week, and Sessions (the log, empty).
+table create exercises Exercise:text Muscles:text Gear:text Cue:text
+put exercises squat Exercise=Squat Muscles="Quads, glutes" Gear="Barbell or bodyweight" Cue="Feet shoulder width, chest up. Sit back and down until your hips reach knee height, then drive up through your whole foot."
+put exercises goblet-squat Exercise="Goblet squat" Muscles="Quads, glutes" Gear=Dumbbell Cue="Hold the bell at your chest, elbows in. Sit between your heels, keep your chest tall, stand up tall."
+put exercises push-up Exercise=Push-up Muscles="Chest, triceps, shoulders" Gear=None Cue="Hands under shoulders, body in one line. Lower until your chest is a fist from the floor, then press away."
+put exercises bench Exercise="Bench press" Muscles="Chest, triceps" Gear="Barbell, bench" Cue="Shoulder blades pinched, feet planted. Lower to mid chest with elbows at about 45 degrees, press up and slightly back."
+put exercises deadlift Exercise=Deadlift Muscles="Hamstrings, glutes, back" Gear=Barbell Cue="Bar over mid foot, flat back. Push the floor away and keep the bar against your legs, stand tall, lower the same way."
+put exercises rdl Exercise="Romanian deadlift" Muscles="Hamstrings, glutes" Gear="Barbell or dumbbells" Cue="Soft knees, hinge at the hips and slide the weight down your thighs until you feel your hamstrings, then squeeze your glutes to stand."
+put exercises ohp Exercise="Overhead press" Muscles="Shoulders, triceps" Gear="Barbell or dumbbells" Cue="Squeeze glutes and brace. Press straight up, move your head back then through, lock out over your midfoot."
+put exercises row Exercise="Dumbbell row" Muscles="Upper back, lats" Gear="Dumbbell, bench" Cue="One hand and knee on the bench, flat back. Pull the bell to your hip, pause, lower slow."
+put exercises pull-up Exercise=Pull-up Muscles="Lats, biceps" Gear="Pull-up bar" Cue="Hang with straight arms, pull your chest to the bar, lead with your elbows. A band helps until you can do five."
+put exercises lat-pulldown Exercise="Lat pulldown" Muscles="Lats, biceps" Gear="Cable machine" Cue="Chest up, pull the bar to your upper chest, elbows down and back. Control it up."
+put exercises lunge Exercise="Reverse lunge" Muscles="Quads, glutes" Gear="Bodyweight or dumbbells" Cue="Step back, drop your back knee toward the floor, front knee over the ankle. Push through the front heel to stand."
+put exercises step-up Exercise=Step-up Muscles="Quads, glutes" Gear="Box or bench" Cue="Whole foot on the box, stand up through that leg without pushing off the back foot, step down slow."
+put exercises bridge Exercise="Glute bridge" Muscles=Glutes Gear=None Cue="On your back, knees bent. Squeeze your glutes and lift your hips until knees, hips and shoulders line up. Hold a second."
+put exercises plank Exercise=Plank Muscles=Core Gear=None Cue="Elbows under shoulders, squeeze glutes and brace like you are about to be poked. Straight line, breathe."
+put exercises dead-bug Exercise="Dead bug" Muscles=Core Gear=None Cue="On your back, arms up, knees over hips. Lower the opposite arm and leg slowly while your low back stays on the floor."
+put exercises farmer-carry Exercise="Farmer carry" Muscles="Grip, core, traps" Gear="Dumbbells or kettlebells" Cue="Heavy weight in each hand, stand tall, shoulders down. Walk with short steps and do not lean."
+table create this_week Day:text Focus:text Workout:text Minutes:number Done:bool
+put this_week mon Day=Mon Focus="Full body A" Workout="Goblet squat 3x10, push-up 3x8, dumbbell row 3x10, plank 3x30s" Minutes=40
+put this_week tue Day=Tue Focus="Easy cardio" Workout="Brisk walk or easy bike" Minutes=30
+put this_week wed Day=Wed Focus="Full body B" Workout="Romanian deadlift 3x10, overhead press 3x8, reverse lunge 3x8 each, dead bug 3x10" Minutes=40
+put this_week thu Day=Thu Focus=Rest Workout="Stretch or a short walk" Minutes=10
+put this_week fri Day=Fri Focus="Full body A" Workout="Goblet squat 3x10, push-up 3x8, dumbbell row 3x10, plank 3x30s" Minutes=40
+put this_week sat Day=Sat Focus="Long walk" Workout="A long walk or hike, easy pace" Minutes=45
+put this_week sun Day=Sun Focus=Rest Workout=Rest Minutes=0
+table create sessions Day:date Exercise:text Sets:number Reps:number Weight:number:lb Note:text

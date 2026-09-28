@@ -1,0 +1,48 @@
+# Basil's starter tables (YUI-170). Foods: common foods, one usual portion each, rounded from USDA FoodData Central.
+# Meals starts empty; it is the log (YUI-103's food memory builds on Foods).
+table create foods Food:text Portion:text Cal:number:kcal Protein:number:g Carbs:number:g Fat:number:g
+put foods egg Food=Egg Portion="1 large" Cal=72 Protein=6.3 Carbs=0.4 Fat=4.8
+put foods egg-white Food="Egg white" Portion="1 large" Cal=17 Protein=3.6 Carbs=0.2 Fat=0.1
+put foods chicken-breast Food="Chicken breast, cooked" Portion="100 g" Cal=165 Protein=31 Carbs=0 Fat=3.6
+put foods salmon Food="Salmon, cooked" Portion="100 g" Cal=206 Protein=22 Carbs=0 Fat=12
+put foods beef-90 Food="Ground beef 90% lean, cooked" Portion="100 g" Cal=217 Protein=26 Carbs=0 Fat=12
+put foods tuna Food="Tuna in water" Portion="100 g" Cal=116 Protein=26 Carbs=0 Fat=1
+put foods shrimp Food="Shrimp, cooked" Portion="100 g" Cal=99 Protein=24 Carbs=0.2 Fat=0.3
+put foods turkey-deli Food="Turkey, deli sliced" Portion="56 g" Cal=60 Protein=10 Carbs=2 Fat=1
+put foods tofu Food="Tofu, firm" Portion="100 g" Cal=144 Protein=16 Carbs=3 Fat=9
+put foods greek-yogurt Food="Greek yogurt, plain nonfat" Portion="170 g" Cal=100 Protein=17 Carbs=6 Fat=0.7
+put foods milk-2 Food="Milk 2%" Portion="1 cup" Cal=122 Protein=8 Carbs=12 Fat=5
+put foods cheddar Food="Cheddar cheese" Portion="28 g" Cal=114 Protein=7 Carbs=0.4 Fat=9.4
+put foods cottage-cheese Food="Cottage cheese 2%" Portion="1/2 cup" Cal=92 Protein=12 Carbs=5 Fat=2.5
+put foods whey Food="Whey protein" Portion="1 scoop" Cal=120 Protein=24 Carbs=3 Fat=1.5
+put foods butter Food=Butter Portion="1 tbsp" Cal=102 Protein=0.1 Carbs=0 Fat=11.5
+put foods olive-oil Food="Olive oil" Portion="1 tbsp" Cal=119 Protein=0 Carbs=0 Fat=13.5
+put foods peanut-butter Food="Peanut butter" Portion="2 tbsp" Cal=190 Protein=7 Carbs=8 Fat=16
+put foods almonds Food=Almonds Portion="28 g" Cal=164 Protein=6 Carbs=6 Fat=14
+put foods avocado Food=Avocado Portion="1/2 medium" Cal=120 Protein=1.5 Carbs=6 Fat=11
+put foods hummus Food=Hummus Portion="2 tbsp" Cal=70 Protein=2 Carbs=4 Fat=5
+put foods oats Food="Oats, dry" Portion="1/2 cup" Cal=150 Protein=5 Carbs=27 Fat=3
+put foods white-rice Food="White rice, cooked" Portion="1 cup" Cal=205 Protein=4.3 Carbs=45 Fat=0.4
+put foods brown-rice Food="Brown rice, cooked" Portion="1 cup" Cal=218 Protein=4.5 Carbs=46 Fat=1.6
+put foods quinoa Food="Quinoa, cooked" Portion="1 cup" Cal=222 Protein=8 Carbs=39 Fat=3.6
+put foods pasta Food="Pasta, cooked" Portion="1 cup" Cal=220 Protein=8 Carbs=43 Fat=1.3
+put foods wheat-bread Food="Whole wheat bread" Portion="1 slice" Cal=80 Protein=4 Carbs=14 Fat=1
+put foods white-bread Food="White bread" Portion="1 slice" Cal=75 Protein=2.6 Carbs=14 Fat=1
+put foods tortilla Food="Flour tortilla, 8 inch" Portion="1 tortilla" Cal=146 Protein=4 Carbs=25 Fat=3.5
+put foods potato Food="Potato, baked" Portion="1 medium" Cal=161 Protein=4.3 Carbs=37 Fat=0.2
+put foods sweet-potato Food="Sweet potato, baked" Portion="1 medium" Cal=103 Protein=2.3 Carbs=24 Fat=0.2
+put foods black-beans Food="Black beans, cooked" Portion="1/2 cup" Cal=114 Protein=7.6 Carbs=20 Fat=0.5
+put foods chickpeas Food="Chickpeas, cooked" Portion="1/2 cup" Cal=134 Protein=7.3 Carbs=22.5 Fat=2.1
+put foods lentils Food="Lentils, cooked" Portion="1/2 cup" Cal=115 Protein=9 Carbs=20 Fat=0.4
+put foods broccoli Food="Broccoli, cooked" Portion="1 cup" Cal=55 Protein=3.7 Carbs=11 Fat=0.6
+put foods spinach Food="Spinach, raw" Portion="2 cups" Cal=14 Protein=1.7 Carbs=2.2 Fat=0.2
+put foods carrot Food=Carrot Portion="1 medium" Cal=25 Protein=0.6 Carbs=6 Fat=0.1
+put foods banana Food=Banana Portion="1 medium" Cal=105 Protein=1.3 Carbs=27 Fat=0.4
+put foods apple Food=Apple Portion="1 medium" Cal=95 Protein=0.5 Carbs=25 Fat=0.3
+put foods orange Food=Orange Portion="1 medium" Cal=62 Protein=1.2 Carbs=15 Fat=0.2
+put foods blueberries Food=Blueberries Portion="1 cup" Cal=84 Protein=1.1 Carbs=21 Fat=0.5
+put foods strawberries Food=Strawberries Portion="1 cup" Cal=49 Protein=1 Carbs=12 Fat=0.5
+put foods orange-juice Food="Orange juice" Portion="1 cup" Cal=112 Protein=1.7 Carbs=26 Fat=0.5
+put foods dark-chocolate Food="Dark chocolate 70-85%" Portion="28 g" Cal=170 Protein=2.2 Carbs=13 Fat=12
+put foods pizza Food="Cheese pizza, 14 inch" Portion="1 slice" Cal=285 Protein=12 Carbs=36 Fat=10
+table create meals Day:date Meal:text Food:text Portion:text Cal:number:kcal Protein:number:g Carbs:number:g Fat:number:g
