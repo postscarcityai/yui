@@ -61,10 +61,20 @@ final class StageFirstModel {
     static let seenKey = "yuiHelloSeen"
     var memory: Set<String>? = ProcessInfo.processInfo.arguments.contains("-yuiDemoAccount") ? [] : nil
     private var met: Set<String> {
-        get { memory ?? Set(UserDefaults.standard.stringArray(forKey: Self.seenKey) ?? []) }
+        get { memory ?? Self.loadSeen() }
         set {
-            if memory != nil { memory = newValue } else { UserDefaults.standard.set(Array(newValue).suffix(200), forKey: Self.seenKey) }
+            if memory != nil { memory = newValue } else { Self.saveSeen(newValue) }
         }
+    }
+
+    /// A plain [String], never a slice: UserDefaults takes property-list types only and
+    /// aborts on anything else (0.5.0 build 278 crashed on switching agents, then on launch).
+    static func saveSeen(_ ids: Set<String>, to defaults: UserDefaults = .standard) {
+        defaults.set(Array(ids.sorted().suffix(200)), forKey: seenKey)
+    }
+
+    static func loadSeen(from defaults: UserDefaults = .standard) -> Set<String> {
+        Set(defaults.stringArray(forKey: seenKey) ?? [])
     }
 
     /// A thread opens (or its hello just arrived): an agent's hello nobody has seen plays on

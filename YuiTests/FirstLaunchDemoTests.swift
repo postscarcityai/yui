@@ -108,4 +108,26 @@ import XCTest
         store.load([said])
         XCTAssertFalse(fresh.meet(store.messages, agent: "a1"))
     }
+
+    /// The real phone path, not the demo's memory: meeting an agent saves to UserDefaults.
+    /// 0.5.0 (build 278) saved a slice there and aborted on switching agents, then on every launch.
+    func testMeetingSavesOnThePhoneWithoutCrashing() {
+        let at = ISO8601DateFormatter().string(from: .now)
+        let hello = ThreadRow(id: "first-arnold-\(UUID().uuidString)", sender: "agent", body: AgentStore.demoFirst["arnold"]!, kind: "text",
+                              meta: .object(["native": .string("first")]), createdAt: at)
+        let store = ChatStore()
+        store.load([hello])
+        let before = UserDefaults.standard.object(forKey: StageFirstModel.seenKey)
+        defer { UserDefaults.standard.set(before, forKey: StageFirstModel.seenKey) }
+        let model = StageFirstModel()
+        model.memory = nil
+        XCTAssertTrue(model.meet(store.messages, agent: "a1"))
+        XCTAssertTrue(StageFirstModel.loadSeen().contains(store.messages.first(where: \.hello)!.id))
+        model.home()
+        XCTAssertFalse(StageFirstModel().meet(store.messages, agent: "a1"), "a new launch remembers it")
+        // Over 200 ids: still a plain string array, capped.
+        let suite = UserDefaults(suiteName: "yui.test.seen.\(UUID().uuidString)")!
+        StageFirstModel.saveSeen(Set((0..<250).map { "id\($0)" }), to: suite)
+        XCTAssertEqual(suite.stringArray(forKey: StageFirstModel.seenKey)?.count, 200)
+    }
 }
