@@ -469,7 +469,8 @@ async function oneTurn(store: Store, agent: NativeAgent, rows: Row[], opts: Turn
       ...(mentions.length ? { mentions } : {}),
       native: { model, ...(answer.usage ? { usage: answer.usage } : {}), ...(budget.left <= 10 ? { left: budget.left } : {}),
                 ...(looked.sources.length ? { sources: looked.sources.slice(0, 8) } : {}), ...(looked.capped ? { search_capped: looked.capped.why } : {}),
-                ...(t.held ? { held: t.held } : {}), ...(reminded ? { reminders: reminded } : {}) },
+                ...(t.held ? { held: t.held } : {}), ...(reminded ? { reminders: reminded } : {}),
+                ...(slip ? { slips: [...new Set([...t.problems, ...notes])].slice(0, 6) } : {}) },
       ...(depth === 0 && !real.length && rows[0]?.body.startsWith("[yui] check-in") ? { checkin: true } : {}),
     });
   }

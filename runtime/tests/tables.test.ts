@@ -77,7 +77,7 @@ test("an answer: writes land, lines leave the screen, a delete waits for a tap",
   assert.equal(a.held!.lines[0], "put groceries eggs +delete");
   assert.match(a.text, /^Added\.\n```yui\nlist title="Groceries" "Milk" "Eggs" "Bread"\nchoose@del-id0 "Delete Eggs from groceries\?" Delete\|Keep\n```$/);
   assert.doesNotMatch(a.text, /\bput |query /);
-  const bad = applyTables("```yui\nput groceries Nope=1\nsay Hi\n```", s, CTX, ids());
+  const bad = applyTables("```yui\nput groceries Got=maybe\nsay Hi\n```", s, CTX, ids());
   assert.equal(bad.problems.length, 1);
   assert.equal(bad.store, s);
 });
@@ -334,9 +334,9 @@ test("a slip is one short plain line in a small card, never the ops, never three
   assert.equal(slipLine([], []), null);
   const { store, byHandle } = await freshYui();
   const yui = await byHandle("yui");
-  // Three writes the store refuses (no such column), and one that lands.
-  const m = fakeModel(() => "All set.\n```yui\nput groceries salmon Item=Salmon Cal=lots\nput groceries rice Item=Rice Cal=lots\n"
-    + "put groceries potato Item=Potatoes Cal=lots\nput groceries tuna Item=Tuna\nquery groceries where=Got=off as list \"Still to get\"\n```");
+  // Three writes the store refuses (a tick that is neither on nor off, and nothing else to keep), and one that lands.
+  const m = fakeModel(() => "All set.\n```yui\nput groceries salmon Got=maybe\nput groceries rice Got=maybe\n"
+    + "put groceries potato Got=maybe\nput groceries tuna Item=Tuna\nquery groceries where=Got=off as list \"Still to get\"\n```");
   store.say(yui.id, "put the goods on my grocery list");
   await runAgent(store, yui.id, { provider, fetch: m.fetch, newId: ids() });
   const body = replyOf(store, yui.id).body;
@@ -344,6 +344,7 @@ test("a slip is one short plain line in a small card, never the ops, never three
   assert.match(body, /\ncard@slip "Couldn't save that to Groceries\." cta="Try again"\n```$/);
   assert.doesNotMatch(body, /I couldn't do all|didn't fit|put:|no column|\(/);
   assert.match(body, /^All set\.\n```yui\nlist title="Still to get" .*"Tuna"/, "the reply is what worked");
+  assert.equal(replyOf(store, yui.id).meta.native.slips.length, 1, "the reasons ride in meta, for us, deduped");
 });
 
 test("Basil's grocery list after a meal plan: the goods land on Groceries and his Groceries page redraws", async () => {
@@ -363,4 +364,16 @@ test("Basil's grocery list after a meal plan: the goods land on Groceries and hi
   assert.match(body, /Salmon/);
   assert.match(body, /\nlist title="Still to get" .*"Salmon · 2 fillets"/, body);
   assert.match(body, /\n~aisle-meat-and-fish title="Meat and fish" .*"Salmon, 2 fillets"/, "his Groceries page redraws");
+});
+
+test("a put mended where the meaning is plain: a new column is added, a bad value left out, the rest of the row lands", () => {
+  const g = store(["table create groceries Item:text Qty:text Got:bool"]);
+  const r = applyTables("```yui\nput groceries salmon Item=Salmon Qty=\"1 lb\" Aisle=\"Meat and fish\" Cal=206\nput groceries tuna Item=Tuna Got=maybe\n```", g, CTX, ids());
+  assert.deepEqual(r.problems, []);
+  assert.deepEqual(r.store.tables.groceries.cols.map((c) => `${c.name}:${c.type}`), ["Item:text", "Qty:text", "Got:bool", "Aisle:text", "Cal:number"]);
+  assert.deepEqual(r.store.tables.groceries.rows.salmon, { Item: "Salmon", Qty: "1 lb", Aisle: "Meat and fish", Cal: 206 });
+  assert.deepEqual(r.store.tables.groceries.rows.tuna, { Item: "Tuna" });
+  const refused = applyTables("```yui\nput groceries tuna Got=maybe\n```", g, CTX, ids());
+  assert.equal(refused.problems.length, 1);
+  assert.equal(refused.store, g, "a refused write changes nothing, not even a column");
 });

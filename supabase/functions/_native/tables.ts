@@ -671,7 +671,7 @@ export function applyTables(text: string, store: TableStore, ctx: Partial<Clock>
         made.push(op.table);
       }
     }
-    const r = write(store, op, ctx);
+    const r = mend(store, op, ops, ctx);
     if (r.error) {
       problems.push(r.error);
       slipped.push(op.op === "put" ? op.table : op.name);
@@ -709,6 +709,37 @@ export function applyTables(text: string, store: TableStore, ctx: Partial<Clock>
       : `${out.trim()}\n\`\`\`yui\n${ask}\n\`\`\``;
   }
   return { text: out.replace(/\n{3,}/g, "\n\n").trim(), store, problems, slipped, made, held, wrote };
+}
+
+/**
+ * A put the store refuses, mended where the meaning is plain (YUI-188): a column the table doesn't have yet is
+ * added (typed by the values), and a value that isn't its column's type is left out so the rest of the row lands.
+ * Anything else is refused as before.
+ */
+function mend(store: TableStore, op: TableOp, ops: TableOp[], ctx: Partial<Clock>): WriteResult {
+  const was = store;
+  let r = write(store, op, ctx);
+  if (op.op !== "put" || op.delete) return r;
+  let put = op;
+  for (let tries = 0; r.error && tries < LIMITS.cols; tries++) {
+    const t = store.tables[put.table];
+    const noCol = r.error.match(/^put: \S+ has no column "(.+)"$/);
+    const badVal = r.error.match(/^put: ([^:]+): /);
+    if (t && noCol && t.cols.length < LIMITS.cols && COL.test(noCol[1]) && noCol[1].toLowerCase() !== "key") {
+      const col = inferCols(ops.filter((o) => o.op === "put" && o.table.toLowerCase() === put.table.toLowerCase()), put.table)
+        .find((c) => c.name.toLowerCase() === noCol[1].toLowerCase()) ?? { name: noCol[1], type: "text" as ColType };
+      const grown = write(store, { op: "table", name: t.name, cols: [...t.cols, col] }, ctx);
+      if (grown.error) break;
+      store = grown.store;
+    } else if (badVal && Object.keys(put.values).length > 1) {
+      const drop = Object.keys(put.values).find((k) => k.toLowerCase() === badVal[1].toLowerCase());
+      if (!drop) break;
+      const { [drop]: _gone, ...rest } = put.values;
+      put = { ...put, values: rest };
+    } else break;
+    r = write(store, put, ctx);
+  }
+  return r.error ? { store: was, error: r.error } : r;
 }
 
 /**
