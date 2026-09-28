@@ -26,14 +26,13 @@ final class StagePagesTests: XCTestCase {
         field.typeText("Cooking bibimbap, keep me on track")
         app.buttons["stage-send-text"].tap()
 
-        // The dots are on the stage; a dot opens its screen there.
-        let tab2 = app.buttons["page-tab-2"], tab3 = app.buttons["page-tab-3"]
-        XCTAssertTrue(tab3.waitForExistence(timeout: 20), "no screen dots on the stage")
+        // The screens are on the stage, with no dots (YUI-168); paging opens each one there.
+        waitScreens(app, 3, "the stage has no screen 3")
         XCTAssertTrue(app.descendants(matching: .any)["stage-first"].exists)
-        XCTAssertEqual(app.buttons["page-tab-1"].label, "Answer")
-        tab2.tap()
+        XCTAssertFalse(app.buttons["page-tab-2"].exists, "dots on the stage")
+        app.goToScreen(2)
         XCTAssertTrue(app.descendants(matching: .any)["stage-screen-2"].waitForExistence(timeout: 5), "screen 2 is not on the stage")
-        tab3.tap()
+        app.goToScreen(3)
         XCTAssertTrue(app.descendants(matching: .any)["stage-screen-3"].waitForExistence(timeout: 5), "screen 3 is not on the stage")
         XCTAssertTrue(app.descendants(matching: .any)["stage-screen-3"].staticTexts["Eggs"].exists, "the list is not on screen 3")
         sleep(1)
@@ -42,7 +41,7 @@ final class StagePagesTests: XCTestCase {
         // The chat: just the chat, no dots, no pages beside it.
         app.buttons["stage-record"].tap()
         XCTAssertTrue(app.buttons["back-to-stage"].waitForExistence(timeout: 10), "the chat did not open")
-        XCTAssertFalse(app.buttons["page-tab-2"].exists, "the chat still has the screen dots")
+        XCTAssertFalse(app.pagePosition.exists, "the chat still pages to the screens")
         XCTAssertFalse(app.descendants(matching: .any)["page-2"].exists, "the chat still has a screen beside it")
         sleep(1)
         shot("chat-plain")

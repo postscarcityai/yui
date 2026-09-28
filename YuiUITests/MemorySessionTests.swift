@@ -63,10 +63,10 @@ final class MemorySessionTests: XCTestCase {
                 XCTAssertTrue(newest.waitForExistence(timeout: 5), "the arrow did not bring the newest message back")
                 // Every screen, 2 to 12, then back to the chat.
                 for n in 2...12 {
-                    let tab = app.buttons["page-tab-\(n)"]
-                    if tab.waitForExistence(timeout: 2) { tab.tap() } else { XCTFail("no screen \(n) tab for \(agent)") }
+                    app.goToScreen(n)
+                    if app.screenShown != n { XCTFail("no screen \(n) for \(agent)") }
                 }
-                app.buttons["page-tab-1"].tap()
+                app.goToScreen(1)
                 // A card full screen, and closed.
                 let pill = app.buttons["Open Tabata full screen"].firstMatch
                 for _ in 0..<3 where !pill.isHittable { top.press(forDuration: 0.01, thenDragTo: bottom) }

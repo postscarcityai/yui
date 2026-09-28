@@ -21,14 +21,14 @@ final class TalkPageTests: XCTestCase {
 
         // The reply brings screen 3 forward: no talk there, so no composer.
         waitHittable(app.descendants(matching: .any)["page-3"].staticTexts["Sleep more"], "screen 3 never showed")
-        waitSelected(app.buttons["page-tab-3"], "the reply did not bring screen 3 forward")
+        waitScreen(app, 3, "the reply did not bring screen 3 forward")
         waitGone(composer, "a composer on a screen the agent did not talk on")
         XCTAssertFalse(app.buttons["Agent menu"].isHittable, "the nav bar is on a screen")
         shot(app, "screen-3-no-composer")
 
         // Screen 2 talks: the composer is there, and it says what it is about.
-        app.buttons["page-tab-2"].tap()
-        waitSelected(app.buttons["page-tab-2"], "the dot does not go to screen 2")
+        app.goToScreen(2)
+        waitScreen(app, 2, "paging does not go to screen 2")
         waitHittable(composer, "no composer on the talk screen")
         XCTAssertEqual(composer.placeholderValue, "About screen 2")
         XCTAssertFalse(app.buttons["Agent menu"].isHittable, "a talk screen is still full screen")
@@ -39,11 +39,11 @@ final class TalkPageTests: XCTestCase {
         shot(app, "screen-2-typing")
         app.buttons["Send"].tap()
         // You stay on the screen you were talking about.
-        waitSelected(app.buttons["page-tab-2"], "sending moved you off the screen")
+        waitScreen(app, 2, "sending moved you off the screen")
 
         // The words land in the chat, marked with the screen they came from.
-        app.buttons["page-tab-1"].tap()
-        waitSelected(app.buttons["page-tab-1"], "the chat glyph does not go to the chat")
+        app.goToScreen(1)
+        waitScreen(app, 1, "paging does not go to the chat")
         waitHittable(app.staticTexts["Swap Thursday for a swim"], "the words did not land in the chat")
         let chip = app.buttons["screen-chip"].firstMatch
         waitHittable(chip, "no From screen 2 chip on the message")
@@ -54,7 +54,7 @@ final class TalkPageTests: XCTestCase {
 
         // The chip goes back to the screen.
         chip.tap()
-        waitSelected(app.buttons["page-tab-2"], "the chip does not go to screen 2")
+        waitScreen(app, 2, "the chip does not go to screen 2")
         waitHittable(composer, "the composer left the talk screen")
     }
 
@@ -69,11 +69,6 @@ final class TalkPageTests: XCTestCase {
         a.name = name
         a.lifetime = .keepAlways
         add(a)
-    }
-
-    private func waitSelected(_ e: XCUIElement, _ message: String) {
-        let p = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", "showing"), object: e)
-        XCTAssertEqual(XCTWaiter.wait(for: [p], timeout: 8), .completed, message)
     }
 
     private func waitGone(_ e: XCUIElement, _ message: String) {

@@ -73,8 +73,7 @@ final class ComposerAttachTests: XCTestCase {
         XCTAssertTrue(sent.isHittable, "the sent photo is hidden")
         // The thread rests on the newest message: the caption clears the page pill (YUI-74).
         let caption = app.staticTexts["Lunch, what do you think?"]
-        let tabs = app.descendants(matching: .any)["page-tabs"].firstMatch
-        let floor = tabs.exists ? tabs.frame.minY : app.descendants(matching: .any)["composer"].firstMatch.frame.minY
+        let floor = app.descendants(matching: .any)["composer"].firstMatch.frame.minY
         XCTAssertLessThanOrEqual(caption.frame.maxY, floor + 1, "the caption sits under the page pill: \(caption.frame) vs \(floor)")
         XCTAssertLessThanOrEqual(sent.frame.maxY, floor + 1, "the photo sits under the page pill")
         shot("03-photo-sent")

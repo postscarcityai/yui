@@ -1,9 +1,9 @@
 import XCTest
 
 /// As many screens as the agent uses, up to 12 (TestFlight feedback on build 57):
-/// the pager has the chat plus one page per screen with something on it, and the
-/// indicator above the composer is a chat glyph and one dot per screen. With only
-/// the chat there is no indicator at all; `>13` stays in the chat; `>N clear`
+/// the pager has the chat plus one page per screen with something on it. No dots
+/// (YUI-168): VoiceOver hears "Screen 3, 3 of 5" and pages with a swipe up or down.
+/// With only the chat there is nothing to page; `>13` stays in the chat; `>N clear`
 /// takes the page away. Demo account, no network. Screenshots go to `YUI_SHOTS`.
 final class PageCountTests: XCTestCase {
     /// Chat only: a reply with nothing routed to a screen.
@@ -11,18 +11,18 @@ final class PageCountTests: XCTestCase {
         let app = launch("one", ["say Just the chat today.", "ask \"Start?\""])
         XCTAssertTrue(app.staticTexts["Just the chat today."].waitForExistence(timeout: 15), "the reply never came")
         sleep(1)
-        XCTAssertFalse(app.otherElements["page-tabs"].exists, "an indicator with only the chat")
-        XCTAssertFalse(app.buttons["page-tab-1"].exists, "a chat tab with only the chat")
+        XCTAssertFalse(app.pagePosition.exists, "screens to page with only the chat")
+        XCTAssertFalse(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'page-tab-'")).firstMatch.exists, "a dot")
         shot(app, "1-chat-only")
     }
 
-    /// Two pages: the chat glyph and one dot.
+    /// Two pages: the chat and screen 2.
     func testTwoScreens() throws {
         let app = launch("two", ["say One screen.", ">2 list Today Squat|Bench +check"])
         try expectTabs(app, count: 2)
         shot(app, "2-screens")
-        app.buttons["page-tab-1"].tap()
-        waitSelected(app.buttons["page-tab-1"], "the chat glyph does not go to the chat")
+        app.goToScreen(1)
+        waitScreen(app, 1, "paging back does not go to the chat")
         shot(app, "2-screens-chat")
     }
 
@@ -31,10 +31,10 @@ final class PageCountTests: XCTestCase {
         let app = launch("five", ["say Four screens."] + (2...5).map { ">\($0) say Screen \($0) note" })
         try expectTabs(app, count: 5)
         shot(app, "5-screens")
-        app.buttons["page-tab-3"].tap()
+        app.goToScreen(3)
         let three = app.descendants(matching: .any)["page-3"].staticTexts["Screen 3 note"]
-        waitHittable(three, "the third dot does not go to screen 3")
-        waitSelected(app.buttons["page-tab-3"], "the third dot is not selected")
+        waitHittable(three, "paging does not go to screen 3")
+        waitScreen(app, 3, "screen 3 is not the one on show")
         shot(app, "5-screens-on-3")
     }
 
@@ -42,13 +42,12 @@ final class PageCountTests: XCTestCase {
     func testTwelveScreensAndNoThirteenth() throws {
         let app = launch("twelve", ["say Eleven screens."] + (2...12).map { ">\($0) say Screen \($0) note" } + [">13 say Thirteen stays in the chat"])
         try expectTabs(app, count: 12)
-        XCTAssertFalse(app.buttons["page-tab-13"].exists, "a thirteenth screen")
         XCTAssertFalse(app.descendants(matching: .any)["page-13"].exists, "a page for screen 13")
-        app.buttons["page-tab-1"].tap()
+        app.goToScreen(1)
         waitHittable(app.staticTexts["Thirteen stays in the chat"], ">13 did not land in the chat")
         shot(app, "12-screens")
-        app.buttons["page-tab-12"].tap()
-        waitHittable(app.descendants(matching: .any)["page-12"].staticTexts["Screen 12 note"], "the last dot does not go to screen 12")
+        app.goToScreen(12)
+        waitHittable(app.descendants(matching: .any)["page-12"].staticTexts["Screen 12 note"], "paging does not reach screen 12")
         shot(app, "12-screens-on-12")
     }
 
@@ -56,26 +55,24 @@ final class PageCountTests: XCTestCase {
     func testClearTakesThePageAway() throws {
         let app = launch("clear", ["say Two, then one.", ">2 say Keep me", ">3 say Clear me", ">3 clear"])
         XCTAssertTrue(app.descendants(matching: .any)["page-2"].staticTexts["Keep me"].waitForExistence(timeout: 15), "screen 2 never filled")
-        let gone = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: app.buttons["page-tab-3"])
-        XCTAssertEqual(XCTWaiter.wait(for: [gone], timeout: 8), .completed, "the cleared screen kept its dot")
         try expectTabs(app, count: 2)
+        XCTAssertFalse(app.descendants(matching: .any)["page-3"].exists, "the cleared screen kept its page")
         shot(app, "clear-2-left")
     }
 
     /// A screen is full screen (TestFlight feedback on build 57): no nav bar and no
-    /// composer, just the dots at the bottom; both come back with the chat.
+    /// composer; both come back with the chat.
     func testScreensAreFullScreen() throws {
         let app = launch("full", ["say Plan on screen 2.", ">2 card \"Mazewood MVP\" body=\"One map, 10 waves\"",
                                   ">2 list Build \"Grid map\" Pathfinding +check"])
         let page = app.descendants(matching: .any)["page-2"]
         waitHittable(page.staticTexts["Mazewood MVP"], "screen 2 never showed")
-        waitSelected(app.buttons["page-tab-2"], "the reply did not bring screen 2 forward")
+        waitScreen(app, 2, "the reply did not bring screen 2 forward")
         waitGone(app.descendants(matching: .any)["composer"].firstMatch, "the composer is on a screen")
         XCTAssertFalse(app.buttons["Agent menu"].isHittable, "the menu button is on a screen")
-        XCTAssertTrue(app.buttons["page-tab-1"].isHittable, "no way back to the chat")
         shot(app, "full-screen-2")
-        app.buttons["page-tab-1"].tap()
-        waitSelected(app.buttons["page-tab-1"], "the chat glyph does not go to the chat")
+        app.swipeRight()
+        waitScreen(app, 1, "a swipe right does not go back to the chat")
         waitHittable(app.descendants(matching: .any)["composer"].firstMatch, "the composer did not come back with the chat")
         waitHittable(app.buttons["Agent menu"], "the nav bar did not come back with the chat")
         shot(app, "full-back-to-chat")
@@ -94,12 +91,10 @@ final class PageCountTests: XCTestCase {
         return app
     }
 
-    /// The indicator shows `count` pages: tabs 1...count exist, the next does not.
+    /// There are `count` pages, and no dots for any of them.
     private func expectTabs(_ app: XCUIApplication, count: Int) throws {
-        XCTAssertTrue(app.buttons["page-tab-\(count)"].waitForExistence(timeout: 20), "no dot for page \(count)")
-        for n in 1...count { XCTAssertTrue(app.buttons["page-tab-\(n)"].exists, "no dot for page \(n)") }
-        XCTAssertFalse(app.buttons["page-tab-\(count + 1)"].exists, "a dot for page \(count + 1)")
-        XCTAssertEqual(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'page-tab-'")).count, count, "dot count")
+        waitScreens(app, count, "not \(count) screens")
+        XCTAssertEqual(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'page-tab-'")).count, 0, "dots on the screens")
     }
 
     private func shot(_ app: XCUIApplication, _ name: String) {
@@ -111,11 +106,6 @@ final class PageCountTests: XCTestCase {
         a.name = "\(tag)-\(name)"
         a.lifetime = .keepAlways
         add(a)
-    }
-
-    private func waitSelected(_ e: XCUIElement, _ message: String) {
-        let p = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", "showing"), object: e)
-        XCTAssertEqual(XCTWaiter.wait(for: [p], timeout: 6), .completed, message)
     }
 
     private func waitGone(_ e: XCUIElement, _ message: String) {

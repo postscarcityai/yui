@@ -26,6 +26,9 @@ struct ChatMessage: Identifiable, Equatable {
     /// The agent's hello, the first message its thread opens on (`meta.native = "first"`):
     /// an answer to start from, never something waiting on you in Review (YUI-165).
     var hello = false
+    /// The agent's home (`meta.native = "home"`, YUI-168): its shortcuts and starter screens,
+    /// written once. It fills the chips and the pages and never shows in the record.
+    var home = false
 }
 
 /// The chat's messages and the events going back to the agent.
@@ -74,7 +77,7 @@ final class ChatStore {
             for c in yl.top where c.page != 1 && !c.onStage(style) { on.insert(c.page) }
             if yl.restyle != nil { restyle = m.id }
         }
-        let d = Derived(shown: messages.filter { $0.yl?.isBlank != true },
+        let d = Derived(shown: messages.filter { $0.yl?.isBlank != true && !$0.home },
                         wearers: Set(lastInRow.values.map { $0.text ?? $0.any }),
                         screens: [1] + on.sorted(),
                         talking: Set(YuiLines.talking(messages.flatMap { $0.yl?.talkLines ?? [] })),
@@ -557,6 +560,8 @@ final class ChatStore {
         poll?.cancel()
         client = nil
         self.agent = agent
+        // Each agent opens on its own page, as a real thread does (attach).
+        page = agent.flatMap { pages[$0.id] } ?? 1
         loaded = true
     }
 
@@ -902,6 +907,7 @@ final class ChatStore {
         } else {
             if let r = row.reaction { reactions[id] = r }
             let hello = row.meta?.object?["native"]?.string == "first"
+            let home = row.meta?.object?["native"]?.string == "home"
             for (i, seg) in YuiFence.split(row.body).enumerated() {
                 switch seg {
                 case .text(let t): new.append(ChatMessage(id: "\(id)#\(i)", text: t, fromUser: false, hello: hello))
@@ -925,15 +931,16 @@ final class ChatStore {
                     file(screen.shelfOps, at: at)
                     fileMenu(screen.menuLines, at: at)
                     if let agentID = agent?.id { for look in screen.looks { onLook?(agentID, look, row.createdAt) } }
-                    new.append(ChatMessage(id: "\(id)#\(i)", text: "", fromUser: false, yl: screen, hello: hello))
-                    if loaded { live += nodes }
+                    new.append(ChatMessage(id: "\(id)#\(i)", text: "", fromUser: false, yl: screen, hello: hello, home: home))
+                    // The home fills its pages quietly: it never brings one forward (YUI-168).
+                    if loaded, !home { live += nodes }
                 }
             }
         }
         guard !new.isEmpty else { return false }
         withAnimation(loaded ? spring : nil) { messages.append(contentsOf: new) }
         // Live replies can take the stage; history loading on open never does.
-        if loaded { for m in new where m.yl != nil { stageUpdate(m.id, before: nil) } }
+        if loaded { for m in new where m.yl != nil && !m.home { stageUpdate(m.id, before: nil) } }
         pageUpdate(live)
         handOff(live, at: row.createdAt)
         return true
@@ -960,7 +967,7 @@ final class ChatStore {
     /// The first hand-off card's link in these lines, if any.
     static func handOffLink(_ nodes: [YLNode]) -> URL? {
         for n in nodes where n.op == .add && n.preset == "card" {
-            if let raw = n.props?["url"]?.string, let u = URL(string: raw), PushCenter.agentTarget(u) != nil { return u }
+            if let raw = n.props?["url"]?.string, let u = URL(string: raw), PushCenter.isHandOff(u) { return u }
         }
         return nil
     }

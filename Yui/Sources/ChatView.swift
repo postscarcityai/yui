@@ -181,12 +181,11 @@ struct ChatView: View {
             .safeAreaInset(edge: .bottom) {
                 if !firstRun {
                     VStack(spacing: theme.spacing.s) {
-                        // A chat glyph and a dot per screen, in the composer's inset so every
-                        // page clears it. Only there when there is somewhere to go.
+                        // No dots (YUI-168, Chris: "let the user rely on instinct that they can
+                        // swipe"): VoiceOver still hears where it is and pages with a swipe up or down.
                         let screens = store.screens
                         if pagedChat, screens.count > 1 {
-                            PageTabs(page: page ?? 1, screens: screens) { store.goToPage($0) }
-                                .transition(.scale(scale: 0.8).combined(with: .opacity))
+                            PagePosition(page: page ?? 1, screens: screens, first: "Chat") { store.goToPage($0) }
                         }
                         // Screens are for reading: the composer stays with the chat,
                         // unless the agent keeps it on this screen (`>2 talk`).
@@ -463,11 +462,31 @@ struct ChatView: View {
                 if old != new, !store.messages.isEmpty, let rows = Self.debugRows() { store.reopen(rows) }
                 // -yuiDemoFirstLaunch (YUI-145): each thread opens on the agent's first message,
                 // the row yui_native_provision writes, so a new person lands on Yui talking.
-                if ProcessInfo.processInfo.arguments.contains("-yuiDemoFirstLaunch"), old != new || store.messages.isEmpty,
-                   let a = agents.selected, let first = AgentStore.demoFirst[a.handle] {
-                    store.reopen([ThreadRow(id: "first-\(a.handle)", sender: "agent", body: first, kind: "text",
-                                            meta: .object(["native": .string("first")]),
-                                            createdAt: ISO8601DateFormatter().string(from: .now))])
+                // Its home comes first (YUI-168), the row yui-agents writes. -yuiDemoHome alone: a
+                // returning person's thread, the home and nothing said yet, no hello to play.
+                let args = ProcessInfo.processInfo.arguments
+                let firstLaunch = args.contains("-yuiDemoFirstLaunch"), homeOnly = args.contains("-yuiDemoHome")
+                if firstLaunch || homeOnly, old != new || store.messages.isEmpty, let a = agents.selected {
+                    let at = ISO8601DateFormatter().string(from: .now)
+                    var rows: [ThreadRow] = []
+                    if let home = AgentStore.demoHome[a.handle] {
+                        rows.append(ThreadRow(id: "home-\(a.handle)", sender: "agent", body: home, kind: "text",
+                                              meta: .object(["native": .string("home")]), createdAt: at))
+                    }
+                    // -yuiDemoWaiting: two notes the agent put in Review, for the home's Waiting on you.
+                    if args.contains("-yuiDemoWaiting") {
+                        rows.append(ThreadRow(id: "waiting-\(a.handle)", sender: "agent", body: """
+                            ```yui
+                            menu review@sat "Saturday: legs or a rest day?" sub="You slept 5h last night"
+                            menu review@max "New squat max?" sub="Last three sets looked easy"
+                            ```
+                            """, kind: "text", meta: .object(["native": .string("home")]), createdAt: at))
+                    }
+                    if firstLaunch, let first = AgentStore.demoFirst[a.handle] {
+                        rows.append(ThreadRow(id: "first-\(a.handle)", sender: "agent", body: first, kind: "text",
+                                              meta: .object(["native": .string("first")]), createdAt: at))
+                    }
+                    if !rows.isEmpty { store.reopen(rows) }
                 }
                 #endif
                 return

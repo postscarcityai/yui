@@ -77,15 +77,14 @@ final class SmoothnessTests: XCTestCase {
         }
 
         if want("swipe") {
-            // Screens 2 and 3 by their tabs, then swiped back. (A swipe left on the chat
-            // lands on a message and starts a reply, so forward goes by tab.)
+            // Screens 2 and 3 paged to, then swiped back. (A swipe left on the chat
+            // lands on a message and starts a reply, so forward goes by VoiceOver's paging.)
             mark("swipe", "begin")
-            let tab2 = app.buttons["page-tab-2"]
-            XCTAssertTrue(tab2.waitForExistence(timeout: 5), "no screen 2 tab")
-            tab2.tap()
+            XCTAssertTrue(app.pagePosition.waitForExistence(timeout: 5), "no screen 2")
+            app.goToScreen(2)
             sleep(1)
             shot("3-screen-2")
-            app.buttons["page-tab-3"].tap()
+            app.goToScreen(3)
             sleep(1)
             app.swipeRight()
             sleep(1)

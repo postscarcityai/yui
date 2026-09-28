@@ -142,7 +142,7 @@ struct StageActions {
     var bar: BarActions
     var send: () -> Void
     var removePhoto: (ComposerPhoto) -> Void
-    /// A dot under the stage: that screen (1 the answer).
+    /// That screen (1 the answer or the home): a swipe, a chip or VoiceOver paging.
     var goScreen: (Int) -> Void = { _ in }
     /// A drag right on the answer pulls the drawer out with the finger (as on the chat, YUI-54),
     /// then lets it settle open or shut from where the finger let go and how fast.
@@ -186,7 +186,7 @@ struct StageFirstView: View {
     var waiting = 0
     let reduceMotion: Bool
     /// The agent's screens (YUI-31): 1 is the answer playing here, 2... each screen it put
-    /// something on. Their dots are on the stage, not in the chat (Chris, 2026-09-27).
+    /// something on. A swipe apart, with no dots (YUI-168).
     var screens: [Int] = [1]
     var screen = 1
     var style: [String: String] = [:]
@@ -196,6 +196,7 @@ struct StageFirstView: View {
     @Environment(\.yuiTheme) private var theme
     @Environment(\.colorScheme) private var scheme
     @Environment(\.scenePhase) private var phase
+    @Environment(\.openURL) private var openURL
     /// When the mood on show began: the burst and the shake count from here.
     @State private var moodSince = Date()
     /// The visual's scrim follows the words (YUI-124): the top of the chunk's words and the
@@ -221,12 +222,23 @@ struct StageFirstView: View {
                         .accessibilityIdentifier("stage-screen-\(screen)")
                 } else if let turn, turn.ask != nil || turn.hello {
                     play(turn, c)
+                } else if hasHome {
+                    // The agent's home (YUI-168): what it does, what is waiting on you, its chips below.
+                    HomeHead(agent: agent, line: homeLine, waiting: AgentHome.waiting(store), open: openWaiting,
+                             seeAll: actions.menu, hasScreens: screens.count > 1)
                 } else {
                     greeting(c, title: "Hi. \(showMic ? "Tap the mic and talk." : "Tap T and type.")",
                              sub: "I answer right here, on the whole screen.")
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            // No dots (Chris, Sep 27): the person swipes on instinct. VoiceOver still hears
+            // "Screen 2, 2 of 4" here and pages with a swipe up or down.
+            .overlay(alignment: .bottom) {
+                if screens.count > 1, !mic.live {
+                    PagePosition(page: at, screens: screens, go: actions.goScreen)
+                }
+            }
             // T is out: a tap anywhere above folds it back to mic, T and + (YUI-121).
             .overlay {
                 if model.typing {
@@ -236,27 +248,25 @@ struct StageFirstView: View {
                         .accessibilityIdentifier("stage-tap-away")
                 }
             }
-            // Sideways, like before the stage (Chris, TestFlight AC0r0OFGJiJOcbFdbXMgHms: "we lost
-            // the left and right scroll"): a drag left shows the next screen, a drag right the one
-            // before, and on the answer it pulls the drawer out. Only on the middle, so the mic's
-            // slide to the trash and the bars' buttons keep their own drags.
-            .contentShape(Rectangle())
-            .gesture(DrawerPan(direction: .right, enabled: !mic.live) { x in
-                if at == 1 { actions.drawerDrag(max(0, x)) }
-            } ended: { x, v in
-                if at == 1 { actions.drawerSettle(x, v) } else if Self.turns(x, v, by: 1) { go(-1) }
-            })
-            .gesture(DrawerPan(direction: .left, enabled: !mic.live && screens.last.map { $0 > at } == true) { _ in
-            } ended: { x, v in
-                if Self.turns(x, v, by: -1) { go(1) }
-            })
-            if screens.count > 1, !mic.live {
-                PageTabs(page: screen, screens: screens, homeIcon: "play.rectangle", homeLabel: "Answer", go: actions.goScreen)
-                    .padding(.bottom, theme.spacing.xs)
-                    .transition(.opacity)
-            }
             bottom(turn, c)
         }
+        // One sideways gesture (YUI-168): a drag left anywhere on the stage shows the next screen,
+        // a drag right the one before, and on screen 1 it pulls the drawer out (Chris, TestFlight
+        // AC0r0OFGJiJOcbFdbXMgHms: "we lost the left and right scroll"). The bars count too. A
+        // control that needs a sideways drag (keys, pads, a map, a slider, a row that scrolls)
+        // owns it inside its own frame: a touch that starts on it goes to it first, and pages
+        // keep a margin at both edges where nothing but the swipe lives. The mic's hold and its
+        // slide to the trash start on the mic, so they stay the mic's. T out: the field's own.
+        .contentShape(Rectangle())
+        .gesture(DrawerPan(direction: .right, enabled: !mic.live && !model.typing) { x in
+            if at == 1 { actions.drawerDrag(max(0, x)) }
+        } ended: { x, v in
+            if at == 1 { actions.drawerSettle(x, v) } else if Self.turns(x, v, by: 1) { go(-1) }
+        })
+        .gesture(DrawerPan(direction: .left, enabled: !mic.live && !model.typing && screens.last.map { $0 > at } == true) { _ in
+        } ended: { x, v in
+            if Self.turns(x, v, by: -1) { go(1) }
+        })
         .background {
             ZStack {
                 c.background
@@ -294,12 +304,47 @@ struct StageFirstView: View {
 
     // MARK: Sideways between screens
 
-    /// The screen on show as the dots count it: 1 is the answer.
+    /// The screen on show: 1 is the answer or the home.
     private var at: Int { screen > 1 && screens.contains(screen) ? screen : 1 }
 
     /// A drag far enough (a fifth of a phone) or quick enough turns the screen; `by` is +1 right, -1 left.
     static func turns(_ x: CGFloat, _ v: CGFloat, by sign: CGFloat) -> Bool {
         x * sign > 80 || v * sign > Drawer.flick
+    }
+
+    // MARK: The home (YUI-168)
+
+    /// The agent's shortcuts, newest four.
+    private var chips: [YLMenuItem] { AgentHome.chips(store) }
+
+    /// Screen 1 is the home: the agent set shortcuts, or something waits on the person.
+    private var hasHome: Bool { !chips.isEmpty || !AgentHome.waiting(store).isEmpty }
+
+    /// The line under its name: what it does (its tagline, YUI-165), else how to start.
+    private var homeLine: String {
+        agent?.line ?? (showMic ? "Tap a shortcut, or the mic and talk." : "Tap a shortcut, or T and type.")
+    }
+
+    /// Nothing is playing on screen 1: the chips are big. Over an answer they step down to one small row.
+    private func onHome(_ turn: StageTurn?) -> Bool { turn.map { $0.ask == nil && $0.pages == 0 } ?? true }
+
+    private func tapChip(_ item: YLMenuItem) {
+        AgentHome.tap(item, store: store, goPage: actions.goScreen) { words in
+            composer.draft = words
+            barActions.type()
+        }
+    }
+
+    /// An ask opens where it waits: its page, or its turn on the stage at the questions.
+    /// A review item opens its screen or link, or goes to the agent, as in the drawer.
+    private func openWaiting(_ w: AgentHome.Waiting) {
+        if let r = w.ask {
+            if r.ask.page > 1, screens.contains(r.ask.page) { actions.goScreen(r.ask.page); return }
+            let shown = withAnimation(look.enterAnimation) { model.show(reply: r.message.id, in: store.messages) }
+            if !shown { actions.menu() }
+        } else if let item = w.item {
+            MenuAction.open(item, bucket: "review", store: store, close: {}, openURL: openURL)
+        }
     }
 
     /// The screen before or after the one on show.
@@ -700,6 +745,12 @@ struct StageFirstView: View {
                     .foregroundStyle(c.inkSoft)
                     .frame(maxWidth: .infinity, alignment: .trailing)
                     .accessibilityIdentifier("stage-mic-note")
+            }
+            // The agent's shortcuts over the bar, on screen 1 only: big on the home, small over an answer.
+            if !model.typing, !mic.live, at == 1, !chips.isEmpty {
+                HomeChips(items: chips, small: !onHome(turn), tap: tapChip)
+                    .transition(.opacity)
+                    .animation(reduceMotion ? nil : theme.spring, value: onHome(turn))
             }
             if model.typing {
                 typingField(c)

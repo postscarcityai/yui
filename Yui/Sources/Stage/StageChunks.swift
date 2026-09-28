@@ -133,6 +133,7 @@ enum StageChunks {
         var t = StageTurn(ask: messages[i])
         for m in messages[(i + 1)...] {
             if m.fromUser { break }
+            if m.home { continue }  // the agent's home is its chips and pages, not part of an answer (YUI-168)
             add(m, to: &t)
         }
         return t

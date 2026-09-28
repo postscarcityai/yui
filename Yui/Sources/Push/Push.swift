@@ -146,11 +146,17 @@ final class PushCenter: NSObject {
     }
 
     /// `yui://agent/<id or handle>[/thread]`: the agent to open. A hand-off card (YUI-144)
-    /// names it by handle (`yui://agent/basil`); ChatView matches either.
+    /// names it by handle (`yui://agent/basil`); ChatView matches either. `/thread` only opens
+    /// it (Yui's crew page, YUI-168) and never jumps on arrival: see `isHandOff`.
     nonisolated static func agentTarget(_ url: URL) -> String? {
         guard url.scheme == "yui", url.host() == "agent", let id = url.pathComponents.dropFirst().first,
               !id.isEmpty else { return nil }
         return id
+    }
+
+    /// A hand-off link jumps the phone when its card lands live; `yui://agent/<id>/thread` does not.
+    nonisolated static func isHandOff(_ url: URL) -> Bool {
+        agentTarget(url) != nil && url.pathComponents.dropFirst(2).first != "thread"
     }
 
     /// `yui://snap`: the camera that hears you (a shortcut like "Log a meal").

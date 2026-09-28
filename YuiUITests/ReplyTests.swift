@@ -64,24 +64,23 @@ final class ReplyTests: XCTestCase {
         keyboardDown(app, bubble)
 
         // 3. The background beside the agent's bubble pages to screen 2, it doesn't reply.
-        let tab1 = app.buttons["page-tab-1"], tab2 = app.buttons["page-tab-2"]
         let f = bubble.frame
         let gutter = app.coordinate(withNormalizedOffset: .zero)
             .withOffset(CGVector(dx: app.frame.width - 40, dy: f.midY))
         gutter.press(forDuration: 0.05, thenDragTo: gutter.withOffset(CGVector(dx: -220, dy: 0)))
-        waitShowing(tab2, "a drag beside a bubble did not page to screen 2")
+        waitScreen(app, 2, "a drag beside a bubble did not page to screen 2")
         XCTAssertFalse(bar.exists, "a drag beside a bubble set a reply")
         shot("reply-4-gutter-pages-\(appearance)")
-        tab1.tap()
-        waitShowing(tab1, "the Chat tab did not come back")
+        app.goToScreen(1)
+        waitScreen(app, 1, "paging did not come back to the chat")
 
         // The bubble itself pages too: a left swipe on it sets no quote.
         swipeLeft(bubble)
-        waitShowing(tab2, "a left swipe on a bubble did not page to screen 2")
+        waitScreen(app, 2, "a left swipe on a bubble did not page to screen 2")
         XCTAssertFalse(bar.exists, "a left swipe on a bubble set a reply")
         shot("reply-5-bubble-pages-\(appearance)")
-        tab1.tap()
-        waitShowing(tab1, "the Chat tab did not come back")
+        app.goToScreen(1)
+        waitScreen(app, 1, "paging did not come back to the chat")
         waitHittable(bubble, "the proposal is not back on screen")
 
         // Reply to an old message, send, and the chip goes back to it.
@@ -129,8 +128,7 @@ final class ReplyTests: XCTestCase {
         let bubble = text(app, Self.proposal)
         XCTAssertTrue(bubble.waitForExistence(timeout: 15), "the thread never loaded")
         // A reply with a screen 2 line brings the page forward: back to the chat.
-        let tab1 = app.buttons["page-tab-1"]
-        if tab1.waitForExistence(timeout: 3), tab1.value as? String != "showing" { tab1.tap() }
+        if app.pagePosition.waitForExistence(timeout: 3) { app.goToScreen(1) }
         waitHittable(bubble, "the proposal is not on screen")
         return app
     }
@@ -167,11 +165,6 @@ final class ReplyTests: XCTestCase {
         a.name = name
         a.lifetime = .keepAlways
         add(a)
-    }
-
-    private func waitShowing(_ e: XCUIElement, _ message: String) {
-        let p = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", "showing"), object: e)
-        XCTAssertEqual(XCTWaiter.wait(for: [p], timeout: 6), .completed, message)
     }
 
     private func waitHittable(_ e: XCUIElement, _ message: String, timeout: TimeInterval = 6) {

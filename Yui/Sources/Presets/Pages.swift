@@ -61,64 +61,6 @@ struct PagedThread<Chat: View>: View {
     }
 }
 
-/// At the bottom when there is more than the chat (ChatView puts it in the
-/// composer's inset, which every page respects; on a screen, where there is no
-/// composer, it is all that is left there): a small chat glyph, then one dot per
-/// screen. The one on show is filled and wider.
-struct PageTabs: View {
-    let page: Int
-    let screens: [Int]
-    /// Page 1's glyph and name: the chat, or on the stage the answer playing there.
-    var homeIcon = "bubble.left"
-    var homeLabel = "Chat"
-    let go: (Int) -> Void
-    @Namespace private var tabs
-    @Environment(\.yuiTheme) private var theme
-    @Environment(\.colorScheme) private var scheme
-
-    var body: some View {
-        let c = theme.swatch(scheme)
-        HStack(spacing: 0) {
-            ForEach(screens, id: \.self) { n in
-                let on = n == page
-                Button { go(n) } label: {
-                    Group {
-                        if n == 1 {
-                            Image(systemName: on ? homeIcon + ".fill" : homeIcon)
-                                .font(.system(size: 11, weight: .bold))
-                                .foregroundStyle(on ? c.accent : c.inkSoft)
-                        } else {
-                            ZStack {
-                                Capsule().fill(c.inkSoft.opacity(0.45)).frame(width: 7, height: 7)
-                                if on {
-                                    Capsule().fill(c.accent).frame(width: 18, height: 7)
-                                        .matchedGeometryEffect(id: "on", in: tabs)
-                                }
-                            }
-                        }
-                    }
-                    // Small to look at, a full finger to tap.
-                    .frame(minWidth: n == 1 ? 30 : (on ? 30 : 20), minHeight: 30)
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel(n == 1 ? homeLabel : "Screen \(n)")
-                .accessibilityValue(on ? "showing" : "")
-                .accessibilityAddTraits(on ? .isSelected : [])
-                .accessibilityIdentifier("page-tab-\(n)")
-            }
-        }
-        .padding(.horizontal, 6)
-        .background(c.surface, in: Capsule())
-        .overlay(Capsule().stroke(c.outline, lineWidth: 1))
-        .animation(theme.spring, value: page)
-        .animation(theme.spring, value: screens)
-        .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("page-tabs")
-        .frame(maxWidth: .infinity)
-    }
-}
-
 /// A screen beside the chat: everything the agent put there, oldest reply first.
 struct ScreenPage: View {
     let number: Int

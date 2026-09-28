@@ -416,7 +416,8 @@ private struct DrawerHome: View {
                     DrawerRow(icon: "sparkles", title: item.label, sub: item.sub, tint: c.butter,
                               trailing: item.say?.hasSuffix(" ") == true ? "text.cursor" : "paperplane.fill") {
                         close()
-                        MenuAction.shortcut(item, store: store, compose: compose)
+                        // A `show=` that was saved from a page goes to that live page (YUI-168).
+                        AgentHome.tap(item, store: store, goPage: { store.openScreen($0) }, compose: compose)
                     }
                     .contextMenu {
                         Button("Remove", systemImage: "minus.circle", role: .destructive) { store.removeFromMenu(item.id) }

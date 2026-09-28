@@ -42,7 +42,6 @@ final class PagesTests: XCTestCase {
         if reduceMotion { app.launchArguments += ["-yuiReduceMotion"] }
         app.launch()
 
-        let tab = { (n: Int) in app.buttons["page-tab-\(n)"] }
         XCTAssertTrue(app.textFields.firstMatch.waitForExistence(timeout: 10) || app.textViews.firstMatch.exists, "no composer")
         shot("0-chat")
 
@@ -51,7 +50,7 @@ final class PagesTests: XCTestCase {
         let eggs = app.descendants(matching: .any)["page-3"].staticTexts["Eggs"]
         XCTAssertTrue(eggs.waitForExistence(timeout: 15), "the list never reached screen 3")
         waitHittable(eggs, "screen 3 did not come forward")
-        waitSelected(tab(3), "the tab does not say screen 3")
+        waitScreen(app, 3, "screen 3 is not the one on show")
         
         sleep(1)
         shot("1-screen-3")
@@ -63,7 +62,7 @@ final class PagesTests: XCTestCase {
         app.swipeRight()
         let focus = app.descendants(matching: .any)["page-2"].staticTexts["Focus"]
         waitHittable(focus, "swiping right did not show screen 2")
-        waitSelected(tab(2), "the tab does not say screen 2")
+        waitScreen(app, 2, "screen 2 is not the one on show")
         XCTAssertFalse(eggs.isHittable, "screen 3 is still showing")
         sleep(1)
         shot("2-screen-2")
@@ -73,26 +72,21 @@ final class PagesTests: XCTestCase {
         let pill3 = app.buttons["Go to screen 3, Shopping"]
         waitHittable(pill3, "no screen 3 pill in the chat")
         XCTAssertTrue(app.buttons["Go to screen 2, Focus"].exists, "no screen 2 pill in the chat")
-        waitSelected(tab(1), "the tab does not say Chat")
+        waitScreen(app, 1, "the chat is not the one on show")
         shot("3-chat-pills")
 
         // The pill goes to its page, and the page kept the tick.
         pill3.tap()
         waitHittable(eggs, "the pill did not open screen 3")
-        waitSelected(tab(3), "the pill did not select screen 3")
+        waitScreen(app, 3, "the pill did not go to screen 3")
         shot("4-back-on-3")
 
-        // A tab goes straight to a page, and swiping left moves on from it.
-        tab(1).tap()
-        waitHittable(pill3, "the Chat tab did not go back to the chat")
+        // VoiceOver pages back to the chat, and swiping left moves on from it.
+        app.goToScreen(1)
+        waitHittable(pill3, "paging did not go back to the chat")
         app.swipeLeft()
         waitHittable(focus, "swiping left from the chat did not show screen 2")
         shot("5-swiped-left")
-    }
-
-    private func waitSelected(_ e: XCUIElement, _ message: String) {
-        let p = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", "showing"), object: e)
-        XCTAssertEqual(XCTWaiter.wait(for: [p], timeout: 6), .completed, message)
     }
 
     private func waitHittable(_ e: XCUIElement, _ message: String, timeout: TimeInterval = 6) {

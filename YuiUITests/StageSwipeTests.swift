@@ -35,12 +35,13 @@ final class StageSwipeTests: XCTestCase {
         XCTAssertTrue(field.waitForExistence(timeout: 5))
         field.typeText("Cooking bibimbap, keep me on track")
         app.buttons["stage-send-text"].tap()
-        XCTAssertTrue(app.buttons["page-tab-3"].waitForExistence(timeout: 20), "no screen dots on the stage")
+        waitScreens(app, 3, "the stage has no screen 3")
+        XCTAssertFalse(app.buttons["page-tab-2"].exists, "dots on the stage")
         // The reply turns the stage to its last screen; start from the answer.
         let screen = { (n: Int) in app.descendants(matching: .any)["stage-screen-\(n)"] }
         XCTAssertTrue(screen(3).waitForExistence(timeout: 10), "the reply did not show screen 3")
-        app.buttons["page-tab-1"].tap()
-        XCTAssertTrue(waitGone(screen(3)), "the Answer dot did not go back to the answer")
+        app.goToScreen(1)
+        XCTAssertTrue(waitGone(screen(3)), "paging did not go back to the answer")
         sleep(1)
         func bar(_ where_: String) {
             XCTAssertTrue(app.buttons["stage-type"].exists, "no T on \(where_)")
