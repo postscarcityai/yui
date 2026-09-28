@@ -337,6 +337,7 @@ struct ChatView: View {
         .environment(\.ylShow, store.ylShow)
         .environment(\.ylPage, store.ylPage)
         .environment(\.ylAnswers, store.ylAnswers)
+        .environment(\.ylAgent, store.agent?.id ?? "")
         .environment(\.yuiMedia, store.agent.flatMap { a in account.session?.userID == "demo" ? nil : YuiMedia(account: account, agentID: a.id) })
         .environment(\.ylTimers, store.timers)
         .environment(\.restyleNewest, store.restyleNewest)
@@ -399,7 +400,7 @@ struct ChatView: View {
         // -yuiDemoPrompt "Tabata tonight?" puts the person's message above it, after
         // -yuiDemoDelay seconds [1.5] (demo clips wait for the recording to catch up).
         .task {
-            guard let text = UserDefaults.standard.string(forKey: "yuiThemeDemo") else { return }
+            guard let text = ChatStore.demoText("yuiThemeDemo") else { return }
             if let prompt = UserDefaults.standard.string(forKey: "yuiDemoPrompt") {
                 let delay = UserDefaults.standard.object(forKey: "yuiDemoDelay") == nil
                     ? 1.5 : UserDefaults.standard.double(forKey: "yuiDemoDelay")
@@ -466,7 +467,8 @@ struct ChatView: View {
                 // returning person's thread, the home and nothing said yet, no hello to play.
                 let args = ProcessInfo.processInfo.arguments
                 let firstLaunch = args.contains("-yuiDemoFirstLaunch"), homeOnly = args.contains("-yuiDemoHome")
-                if firstLaunch || homeOnly, old != new || store.messages.isEmpty, let a = agents.selected {
+                // A -yuiThreadRows file is the whole thread, its home row too (YUI-183: a relaunch mid-flow).
+                if firstLaunch || homeOnly, Self.debugRows() == nil, old != new || store.messages.isEmpty, let a = agents.selected {
                     let at = ISO8601DateFormatter().string(from: .now)
                     var rows: [ThreadRow] = []
                     if let home = AgentStore.demoHome[a.handle] {
@@ -1253,7 +1255,7 @@ struct ChatView: View {
         }
         #if DEBUG
         // -yuiDemoReply: the demo account's agent answers through the store, working row and all (YUI-63).
-        if photos.isEmpty, UserDefaults.standard.string(forKey: "yuiDemoReply") != nil {
+        if photos.isEmpty, ChatStore.demoText("yuiDemoReply") != nil {
             let words = emptyField()
             guard store.send(text, screen: talkPage) else { composer.draft = words; return }
             Perf.shared.span(.sendBubble, from: tapped)
@@ -1274,7 +1276,7 @@ struct ChatView: View {
         clearComposer()
         #if DEBUG
         // -yuiDemoReply answers a photo too (YUI-141: Basil reading a meal).
-        if let reply = UserDefaults.standard.string(forKey: "yuiDemoReply") {
+        if let reply = ChatStore.demoText("yuiDemoReply") {
             withAnimation(ChatStore.sendSpring) { store.demoAnswer(reply) }
             return
         }
@@ -1314,7 +1316,7 @@ struct ChatView: View {
                                               photos: [.local(photo.preview)]))
         }
         #if DEBUG
-        if let reply = UserDefaults.standard.string(forKey: "yuiDemoReply") {
+        if let reply = ChatStore.demoText("yuiDemoReply") {
             withAnimation(ChatStore.sendSpring) { store.demoAnswer(reply) }
         }
         #endif

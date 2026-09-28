@@ -71,6 +71,7 @@ struct ScreenPage: View {
     @Environment(\.yuiTheme) private var theme
     @Environment(\.colorScheme) private var scheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.ylAgent) private var agentID
 
     var body: some View {
         let c = theme.swatch(scheme)
@@ -106,6 +107,7 @@ struct ScreenPage: View {
                                             : .scale(scale: 0.92, anchor: .top).combined(with: .opacity))
                             }
                         }
+                        shareRow(c)
                     }
                     .padding(.horizontal, theme.spacing.l)
                     .padding(.vertical, theme.spacing.m)
@@ -119,6 +121,30 @@ struct ScreenPage: View {
         .background(c.background)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("page-\(number)")
+    }
+
+    /// A page of checklists (Basil's grocery list by aisle, YUI-183) goes out as plain
+    /// words: the aisles as headers, what is still to get under each, ticks left off.
+    @ViewBuilder
+    private func shareRow(_ c: Swatch) -> some View {
+        let all = parts.flatMap { $0.yl?.onPage(number, style: style) ?? [] }
+        let sections = ChecklistText.sections(all, agent: agentID)
+        if sections.contains(where: { !$0.items.isEmpty }) {
+            let title = all.first { $0.preset == "stat" }?.string("label")
+            ShareLink(item: ChecklistText.text(title: title, sections)) {
+                Label("Share list", systemImage: "square.and.arrow.up")
+                    .font(theme.font(theme.type.body, .bold))
+                    .foregroundStyle(c.ink)
+                    .padding(.horizontal, theme.spacing.l)
+                    .padding(.vertical, theme.spacing.m)
+                    .frame(maxWidth: .infinity)
+                    .background(c.surface, in: Capsule())
+                    .overlay(Capsule().stroke(c.outline, lineWidth: 1.5))
+                    .contentShape(Capsule())
+            }
+            .buttonStyle(BounceButtonStyle())
+            .accessibilityIdentifier("page-share-\(number)")
+        }
     }
 }
 

@@ -91,6 +91,8 @@ extension ChatStore {
                 let fresh = seen.insert(c.ylID).inserted
                 guard fresh, Self.asks.contains(c.preset), !c.locked, answers[m.id]?[c.ylID] == nil,
                       c.page != 1 || i > lastSaid else { continue }
+                // A page redrawn and named (Basil's This week, YUI-183) is a standing page: its pickers are tools too.
+                if c.page != 1, yl.namedScreens.contains(c.screen) { continue }
                 // What leads up to it: back to the previous ask, at most two parts, same screen.
                 var parts = [c]
                 var k = j - 1

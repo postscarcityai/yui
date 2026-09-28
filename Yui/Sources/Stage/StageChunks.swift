@@ -78,6 +78,14 @@ enum StageChunks {
             // A member of a drawing belongs to the drawing, not to the flow.
             if let head, !flows.contains(head.preset) { continue }
             if flows.contains(c.preset) { open = nil; continue }
+            // A deck page you act on (Basil's week, a day a card, each meal a swap, YUI-183): a question
+            // with its own title is that page, played in turn, and a tap on it goes at once. A quiz
+            // question has no title and still waits for the end.
+            if questions.contains(c.preset), head?.preset == "deck", c.string("title") != nil {
+                start(StageChunk(scope: scope, id: "\(scope)#\(c.serial)", pic: c, all: all))
+                open = nil
+                continue
+            }
             if questions.contains(c.preset) {
                 qs.append(StageQuestion(scope: scope, c: c, all: all))
                 if let head, head.preset == "plan" { plan = head }

@@ -12,6 +12,8 @@ extension EnvironmentValues {
     @Entry var ylAnswers = YLAnswers()
     /// Goes to one of the agent's pages (2 to 12) from the chat's page pills.
     @Entry var ylPage = YLPage()
+    /// The agent whose thread this is: a checklist keeps its ticks under it (YUI-183).
+    @Entry var ylAgent = ""
 }
 
 /// Moves the thread to page `n` (spec section 5, Pages).
@@ -466,20 +468,25 @@ struct SlidePreset: View {
 
 struct ListPreset: View {
     let c: YLComponent
-    @State private var checked: Set<Int> = []
+    /// Ticks for a list the phone doesn't keep (no agent, or no id of its own).
+    @State private var checked: Set<String> = []
     @Environment(\.yuiTheme) private var theme
     @Environment(\.colorScheme) private var scheme
     @Environment(\.ylEmit) private var emit
+    @Environment(\.ylAgent) private var agent
 
     var body: some View {
         let s = theme.swatch(scheme)
         let items = c.strings("items") ?? []
         let check = c.flag("check")
+        // A named list keeps its ticks on the phone until it is drawn again (YUI-183).
+        let kept = check && ListTicks.keeps(agent, c.ylID)
+        let ticked = kept ? ListTicks.shared.ticked(agent, c.ylID, items: items) : checked
         PresetCard {
             if let t = c.string("title") { PresetTitle(text: t) }
             VStack(alignment: .leading, spacing: theme.spacing.s) {
                 ForEach(Array(items.enumerated()), id: \.offset) { i, item in
-                    let done = checked.contains(i)
+                    let done = ticked.contains(item)
                     let row = HStack(alignment: .firstTextBaseline, spacing: theme.spacing.m) {
                         marker(i, done: done, check: check, s)
                         Text(item)
@@ -493,7 +500,8 @@ struct ListPreset: View {
                     if check {
                         Button {
                             withAnimation(theme.spring) {
-                                if done { checked.remove(i) } else { checked.insert(i) }
+                                if kept { ListTicks.shared.set(agent, c.ylID, item: item, on: !done) }
+                                else if done { checked.remove(item) } else { checked.insert(item) }
                             }
                             emit(c.event(["item": .string(item), "checked": .bool(!done)]))
                         } label: { row.contentShape(Rectangle()) }
@@ -505,6 +513,9 @@ struct ListPreset: View {
                 }
             }
         }
+        // A page holds the list as drawn now; an old copy up the chat may not, so only a page drops ticks.
+        .onAppear { if kept, YuiLines.page(of: c.screen) > 1 { ListTicks.shared.prune(agent, c.ylID, items: items) } }
+        .onChange(of: items) { _, now in if kept { ListTicks.shared.prune(agent, c.ylID, items: now) } }
     }
 
     @ViewBuilder

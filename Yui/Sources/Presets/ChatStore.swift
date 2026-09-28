@@ -2,6 +2,7 @@ import Foundation
 import Observation
 import QuartzCore
 import SwiftUI
+import Synchronization
 import YuiLines
 
 struct ChatMessage: Identifiable, Equatable {
@@ -215,9 +216,16 @@ final class ChatStore {
 
     /// A live reply added something to a page: bring the newest such page forward.
     /// Patches, `clear` and history loading never move the person.
+    /// A reply with something to read in the chat that also redraws a named page (`>4 clear`,
+    /// its lines, `save groceries`) keeps the person on what it said: the redraw keeps the page
+    /// current, like a patch (YUI-183: Basil's week lands as a deck, not on the grocery list).
     private func pageUpdate(_ nodes: [YLNode]) {
+        let saved = Set(nodes.filter { $0.op == .save }.map(\.screen))
+        let redrawn = Set(nodes.filter { $0.op == .clear }.map(\.screen)).intersection(saved)
+        let says = nodes.contains { $0.op == .add && YuiLines.page(of: $0.screen) == 1 }
         guard let n = nodes.last(where: { $0.op == .add && YuiLines.page(of: $0.screen) != 1
-            && !YuiLines.opensOnStage($0, style: style) }).map({ YuiLines.page(of: $0.screen) }) else { return }
+            && !YuiLines.opensOnStage($0, style: style) && !(says && redrawn.contains($0.screen)) })
+            .map({ YuiLines.page(of: $0.screen) }) else { return }
         goToPage(n)
     }
 
@@ -436,7 +444,7 @@ final class ChatStore {
         #if DEBUG
         // -yuiDemoReplyTaps: a tap the agent would get is answered with -yuiDemoReply too (YUI-145).
         if client == nil, e.relays, e.echo != nil, ProcessInfo.processInfo.arguments.contains("-yuiDemoReplyTaps"),
-           let reply = UserDefaults.standard.string(forKey: "yuiDemoReply") {
+           let reply = ChatStore.demoText("yuiDemoReply") {
             demoAnswer(reply)
             return
         }
@@ -614,7 +622,7 @@ final class ChatStore {
         let screen = text.hasPrefix("/") ? nil : screen
         #if DEBUG
         // -yuiDemoReply "<lines>": on the demo account the agent answers what you send with these lines (SOC-3 videos).
-        if client == nil, agent != nil, let reply = UserDefaults.standard.string(forKey: "yuiDemoReply") {
+        if client == nil, agent != nil, let reply = ChatStore.demoText("yuiDemoReply") {
             let about = screen == nil && !text.hasPrefix("/") ? self.about : nil
             let q = screen == nil && about == nil ? takeReply(for: text) : nil
             withAnimation(Self.sendSpring) {
@@ -973,10 +981,26 @@ final class ChatStore {
     }
 
     #if DEBUG
+    /// A demo launch arg's text: `-yuiDemoReply <lines>`, or `-yuiDemoReplyFile <path>` for a
+    /// runtime reply as it is, apostrophes and all (a launch arg is read as a plist, where `'` quotes).
+    /// A `.json` file is an array of replies, one per turn, the last one kept (YUI-183: Plan my
+    /// meals, then its Send, then a swap, each answered as the runtime answers it).
+    nonisolated static func demoText(_ key: String) -> String? {
+        let d = UserDefaults.standard
+        if let text = d.string(forKey: key) { return text }
+        guard let path = d.string(forKey: key + "File"), let data = FileManager.default.contents(atPath: path) else { return nil }
+        guard path.hasSuffix(".json") else { return String(data: data, encoding: .utf8) }
+        guard let turns = try? JSONDecoder().decode([String].self, from: data), !turns.isEmpty else { return nil }
+        return turns[min(demoTurn.withLock { $0 }, turns.count - 1)]
+    }
+    /// Which of a `.json` file's replies is next: each demo answer moves it on.
+    nonisolated static let demoTurn = Mutex(0)
+
     /// The demo account's scripted answer (-yuiDemoReply), after a working row. A reply
     /// with a ```yui fence lands as a real agent row does (YUI-141: a native agent's answer, verbatim).
     func demoAnswer(_ reply: String) {
         owe()
+        Self.demoTurn.withLock { $0 += 1 }
         // -yuiDemoPickupAfter / -yuiDemoReplyAfter <seconds>: stretch the turn so the working row can be watched (YUI-63).
         let d = UserDefaults.standard
         let pickup = d.object(forKey: "yuiDemoPickupAfter") == nil ? 0.5 : d.double(forKey: "yuiDemoPickupAfter")
