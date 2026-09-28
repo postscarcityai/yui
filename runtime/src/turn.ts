@@ -22,6 +22,7 @@ import { type Clock, type TableStore, applyHeld, applyTables, asText, changed, c
          tablesPrompt } from "./tables.ts";
 import type { NativeAgent, OwnKey, Row, ScheduleItem } from "./types.ts";
 import { ACK, type MealFix, applyFix, fixTaps, logsMeals, mealTurn, runMealJob, spoken } from "./meals.ts";
+import { card as handoffCard, cards as handoffCards, handedIn, handlesIn, oneThread, threadOf, withCard } from "./handoff.ts";
 
 export interface Provider {
   url: string; // an OpenAI-compatible base URL
@@ -93,7 +94,8 @@ export async function runAgent(store: Store, agentId: string, opts: TurnOptions)
     for (let i = 0; i < (opts.maxTurns ?? 3); i++) {
       const agent = await store.agent(agentId);
       if (!agent) break;
-      const rows = await store.pending(agentId);
+      // One thread a turn: a group's rows (YUI-144) and the agent's own are answered apart.
+      const rows = oneThread(await store.pending(agentId));
       if (!rows.length) break;
       const done = await oneTurn(store, agent, rows, opts, log, result, 0);
       result.turns++;
@@ -140,7 +142,7 @@ async function synthetic(store: Store, agent: NativeAgent, line: string, opts: T
     // The person may have written while this ran: their own wake found the lock taken and left (t_a88dc3b5, a
     // macros ask sent four hand-offs to Basil and his answer to the ask never came). Answer them before letting go.
     for (let i = 0; i < (opts.maxTurns ?? 3); i++) {
-      const rows = await store.pending(agent.id);
+      const rows = oneThread(await store.pending(agent.id));
       if (!rows.length) break;
       const done = await oneTurn(store, agent, rows, opts, log, result, depth);
       result.turns++;
@@ -201,8 +203,9 @@ async function oneTurn(store: Store, agent: NativeAgent, rows: Row[], opts: Turn
   }
 
   if (last) await store.doing(last, "Thinking");
-  const [history, memory, guide, routes, tzRaw, schedules, mine, tables0] = await Promise.all([
-    store.history(agent.id, rows[0].created_at, opts.historyRows ?? HISTORY_ROWS),
+  const thread = threadOf(rows[0]);
+  const [history, memory, guide, routes, tzRaw, schedules, mine, tables0, others] = await Promise.all([
+    store.history(agent.id, rows[0].created_at, opts.historyRows ?? HISTORY_ROWS, thread),
     store.memory(agent.userId, agent.id),
     store.guide(),
     store.routes(),
@@ -210,6 +213,7 @@ async function oneTurn(store: Store, agent: NativeAgent, rows: Row[], opts: Turn
     store.schedules(agent.id),
     store.agents(agent.userId),
     store.tables(agent.id),
+    store.others(agent.userId),
   ]);
   const tz = validZone(tzRaw);
   const clk = clock(now, tz);
@@ -218,7 +222,8 @@ async function oneTurn(store: Store, agent: NativeAgent, rows: Row[], opts: Turn
   // A Delete or Keep tap on deletes held last turn: done here, and the agent hears what happened.
   let turnRows = rows;
   ({ tables, rows: turnRows } = await heldTaps(store, agent, rows, history, tables, clk, log));
-  const crew: CrewEntry[] = mine.map((a) => ({ handle: a.profile.handle, name: a.profile.name, role: a.profile.role }));
+  const crew: CrewEntry[] = [...mine.map((a) => ({ handle: a.profile.handle, name: a.profile.name, role: a.profile.role })),
+                             ...others.map((o) => ({ handle: o.handle, name: o.name, role: "", connected: true }))];
 
   // One photo per turn, the newest (spec/NATIVE.md, limits); the model hears how many it missed.
   const photos = photoPaths(rows);
@@ -334,6 +339,16 @@ async function oneTurn(store: Store, agent: NativeAgent, rows: Row[], opts: Turn
   // Sources the answer didn't link, and the invite to add a Firecrawl key when the free lookups ran out.
   const cards = [...sourceCards(body, looked.sources), ...(looked.capped ? [searchInvite(looked.capped.why, looked.capped.limit)] : [])];
   if (cards.length && body.trim()) body = `${body.trim()}\n\`\`\`yui\n${cards.join("\n")}\n\`\`\``;
+  // Hand-offs (YUI-144): one a turn, never from a turn another agent started, never inside a group.
+  // The card goes under the answer, so the phone jumps to that agent once it has been read.
+  const passes = depth === 0 && !handedIn(rows) && !thread;
+  const drawn = handoffCards(body);
+  const handoff = passes ? [...out.handoff, ...drawn].map((h) => ({ ...h, to: mine.find((a) => a.profile.handle === h.target) }))
+                                                        .find((h) => h.to && h.to.id !== agent.id) : undefined;
+  if (handoff && !drawn.some((d) => d.target === handoff.target)) body = withCard(body, handoffCard(handoff.to!.profile, handoff.note));
+  // @handles in the words reach the person's other agents through the database, on a turn the person
+  // started: a mention, or in a group an ask on its hop budget. Never the one being handed off to.
+  const mentions = real.length && !handedIn(rows) ? handlesIn(body, [p.handle, ...(handoff ? [handoff.target] : [])]) : [];
   if (!body.trim() && answer.finish === "length") body = `${p.name} ran out of room before it could answer. Try a shorter message.`;
   // Never close a turn the person started without a word back.
   else if (real.length && silent(answer.text)) body = `${p.name} couldn't put an answer together. Send that again?`;
@@ -342,6 +357,7 @@ async function oneTurn(store: Store, agent: NativeAgent, rows: Row[], opts: Turn
   if (body.trim()) {
     await say(body.trim(), {
       ...(real.length ? { turn: real } : {}),
+      ...(mentions.length ? { mentions } : {}),
       native: { model, ...(answer.usage ? { usage: answer.usage } : {}), ...(budget.left <= 10 ? { left: budget.left } : {}),
                 ...(looked.sources.length ? { sources: looked.sources.slice(0, 8) } : {}), ...(looked.capped ? { search_capped: looked.capped.why } : {}),
                 ...(t.held ? { held: t.held } : {}) },
@@ -352,15 +368,10 @@ async function oneTurn(store: Store, agent: NativeAgent, rows: Row[], opts: Turn
   log(`${p.name}: ${model} answered, ${body.length} chars`);
 
   // Hand-offs last, so the person reads this answer first. One level only: a handed-off agent can't hand on.
-  if (depth === 0) {
-    for (const h of out.handoff.slice(0, 1)) {
-      const target = mine.find((a) => a.profile.handle === h.target);
-      if (!target || target.id === agent.id) {
-        log(`${p.name}: no agent @${h.target} to hand off to`);
-        continue;
-      }
-      await synthetic(store, target, `[yui] handoff from=${p.handle} note="${h.note.replace(/"/g, "'")}"`, opts, log, result, 1);
-    }
+  if (handoff) {
+    await synthetic(store, handoff.to!, `[yui] handoff from=${p.handle} note="${handoff.note.replace(/"/g, "'")}"`, opts, log, result, 1);
+  } else if (passes && (out.handoff.length || drawn.length)) {
+    log(`${p.name}: no agent @${(out.handoff[0] ?? drawn[0]).target} to hand off to`);
   }
   return { handled: true };
 }

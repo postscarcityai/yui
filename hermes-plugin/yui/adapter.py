@@ -1117,7 +1117,11 @@ class YuiAdapter(BasePlatformAdapter):
             row["meta"] = {"turn": turn}  # the rows this reply answers (restart dedupe)
             # @another agent in a reply to the person (YUI-44): Yui hands it on, one hop.
             # Never out of a shared thread: the owner's other agents aren't the person's.
-            found = mentions.handles_in(body, own=[(self._agents.get(agent_id) or {}).get("handle")])
+            own = [(self._agents.get(agent_id) or {}).get("handle")]
+            # A hand-off card (YUI-144) tells its agent the way an @ does, hand-off first.
+            found = mentions.handoffs_in(body, own=own)
+            found += [h for h in mentions.handles_in(body, own=own) if h not in found]
+            found = found[:mentions.MAX_MENTIONS]
             if found and user_id == self._user_id:
                 row["meta"]["mentions"] = found
         handoff = bool(sender) or time.time() - self._last_inbound.get(key, 0) > HANDOFF_AFTER_SECONDS

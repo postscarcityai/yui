@@ -82,6 +82,94 @@ test("hand-off: Yui passes the person to Gouda, who opens its own thread with th
   const g = store.data.rows.filter((x) => x.agent_id === gouda.id && x.sender === "agent").pop()!;
   assert.match(g.body, /Yui says lo-fi at 80/);
   assert.equal(m.calls.length, 2, "a handed-off agent can't hand on");
+  // The answer carries the card that takes the person to Gouda (YUI-144): the phone jumps on it.
+  const y = store.data.rows.filter((x) => x.agent_id === yui.id && x.sender === "agent").pop()!;
+  assert.match(y.body, /^Gouda is your musician; I passed it on\.\n```yui\ncard "Gouda" body="Wants a lo-fi beat at 80 bpm, plays bass" url=yui:\/\/agent\/gouda cta="Open Gouda"\n```$/);
+  assert.doesNotMatch(g.body, /yui:\/\/agent/, "no card back: Gouda can't hand on");
+});
+
+test("a hand-off card the agent draws itself hands off too, once, with its body as the note (YUI-144)", async () => {
+  const { store, byHandle } = await freshYui();
+  const yui = await byHandle("yui");
+  const basil = await byHandle("basil");
+  const m = fakeModel((c) => /Who you are: Yui/.test(system(c))
+    ? 'Basil does food.\n```yui\ncard "Basil" body="She just finished leg day, wants dinner ideas" url=yui://agent/basil cta="Open Basil"\n```'
+    : "Leg day dinner: salmon, rice, greens.");
+  store.say(yui.id, "what should I eat after leg day?");
+  await runAgent(store, yui.id, { provider, fetch: m.fetch });
+  assert.match(String(lastUser(m.calls[1]).content), /\[yui\] handoff from=yui note="She just finished leg day, wants dinner ideas"/);
+  const y = store.data.rows.filter((x) => x.agent_id === yui.id && x.sender === "agent").pop()!;
+  assert.equal(y.body.match(/url=yui:\/\/agent\/basil/g)!.length, 1, "no second card");
+  assert.match(store.data.rows.filter((x) => x.agent_id === basil.id && x.sender === "agent").pop()!.body, /salmon/);
+});
+
+test("a hand-off to no one in the crew hands nothing off and adds no card", async () => {
+  const { store, byHandle } = await freshYui();
+  const yui = await byHandle("yui");
+  const m = fakeModel(() => 'Passing you on.\n```handoff\nnobody "x"\n```');
+  store.say(yui.id, "hi");
+  await runAgent(store, yui.id, { provider, fetch: m.fetch });
+  assert.equal(m.calls.length, 1);
+  assert.doesNotMatch(store.data.rows.filter((x) => x.agent_id === yui.id && x.sender === "agent").pop()!.body, /card/);
+});
+
+test("connected agents: listed by handle, reached by @mention, never handed to (YUI-144)", async () => {
+  const { store, byHandle } = await freshYui();
+  store.data.others = [{ handle: "urza", name: "Urza" }];
+  store.data.memory.push({ id: "m1", userId: USER, agentId: null, kind: "about", key: "knee", body: "bad left knee", updatedAt: "t" } as any);
+  const yui = await byHandle("yui");
+  const m = fakeModel(() => "I'll ask @urza about the server. `@notme` stays code.\n```handoff\nurza \"server is down\"\n```");
+  store.say(yui.id, "is the server ok?");
+  await runAgent(store, yui.id, { provider, fetch: m.fetch });
+  assert.match(system(m.calls[0]), /Connected \(reach with @handle, no hand-off\): Urza \(@urza\)/);
+  assert.equal(m.calls.length, 1, "a connected agent is not handed to");
+  const y = store.data.rows.filter((x) => x.agent_id === yui.id && x.sender === "agent").pop()!;
+  assert.deepEqual(y.meta.mentions, ["urza"], "the database routes the @ as a mention");
+  assert.doesNotMatch(y.body, /yui:\/\/agent/);
+  assert.doesNotMatch(JSON.stringify(y.meta), /knee/, "memory never rides along");
+});
+
+test("a turn another agent started answers but never passes the person on", async () => {
+  const { store, byHandle } = await freshYui();
+  const basil = await byHandle("basil");
+  const m = fakeModel(() => 'Sure. Ask @gouda too.\n```handoff\ngouda "more"\n```');
+  store.say(basil.id, "[yui] mention from=urza by=agent msg=x\nwhat's for dinner?");
+  await runAgent(store, basil.id, { provider, fetch: m.fetch });
+  assert.equal(m.calls.length, 1);
+  const b = store.data.rows.filter((x) => x.agent_id === basil.id && x.sender === "agent").pop()!;
+  assert.equal(b.meta.mentions, undefined);
+  assert.doesNotMatch(b.body, /yui:\/\/agent/);
+});
+
+test("groups: a native agent answers a group row in the group, apart from its own thread (YUI-144)", async () => {
+  const { store, byHandle } = await freshYui();
+  const arnold = await byHandle("arnold");
+  const G = "g-race-week";
+  const push = (body: string, thread?: string, sender = "user") => {
+    const id = store.id("row");
+    store.data.rows.push({ id, agent_id: arnold.id, sender, kind: "text", body, meta: thread ? { group: { thread: G } } : {},
+                           created_at: new Date().toISOString(), ...(thread ? { thread_id: thread } : {}) });
+    return id;
+  };
+  push("solo secret: I skipped Tuesday", undefined, "user");
+  store.data.rows[store.data.rows.length - 1].handled_at = "t";
+  push('[yui] group "Race week" thread=g-race-week members=@arnold,@sage lead=@sage hop=0 from=person\n> Person: plan Saturday\nplan Saturday', G);
+  const solo = push("and my own plan?");
+  const m = fakeModel((c) => /\[yui\] group/.test(String(lastUser(c).content))
+    ? "Easy 5k Saturday. @sage can you do the fuel?\n```handoff\nbasil \"x\"\n```" : "Your plan: rest.");
+  const r = await runAgent(store, arnold.id, { provider, fetch: m.fetch });
+  assert.equal(r.turns, 2, "one turn for the group, one for the solo thread");
+  const groupCall = m.calls.find((c) => /\[yui\] group/.test(String(lastUser(c).content)))!;
+  assert.doesNotMatch(JSON.stringify(groupCall.messages.slice(1)), /solo secret|my own plan/, "the group turn reads the group only");
+  const soloCall = m.calls.find((c) => c !== groupCall)!;
+  assert.doesNotMatch(JSON.stringify(soloCall.messages.slice(1)), /Race week/, "the solo turn reads its own thread only");
+  const out = store.data.rows.filter((x) => x.agent_id === arnold.id && x.sender === "agent" && x.meta?.turn);
+  const inGroup = out.find((x) => x.thread_id === G)!;
+  assert.match(inGroup.body, /Easy 5k/);
+  assert.deepEqual(inGroup.meta.mentions, ["sage"], "an @ in a group is an ask on its hop budget");
+  assert.doesNotMatch(inGroup.body, /yui:\/\/agent/, "no hand-off out of a group");
+  assert.equal(out.find((x) => !x.thread_id)!.meta.turn[0], solo);
+  assert.equal(m.calls.length, 2, "no hand-off turn for Basil");
 });
 
 test("a person's own key: their provider, their model, no monthly cap", async () => {

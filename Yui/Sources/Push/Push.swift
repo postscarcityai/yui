@@ -129,7 +129,7 @@ final class PushCenter: NSObject {
     /// This app's build ("112", a test build "112.1"): hosts send only the presets it can draw.
     static let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? ""
 
-    /// `yui://agent/<id>/thread` (also `yui://agent/<id>`), and `yui://settings[/<section>]`.
+    /// `yui://agent/<id>/thread` (also `yui://agent/<id>` or `yui://agent/<handle>`), and `yui://settings[/<section>]`.
     @discardableResult
     func open(_ url: URL) -> Bool {
         if let section = Self.settingsSection(url) {
@@ -140,10 +140,17 @@ final class PushCenter: NSObject {
             pendingSnap = true
             return true
         }
-        guard url.scheme == "yui", url.host() == "agent", let id = url.pathComponents.dropFirst().first,
-              !id.isEmpty else { return false }
+        guard let id = Self.agentTarget(url) else { return false }
         pendingAgentID = id
         return true
+    }
+
+    /// `yui://agent/<id or handle>[/thread]`: the agent to open. A hand-off card (YUI-144)
+    /// names it by handle (`yui://agent/basil`); ChatView matches either.
+    nonisolated static func agentTarget(_ url: URL) -> String? {
+        guard url.scheme == "yui", url.host() == "agent", let id = url.pathComponents.dropFirst().first,
+              !id.isEmpty else { return nil }
+        return id
     }
 
     /// `yui://snap`: the camera that hears you (a shortcut like "Log a meal").

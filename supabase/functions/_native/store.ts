@@ -20,7 +20,8 @@ export interface Store {
   removeAgent(agentId: string): Promise<void>;
   /** Person rows not handled yet, oldest first (text and taps only). */
   pending(agentId: string): Promise<Row[]>;
-  history(agentId: string, before: string, limit: number): Promise<Row[]>; // oldest first
+  history(agentId: string, before: string, limit: number, thread?: string | null): Promise<Row[]>; // oldest first, one thread
+  others(userId: string): Promise<{ handle: string; name: string }[]>; // the person's connected agents (Hermes and others)
   markDelivered(ids: string[]): Promise<void>;
   markHandled(ids: string[]): Promise<void>;
   doing(rowId: string, text: string | null): Promise<void>;
@@ -78,6 +79,7 @@ export interface LocalData {
   searches?: Record<string, number>; // "<user>:<day>" and "<user>:<month>" -> count
   searchKeys?: Record<string, string>; // a person's own Firecrawl key
   tables?: Record<string, TableStore>; // by agent id
+  others?: { handle: string; name: string; userId?: string }[]; // connected agents (Hermes and others), for @mentions
   jobs?: (JobItem & { claimedAt?: string })[];
 }
 
@@ -152,9 +154,13 @@ export class LocalStore implements Store {
   async pending(agentId: string) {
     return this.data.rows.filter((r) => r.agent_id === agentId && r.sender === "user" && !r.handled_at && r.kind !== "control");
   }
-  async history(agentId: string, before: string, limit: number) {
+  async history(agentId: string, before: string, limit: number, thread: string | null = null) {
     // <= in file order: rows written in the same millisecond still count (the turn drops its own rows).
-    return this.data.rows.filter((r) => r.agent_id === agentId && r.kind !== "control" && r.created_at <= before).slice(-limit);
+    return this.data.rows.filter((r) => r.agent_id === agentId && r.kind !== "control" && r.created_at <= before
+                                        && (r.thread_id ?? null) === thread).slice(-limit);
+  }
+  async others(userId: string) {
+    return (this.data.others ?? []).filter((o) => !o.userId || o.userId === userId).map(({ handle, name }) => ({ handle, name }));
   }
   async markDelivered(ids: string[]) {
     for (const r of this.data.rows) if (ids.includes(r.id) && !r.delivered_at) r.delivered_at = new Date().toISOString();
@@ -169,7 +175,11 @@ export class LocalStore implements Store {
   }
   async reply(agent: NativeAgent, body: string, meta: Record<string, unknown>) {
     const id = this.id("row");
-    this.data.rows.push({ id, agent_id: agent.id, sender: "agent", kind: "text", body, meta, created_at: new Date().toISOString() });
+    // The database puts a reply to a group row in that group (yui_group_accept); so does this.
+    const turn = Array.isArray(meta.turn) ? meta.turn : [];
+    const thread = this.data.rows.find((r) => turn.includes(r.id) && r.thread_id)?.thread_id;
+    this.data.rows.push({ id, agent_id: agent.id, sender: "agent", kind: "text", body, meta, created_at: new Date().toISOString(),
+                          ...(thread ? { thread_id: thread } : {}) });
     this.changed();
     return id;
   }

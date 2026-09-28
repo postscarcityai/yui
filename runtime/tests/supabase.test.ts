@@ -53,6 +53,20 @@ test("pending: the person's unhandled text and taps, oldest first", async () => 
   assert.match(calls[0].path, /sender=eq\.user&handled_at=is\.null&kind=in\.\(text,event\)&order=created_at\.asc/);
 });
 
+test("history reads one thread: the agent's own, or one group (YUI-144)", async () => {
+  const { store, calls } = fakeDb(() => []);
+  await store.history(A, "2026-09-27T00:00:00Z", 10);
+  await store.history(A, "2026-09-27T00:00:00Z", 10, "g1");
+  assert.match(calls[0].path, /select=[^&]*thread_id.*&thread_id=is\.null/);
+  assert.match(calls[1].path, /&thread_id=eq\.g1/);
+});
+
+test("connected agents: handle and name only, never a hosted one", async () => {
+  const { store, calls } = fakeDb(() => [{ handle: "urza", name: "Urza" }, { handle: "", name: "x" }]);
+  assert.deepEqual(await store.others(U), [{ handle: "urza", name: "Urza" }]);
+  assert.match(calls[0].path, /yui_agents\?select=handle,name&user_id=eq\.[^&]+&kind=neq\.hosted/);
+});
+
 test("handled clears the working row too", async () => {
   const { store, calls } = fakeDb(() => undefined);
   await store.markHandled(["r1", "r2"]);

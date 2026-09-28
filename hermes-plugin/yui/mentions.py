@@ -43,6 +43,23 @@ def handles_in(text: str, own: Iterable[str] = ()) -> List[str]:
     return out
 
 
+HANDOFF_CARD = re.compile(r'^\s*card\b.*?\burl="?yui://agent/([a-z0-9][a-z0-9-]{0,31})', re.I | re.M)
+YUI_FENCE = re.compile(r"```yui[^\n]*\n(.*?)(```|\Z)", re.S)
+
+
+def handoffs_in(text: str, own: Iterable[str] = ()) -> List[str]:
+    """Hand-off cards (YUI-144) in the reply's screens: `card ... url=yui://agent/<handle>`.
+    The phone jumps to that agent; the agent is told the way a mention tells it."""
+    skip = {h.lower() for h in own if h}
+    out: List[str] = []
+    for block in YUI_FENCE.finditer(text or ""):
+        for m in HANDOFF_CARD.finditer(block.group(1)):
+            h = m.group(1).lower()
+            if h not in skip and h not in out:
+                out.append(h)
+    return out[:1]  # one hand-off a reply
+
+
 def plain(body: str, n: int = NOTE_CHARS) -> str:
     """One line: the app's `[yui] ...` header dropped, screens as [screen]."""
     body = re.sub(r"^\[yui\] (mention|reply) [^\n]*\n?", "", body or "")

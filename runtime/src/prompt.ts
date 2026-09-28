@@ -59,10 +59,15 @@ https://en.wikipedia.org/wiki/Boom_bap
 Answer from what you found and say where it came from; the sources show under your answer as cards.
 
 ### Handing off
-When another agent on their Yui fits the job better, say so in one line and hand it over with what they need to know. That agent opens its own thread with it.
+When another agent in their crew fits the job better, say so in one line and hand it over with what they need to know. Their Yui takes them to that agent, which opens its thread with your note. One a turn.
 \`\`\`handoff
 gouda "Wants a lo-fi beat at 80 bpm to practice bass over"
-\`\`\``;
+\`\`\`
+Agents they connected (listed as connected) can't be handed to: write their @handle in your words to ask them, and their answer shows here. They read only what you write, so never pass on what your notes say about the person.
+
+### Groups and mentions
+A turn that starts \`[yui] group "<name>"\` is a group thread: the person and a few agents, the last lines quoted. Answer only your part, short. @handle a member to pass them a question. Everyone in the group reads what you write, so nothing from your notes they did not say there.
+A turn that starts \`[yui] mention from=<handle>\` or \`[yui] handoff from=<handle>\` comes from another agent: answer the person, never pass them on again.`;
 
 export const TABLE_RULES = `### Your tables
 You keep small tables for this person: their lists, logs and plans. They stay between chats and are yours alone. They are listed below under "Your tables". Words alone keep nothing: to add, change or make something, write the lines in your yui block. The person never sees those lines, only the views you draw.
@@ -115,7 +120,7 @@ Say what you do in \`tagline\` (under 8 words), \`about\` (two short sentences) 
 export const CAREFUL_RULES = `### Health
 You are a careful coach: ask about injuries, conditions and allergies before the first plan, never diagnose, never give medical or drug advice, and say once, briefly, to check with a doctor when it matters.`;
 
-export interface CrewEntry { handle: string; name: string; role: string }
+export interface CrewEntry { handle: string; name: string; role: string; connected?: boolean }
 
 export interface PromptInput {
   guide: string;
@@ -143,9 +148,11 @@ export function systemPrompt(p: Profile, memory: MemoryItem[], agentId: string, 
   parts.push(`## Who you are: ${p.name}${p.role ? `, ${p.role.toLowerCase()}` : ""}\n\n${p.soul}`);
   if (p.favorites.length) parts.push(`Screens you reach for first: ${p.favorites.map((f) => `\`${f}\``).join(", ")}. Use any other screen when it fits better.`);
   if (crew) {
-    const lines = ["## This person's crew", ...crew.map((c) => `- ${c.name} (@${c.handle}): ${c.role || "custom"}`)];
+    const lines = ["## This person's crew", ...crew.filter((c) => !c.connected).map((c) => `- ${c.name} (@${c.handle}): ${c.role || "custom"}`)];
+    const connected = crew.filter((c) => c.connected);
+    if (connected.length) lines.push("Connected (reach with @handle, no hand-off): " + connected.map((c) => `${c.name} (@${c.handle})`).join(", "));
     if (p.maker) {
-      const have = new Set(crew.map((c) => c.handle));
+      const have = new Set(crew.filter((c) => !c.connected).map((c) => c.handle));
       const more = shelf().filter((s) => !have.has(s.handle));
       if (more.length) lines.push("On the shelf, not added yet: " + more.map((s) => `${s.handle} (${s.role.toLowerCase()})`).join(", "));
     }

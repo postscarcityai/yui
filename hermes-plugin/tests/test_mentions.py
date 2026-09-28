@@ -135,6 +135,25 @@ class AdapterPath(unittest.TestCase):
         self.assertEqual(written[1]["meta"], {"turn": ["row-1"]})
         asyncio.run(a._insert("a1", "Handoff for @coach", sender="Coach"))
         self.assertNotIn("meta", written[2])
+        # A hand-off card (YUI-144): its agent is told first, then any @ in the words.
+        asyncio.run(a._insert("a1", 'Basil has this. Ask @coach later.\n```yui\ncard "Basil" body="Leg day, dinner" '
+                                     'url=yui://agent/basil cta="Open Basil"\n```'))
+        self.assertEqual(written[3]["meta"], {"turn": ["row-1"], "mentions": ["basil", "coach"]})
+
+
+class Handoffs(unittest.TestCase):
+    def test_a_card_that_opens_an_agent(self):
+        text = 'Over to Basil.\n```yui\ncard "Basil" body="x" url=yui://agent/Basil cta="Open Basil"\n```'
+        self.assertEqual(mentions.handoffs_in(text), ["basil"])
+
+    def test_one_a_reply_never_its_own_only_in_screens(self):
+        text = ('card "No" url=yui://agent/coach\n```yui\ncard "Me" url=yui://agent/yui\n'
+                'card "Arnold" url="yui://agent/arnold"\ncard "Basil" url=yui://agent/basil\n```')
+        self.assertEqual(mentions.handoffs_in(text, own=["yui"]), ["arnold"])
+
+    def test_other_links_are_not_hand_offs(self):
+        text = '```yui\ncard "Docs" url=https://www.yuigui.com/agent/basil\ncard "S" url=yui://settings/search\n```'
+        self.assertEqual(mentions.handoffs_in(text), [])
 
 
 if __name__ == "__main__":

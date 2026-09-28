@@ -60,6 +60,12 @@ export class SupabaseStore implements Store {
       .filter((a: NativeAgent | null): a is NativeAgent => !!a);
   }
 
+  async others(userId: string) {
+    // Connected agents: their handle and name only. They never read native memory (spec/NATIVE.md section 10).
+    const rows = await this.rest("GET", `yui_agents?select=handle,name&user_id=eq.${userId}&kind=neq.hosted&order=sort,created_at`);
+    return (rows as { handle: string; name: string }[]).filter((a) => a.handle);
+  }
+
   async memory(userId: string, agentId: string) {
     const rows = await this.rest("GET", `yui_native_memory?select=id,user_id,agent_id,kind,key,body,updated_at`
       + `&user_id=eq.${userId}&or=(agent_id.is.null,agent_id.eq.${agentId})&order=updated_at`);
@@ -95,14 +101,15 @@ export class SupabaseStore implements Store {
   }
 
   async pending(agentId: string) {
-    return await this.rest("GET", `yui_messages?select=id,sender,kind,body,meta,created_at`
+    return await this.rest("GET", `yui_messages?select=id,sender,kind,body,meta,created_at,thread_id`
       + `&agent_id=eq.${agentId}&sender=eq.user&handled_at=is.null&kind=in.(text,event)`
       + `&order=created_at.asc,id.asc&limit=50`) as Row[];
   }
 
-  async history(agentId: string, before: string, limit: number) {
-    const rows = await this.rest("GET", `yui_messages?select=id,sender,kind,body,meta,created_at`
+  async history(agentId: string, before: string, limit: number, thread: string | null = null) {
+    const rows = await this.rest("GET", `yui_messages?select=id,sender,kind,body,meta,created_at,thread_id`
       + `&agent_id=eq.${agentId}&kind=in.(text,event)&created_at=lt.${encodeURIComponent(before)}`
+      + `&thread_id=${thread ? `eq.${thread}` : "is.null"}`
       + `&order=created_at.desc,id.desc&limit=${limit}`) as Row[];
     return rows.reverse();
   }

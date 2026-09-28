@@ -277,10 +277,10 @@ struct CardPreset: View {
             if !folded {
                 if let link {
                     OptionPill(text: c.string("cta") ?? "Open", fill: s.accent, ink: s.onAccent, grow: true,
-                               icon: inApp ? "gearshape" : "arrow.up.right") {
+                               icon: handsOff ? "arrow.right" : inApp ? "gearshape" : "arrow.up.right") {
                         if inApp { PushCenter.shared.open(link) } else { openURL(link) }
                     }
-                        .accessibilityHint(inApp ? "Opens Settings" : "Opens in Safari")
+                        .accessibilityHint(handsOff ? "Opens that agent's thread" : inApp ? "Opens Settings" : "Opens in Safari")
                 } else if let cta = c.string("cta") {
                     OptionPill(text: cta, fill: s.accent, ink: s.onAccent, grow: true) {
                         emit(c.event(["cta": .string(cta)], echo: cta))
@@ -315,11 +315,13 @@ struct CardPreset: View {
     /// Other schemes are ignored and the button emits `{cta}` as usual.
     private var link: URL? {
         guard let raw = c.string("url"), let u = URL(string: raw) else { return nil }
-        // yui://settings/<section> opens Yui's own Settings (YUI-142); no other app link.
-        if PushCenter.settingsSection(u) != nil { return u }
+        // yui://settings/<section> opens Yui's own Settings (YUI-142); yui://agent/<handle>
+        // opens that agent's thread (a hand-off, YUI-144); no other app link.
+        if PushCenter.settingsSection(u) != nil || PushCenter.agentTarget(u) != nil { return u }
         return ["https", "itms-services"].contains(u.scheme?.lowercased() ?? "") ? u : nil
     }
     private var inApp: Bool { link?.scheme == "yui" }
+    private var handsOff: Bool { link.flatMap(PushCenter.agentTarget) != nil }
 }
 
 // MARK: - table

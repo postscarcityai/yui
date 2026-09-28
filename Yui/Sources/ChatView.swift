@@ -499,8 +499,16 @@ struct ChatView: View {
             showAgents = false
             showSettings = false
             settleDrawer(open: false)
-            agents.selectedID = id
-            if !agents.agents.contains(where: { $0.id == id }) { Task { await agents.refresh() } }
+            // A hand-off card names the agent by handle (yui://agent/basil, YUI-144).
+            let target = agents.idFor(id)
+            agents.selectedID = target
+            if !agents.agents.contains(where: { $0.id == target }) { Task { await agents.refresh() } }
+            #if DEBUG
+            // -yuiDemoHandoffReply "<lines>": on the demo account the agent handed to answers with these (YUI-144 shots).
+            if account.session?.userID == "demo", let reply = UserDefaults.standard.string(forKey: "yuiDemoHandoffReply") {
+                Task { try? await Task.sleep(for: .seconds(0.6)); store.demoAnswer(reply) }
+            }
+            #endif
         }
         .tint(c.accent)
     }

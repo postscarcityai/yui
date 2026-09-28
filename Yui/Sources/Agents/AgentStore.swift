@@ -199,6 +199,12 @@ final class AgentStore {
     var onlyShared: Bool { !agents.isEmpty && agents.allSatisfy(\.isShared) }
 
     /// The agent the chat talks to. Falls back to the default agent.
+    /// An agent's id from its id or its handle (a hand-off card says `yui://agent/basil`, YUI-144).
+    func idFor(_ key: String) -> String {
+        let h = key.lowercased()
+        return agents.first { $0.id == key || $0.handle == h }?.id ?? key
+    }
+
     var selectedID: String? {
         didSet {
             UserDefaults.standard.set(selectedID, forKey: "selectedAgent")

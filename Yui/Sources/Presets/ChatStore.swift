@@ -935,7 +935,34 @@ final class ChatStore {
         // Live replies can take the stage; history loading on open never does.
         if loaded { for m in new where m.yl != nil { stageUpdate(m.id, before: nil) } }
         pageUpdate(live)
+        handOff(live, at: row.createdAt)
         return true
+    }
+
+    /// A hand-off (YUI-144): a live reply's `card ... url=yui://agent/<handle>` takes the
+    /// person to that agent's thread, a beat after the card lands so they read who and why.
+    /// History never jumps: only a reply that arrives while this thread is open, and fresh.
+    private func handOff(_ live: [YLNode], at createdAt: String) {
+        guard let url = Self.handOffLink(live), let from = agent?.id,
+              Date.now.timeIntervalSince(YuiTime.date(createdAt) ?? .now) < 120 else { return }
+        var wait = 1.4
+        #if DEBUG
+        // -yuiDemoHandoffAfter <seconds>: a longer beat, so a test can photograph the card first.
+        if UserDefaults.standard.object(forKey: "yuiDemoHandoffAfter") != nil { wait = UserDefaults.standard.double(forKey: "yuiDemoHandoffAfter") }
+        #endif
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(wait))
+            guard self?.agent?.id == from else { return }
+            PushCenter.shared.open(url)
+        }
+    }
+
+    /// The first hand-off card's link in these lines, if any.
+    static func handOffLink(_ nodes: [YLNode]) -> URL? {
+        for n in nodes where n.op == .add && n.preset == "card" {
+            if let raw = n.props?["url"]?.string, let u = URL(string: raw), PushCenter.agentTarget(u) != nil { return u }
+        }
+        return nil
     }
 
     #if DEBUG
