@@ -248,3 +248,71 @@ struct PagePosition: View {
             .accessibilityIdentifier("page-position")
     }
 }
+
+/// The stage's dots (YUI-187, Chris Sep 28: "the dots we removed ... i also want those to
+/// slide, not fade between them and the dots should animate"). One small dot per screen in
+/// the agent's colors. The one on show is a pill that stretches toward the next dot and slides
+/// there as the finger drags, read from the pager's offset, so it follows the finger and
+/// springs with the page on release. A tap on a dot goes to that screen.
+/// VoiceOver hears one control, as before: "Screen 2, 2 of 4", and swipes up or down to page.
+struct PageDots: View, Animatable {
+    let screens: [Int]
+    /// Where the pager is, in screens: 0 the first, 1.5 halfway from the second to the third.
+    var progress: CGFloat
+    /// The screen on show, for VoiceOver.
+    let page: Int
+    let go: (Int) -> Void
+    @Environment(\.yuiTheme) private var theme
+    @Environment(\.colorScheme) private var scheme
+
+    nonisolated var animatableData: CGFloat {
+        get { progress }
+        set { progress = newValue }
+    }
+
+    static let dot: CGFloat = 6, pill: CGFloat = 16, pitch: CGFloat = 14
+
+    var body: some View {
+        let c = theme.swatch(scheme)
+        let n = screens.count
+        let p = min(max(progress, 0), CGFloat(n - 1))
+        let i = screens.firstIndex(of: page) ?? 0
+        // Between two dots the pill reaches for the next one, most at halfway.
+        let between = p - p.rounded(.down)
+        let reach = (1 - abs(2 * between - 1)) * Self.pitch * 0.7
+        let width = CGFloat(n - 1) * Self.pitch + Self.pill
+        ZStack(alignment: .leading) {
+            ForEach(0..<n, id: \.self) { k in
+                Circle().fill(c.inkSoft.opacity(0.4))
+                    .frame(width: Self.dot, height: Self.dot)
+                    .position(x: Self.pill / 2 + CGFloat(k) * Self.pitch, y: 15)
+            }
+            Capsule().fill(c.accent)
+                .frame(width: Self.pill + reach, height: Self.dot)
+                .position(x: Self.pill / 2 + p * Self.pitch, y: 15)
+        }
+        .frame(width: width, height: 30)
+        .padding(.horizontal, 8)
+        .background(c.surface.opacity(0.72), in: Capsule())
+        .contentShape(Capsule())
+        // A full finger to tap: the nearest dot to the touch.
+        .onTapGesture { at in
+            let k = Int(((at.x - 8 - Self.pill / 2) / Self.pitch).rounded())
+            let hit = min(max(k, 0), n - 1)
+            if screens[hit] != page { go(screens[hit]) }
+        }
+        .accessibilityElement()
+        .accessibilityLabel(i == 0 ? "Home" : "Screen \(page)")
+        .accessibilityValue("\(i + 1) of \(n)")
+        .accessibilityHint("Swipe up or down to change screens")
+        .accessibilityAddTraits(.updatesFrequently)
+        .accessibilityAdjustableAction { d in
+            switch d {
+            case .increment: if screens.indices.contains(i + 1) { go(screens[i + 1]) }
+            case .decrement: if i > 0 { go(screens[i - 1]) }
+            @unknown default: break
+            }
+        }
+        .accessibilityIdentifier("page-position")
+    }
+}

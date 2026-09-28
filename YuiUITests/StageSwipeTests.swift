@@ -36,7 +36,7 @@ final class StageSwipeTests: XCTestCase {
         field.typeText("Cooking bibimbap, keep me on track")
         app.buttons["stage-send-text"].tap()
         waitScreens(app, 3, "the stage has no screen 3")
-        XCTAssertFalse(app.buttons["page-tab-2"].exists, "dots on the stage")
+        XCTAssertTrue(app.pagePosition.isHittable, "no dots on the stage")
         // The reply turns the stage to its last screen; start from the answer.
         let screen = { (n: Int) in app.descendants(matching: .any)["stage-screen-\(n)"] }
         XCTAssertTrue(screen(3).waitForExistence(timeout: 10), "the reply did not show screen 3")
@@ -83,6 +83,79 @@ final class StageSwipeTests: XCTestCase {
         app.swipeLeft()
         XCTAssertTrue(screen(2).waitForExistence(timeout: 5), "a drag left on the chat did not open screen 2 on the stage")
         bar("screen 2 from the chat")
+    }
+
+    /// The dots (YUI-187, Chris Sep 28: "the dots we removed ... i also want those to slide, not
+    /// fade between them and the dots should animate"). A slow drag moves the page with the
+    /// finger: short of a fifth of the screen it springs back, past it the next page lands where
+    /// the finger took it. The dots say where you are, and a tap on one goes there.
+    func testDotsFollowTheDrag() throws { try dots(reduceMotion: false) }
+
+    /// Reduce Motion: the pages cross-fade instead of sliding, and the dots stay.
+    func testDotsReduceMotion() throws { try dots(reduceMotion: true) }
+
+    private func dots(reduceMotion: Bool) throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["-yuiStageFirst", "YES", "-yuiDemoAccount", "-yuiDemoAgents", "-yuiAgent", "yui",
+                               "-appearance", "light", "-yuiDemoReply", StagePagesTests.reply,
+                               "-yuiDemoPickupAfter", "0.5", "-yuiDemoReplyAfter", "2"]
+            + (reduceMotion ? ["-yuiReduceMotion"] : [])
+        app.launch()
+        XCTAssertTrue(app.buttons["stage-type"].waitForExistence(timeout: 15), "no stage")
+        app.buttons["stage-type"].tap()
+        let field = app.textFields["stage-field"]
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        field.typeText("Cooking bibimbap, keep me on track")
+        app.buttons["stage-send-text"].tap()
+        waitScreens(app, 3, "the stage has no screen 3")
+        let screen = { (n: Int) in app.descendants(matching: .any)["stage-screen-\(n)"] }
+        XCTAssertTrue(screen(3).waitForExistence(timeout: 10), "the reply did not show screen 3")
+        let dots = app.pagePosition
+        XCTAssertTrue(dots.isHittable, "no dots")
+        XCTAssertEqual(dots.value as? String, "3 of 3", "the dots are not on screen 3")
+
+        // A tap on the first dot goes home.
+        tapDot(app, 0)
+        waitScreen(app, 1, "the first dot did not go to the answer")
+        XCTAssertEqual(dots.value as? String, "1 of 3")
+
+        // A slow, short drag: the page goes with the finger and comes back.
+        let mid = app.coordinate(withNormalizedOffset: CGVector(dx: 0.7, dy: 0.45))
+        mid.press(forDuration: 0.1, thenDragTo: mid.withOffset(CGVector(dx: -50, dy: 0)),
+                  withVelocity: 60, thenHoldForDuration: 0.3)
+        sleep(1)
+        waitScreen(app, 1, "a short slow drag turned the page")
+
+        // A slow, long drag: the next page lands, whole, where it belongs.
+        mid.press(forDuration: 0.1, thenDragTo: mid.withOffset(CGVector(dx: -200, dy: 0)),
+                  withVelocity: 150, thenHoldForDuration: 0.1)
+        waitScreen(app, 2, "a long slow drag did not turn to screen 2")
+        XCTAssertTrue(screen(2).waitForExistence(timeout: 3), "screen 2 is not on show")
+        sleep(1)
+        let two = screen(2).frame, stage = app.windows.firstMatch.frame
+        XCTAssertLessThan(abs(two.midX - stage.midX), 30, "screen 2 did not settle in the middle (\(two))")
+        XCTAssertFalse(screen(3).exists, "the page beside it is still drawn")
+        XCTAssertEqual(dots.value as? String, "2 of 3", "the dots did not follow")
+        shot("dots-\(reduceMotion ? "still" : "slide")-screen2")
+
+        // The third dot jumps.
+        tapDot(app, 2)
+        waitScreen(app, 3, "the third dot did not go to screen 3")
+        XCTAssertEqual(dots.value as? String, "3 of 3")
+        sleep(1)
+        shot("dots-\(reduceMotion ? "still" : "slide")-screen3")
+
+        // The drag back comes the other way.
+        app.swipeRight()
+        waitScreen(app, 2, "a drag right on screen 3 did not go back to screen 2")
+    }
+
+    /// Taps dot `k` (0 is the first) inside the dots' row: 8 points of padding, then a dot
+    /// every `PageDots.pitch` (14) from the pill's half width (8).
+    private func tapDot(_ app: XCUIApplication, _ k: Int) {
+        let row = app.pagePosition
+        let x = 8 + 8 + CGFloat(k) * 14
+        row.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: x, dy: row.frame.height / 2)).tap()
     }
 
     private func waitGone(_ e: XCUIElement, timeout: TimeInterval = 5) -> Bool {

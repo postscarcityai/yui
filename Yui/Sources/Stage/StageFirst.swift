@@ -196,7 +196,7 @@ struct StageFirstView: View {
     var waiting = 0
     let reduceMotion: Bool
     /// The agent's screens (YUI-31): 1 is the answer playing here, 2... each screen it put
-    /// something on. A swipe apart, with no dots (YUI-168).
+    /// something on. A swipe apart, with a dot each (YUI-187).
     var screens: [Int] = [1]
     var screen = 1
     var style: [String: String] = [:]
@@ -215,6 +215,18 @@ struct StageFirstView: View {
     @State private var stageHeight: CGFloat = 0
     /// Heard words so far: the mic ring beats on each change.
     @State private var voice = 0
+    /// The pager (YUI-187): the page drawn in the middle, how far off center it sits, the page
+    /// beside it and on which side (-1 left, +1 right), the stage's width, and where the finger
+    /// let go of a drag that turned the page.
+    @State private var shown = 1
+    @State private var slide: CGFloat = 0
+    @State private var beside: Int?
+    @State private var side = 1
+    @State private var pagerWidth: CGFloat = 0
+    @State private var releasedAt: CGFloat?
+    /// How many dots the last turn crossed: a tap on the fourth dot from the second slides one
+    /// page but moves the pill two.
+    @State private var span: CGFloat = 1
 
     static let small = BarButtons.small, touch = BarButtons.touch
 
@@ -227,28 +239,11 @@ struct StageFirstView: View {
             Group {
                 if mic.live {
                     listening(c)
-                } else if screen > 1, screens.contains(screen) {
-                    ScreenPage(number: screen, parts: store.onPage(screen), agent: agent, style: style) { store.openStage($0) }
-                        .accessibilityIdentifier("stage-screen-\(screen)")
-                } else if let turn, turn.ask != nil || turn.hello {
-                    play(turn, c)
-                } else if hasHome {
-                    // The agent's home (YUI-168): what it does, what is waiting on you, its chips below.
-                    HomeHead(agent: agent, line: homeLine, waiting: AgentHome.waiting(store), open: openWaiting,
-                             seeAll: actions.menu, hasScreens: screens.count > 1)
                 } else {
-                    greeting(c, title: "Hi. \(showMic ? "Tap the mic and talk." : "Tap T and type.")",
-                             sub: "I answer right here, on the whole screen.")
+                    pager(turn, c)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            // No dots (Chris, Sep 27): the person swipes on instinct. VoiceOver still hears
-            // "Screen 2, 2 of 4" here and pages with a swipe up or down.
-            .overlay(alignment: .bottom) {
-                if screens.count > 1, !mic.live {
-                    PagePosition(page: at, screens: screens, go: actions.goScreen)
-                }
-            }
             // T is out: a tap anywhere above folds it back to mic, T and + (YUI-121).
             .overlay {
                 if model.typing {
@@ -257,6 +252,12 @@ struct StageFirstView: View {
                         .accessibilityHidden(true)
                         .accessibilityIdentifier("stage-tap-away")
                 }
+            }
+            // The dots (YUI-187): above the bar, only when there is somewhere to go.
+            if screens.count > 1, !mic.live {
+                PageDots(screens: screens, progress: dotsAt, page: at, go: actions.goScreen)
+                    .padding(.bottom, theme.spacing.xs)
+                    .transition(.opacity)
             }
             bottom(turn, c)
         }
@@ -268,15 +269,18 @@ struct StageFirstView: View {
         // keep a margin at both edges where nothing but the swipe lives. The mic's hold and its
         // slide to the trash start on the mic, so they stay the mic's. T out: the field's own.
         .contentShape(Rectangle())
+        // The screen under the finger moves with it and the next one comes in beside it (YUI-187).
         .gesture(DrawerPan(direction: .right, enabled: !mic.live && !model.typing) { x in
-            if at == 1 { actions.drawerDrag(max(0, x)) }
+            if at == 1 { actions.drawerDrag(max(0, x)) } else { follow(max(0, x), toward: -1) }
         } ended: { x, v in
-            if at == 1 { actions.drawerSettle(x, v) } else if Self.turns(x, v, by: 1) { go(-1) }
+            if at == 1 { actions.drawerSettle(x, v) } else { release(max(0, x), turns: Self.turns(x, v, by: 1), toward: -1) }
         })
-        .gesture(DrawerPan(direction: .left, enabled: !mic.live && !model.typing && screens.last.map { $0 > at } == true) { _ in
+        .gesture(DrawerPan(direction: .left, enabled: !mic.live && !model.typing && screens.last.map { $0 > at } == true) { x in
+            follow(min(0, x), toward: 1)
         } ended: { x, v in
-            if Self.turns(x, v, by: -1) { go(1) }
+            release(min(0, x), turns: Self.turns(x, v, by: -1), toward: 1)
         })
+        .onChange(of: at, initial: true) { old, new in arrive(at: new, from: old) }
         .background {
             ZStack {
                 c.background
@@ -359,8 +363,129 @@ struct StageFirstView: View {
 
     /// The screen before or after the one on show.
     private func go(_ step: Int) {
-        guard let i = screens.firstIndex(of: at), screens.indices.contains(i + step) else { return }
-        actions.goScreen(screens[i + step])
+        guard let n = neighbor(step) else { return }
+        actions.goScreen(n)
+    }
+
+    private func neighbor(_ step: Int) -> Int? {
+        guard let i = screens.firstIndex(of: at), screens.indices.contains(i + step) else { return nil }
+        return screens[i + step]
+    }
+
+    // MARK: The pager (YUI-187, Chris Sep 28: "slide, not fade")
+
+    /// The screens slide: the one on show sits `slide` points off center, and while a drag or
+    /// its spring is under way the one beside it (`beside`, on the `side` it comes from) is
+    /// drawn a screen's width away. Only those two are ever drawn. Reduce Motion cross-fades.
+    @ViewBuilder private func pager(_ turn: StageTurn?, _ c: Swatch) -> some View {
+        let still = look.reduced
+        ZStack {
+            ForEach(pagerPages, id: \.self) { n in
+                page(n, turn, c)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .offset(x: n == shown ? slide : slide + CGFloat(side) * pagerWidth)
+                    .allowsHitTesting(n == shown)
+                    .accessibilityHidden(n != shown)
+                    .transition(still ? .opacity : .identity)
+            }
+        }
+        .onGeometryChange(for: CGFloat.self, of: { $0.size.width }) { pagerWidth = $0 }
+    }
+
+    /// What screen `n` holds: 1 the answer or the home, 2 on the agent's screens.
+    @ViewBuilder private func page(_ n: Int, _ turn: StageTurn?, _ c: Swatch) -> some View {
+        if n > 1, screens.contains(n) {
+            ScreenPage(number: n, parts: store.onPage(n), agent: agent, style: style) { store.openStage($0) }
+                .accessibilityIdentifier("stage-screen-\(n)")
+        } else if let turn, turn.ask != nil || turn.hello {
+            play(turn, c)
+        } else if hasHome {
+            // The agent's home (YUI-168): what it does, what is waiting on you, its chips below.
+            HomeHead(agent: agent, line: homeLine, waiting: AgentHome.waiting(store), open: openWaiting,
+                     seeAll: actions.menu, hasScreens: screens.count > 1)
+        } else {
+            greeting(c, title: "Hi. \(showMic ? "Tap the mic and talk." : "Tap T and type.")",
+                     sub: "I answer right here, on the whole screen.")
+        }
+    }
+
+    /// The pages drawn: the one on show, and the one beside it while it moves.
+    private var pagerPages: [Int] {
+        guard let b = beside, b != shown, screens.contains(b) || b == 1 else { return [shown] }
+        return side < 0 ? [b, shown] : [shown, b]
+    }
+
+    /// Where the dots stand, in screens: the page on show, less how far the finger has taken it.
+    private var dotsAt: CGFloat {
+        let i = CGFloat(screens.firstIndex(of: shown) ?? 0)
+        guard pagerWidth > 0 else { return i }
+        return i - slide / pagerWidth * span
+    }
+
+    /// The finger is down and has moved `x`: the page goes with it, the next one (`toward` +1)
+    /// or the one before (-1) comes in from that side. Past the last screen it gives a little.
+    private func follow(_ x: CGFloat, toward step: Int) {
+        guard !look.reduced, shown == at else { return }
+        guard let n = neighbor(step) else { slide = x / 4; return }
+        var t = Transaction()
+        t.disablesAnimations = true
+        withTransaction(t) {
+            beside = n
+            side = step
+            slide = x
+            span = 1
+        }
+    }
+
+    /// The finger let go: the page turns (the store moves on; `arrive` takes it from where the
+    /// finger left it) or springs back.
+    private func release(_ x: CGFloat, turns: Bool, toward step: Int) {
+        if turns, neighbor(step) != nil {
+            releasedAt = look.reduced ? nil : x
+            go(step)
+        } else {
+            settle()
+        }
+    }
+
+    /// The store turned the page (a drag, a dot, a chip, VoiceOver). The new page takes over
+    /// from where the finger left the old one, or from the edge it comes in at, and springs
+    /// home; the old one slides out beside it. Reduce Motion: the pages cross-fade.
+    private func arrive(at new: Int, from old: Int) {
+        let released = releasedAt
+        releasedAt = nil
+        guard new != shown else { return }
+        let before = shown
+        guard !look.reduced, pagerWidth > 0, screens.contains(before) || before == 1 else {
+            withAnimation(look.reduced ? .easeInOut(duration: 0.25) : nil) {
+                shown = new
+                slide = 0
+                beside = nil
+            }
+            return
+        }
+        let from = screens.firstIndex(of: before) ?? 0, to = screens.firstIndex(of: new) ?? 0
+        let forward = to > from
+        let step: CGFloat = forward ? 1 : -1
+        var t = Transaction()
+        t.disablesAnimations = true
+        withTransaction(t) {
+            shown = new
+            slide = (released ?? 0) + step * pagerWidth
+            beside = before
+            side = forward ? -1 : 1
+            span = CGFloat(max(1, abs(to - from)))
+        }
+        settle()
+    }
+
+    /// The page springs to the middle; the one beside it goes once it is off screen.
+    private func settle() {
+        withAnimation(theme.spring) {
+            slide = 0
+        } completion: {
+            if slide == 0 { beside = nil }
+        }
     }
 
     // MARK: The visual (YUI-124)
