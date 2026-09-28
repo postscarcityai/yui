@@ -30,10 +30,10 @@ import YuiLines
 
     func testArnoldsHomeFillsChipsPagesAndShelfButNotTheRecord() {
         let store = load("arnold")
-        XCTAssertEqual(AgentHome.chips(store).map(\.label), ["Start a workout", "My split"])
-        XCTAssertEqual(store.screens, [1, 2, 3])
+        XCTAssertEqual(AgentHome.chips(store).map(\.label), ["Start a workout", "My split", "Log a workout", "Progress"])
+        XCTAssertEqual(store.screens, [1, 2, 3, 4])
         XCTAssertTrue(store.shown.isEmpty, "the home shows in the record")
-        XCTAssertTrue(store.awaitingYou.isEmpty)
+        XCTAssertTrue(store.awaitingYou.isEmpty, "Change a day is a tool on the home, not an ask")
         XCTAssertEqual(store.page, 1, "loading the home moved the person")
         XCTAssertNotNil(store.shelf["this week"])
         // My split goes to the live page it was saved from; Start a workout talks.
@@ -47,14 +47,14 @@ import YuiLines
 
     func testGoudasInstrumentsSitOnTheirPages() {
         let store = load("gouda")
-        XCTAssertEqual(store.screens, [1, 2, 3, 4])
-        XCTAssertEqual(store.onPage(2).flatMap { $0.yl?.onPage(2, style: [:]) ?? [] }.map(\.preset), ["loop"])
-        XCTAssertEqual(store.onPage(4).flatMap { $0.yl?.onPage(4, style: [:]) ?? [] }.map(\.preset), ["keys"])
+        XCTAssertEqual(store.screens, [1, 2, 3, 4, 5])
+        XCTAssertEqual(store.onPage(2).flatMap { $0.yl?.onPage(2, style: [:]) ?? [] }.map(\.preset), ["loop", "choose"])
+        XCTAssertEqual(store.onPage(4).flatMap { $0.yl?.onPage(4, style: [:]) ?? [] }.map(\.preset), ["keys", "choose"])
     }
 
     func testBasilsLogAMealFillsTheField() {
         let store = load("basil")
-        let log = AgentHome.chips(store)[0]
+        let log = AgentHome.chips(store)[1]
         XCTAssertEqual(log.label, "Log a meal")
         var words: String?
         AgentHome.tap(log, store: store, goPage: { _ in XCTFail("Log a meal paged") }, compose: { words = $0 })

@@ -84,7 +84,8 @@ extension ChatStore {
         var seen = Set<String>()
         var out: [ReviewItem] = []
         for (i, m) in messages.enumerated().reversed() {
-            guard !m.fromUser, !m.hello, let yl = m.yl, !m.id.hasPrefix("shelf-") else { continue }
+            // The home's pickers (Change a day, Scale) are standing tools, not asks.
+            guard !m.fromUser, !m.hello, !m.home, let yl = m.yl, !m.id.hasPrefix("shelf-") else { continue }
             let top = yl.top
             for (j, c) in top.enumerated().reversed() {
                 let fresh = seen.insert(c.ylID).inserted

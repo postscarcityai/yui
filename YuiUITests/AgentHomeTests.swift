@@ -25,7 +25,7 @@ final class AgentHomeTests: XCTestCase {
         XCTAssertTrue(app.buttons["home-menu-sat"].exists, "the ask is not on the home")
         XCTAssertTrue(app.buttons["home-menu-max"].exists)
         XCTAssertFalse(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'page-tab-'")).firstMatch.exists, "dots")
-        XCTAssertEqual(app.pagePosition.value as? String, "1 of 3", "VoiceOver does not hear where it is")
+        XCTAssertEqual(app.pagePosition.value as? String, "1 of 4", "VoiceOver does not hear where it is")
         sleep(1)
         shot("arnold-\(appearance)-1-home")
 
@@ -67,8 +67,8 @@ final class AgentHomeTests: XCTestCase {
         shot("basil-light-2-log")
         app.buttons["stage-back-to-mic"].tap()
         app.buttons["home-chip-groceries"].tap()
-        let groceries = app.descendants(matching: .any)["stage-screen-3"]
-        XCTAssertTrue(groceries.waitForExistence(timeout: 5), "Grocery list did not open screen 3")
+        let groceries = app.descendants(matching: .any)["stage-screen-4"]
+        XCTAssertTrue(groceries.waitForExistence(timeout: 5), "Grocery list did not open screen 4")
         XCTAssertTrue(groceries.staticTexts["Greek yogurt"].exists)
         app.goToScreen(2)
         XCTAssertTrue(app.descendants(matching: .any)["stage-screen-2"].staticTexts["Macros vs goal"].waitForExistence(timeout: 5))
