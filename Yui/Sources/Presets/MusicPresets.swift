@@ -52,6 +52,17 @@ final class MusicHost {
     var metroOwner: Int?
     /// The instrument recording a take, if any (one at a time).
     var takeOwner: Int?
+    /// Stops the clicking metronome and sends its practice (YUI-184).
+    @ObservationIgnored var metroStop: (() -> Void)?
+
+    /// The thread is about to show another agent: the click stops now, while its practice
+    /// still goes to the agent it clicked for. One store serves every agent, so a click
+    /// stopped by its view going away would log Gouda's minutes on the next agent.
+    func leavingAgent() {
+        let stop = metroStop
+        metroStop = nil
+        stop?()
+    }
 }
 
 /// Row colors from the agent's theme, so a beat looks like its agent.
@@ -152,6 +163,7 @@ struct LoopPreset: View {
     @Environment(\.ylEmit) private var emit
     @Environment(\.ylScope) private var scope
     @Environment(\.ylAnswers) private var answers
+    @Environment(\.ylAgent) private var agent
     @Environment(\.yuiTheme) private var theme
     @Environment(\.colorScheme) private var scheme
 
@@ -165,6 +177,13 @@ struct LoopPreset: View {
     private var playing: Bool { host.loopOwner == c.serial }
     /// What a patch can change: the grid resets to the agent's version.
     private var patternKey: [YLValue?] { [c.props["p"], c.props["rows"], c.props["steps"]] }
+    /// The loop as the agent drew it, which a beat kept on the phone sits on (YUI-184).
+    private var base: String {
+        LoopDrafts.base(p: c.strings("p") ?? [], rows: rows, steps: steps,
+                        bpm: c.clamp("bpm", 40...240, 96), swing: c.clamp("swing", 0...75, 0))
+    }
+    /// The person's unsent beat on this loop, kept on the phone (a looper the agent named).
+    private var draft: LoopDrafts.Draft? { LoopDrafts.shared.draft(agent, c.ylID, base: base) }
 
     var body: some View {
         let s = theme.swatch(scheme)
@@ -195,8 +214,22 @@ struct LoopPreset: View {
         .modifier(SoundHold())
         .sensoryFeedback(.selection, trigger: tapped)
         .onChange(of: patternKey) { edited = nil; sync() }
-        .onChange(of: c.props["bpm"], initial: true) { bpm = c.clamp("bpm", 40...240, 96) }
-        .onChange(of: c.props["swing"], initial: true) { swing = c.clamp("swing", 0...75, 0) }
+        .onChange(of: c.props["bpm"], initial: true) { bpm = draft?.bpm ?? c.clamp("bpm", 40...240, 96) }
+        .onChange(of: c.props["swing"], initial: true) { swing = draft?.swing ?? c.clamp("swing", 0...75, 0) }
+        .onChange(of: base, initial: true) { old, new in
+            // A beat kept on the phone comes back on a relaunch or another agent and back.
+            if let d = draft {
+                edited = LoopPattern.grid(d.p, rows: rows.count, steps: steps)
+                bpm = d.bpm
+                swing = d.swing
+                sent = false
+                sync()
+                return
+            }
+            // The agent drew a different loop: its draft goes. A tempo change alone keeps the grid.
+            LoopDrafts.shared.prune(agent, c.ylID, base: new)
+            if old != new, edited != nil, old.split(separator: ";").prefix(3) == new.split(separator: ";").prefix(3) { keep() }
+        }
         .onChange(of: bpm) { sync() }
         .onChange(of: swing) { sync() }
         .onChange(of: answers(scope, c.ylID), initial: true) { _, v in
@@ -219,11 +252,11 @@ struct LoopPreset: View {
             .accessibilityLabel(playing ? "Stop" : "Play")
             .accessibilityIdentifier("loop-play")
             Spacer(minLength: 0)
-            MusicButton(text: "−") { bpm = max(40, bpm - 2) }.accessibilityLabel("Slower")
+            MusicButton(text: "−") { bpm = max(40, bpm - 2); keep() }.accessibilityLabel("Slower")
                 .accessibilityIdentifier("loop-slower")
-            MusicButton(text: "+") { bpm = min(240, bpm + 2) }.accessibilityLabel("Faster")
+            MusicButton(text: "+") { bpm = min(240, bpm + 2); keep() }.accessibilityLabel("Faster")
                 .accessibilityIdentifier("loop-faster")
-            MusicButton(text: compact ? "\(swing)%" : "Swing \(swing)%") { swing = swing >= 75 ? 0 : swing + 25 }
+            MusicButton(text: compact ? "\(swing)%" : "Swing \(swing)%") { swing = swing >= 75 ? 0 : swing + 25; keep() }
                 .accessibilityLabel("Swing \(swing) percent")
                 .accessibilityIdentifier("loop-swing")
         }
@@ -282,6 +315,19 @@ struct LoopPreset: View {
         sent = false
         tapped += 1
         sync()
+        keep()
+    }
+
+    /// The beat as it is now, kept on the phone until it is sent or the agent changes the loop.
+    /// Back to the agent's own loop, nothing is kept.
+    private func keep() {
+        let p = LoopPattern.strings(grid)
+        let theirs = LoopPattern.strings(LoopPattern.grid(c.strings("p") ?? [], rows: rows.count, steps: steps))
+        if p == theirs, bpm == c.clamp("bpm", 40...240, 96), swing == c.clamp("swing", 0...75, 0) {
+            LoopDrafts.shared.clear(agent, c.ylID)
+        } else {
+            LoopDrafts.shared.set(agent, c.ylID, .init(base: base, p: p, bpm: bpm, swing: swing))
+        }
     }
 
     /// Hands the current loop to the engine; it lands on the next step.

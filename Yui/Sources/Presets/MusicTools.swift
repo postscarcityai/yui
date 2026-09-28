@@ -405,12 +405,14 @@ struct MetronomePreset: View {
         YuiSound.shared.startMetronome()
         startedAt = Date()
         said = nil
+        host.metroStop = { stop() }
     }
 
     private func stop() {
         guard playing else { return }
         YuiSound.shared.stopMetronome()
         host.metroOwner = nil
+        host.metroStop = nil
         let seconds = Int(Date().timeIntervalSince(startedAt ?? Date()).rounded())
         startedAt = nil
         guard seconds >= 10 else { return }

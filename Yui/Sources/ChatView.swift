@@ -454,6 +454,8 @@ struct ChatView: View {
             }
         }
         .onChange(of: agents.selected?.id, initial: true) { old, new in
+            // A click still going is Gouda's practice: it goes to him before the thread moves on (YUI-184).
+            if old != new { MusicHost.shared.leavingAgent() }
             // The demo account keeps the local demo chat, with the agent's face on it.
             if account.session?.userID == "demo" {
                 store.demo(agents.selected)

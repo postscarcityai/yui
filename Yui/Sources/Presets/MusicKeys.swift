@@ -440,6 +440,9 @@ struct ChordsPreset: View {
                     chordButton(i, chords[i], s)
                 }
             }
+            // A patch that swaps the chords (a looped bar: 4 buttons to 2) left the lazy grid
+            // blank until a relaunch. New chords, a new grid (YUI-184).
+            .id(chords.map(\.name))
             HStack(spacing: theme.spacing.s) {
                 Text("Strum")
                     .font(theme.font(theme.type.caption, .bold))
