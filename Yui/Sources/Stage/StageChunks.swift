@@ -47,6 +47,8 @@ struct StageTurn: Equatable {
     var replies = 0
     /// A reply came back as nothing but error lines: the turn failed (Stage motion's error).
     var failed = false
+    /// The person stopped it (YUI-190): nothing more comes for this turn.
+    var stopped = false
 
     /// The questions screen follows the last chunk.
     var pages: Int { chunks.count + (questions.isEmpty ? 0 : 1) }
@@ -142,6 +144,7 @@ enum StageChunks {
         for m in messages[(i + 1)...] {
             if m.fromUser { break }
             if m.home { continue }  // the agent's home is its chips and pages, not part of an answer (YUI-168)
+            if m.stopped { t.stopped = true; continue }  // a note in the record, never a chunk (YUI-190)
             add(m, to: &t)
         }
         return t

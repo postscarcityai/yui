@@ -17,6 +17,7 @@ import { buildTurn, photoPaths, type CrewEntry } from "./prompt.ts";
 import { next, parseLine, validZone } from "./schedule.ts";
 import { Firecrawl, LookupError, searchInvite, sourceCards, type Source } from "./search.ts";
 import type { Store } from "./store.ts";
+import { Stopped, guard } from "./stop.ts";
 import { crew } from "./profiles.ts";
 import { type Clock, type TableStore, LIMITS, applyHeld, applyTables, asText, changed, clock, diff, draw, emptyStore, fromSeeds, pretty,
          readQueries, tablesPrompt } from "./tables.ts";
@@ -82,6 +83,8 @@ export interface TurnOptions {
   log?: (msg: string) => void;
   now?: () => number;
   newId?: () => string;
+  signal?: AbortSignal; // the person's Stop (YUI-190): aborted, the model call ends and nothing more is written
+  stopPoll?: number; // ms between looks for a Stop while a turn runs, default 1500
 }
 
 export interface SearchOptions {
@@ -112,7 +115,7 @@ export async function runAgent(store: Store, agentId: string, opts: TurnOptions)
       // One thread a turn: a group's rows (YUI-144) and the agent's own are answered apart.
       const rows = oneThread(await store.pending(agentId));
       if (!rows.length) break;
-      const done = await oneTurn(store, agent, rows, opts, log, result, 0);
+      const done = await stoppable(store, agent, rows, opts, log, (s, o) => oneTurn(s, agent, rows, o, log, result, 0));
       result.turns++;
       if (!done.handled) break; // the model is away: the rows wait for the next message
     }
@@ -159,12 +162,34 @@ async function synthetic(store: Store, agent: NativeAgent, line: string, opts: T
     for (let i = 0; i < (opts.maxTurns ?? 3); i++) {
       const rows = oneThread(await store.pending(agent.id));
       if (!rows.length) break;
-      const done = await oneTurn(store, agent, rows, opts, log, result, depth);
+      const done = await stoppable(store, agent, rows, opts, log, (s, o) => oneTurn(s, agent, rows, o, log, result, depth));
       result.turns++;
       if (!done.handled) break;
     }
   } finally {
     await store.unlock(agent.id);
+  }
+}
+
+/**
+ * A turn the person can stop (YUI-190): its writes ask about a Stop first and its model call
+ * ends when one lands. Stopped, it wrote nothing and its rows are handled.
+ */
+async function stoppable(store: Store, agent: NativeAgent, rows: Row[], opts: TurnOptions, log: (m: string) => void,
+                         run: (store: Store, opts: TurnOptions) => Promise<{ handled: boolean }>): Promise<{ handled: boolean }> {
+  const real = rows.filter((r) => !r.id.startsWith(SYNTHETIC));
+  if (!real.length) return run(store, opts);
+  const who = (real[0] as Row & { user_id?: string }).user_id ?? agent.userId;
+  const g = guard(store, agent.id, who, real[0].created_at, { fetch: opts.fetch, poll: opts.stopPoll });
+  try {
+    return await run(g.store, { ...opts, fetch: g.fetch, signal: g.signal });
+  } catch (e) {
+    if (!(e instanceof Stopped) && !g.signal.aborted) throw e;
+    await store.markHandled(real.map((r) => r.id));
+    log(`${agent.profile.name}: stopped by the person, nothing written`);
+    return { handled: true };
+  } finally {
+    g.end();
   }
 }
 
@@ -499,10 +524,13 @@ export async function runJob(store: Store, jobId: string, opts: TurnOptions): Pr
   const own = await store.ownKey(agent.userId);
   const provider = own ? ownProvider(own) : opts.provider;
   const routes = await store.routes();
+  // The person's Stop (YUI-190) reaches a job too: nothing logged, no breakdown.
+  const g = guard(store, job.agentId, job.userId, job.createdAt, { fetch: opts.fetch, poll: opts.stopPoll });
+  const jobOpts = { ...opts, fetch: g.fetch, signal: g.signal };
   try {
-    const done = await runMealJob(store, job, {
+    const done = await runMealJob(g.store, job, {
       // The job answers JSON: no thinking budget, the answer's room is enough.
-      ask: (req) => ask(opts, provider, provider.reasoning ? { ...req, reasoning: { enabled: false } } : req),
+      ask: (req) => ask(jobOpts, provider, provider.reasoning ? { ...req, reasoning: { enabled: false } } : req),
       route: (photo) => provider.model ?? (photo ? routes.vision : routes.text),
       inline: (messages) => inlineImages(messages, opts.fetchMedia ?? fetch),
       log: (m) => log(`${agent.profile.name}: ${m}`),
@@ -513,7 +541,7 @@ export async function runJob(store: Store, jobId: string, opts: TurnOptions): Pr
         if (plansMeals(a) && !n.limit && n.food !== false) {
           body = await withMealScreens(store, a, body, await store.tables(a.id), clock((opts.now ?? Date.now)(), validZone(await store.timezone(a.userId))), ["today"]);
         }
-        const id = await store.reply(a, body, meta);
+        const id = await g.store.reply(a, body, meta);
         result.replies.push(id);
         return id;
       },
@@ -522,6 +550,11 @@ export async function runJob(store: Store, jobId: string, opts: TurnOptions): Pr
     await store.finishJob(job.id, "done", done.result);
     result.turns++;
   } catch (e: any) {
+    if (e instanceof Stopped || g.signal.aborted) {
+      await store.finishJob(job.id, "failed", { stopped: true });
+      log(`${agent.profile.name}: meal job ${job.id} stopped by the person, nothing written`);
+      return result;
+    }
     log(`${agent.profile.name}: meal job ${job.id} failed: ${e?.message ?? e}`);
     // A model that is away gets another go from the tick; the third try tells the person.
     if (e instanceof ModelUnavailable && job.tries < 3) {
@@ -531,6 +564,8 @@ export async function runJob(store: Store, jobId: string, opts: TurnOptions): Pr
     await store.finishJob(job.id, "failed", { error: String(e?.message ?? e).slice(0, 200) });
     result.replies.push(await store.reply(agent, `${agent.profile.name} couldn't work out that meal: ${e?.message ?? "something went wrong"}. Send the photo again?`,
                                           { native: { meal: job.id, failed: true } }));
+  } finally {
+    g.end();
   }
   return result;
 }
@@ -1829,11 +1864,13 @@ export async function inlineImages(messages: any[], fetchImpl: typeof fetch): Pr
 }
 
 async function ask(opts: TurnOptions, pv: Provider, req: Record<string, unknown>): Promise<Completion> {
+  if (opts.signal?.aborted) throw new Stopped();
   const client = new ChatClient(pv.url, { key: pv.key, headers: pv.headers, fetch: opts.fetch, idle: 120 });
   const body = { ...req, ...(pv.extra ?? {}) } as any;
   try {
     return await client.complete(body, { stream: true });
   } catch (e) {
+    if (opts.signal?.aborted) throw new Stopped(); // the person's Stop ended the call, not the model
     if (!(e instanceof ModelUnavailable)) throw e;
     await new Promise((r) => setTimeout(r, Math.min((e.retryAfter ?? 2) * 1000, 8000)));
     return await client.complete(body, { stream: true });

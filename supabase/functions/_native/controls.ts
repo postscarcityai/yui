@@ -7,6 +7,7 @@
 // row counts, read and delete) and Model (read only). No turn, no model call.
 import { MODELS } from "./models.ts";
 import type { Store } from "./store.ts";
+import { isStop, stopTurns } from "./stop.ts";
 import { describe, next, parseLine } from "./schedule.ts";
 import type { MemoryItem, NativeAgent, ScheduleItem } from "./types.ts";
 import { asText, diff, write } from "./tables.ts";
@@ -112,6 +113,11 @@ export async function answerControl(store: Store, rowId: string): Promise<boolea
   if (!row || row.kind !== "control" || row.sender !== "user") return false;
   const agent = await store.agent(row.agent_id);
   if (!agent) return true;
+  // Stop (YUI-190): the running turn sees it at its next write; the rest is dropped here.
+  if (isStop(row)) {
+    await stopTurns(store, agent, row);
+    return true;
+  }
   const own = await store.ownKey(agent.userId);
   const provider = own ? `your own ${({ openrouter: "OpenRouter", trustedrouter: "TrustedRouter", groq: "Groq", custom: "model server" } as Record<string, string>)[own.provider]} key`
     : "OpenRouter, on Yui";

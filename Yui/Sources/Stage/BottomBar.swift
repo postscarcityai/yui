@@ -21,6 +21,8 @@ struct BarActions {
     var micUp: () -> Void
     /// VoiceOver's activate: the tap, with no hold.
     var micTap: () -> Void
+    /// Set while the agent works (YUI-190): the mic is a stop square and a tap stops it.
+    var stop: (() -> Void)? = nil
 }
 
 /// + T and the mic, bottom right. While the mic is on only the mic shows.
@@ -46,6 +48,8 @@ struct BarButtons: View {
     @Environment(\.yuiTheme) private var theme
     @Environment(\.colorScheme) private var scheme
     @GestureState private var press: CGFloat?
+    /// Counts Stop taps: each one is a firm tap under the thumb.
+    @State private var stops = 0
 
     /// The sizes Chris picked on the mock (a notch under its first cut): mic 58,
     /// T and + 40 with a 48 point touch, 8 apart.
@@ -58,9 +62,17 @@ struct BarButtons: View {
         HStack(spacing: 8) {
             if showAttach, !micOn { attach(c).transition(pop) }
             if showType || !showMic, !micOn { type(c).transition(pop) }
-            if showMic { mic(c) }
+            // Chris on TestFlight (YUI-190): "Find the best place to put a cancel button... I'm
+            // leaning towards the main screen." The mic's own spot, always under the thumb.
+            if let stop = actions.stop { stopButton(c, stop).transition(swap) } else if showMic { mic(c).transition(swap) }
         }
         .animation(reduceMotion ? .easeInOut(duration: 0.2) : theme.spring, value: micOn)
+        .animation(reduceMotion ? .easeInOut(duration: 0.2) : theme.spring, value: actions.stop != nil)
+    }
+
+    /// The mic and the stop square trade places where they stand.
+    private var swap: AnyTransition {
+        reduceMotion ? .opacity : .scale(scale: 0.7).combined(with: .opacity)
     }
 
     private var pop: AnyTransition {
@@ -97,6 +109,28 @@ struct BarButtons: View {
         .disabled(attachDisabled)
         .accessibilityLabel("Attach")
         .accessibilityIdentifier("\(prefix)-attach")
+    }
+
+    /// Stop (YUI-190): the mic's size and color, a square in it. One tap ends the agent's turn;
+    /// the mic comes back at once, so the next thing can be said right away.
+    private func stopButton(_ c: Swatch, _ stop: @escaping () -> Void) -> some View {
+        Button {
+            stops += 1
+            stop()
+        } label: {
+            Image(systemName: "stop.fill")
+                .font(.system(size: Self.micSize * 0.3, weight: .bold))
+                .foregroundStyle(c.onAccent)
+                .frame(width: Self.micSize, height: Self.micSize)
+                .background(c.accent, in: Circle())
+                .shadow(color: c.accent.opacity(0.45), radius: 9, y: 6)
+                .contentShape(Circle())
+        }
+        .buttonStyle(BounceButtonStyle())
+        .sensoryFeedback(.impact(weight: .medium), trigger: stops)
+        .accessibilityLabel("Stop")
+        .accessibilityHint("Stops the agent's answer.")
+        .accessibilityIdentifier("\(prefix)-stop")
     }
 
     /// A tap talks hands-free; a hold talks until the finger lets go. The drag runs in

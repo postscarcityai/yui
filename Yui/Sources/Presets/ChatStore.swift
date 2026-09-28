@@ -30,6 +30,8 @@ struct ChatMessage: Identifiable, Equatable {
     /// The agent's home (`meta.native = "home"`, YUI-168): its shortcuts and starter screens,
     /// written once. It fills the chips and the pages and never shows in the record.
     var home = false
+    /// The person stopped the agent here (YUI-190): a quiet "Stopped" in the record, nothing on the stage.
+    var stopped = false
 }
 
 /// The chat's messages and the events going back to the agent.
@@ -270,6 +272,22 @@ final class ChatStore {
     /// What the agent says it is doing on this turn (`doing`, YUI-63): its
     /// words and step for the working row. Nil: the working word.
     private(set) var doing: YLDoing?
+    /// Work the agent runs after its answer (YUI-103: Basil's "Got it, working out the macros"),
+    /// by its job id: the agent is still on it until the job's own answer lands.
+    private(set) var job: String?
+    private var jobAt: Date?
+    /// The agent is on something the person can stop (YUI-190): a turn, or a job behind its answer.
+    var working: Bool { waiting || job != nil }
+    /// What a Stop ended (YUI-190): the person's rows and the jobs. An answer to any of them
+    /// that lands later is never shown, in this session or when the thread opens again.
+    private var stoppedRows = Set<String>()
+    private var stoppedJobs = Set<String>()
+    /// A job's answer is owed at most this long after its "working on it" (a meal takes seconds).
+    static let jobWindow: TimeInterval = 10 * 60
+    #if DEBUG
+    /// The demo account's scripted answer on its way: Stop cancels it.
+    private var demoTurn: Task<Void, Never>?
+    #endif
     /// How long this agent's recent turns took, pickup to finished, oldest
     /// first (TestFlight AE1JyD1P: "give a range, like an iPhone install").
     /// The working row turns them into "Usually 1 to 3 min".
@@ -610,6 +628,10 @@ final class ChatStore {
         waiting = false
         pickedUpAt = nil
         doing = nil
+        job = nil
+        jobAt = nil
+        stoppedRows = []
+        stoppedJobs = []
         loaded = false
         error = nil
         guard client != nil else { return }
@@ -752,12 +774,83 @@ final class ChatStore {
         doing = nil
     }
 
+    // MARK: Stop (YUI-190)
+
+    /// The person's Stop: a control row from them with op stop.
+    static func isStop(_ row: ThreadRow) -> Bool {
+        row.kind == "control" && row.sender == "user" && row.meta?.object?["op"]?.string == "stop"
+    }
+
+    /// True when an agent row answers something a Stop ended: its meta.turn names a stopped
+    /// row, or it is a stopped job's answer (`meta.native.meal`).
+    static func answers(_ meta: YLValue?, rows: Set<String>, jobs: Set<String>) -> Bool {
+        let o = meta?.object
+        if !rows.isEmpty, let turn = o?["turn"]?.array,
+           turn.contains(where: { $0.string.map { rows.contains($0.lowercased()) } ?? false }) { return true }
+        if !jobs.isEmpty, let job = o?["native"]?.object?["meal"]?.string, jobs.contains(job) { return true }
+        return false
+    }
+
+    /// A job behind an answer (YUI-103): the agent is on it from its "working on it"
+    /// (`meta.native.queued`) until the job's own answer, or `jobWindow` at most.
+    private func trackJob(_ row: ThreadRow) {
+        guard let n = row.meta?.object?["native"]?.object, let id = n["meal"]?.string else { return }
+        if n["queued"]?.bool == true {
+            guard let at = YuiTime.date(row.createdAt), Date.now.timeIntervalSince(at) < Self.jobWindow else { return }
+            job = id
+            jobAt = at
+        } else if job == id {
+            job = nil
+            jobAt = nil
+        }
+    }
+
+    /// Stop: the mic's stop square while the agent works. The phone stops waiting at once and
+    /// the record says Stopped. The host reads a control row (never a turn): it ends the turn
+    /// or drops the job, with nothing written. Its late answers never land here.
+    func stop() {
+        guard working else { return }
+        let id = UUID().uuidString.lowercased()
+        #if DEBUG
+        if client == nil {
+            demoTurn?.cancel()
+            demoTurn = nil
+            seen.insert(id)
+            halt(note: id)
+            return
+        }
+        #endif
+        guard client != nil, let agentID = agent?.id, let user = account?.session?.userID else { return }
+        seen.insert(id)
+        halt(note: id)
+        Outbox.shared.add(.init(id: id, userID: user, agentID: agentID, body: "stop", kind: "control",
+                                meta: .object(["op": .string("stop")]), queuedAt: .now))
+    }
+
+    /// A Stop, sent from here or read back from the thread (another phone, a reopen): what
+    /// was running is over, answers to it are dropped, and a quiet Stopped goes in the record.
+    private func halt(note id: String) {
+        let from = messages.lastIndex { !$0.fromUser && !$0.stopped }.map { $0 + 1 } ?? 0
+        for m in messages[from...] where m.fromUser { stoppedRows.insert(m.rowID.lowercased()) }
+        if let job { stoppedJobs.insert(job) }
+        waiting = false
+        pickedUpAt = nil
+        doing = nil
+        job = nil
+        jobAt = nil
+        guard !messages.contains(where: { $0.id == id }) else { return }
+        withAnimation(loaded ? spring : nil) {
+            messages.append(ChatMessage(id: id, text: "Stopped", fromUser: false, stopped: true))
+        }
+    }
+
     /// Messages still in the outbox for this thread, after the history: they
     /// were sent last. Shown as not sent yet until they land.
     private func restorePending() {
         guard let agentID = agent?.id else { return }
         var new: [ChatMessage] = []
         for item in Outbox.shared.pending(agentID: agentID) where seen.insert(item.id).inserted {
+            if item.kind == "control" { continue }  // a Stop on its way (YUI-190): its note is already here
             if item.kind == "event" {
                 record(meta: item.meta)
                 applyReaction(meta: item.meta)
@@ -787,6 +880,7 @@ final class ChatStore {
             for row in rows where add(row) && row.sender == "agent" { landed = true }
             if landed, !first { Perf.shared.span(.arriveDrawn, from: arrived) }
             if first { resume(rows) }
+            if let jobAt, Date.now.timeIntervalSince(jobAt) > Self.jobWindow { job = nil; self.jobAt = nil }
             if let last = rows.last?.createdAt, last > (cursor ?? "") { cursor = last }
             loaded = true
             if first { Perf.shared.threadShown() }
@@ -855,7 +949,7 @@ final class ChatStore {
     /// A thread opened mid-turn: its newest row is the person's and the agent
     /// has not finished it, so the working note picks up where it was.
     private func resume(_ rows: [ThreadRow], now: Date = .now) {
-        guard let last = rows.last, last.sender == "user", last.handledAt == nil,
+        guard let last = rows.last, last.sender == "user", last.kind != "control", last.handledAt == nil,
               let sent = YuiTime.date(last.createdAt), now.timeIntervalSince(sent) < Self.turnWindow else { return }
         waiting = true
         waitingSince = sent
@@ -891,10 +985,18 @@ final class ChatStore {
     @discardableResult
     private func add(_ row: ThreadRow) -> Bool {
         let id = row.id.lowercased()
-        if row.kind == "control" { return false }  // settings traffic (YUI-70), never in the thread
+        if row.kind == "control" {
+            // Settings traffic (YUI-70) never shows; the person's Stop (YUI-190) is a quiet note.
+            guard Self.isStop(row), seen.insert(id).inserted else { return false }
+            halt(note: id)
+            return true
+        }
         // Polls overlap: only a row not seen before can end the wait.
         guard seen.insert(id).inserted else { return false }
+        // An answer to what the person stopped (YUI-190): it never lands.
+        if row.sender == "agent", Self.answers(row.meta, rows: stoppedRows, jobs: stoppedJobs) { return false }
         time(row)
+        if row.sender == "agent", Mentions.from(meta: row.meta) == nil { trackJob(row) }
         // Another agent's answer copied in (YUI-44) doesn't end this agent's turn.
         if row.sender == "agent", Mentions.from(meta: row.meta) == nil { waiting = false; pickedUpAt = nil; doing = nil }
         if row.sender == "agent", let done = TalkAbout.applied(meta: row.meta), done == about?.id {
@@ -1030,15 +1132,18 @@ final class ChatStore {
         let steps = (d.string(forKey: "yuiDemoDoing") ?? "").split(separator: "|").map {
             YuiLines.doing(of: YuiLines.parse("doing \($0)"))
         }
-        Task {
+        demoTurn = Task {
             try? await Task.sleep(for: .seconds(pickup))
+            guard !Task.isCancelled else { return }
             if !quiet { pickedUpAt = .now }
             let gap = (answer - pickup) / Double(steps.count + 1)
             for step in steps {
                 try? await Task.sleep(for: .seconds(gap))
+                guard !Task.isCancelled else { return }
                 setDoing(step)
             }
             try? await Task.sleep(for: .seconds(steps.isEmpty ? answer - pickup : gap))
+            guard !Task.isCancelled else { return }  // stopped (YUI-190): no late reply
             waiting = false
             pickedUpAt = nil
             doing = nil

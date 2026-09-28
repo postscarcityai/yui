@@ -100,7 +100,7 @@ export class SupabaseStore implements Store {
   }
 
   async pending(agentId: string) {
-    return await this.rest("GET", `yui_messages?select=id,sender,kind,body,meta,created_at,thread_id`
+    return await this.rest("GET", `yui_messages?select=id,user_id,sender,kind,body,meta,created_at,thread_id`
       + `&agent_id=eq.${agentId}&sender=eq.user&handled_at=is.null&kind=in.(text,event)`
       + `&order=created_at.asc,id.asc&limit=50`) as Row[];
   }
@@ -299,6 +299,19 @@ export class SupabaseStore implements Store {
 
   async finishJob(id: string, status: "done" | "failed" | "queued", result?: Record<string, unknown>) {
     await this.rest("PATCH", `yui_native_jobs?id=eq.${id}`, { status, result: result ?? null, finished_at: new Date().toISOString() }, "return=minimal");
+  }
+
+  async stoppedSince(agentId: string, userId: string, since: string) {
+    const r = await this.rest("GET", `yui_messages?select=id&agent_id=eq.${agentId}&user_id=eq.${userId}&sender=eq.user&kind=eq.control`
+      + `&meta->>op=eq.stop&created_at=gte.${encodeURIComponent(since)}&limit=1`);
+    return r.length > 0;
+  }
+
+  async stopJobs(agentId: string, userId: string, before: string) {
+    const r = await this.rest("PATCH", `yui_native_jobs?select=id&agent_id=eq.${agentId}&user_id=eq.${userId}&status=in.(queued,running)`
+      + `&created_at=lte.${encodeURIComponent(before)}`, { status: "failed", result: { stopped: true }, finished_at: new Date().toISOString() },
+      "return=representation");
+    return r.length;
   }
 
   async dropSchedule(id: string) {

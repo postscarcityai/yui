@@ -601,7 +601,9 @@ struct ChatView: View {
                     let all = store.shown
                     ForEach(all.count > window ? Array(all.suffix(window)) : all) { m in
                         Group {
-                            if let yl = m.yl {
+                            if m.stopped {
+                                QuietNote(text: "Stopped", icon: "stop.circle", id: "stopped-note")
+                            } else if let yl = m.yl {
                                 YLReply(screen: yl, scope: m.id, agent: store.agent, style: agentStyle,
                                         reaction: store.wearsReaction(m) ? store.reaction(for: m) : nil,
                                         lifted: store.reacting == m.id,
@@ -1443,7 +1445,20 @@ struct ChatView: View {
                 if micTapOnly { micTapOnly = false; micDragX = 0; tap(); return }
                 micUp(quick: tap)
             },
-            micTap: tap)
+            micTap: tap,
+            stop: canStop ? { stopTurn() } : nil)
+    }
+
+    /// The agent is on something and the mic is free (YUI-190): the mic is a stop square.
+    /// Hands-free waiting on the reply counts; listening or a held mic does not.
+    private var canStop: Bool {
+        store.working && !talk.listening && (!handsFree.on || handsFree.state == .waiting)
+    }
+
+    /// Stop: the turn ends where it is, and hands-free waiting on it goes off.
+    private func stopTurn() {
+        if handsFree.state == .waiting { handsFreeDo(.stop) }
+        store.stop()
     }
 
     /// Tap: talk, hands-free. Tap while it hears words: send them now. Tap otherwise: stop.
@@ -2264,6 +2279,7 @@ private struct ListeningNote: View {
 private struct QuietNote: View {
     let text: String
     let icon: String
+    var id = "quiet-note"
     @Environment(\.yuiTheme) private var theme
     @Environment(\.colorScheme) private var scheme
 
@@ -2273,7 +2289,7 @@ private struct QuietNote: View {
             .foregroundStyle(theme.swatch(scheme).inkSoft)
             .frame(maxWidth: .infinity, alignment: .trailing)
             .transition(.opacity)
-            .accessibilityIdentifier("quiet-note")
+            .accessibilityIdentifier(id)
     }
 }
 

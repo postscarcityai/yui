@@ -64,6 +64,10 @@ export interface Store {
   /** Takes a queued job (or one whose run died) to run it; null when another run has it, it is done, or it failed 3 times. */
   claimJob(id: string): Promise<JobItem | null>;
   finishJob(id: string, status: "done" | "failed" | "queued", result?: Record<string, unknown>): Promise<void>;
+  /** Stop (YUI-190): true when this person tapped Stop on this agent at or after `since`. */
+  stoppedSince(agentId: string, userId: string, since: string): Promise<boolean>;
+  /** Stop (YUI-190): this agent's jobs for this person queued at or before `before` and not finished fail as stopped. How many. */
+  stopJobs(agentId: string, userId: string, before: string): Promise<number>;
 }
 
 /** Everything in one plain object: `JSON.stringify(store.data)` saves it. */
@@ -280,6 +284,17 @@ export class LocalStore implements Store {
     const j = (this.data.jobs ?? []).find((x) => x.id === id);
     if (j) Object.assign(j, { status, ...(result ? { result } : {}) });
     this.changed();
+  }
+  async stoppedSince(agentId: string, userId: string, since: string) {
+    const owner = this.data.agents[agentId]?.userId;
+    return this.data.rows.some((r) => r.agent_id === agentId && r.sender === "user" && r.kind === "control" && r.meta?.op === "stop"
+                                      && ((r as any).user_id ?? owner) === userId && r.created_at >= since);
+  }
+  async stopJobs(agentId: string, userId: string, before: string) {
+    const open = (this.data.jobs ?? []).filter((j) => j.agentId === agentId && j.userId === userId && (j.status === "queued" || j.status === "running") && j.createdAt <= before);
+    for (const j of open) Object.assign(j, { status: "failed", result: { stopped: true } });
+    if (open.length) this.changed();
+    return open.length;
   }
   async dropSchedule(id: string) {
     this.data.schedules = (this.data.schedules ?? []).filter((x) => x.id !== id);

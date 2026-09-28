@@ -571,7 +571,7 @@ struct StageFirstView: View {
 
     // MARK: The middle
 
-    private func greeting(_ c: Swatch, title: String, sub: String) -> some View {
+    private func greeting(_ c: Swatch, title: String, sub: String, id: String = "stage-greeting") -> some View {
         VStack(spacing: theme.spacing.m) {
             if let agent {
                 AgentBadge(agent: agent, size: 72)
@@ -589,7 +589,7 @@ struct StageFirstView: View {
         }
         .padding(.horizontal, theme.spacing.xl)
         .accessibilityElement(children: .combine)
-        .accessibilityIdentifier("stage-greeting")
+        .accessibilityIdentifier(id)
     }
 
     /// Hands-free is open: what it hears, big, as it hears it.
@@ -636,7 +636,10 @@ struct StageFirstView: View {
                 if t.failed, pages == 0, !store.waiting {
                     failed(t, c)
                 } else if pages == 0 || model.foundUntil != nil {
-                    if store.waiting || model.foundUntil != nil { working(c) } else {
+                    if store.waiting || model.foundUntil != nil { working(c) } else if t.stopped {
+                        // Stopped (YUI-190): the stage is still, ready for the next thing.
+                        greeting(c, title: "Stopped.", sub: "Say the next thing when you're ready.", id: "stage-stopped")
+                    } else {
                         greeting(c, title: "Anything else?", sub: "Everything so far is in the chat, top right.")
                     }
                 } else if at < t.chunks.count {

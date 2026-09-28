@@ -129,8 +129,9 @@ struct ThreadClient {
         var items = [
             URLQueryItem(name: "select", value: Self.columns),
             URLQueryItem(name: "agent_id", value: "eq.\(agentID)"),
-            // Controls (YUI-70) ride the same table and never show in the thread.
-            URLQueryItem(name: "kind", value: "neq.control"),
+            // Controls (YUI-70) ride the same table and never show in the thread,
+            // except the person's Stop (YUI-190): the record says Stopped where it was.
+            URLQueryItem(name: "or", value: "(kind.neq.control,and(sender.eq.user,body.eq.stop))"),
         ]
         if let since {
             items += [URLQueryItem(name: "created_at", value: "gt.\(since)"),

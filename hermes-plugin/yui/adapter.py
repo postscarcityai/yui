@@ -130,6 +130,12 @@ Transport: the gateway dials OUT to Supabase (the yuigui project). No inbound po
      yui_limits doing_min_build. A message of only doing lines writes no row
      and sends no push; doing lines anywhere else are taken out of the body.
 
+ 19. Stop (YUI-190): the mic's stop square sends a kind='control' row with
+     meta {op: stop}. No turn: Hermes gets /stop for the running turn, rows
+     waiting behind it in that chat are dropped (handled), and anything the
+     stopped turn still says is held back until it ends (STOP_HOLD_SECONDS at
+     most). One kind='control' answer row, no push.
+
 The channel guide (CHANNEL.md, synced verbatim from yuigui/spec/CHANNEL.md by
 ../sync_channel.py) is this platform's system-prompt hint, so it is in the
 system prompt on every turn on the Yui channel, and only there. Its restyle
@@ -185,6 +191,7 @@ MAX_MESSAGE_LENGTH = 32000   # matches the yui_messages body check; never split 
 OUTBOX_BACKOFF_MAX = 60      # seconds between resends while Yui is unreachable
 FAILURE_ACK_SECONDS = 5      # a failed turn is acked only if the gateway is still up after this
 TURN_TIMEOUT_SECONDS = 30 * 60  # a turn that never reports back stops holding the queue
+STOP_HOLD_SECONDS = 120  # a stopped turn's late words are held back until it ends, or this long (YUI-190)
 NEW_AGENT_LOOKBACK_SECONDS = 24 * 3600  # a just-paired agent still answers what was sent before its gateway came up
 
 
@@ -264,6 +271,12 @@ def _parse_ts(s: str | None) -> datetime:
         return datetime.now(tz=timezone.utc)
 
 
+def is_stop(row: dict) -> bool:
+    """The person's Stop (YUI-190): a control row from them with op stop."""
+    meta = row.get("meta")
+    return row.get("kind") == "control" and row.get("sender", "user") == "user" and isinstance(meta, dict) and meta.get("op") == "stop"
+
+
 def texts_are_commands(rows: List[dict]) -> bool:
     """/stop, /new ...: they change nothing outside the session, so they run even while paused."""
     return all(r.get("kind") == "text" and r["body"].lstrip().startswith("/") for r in rows)
@@ -320,6 +333,7 @@ class YuiAdapter(BasePlatformAdapter):
         self._queue: Dict[str, List[dict]] = {}       # agent id -> rows waiting for the next turn
         self._busy: Dict[str, tuple] = {}             # agent id -> (row ids of the running turn, started)
         self._turns: Dict[int, tuple] = {}            # id(event) -> (agent id, row ids)
+        self._halted: Dict[str, tuple] = {}           # chat key -> (row ids of a turn the person stopped, when)
         self._acks: set = set()                       # handled, not yet written
         self._outbox = outbox.Outbox(self._state_dir() / "outbox.jsonl")
         self._outbox_wake = asyncio.Event()
@@ -600,7 +614,7 @@ class YuiAdapter(BasePlatformAdapter):
                         logger.info("[yui] %s was answered before a restart, not replaying", row["id"][:8])
                         self._acks.add(row["id"])
                         continue
-                    if (await self._control(aid, row) or await self._owner_only(aid, row)
+                    if (await self._stop(aid, row) or await self._control(aid, row) or await self._owner_only(aid, row)
                             or await self._board_order(aid, row)
                             or await self._need_answer(aid, row)
                             or await self._need_open(aid, row)
@@ -749,6 +763,39 @@ class YuiAdapter(BasePlatformAdapter):
             except Exception as e:
                 logger.warning("[yui] war room redraw: %s", e)
 
+    async def _stop(self, aid: str, row: dict) -> bool:
+        """The person's Stop (YUI-190): the mic's stop square while the agent works. Never a turn.
+        Hermes gets its own /stop for the running turn, the rows waiting behind it are dropped, and
+        whatever the stopped turn still says is held back (the phone already says Stopped)."""
+        if not is_stop(row):
+            return False
+        key = self._key(row)
+        await self._mark([row["id"]], "delivered_at")
+        dropped = [r["id"] for r in self._queue.pop(key, [])]
+        busy = self._busy.get(key)
+        if busy:
+            self._halted[key] = (list(busy[0]), time.time())
+            self._acks.update(busy[0])
+            await self._dispatch([{**row, "kind": "text", "body": "/stop", "meta": {}}])
+        self._acks.update(dropped)
+        reply = {"id": str(uuid.uuid4()), "user_id": row.get("user_id") or self._user_id, "agent_id": aid,
+                 "sender": "agent", "body": "controls: stop", "kind": "control",
+                 "meta": {"ok": True, "op": "stop", "rows": len(dropped) + (len(busy[0]) if busy else 0), "for": row["id"]}}
+        await self._write_row(reply)
+        self._acks.add(row["id"])
+        logger.info("[yui] stop %s: %s, %d waiting dropped", row["id"][:8], "turn stopped" if busy else "nothing running", len(dropped))
+        return True
+
+    def _held_back(self, key: str) -> bool:
+        """A reply from a turn the person stopped (YUI-190): never written."""
+        halted = getattr(self, "_halted", {}).get(key)
+        if not halted:
+            return False
+        if time.time() - halted[1] > STOP_HOLD_SECONDS:
+            self._halted.pop(key, None)
+            return False
+        return True
+
     async def _control(self, aid: str, row: dict) -> bool:
         """A request from the drawer's Controls tab (YUI-70): served here, never a turn.
         One answer row back (kind control, same req, no push)."""
@@ -864,6 +911,9 @@ class YuiAdapter(BasePlatformAdapter):
         key, ids = self._turns.pop(id(event), (None, []))
         if not key:
             return
+        halted = getattr(self, "_halted", {}).get(key)
+        if halted and halted[0] == ids:
+            self._halted.pop(key, None)  # the stopped turn is over: the next one speaks again
         if self._busy.get(key, ((),))[0] == ids:
             self._busy.pop(key, None)
             self._doing.end(key)
@@ -1098,6 +1148,9 @@ class YuiAdapter(BasePlatformAdapter):
         if now is not None and key in self._busy and doing.allowed(compat.build_for(user_id, self._user_id)):
             self._doing.note(key, now)
         if not body:
+            return SendResult(success=True, message_id=None)
+        if not sender and self._held_back(key):
+            logger.info("[yui] reply from a stopped turn held back (%d chars)", len(body))
             return SendResult(success=True, message_id=None)
         reads = self.__dict__.setdefault("_reads", {})
         if user_id == self._user_id and tables.has_words(body):
