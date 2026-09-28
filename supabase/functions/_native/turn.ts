@@ -864,10 +864,31 @@ const QUOTED_TITLE = /^(\s*(?:>[\w-]+\s+)?table(?:@[\w-]+)?)\s+"((?:[^"\\]|\\.)*
 // phone: it is rejoined into one quoted row, `"Eggs (2 large)|140|12g"`.
 const SPLIT_ROW = /"((?:[^"\\|]|\\.)*)"((?:\|(?:"(?:[^"\\]|\\.)*"|[^\s|"]+))+)/g;
 
+// A header with spaces (`Day|Cal (kcal)|Protein (g)`) splits on the phone and shows as rows (YUI-170 shots): a unit in
+// brackets moves to units=, any other space becomes a dash.
+const SPACED_HEADER = /^(\s*(?:>[\w-]+\s+)?table(?:@[\w-]+)?\s+(?:name="(?:[^"\\]|\\.)*"\s+)?)([^"=\n]*\|[^"=\n]*?)(\s+")/;
+
+function spacedHeader(l: string): string {
+  const m = l.match(SPACED_HEADER);
+  if (!m) return l;
+  // With no name=, a bare first word is the title (`table Macros Item|Amount`), not part of the header.
+  let lead = m[1], head = m[2].trim();
+  const title = !/name="/.test(lead) ? head.match(/^([^\s|]+)\s+(?=\S)/) : null;
+  if (title) {
+    lead += title[0];
+    head = head.slice(title[0].length);
+  }
+  if (!/\S\s+\S/.test(head)) return l;
+  const cells = head.split("|").map((c) => c.trim().match(/^(.*?)\s*\(([^()]+)\)$/) ?? [c, c.trim(), ""]);
+  const header = cells.map((c) => c[1].replace(/\s+/g, "-")).join("|");
+  const units = cells.some((c) => c[2]) && !/\sunits=/.test(l) ? ` units=${cells.map((c) => c[2].replace(/\s+/g, "")).join("|")}` : "";
+  return `${lead}${header}${m[3]}${l.slice(m[0].length)}${units}`;
+}
+
 function tableLine(l: string): string {
   if (!/^\s*(?:>[\w-]+\s+)?table(?:@[\w-]+)?\s/.test(l) || /^\s*(?:>[\w-]+\s+)?table\s+create\b/.test(l)) return l;
-  return l.replace(QUOTED_TITLE, '$1 name="$2"')
-    .replace(SPLIT_ROW, (_m, first: string, rest: string) => `"${first}${rest.replace(/"/g, "")}"`);
+  return spacedHeader(l.replace(QUOTED_TITLE, '$1 name="$2"')
+    .replace(SPLIT_ROW, (_m, first: string, rest: string) => `"${first}${rest.replace(/"/g, "")}"`));
 }
 
 /** The answer on at most MOST_PAGES stage pages where short ones can share a page. */

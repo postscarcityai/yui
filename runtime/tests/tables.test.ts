@@ -234,7 +234,7 @@ test("table words outside a yui block still land, and never reach the phone as t
   assert.equal(a.text, "Bench logged.");
   const b = applyTables('Logged.\nput sessions Day=today Exercise=Squat Sets=5\n```yui\nquery sessions as list\n```', s, CTX, ids());
   assert.equal(b.store.tables.sessions.order.length, 1);
-  assert.equal(b.text, 'Logged.\n```yui\nlist title="Sessions" "2026-09-27 · Squat · 5"\n```');
+  assert.equal(b.text, 'Logged.\n```yui\nlist title="Sessions" "2026-09-27 · Squat · Sets 5"\n```');
   const c = applyTables("Here's code:\n```\nconst x = 1;\n```", s, CTX, ids());
   assert.equal(c.text, "Here's code:\n```\nconst x = 1;\n```", "other fences are left alone");
 });
@@ -255,4 +255,12 @@ test("a held delete never reads as done", () => {
   assert.equal(a.text, 'Tap Delete to confirm.\n```yui\nlist title="Groceries" "Coffee"\nchoose@del-id0 "Delete Coffee from groceries?" Delete|Keep\n```');
   const b = applyTables("Tap Delete to take coffee off.\n```yui\nput groceries coffee +delete\n```", s, CTX, ids());
   assert.match(b.text, /^Tap Delete to take coffee off\./);
+});
+
+test("a list labels its numbers; a table header with spaces is mended", async () => {
+  const m = store(["table create meals Day:date Food:text Cal:number:kcal Protein:number:g", "put meals Day=2026-09-27 Food=Oats Cal=300 Protein=10"]);
+  assert.equal(draw(m, queryLine("query meals as list")!, CTX)[0], 'list title="Meals" "2026-09-27 · Oats · Cal 300 kcal · Protein 10 g"');
+  const { unsprawl } = await import("../src/turn.ts");
+  assert.equal(unsprawl('Hi.\n```yui\ntable name="Week" Day|Cal (kcal)|Protein (g)|Meal type "Fri|300|10|Lunch"\n```'),
+    'Hi.\n```yui\ntable name="Week" Day|Cal|Protein|Meal-type "Fri|300|10|Lunch" units=|kcal|g|\n```');
 });

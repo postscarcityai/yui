@@ -527,7 +527,10 @@ export function draw(store: TableStore, props: Record<string, unknown>, ctx: Par
   if (view === "list") {
     const check = props.check ? cols.findIndex((c) => c.name.toLowerCase() === String(props.check).toLowerCase()) : -1;
     const items = rows.map((r) => {
-      const cells = r.map((v, i) => (i === check ? "" : show(v, cols[i]))).filter(Boolean).join(" · ");
+      // A number says what it is: "Cal 300 kcal", "Sets 3".
+      const cells = r.map((v, i) => (i === check || v == null || v === "" ? ""
+        : cols[i].type === "number" ? `${cols[i].name} ${show(v, cols[i])}${cols[i].unit ? ` ${cols[i].unit}` : ""}` : show(v, cols[i])))
+        .filter(Boolean).join(" · ");
       return q(`${check >= 0 && r[check] === true ? "Done: " : ""}${cells}`);
     });
     return [`list${id} title=${q(title)} ${items.join(" ")}`];
