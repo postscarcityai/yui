@@ -109,7 +109,7 @@ test("Start: the runner is one full-screen plan, a step per move, how it felt la
     "choose@feel",
   ], "questions last, all in the one flow");
   const squat = members.find((o: any) => o.id === "e1-sets");
-  assert.deepEqual(squat.props.options, ["Set 1", "Set 2", "Set 3"]);
+  assert.deepEqual(squat.props.options, ["Set 1", "Set 2", "Set 3", "Skip"]);
   assert.equal(squat.props.title, "Goblet squat");
   assert.match(squat.props.body, /Hold the bell at your chest/, "the how-to cue from his exercises table");
   assert.equal(members.find((o: any) => o.id === "e1-lb").props.value, 20);
@@ -130,7 +130,7 @@ test("Finish writes a row per move, ticks the day, and draws the pages once; the
   await runAgent(store, arnold.id, { provider, fetch: m.fetch, now: () => MON });
   const done = tap(store, arnold.id, "wk-20260928-mon", "plan", {
     plan: { "e1-sets": ["Set 1", "Set 2", "Set 3"], "e1-reps": 12, "e1-lb": 25, "e2-sets": ["Set 1", "Set 2"], "e2-reps": 8,
-            "e3-sets": ["Set 1", "Set 2", "Set 3"], "e3-lb": 30, "e4-sets": [], feel: "Easy" },
+            "e3-sets": ["Set 1", "Set 2", "Set 3"], "e3-lb": 30, "e4-sets": ["Skip"], feel: "Easy" },
   });
   await runAgent(store, arnold.id, { provider, fetch: m.fetch, now: () => MON });
   assert.equal(m.calls.length, 0);
@@ -140,7 +140,7 @@ test("Finish writes a row per move, ticks the day, and draws the pages once; the
     { key: "2026-09-28-goblet-squat", Day: "2026-09-28", Session: "Full body A", Exercise: "Goblet squat", Sets: 3, Reps: 12, Weight: 25, Feel: "Easy", Source: "runner" },
     { key: "2026-09-28-push-up", Day: "2026-09-28", Session: "Full body A", Exercise: "Push-up", Sets: 2, Reps: 8, Feel: "Easy", Source: "runner" },
     { key: "2026-09-28-dumbbell-row", Day: "2026-09-28", Session: "Full body A", Exercise: "Dumbbell row", Sets: 3, Reps: 10, Weight: 30, Feel: "Easy", Source: "runner" },
-  ], "unticked plank is left out; untouched reps keep the target");
+  ], "a skipped plank is left out; untouched reps keep the target");
   assert.equal(t.this_week.rows.mon.Done, true);
 
   const r = lastReply(store, arnold.id);

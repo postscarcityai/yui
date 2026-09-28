@@ -41,6 +41,7 @@ export const DAY_KEYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"] as con
 const DAY_NAMES: Record<string, string> = { mon: "Monday", tue: "Tuesday", wed: "Wednesday", thu: "Thursday", fri: "Friday", sat: "Saturday", sun: "Sunday" };
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 export const REST_SECONDS = 90;
+export const SKIP = "Skip";
 
 /** What each focus trains when a day is changed to it (from the starter exercises). */
 export const FOCUS_WORKOUTS: Record<string, { workout: string; minutes: number }> = {
@@ -207,9 +208,10 @@ export function runnerLines(s: Session): string[] {
   } else {
     out.push(`page ${q(s.focus)} body=${q(`${s.moves.length} moves, about ${s.minutes || s.moves.length * 10} minutes. Rest about ${REST_SECONDS} seconds between sets.`)} points=${opts(s.moves.map(moveLine))}`);
     s.moves.forEach((m) => {
-      const sets = Array.from({ length: m.sets }, (_, i) => `Set ${i + 1}`);
-      const body = `${m.cue ? `${m.cue} ` : ""}Target ${target(m)}${m.lb ? ` at ${m.lb} lb` : ""}. Tick each set as you finish it.`;
-      out.push(`pick@e${m.n}-sets "Tick your sets" ${opts(sets)} tag=${q(`${m.n} of ${s.moves.length}`)} title=${q(m.name)} body=${q(body.slice(0, 400))} submit=Next`);
+      // "Skip" lets a move go by with nothing ticked (a pick with no answer holds the flow's Next).
+      const sets = [...Array.from({ length: m.sets }, (_, i) => `Set ${i + 1}`), SKIP];
+      const body = `${m.cue ? `${m.cue} ` : ""}Target ${target(m)}${m.lb ? ` at ${m.lb} lb` : ""}. Tick each set as you finish it, or Skip.`;
+      out.push(`pick@e${m.n}-sets ${q(`${m.name}: sets done`)} ${opts(sets)} tag=${q(`${m.n} of ${s.moves.length}`)} title=${q(m.name)} body=${q(body.slice(0, 400))}`);
       if (m.secs) out.push(`slide@e${m.n}-secs ${q(`${m.name}: seconds per set`)} 5-180 value=${m.secs} step=5`);
       else out.push(`slide@e${m.n}-reps ${q(`${m.name}: reps per set`)} 1-30 value=${m.reps}`);
       if (m.lb != null) out.push(`slide@e${m.n}-lb ${q(`${m.name}: weight in lb`)} 0-${Math.max(300, Math.ceil((m.lb * 2) / 50) * 50)} value=${m.lb} step=5 unit=lb`);
@@ -407,7 +409,7 @@ export function applyRunner(store: TableStore, s: Session, answers: Record<strin
     items.push({ exercise: s.focus, sets: 1, minutes: num(answers.minutes) ?? s.minutes });
   }
   for (const m of s.moves) {
-    const ticked = list(answers[`e${m.n}-sets`]);
+    const ticked = list(answers[`e${m.n}-sets`])?.filter((x) => x !== SKIP);
     // A step they moved past without ticking counts as done: they pressed Finish on the whole session.
     const sets = ticked ? ticked.length : m.sets;
     if (!sets) continue;
@@ -545,7 +547,7 @@ export function weekScreen(store: TableStore, clk: Clock): string[] {
   const w = weekLines(store, clk);
   return [
     `stat@week-done ${q(w.stat)} "Workouts this week" sub=${q(weekSub(store, clk))}`,
-    `list@days title="This week" ${w.days} +check`,
+    `list@days title="This week" ${w.days} check=off`, // done days carry a ✓; an empty box beside one read as not done
     `choose@edit-day "Change a day" ${DAY_KEYS.map((k) => DAY_NAMES[k].slice(0, 3)).join("|")} body="Tap a day to change what it trains."`,
     `card@split "Your split" ${q(`${splitDays(store).filter((d) => !isRest(d)).length} training days a week.`)} cta="Rebuild my split"`,
   ];

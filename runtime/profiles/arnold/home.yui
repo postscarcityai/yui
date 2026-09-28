@@ -6,7 +6,7 @@ menu shortcut@split "My split" show="this week"
 menu shortcut@workout "Start a workout" say="Start today's workout"
 >2
 stat@week-done "0 of 5" "Workouts this week" sub="Build your split and this fills in"
-list@days title="This week" "Mon Full body A" "Tue Easy cardio" "Wed Full body B" "Fri Full body A" "Sat Long walk" +check
+list@days title="This week" "Mon Full body A" "Tue Easy cardio" "Wed Full body B" "Fri Full body A" "Sat Long walk"
 choose@edit-day "Change a day" Mon|Tue|Wed|Thu|Fri|Sat|Sun body="Tap a day to change what it trains."
 card@split "Make it yours" "Your days, your split, your gear. This week fills in from it." cta="Build my split"
 save this week
