@@ -15,9 +15,9 @@ struct AgentLook: Codable, Equatable, Sendable {
     var bg: String?
     /// "round" | "soft" | "square" | a number of points.
     var radius: String?
-    /// "rounded" | "default" | "serif" | "mono"
+    /// "default" (SF Pro, the base) | "rounded" | "serif" | "mono"
     var font: String?
-    /// Headings and names: "regular" | "bold" | "heavy"
+    /// Headings and names: "regular" | "semibold" (the base) | "bold" | "heavy"
     var weight: String?
     /// "bouncy" | "calm" | "snappy"
     var motion: String?
@@ -77,8 +77,8 @@ extension AgentLook {
         var accent: String
         var bg: String? = nil
         var radius = "soft"
-        var font = "rounded"
-        var weight = "heavy"
+        var font = "default"
+        var weight = "semibold"
         var motion = "bouncy"
     }
 
@@ -148,8 +148,8 @@ extension AgentLook {
         for b in name.lowercased().utf8 { h = (h ^ UInt64(b)) &* 0x100000001b3 }
         func pick<T>(_ a: [T], _ salt: UInt64) -> T { a[Int((h / salt) % UInt64(a.count))] }
         return Recipe(accent: pick(seedAccents, 1), bg: pick(seedPapers, 13), radius: pick(radii, 101),
-                      font: pick(["rounded", "rounded", "default", "serif"], 1009),
-                      weight: pick(["heavy", "bold"], 10007), motion: pick(motions, 100003))
+                      font: "default",
+                      weight: pick(["semibold", "bold"], 10007), motion: pick(motions, 100003))
     }
 }
 
@@ -295,8 +295,8 @@ extension AgentLook {
         default: yui.motion
         }
         var type = yui.type
-        type.design = r.font == "mono" ? "monospaced" : (fonts.contains(r.font) ? r.font : "rounded")
-        type.weight = weights.contains(r.weight) ? r.weight : "heavy"
+        type.design = r.font == "mono" ? "monospaced" : (fonts.contains(r.font) ? r.font : "default")
+        type.weight = (weights + ["semibold"]).contains(r.weight) ? r.weight : "semibold"
 
         return YuiTheme(name: name, light: palette(dark: false), dark: palette(dark: true), radius: radius,
                         spacing: yui.spacing, type: type, motion: motion, agents: [:])

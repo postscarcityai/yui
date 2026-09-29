@@ -53,13 +53,13 @@ struct YuiTheme: Codable, Equatable, Sendable {
     }
 
     struct Typography: Codable, Equatable, Sendable {
-        /// "rounded" | "default" | "serif" | "monospaced"
+        /// "default" (SF Pro, Yui's base) | "rounded" | "serif" | "monospaced"
         var design: String
         var body: Double
         var caption: Double
         var title: Double
         var display: Double
-        /// Headings and names: "regular" | "bold" | "heavy"
+        /// Headings and names: "regular" | "semibold" | "bold" | "heavy"
         var weight: String
     }
 
@@ -90,7 +90,8 @@ extension YuiTheme {
             agentBubble: "#352D4A", agentInk: "#F6EEF7", onAccent: "#2A2238"),
         radius: Radii(bubble: 22, bubbleTail: 8, pill: 26, card: 28, avatar: 18),
         spacing: Spacing(xs: 4, s: 8, m: 12, l: 16, xl: 24),
-        type: Typography(design: "rounded", body: 17, caption: 13, title: 20, display: 28, weight: "heavy"),
+        // YUI-211: a sleek sans base. SF Pro (the system face), semibold headings, the scale in YuiType.
+        type: Typography(design: "default", body: 17, caption: 13, title: 22, display: 34, weight: "semibold"),
         motion: Motion(springResponse: 0.35, springDamping: 0.55, bounceScale: 1.18),
         agents: [:]
     )
@@ -121,14 +122,19 @@ extension YuiTheme {
         }
     }
 
+    /// A size on the Yui type scale (YuiType), set in the theme's design and scaled with Dynamic Type.
     func font(_ size: Double, _ weight: Font.Weight = .regular) -> Font {
-        .system(size: size, weight: weight, design: fontDesign)
+        guard let style = YuiType.style(for: size) else {
+            return .system(size: size, weight: weight, design: fontDesign)
+        }
+        return .system(style, design: fontDesign, weight: weight)
     }
 
     /// The heading weight this theme wears (agent names, titles).
     var strong: Font.Weight {
         switch type.weight {
-        case "regular": .semibold
+        case "regular": .medium
+        case "semibold": .semibold
         case "bold": .bold
         default: .heavy
         }
@@ -211,4 +217,97 @@ extension Swatch {
 
 extension YuiTheme {
     func swatch(_ scheme: ColorScheme) -> Swatch { Swatch(palette(for: scheme)) }
+}
+
+
+/// The Yui type scale (YUI-211). Sizes are points at the default text size; each rides a system
+/// text style, so the whole scale follows the person's text size setting up to the accessibility sizes.
+/// display 34, title1 28, title2 22, headline 17 semibold, body 17, callout 15, subhead 15,
+/// caption 13, footnote 12. Line spacing is tighter on display and looser on caption.
+enum YuiType: CaseIterable {
+    case display, title1, title2, headline, body, callout, subhead, caption, footnote
+
+    var size: Double {
+        switch self {
+        case .display: 34
+        case .title1: 28
+        case .title2: 22
+        case .headline, .body: 17
+        case .callout, .subhead: 15
+        case .caption: 13
+        case .footnote: 12
+        }
+    }
+
+    var textStyle: Font.TextStyle {
+        switch self {
+        case .display: .largeTitle
+        case .title1: .title
+        case .title2: .title2
+        case .headline: .headline
+        case .body: .body
+        case .callout, .subhead: .subheadline
+        case .caption: .footnote
+        case .footnote: .caption
+        }
+    }
+
+    /// Extra points between lines, on top of the face's own.
+    var lineSpacing: Double {
+        switch self {
+        case .display: -1
+        case .title1, .title2: 0
+        case .headline, .body: 2
+        case .callout, .subhead: 2
+        case .caption, .footnote: 3
+        }
+    }
+
+    /// Points of tracking: tighter on display, looser on caption.
+    var tracking: Double {
+        switch self {
+        case .display: -0.6
+        case .title1: -0.4
+        case .title2: -0.2
+        case .headline, .body: 0
+        case .callout, .subhead: 0.1
+        case .caption: 0.2
+        case .footnote: 0.3
+        }
+    }
+
+    /// The text style for a literal size: the scale's own, or the nearest one within a point
+    /// (16 and 14 ride callout and subhead, 20 and 21 ride title3). Nil for numerals and icon glyphs
+    /// outside the text range, which stay fixed.
+    static func style(for size: Double) -> Font.TextStyle? {
+        switch size {
+        case 33...35: .largeTitle
+        case 27...29: .title
+        case 21.5...22.5: .title2
+        case 19.5...21.5: .title3
+        case 16.5...18.5: .body
+        case 15.5...16.5: .callout
+        case 13.5...15.5: .subheadline
+        case 12.5...13.5: .footnote
+        case 11.5...12.5: .caption
+        case 10.5...11.5: .caption2
+        default: nil
+        }
+    }
+}
+
+extension View {
+    /// A scale token as a font plus its line spacing. Tracking rides Text via `yuiTracking`.
+    func yuiText(_ token: YuiType, _ theme: YuiTheme, weight: Font.Weight? = nil) -> some View {
+        font(.system(token.textStyle, design: theme.fontDesign, weight: weight ?? (token == .headline ? .semibold : .regular)))
+            .lineSpacing(token.lineSpacing)
+    }
+}
+
+extension Text {
+    /// The scale token's tracking; tabular numbers for counters and timers.
+    func yuiTracking(_ token: YuiType, tabular: Bool = false) -> Text {
+        let t = tracking(token.tracking)
+        return tabular ? t.monospacedDigit() : t
+    }
 }

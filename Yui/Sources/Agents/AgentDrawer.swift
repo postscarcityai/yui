@@ -276,6 +276,8 @@ private struct TabStrip: View {
                 .accessibilityIdentifier("drawer-tab-\(t.rawValue.lowercased())")
             }
         }
+        // Four tabs share one row: like the system tab bar, they stop growing at XL so no label truncates.
+        .dynamicTypeSize(...DynamicTypeSize.xLarge)
         .padding(4)
         .background(c.surface, in: Capsule())
         .overlay(Capsule().stroke(c.outline, lineWidth: 1))

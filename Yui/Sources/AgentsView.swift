@@ -326,7 +326,7 @@ private struct EmptyAgents: View {
         VStack(spacing: theme.spacing.l) {
             Spacer(minLength: 0)
             Image(systemName: "sparkles")
-                .font(.system(size: 44, weight: .bold, design: .rounded))
+                .font(.system(size: 44, weight: .bold))
                 .foregroundStyle(c.accent)
             Text("Add your first agent")
                 .font(theme.font(theme.type.display, theme.strong)).foregroundStyle(c.ink)
@@ -744,7 +744,7 @@ private struct PairingStep: View {
     private func codeCard(_ left: Int, _ c: Swatch) -> some View {
         VStack(spacing: theme.spacing.s) {
             Text(spaced(code.code))
-                .font(.system(size: 44, weight: .heavy, design: .rounded).monospacedDigit())
+                .font(.system(size: 44, weight: .bold).monospacedDigit())
                 .foregroundStyle(left > 0 ? c.ink : c.inkSoft.opacity(0.5))
                 .strikethrough(left == 0)
                 .accessibilityLabel("Pairing code \(code.code.map(String.init).joined(separator: " "))")

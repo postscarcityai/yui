@@ -445,6 +445,18 @@ extension YuiTheme {
     /// `font(_:_:)` for UIKit text, in the theme's design, scaled with Dynamic Type.
     func uiFont(_ size: Double, _ weight: UIFont.Weight = .medium) -> UIFont {
         let base = UIFont.systemFont(ofSize: size, weight: weight)
+        let style: UIFont.TextStyle = switch YuiType.style(for: size) {
+        case .largeTitle: .largeTitle
+        case .title: .title1
+        case .title2: .title2
+        case .title3: .title3
+        case .callout: .callout
+        case .subheadline: .subheadline
+        case .footnote: .footnote
+        case .caption: .caption1
+        case .caption2: .caption2
+        default: .body
+        }
         let design: UIFontDescriptor.SystemDesign = switch type.design {
         case "serif": .serif
         case "monospaced": .monospaced
@@ -452,6 +464,6 @@ extension YuiTheme {
         default: .rounded
         }
         let font = base.fontDescriptor.withDesign(design).map { UIFont(descriptor: $0, size: size) } ?? base
-        return UIFontMetrics(forTextStyle: .body).scaledFont(for: font)
+        return UIFontMetrics(forTextStyle: style).scaledFont(for: font)
     }
 }

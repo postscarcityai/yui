@@ -93,7 +93,7 @@ struct BarButtons: View {
     private func type(_ c: Swatch) -> some View {
         Button(action: actions.type) {
             Text("T")
-                .font(.system(size: 18, weight: .bold, design: .serif))
+                .font(theme.font(18, .bold))
                 .foregroundStyle(c.ink)
                 .frame(width: Self.small, height: Self.small)
                 .background(c.surface, in: Circle())
