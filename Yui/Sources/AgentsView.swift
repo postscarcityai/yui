@@ -425,6 +425,7 @@ struct AddAgentSheet: View {
     @State private var pending: (agent: YuiAgent, code: PairingCode)?
     @State private var working = false
     @State private var error: String?
+    @State private var bringKey = false
     @FocusState private var focused: Bool
 
     var body: some View {
@@ -440,6 +441,7 @@ struct AddAgentSheet: View {
                 }
             }
             .background(c.background)
+            .sheet(isPresented: $bringKey) { ModelKeySheet() }
             .navigationTitle("Add agent")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -460,6 +462,11 @@ struct AddAgentSheet: View {
             // The crew, one tap each, next to pairing your own (YUI-145, feedback APsS404f7C).
             if let crew = store.crew, !crew.isEmpty {
                 CrewPicker(crew: crew, open: done)
+                // Quiet: past the free turns, or on a plan they already pay for (YUI-139 step 2e).
+                Button { bringKey = true } label: {
+                    Text("Bring your own key").font(theme.font(theme.type.caption, .bold)).foregroundStyle(c.inkSoft).underline()
+                }
+                .accessibilityIdentifier("bring-own-key")
                 Text("Or connect your own")
                     .font(theme.font(theme.type.title, .bold)).foregroundStyle(c.ink)
                     .padding(.top, theme.spacing.s)

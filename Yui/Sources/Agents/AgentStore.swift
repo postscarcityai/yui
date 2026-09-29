@@ -701,6 +701,9 @@ struct NativeStatus: Decodable, Equatable, Sendable {
         let id: String
         let label: String
         let needsModel: Bool
+        /// Where this provider makes a key, and one line when a chat plan can't pay for it (older servers leave both out).
+        var keyUrl: String? = nil
+        var plan: String? = nil
     }
     struct Turns: Decodable, Equatable, Sendable {
         let used: Int
@@ -734,7 +737,13 @@ extension AgentStore {
     }
 
     #if DEBUG
-    static let demoNative = NativeStatus(key: nil, providers: [.init(id: "openrouter", label: "OpenRouter", needsModel: false)],
+    static let demoNative = NativeStatus(key: nil, providers: [
+        .init(id: "openrouter", label: "OpenRouter", needsModel: false),
+        .init(id: "anthropic", label: "Claude", needsModel: false, keyUrl: "https://console.anthropic.com/settings/keys",
+              plan: "A Claude Pro or Max plan can't pay for another app. Only an API key can."),
+        .init(id: "openai", label: "ChatGPT", needsModel: false, keyUrl: "https://platform.openai.com/api-keys",
+              plan: "A ChatGPT Plus or Pro plan can't pay for another app. Only an API key can."),
+    ],
                                          turns: .init(used: 31, limit: 100), search: .init(used: 50, limit: 50, key: nil))
     #endif
 

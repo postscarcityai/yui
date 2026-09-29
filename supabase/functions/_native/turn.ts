@@ -1919,7 +1919,7 @@ export function outOfTurns(limit: number): string {
   const next = new Date();
   next.setUTCMonth(next.getUTCMonth() + 1, 1);
   const when = next.toLocaleDateString("en-US", { month: "long", day: "numeric", timeZone: "UTC" });
-  return `That's your ${limit} free turns for this month. They come back on ${when}, or add your own model key in Settings to keep going now.\n\`\`\`yui\ncard "Free turns used" body="${limit} a month on Yui. Your own OpenRouter, TrustedRouter or Groq key has no limit."\n\`\`\``;
+  return `That's your ${limit} free turns for this month. They come back on ${when}, or add your own model key in Settings to keep going now.\n\`\`\`yui\ncard "Free turns used" body="${limit} a month on Yui. Your own key has no limit." cta="Add my key" url=yui://settings/key\n\`\`\``;
 }
 
 export function uuid(): string {

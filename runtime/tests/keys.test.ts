@@ -71,3 +71,20 @@ test("OpenRouter signs in with a tap, and My computer may need no key", () => {
   assert.equal(mine.needsModel, true);
   assert.ok(!PROVIDERS.some((p) => p.id !== "openrouter" && p.signIn), "paste stays for the rest");
 });
+
+test("the limit card opens the key sheet and names no provider or developer word", async () => {
+  const { outOfTurns } = await import("../src/turn.ts");
+  const text = outOfTurns(100);
+  assert.match(text, /card "Free turns used"/);
+  assert.match(text, /cta="Add my key" url=yui:\/\/settings\/key/);
+  assert.doesNotMatch(text, /API|base url|OpenRouter|TrustedRouter|Groq/i);
+});
+
+test("providers carry where to make a key and, for a chat plan, the plain line", () => {
+  const claude = PROVIDERS.find((p) => p.id === "anthropic")!;
+  const gpt = PROVIDERS.find((p) => p.id === "openai")!;
+  assert.match(claude.keyUrl!, /^https:\/\/console\.anthropic\.com/);
+  assert.match(gpt.keyUrl!, /^https:\/\/platform\.openai\.com/);
+  assert.match(claude.plan!, /Claude Pro/);
+  assert.match(gpt.plan!, /ChatGPT Plus/);
+});

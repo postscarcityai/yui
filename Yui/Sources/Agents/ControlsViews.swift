@@ -934,6 +934,7 @@ private struct TimePicker: View {
 
 private struct ModelScreen: View {
     let model: ControlsModel
+    @State private var bringKey = false
     @Environment(\.yuiTheme) private var theme
     @Environment(\.colorScheme) private var scheme
 
@@ -961,6 +962,17 @@ private struct ModelScreen: View {
                             .accessibilityElement(children: .combine)
                         }
                     }
+                    if m.profile != nil {
+                        Button { bringKey = true } label: {
+                            Label("Run on your own key", systemImage: "key.fill")
+                                .font(theme.font(theme.type.body, .bold)).foregroundStyle(c.ink)
+                                .frame(maxWidth: .infinity).padding(.vertical, theme.spacing.m)
+                                .background(c.surface, in: .rect(cornerRadius: theme.radius.bubble))
+                                .overlay(RoundedRectangle(cornerRadius: theme.radius.bubble).stroke(c.outline, lineWidth: 1.5))
+                        }
+                        .buttonStyle(BounceButtonStyle())
+                        .accessibilityIdentifier("model-own-key")
+                    }
                     Text(m.profile != nil ? "Yui only runs models that pass its screen test. Keys never show here."
                          : "Switching the model comes later, once your Mac can test one first. Keys never show here.")
                         .font(theme.font(theme.type.caption)).foregroundStyle(c.inkSoft)
@@ -972,6 +984,7 @@ private struct ModelScreen: View {
                 }
                 .padding(theme.spacing.l)
             }
+            .sheet(isPresented: $bringKey) { ModelKeySheet() }
         }
     }
 }

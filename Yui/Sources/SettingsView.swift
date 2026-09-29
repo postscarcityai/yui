@@ -4,7 +4,7 @@ struct SettingsView: View {
     /// A section to open at (`yui://settings/search`).
     var focus: String? = nil
     /// The sections a `yui://settings/<section>` link can open at.
-    static let sections: Set<String> = ["search"]
+    static let sections: Set<String> = ["search", "key"]
 
     @AppStorage("appearance") private var appearance: Appearance = .system
     @Environment(\.yuiTheme) private var theme
@@ -37,7 +37,7 @@ struct SettingsView: View {
                     StageFirstSection()
                     LookSection()
                     AgentAccessSection()
-                    ModelKeySection()
+                    ModelKeySection().id("key")
                     SearchKeySection().id("search")
                     HelpSection()
                     AccountSection()
@@ -246,15 +246,9 @@ private struct ModelKeySection: View {
     @Environment(\.yuiTheme) private var theme
     @Environment(\.colorScheme) private var scheme
     @State private var status: NativeStatus?
-    @State private var provider = "openrouter"
-    @State private var key = ""
-    @State private var model = ""
-    @State private var baseURL = ""
     @State private var working = false
     @State private var error: String?
     @State private var saved = false
-
-    private var chosen: NativeStatus.Provider? { status?.providers.first { $0.id == provider } }
 
     var body: some View {
         let c = theme.swatch(scheme)
@@ -278,50 +272,7 @@ private struct ModelKeySection: View {
                             Text("Yui and your crew use this key, with no monthly limit.")
                                 .font(theme.font(theme.type.caption)).foregroundStyle(c.inkSoft)
                         } else {
-                            Text("Yui and your crew have \(max(status.turns.limit - status.turns.used, 0)) of \(status.turns.limit) free turns left this month. Add your own key to keep going with no limit.")
-                                .font(theme.font(theme.type.body)).foregroundStyle(c.ink)
-                                .fixedSize(horizontal: false, vertical: true)
-                            Picker("Provider", selection: $provider) {
-                                ForEach(status.providers) { Text($0.label).tag($0.id) }
-                            }
-                            .pickerStyle(.menu).tint(c.ink)
-                            SecureField("Paste your key", text: $key)
-                                .textInputAutocapitalization(.never).autocorrectionDisabled()
-                                .padding(theme.spacing.m)
-                                .background(c.background, in: .rect(cornerRadius: theme.radius.bubble))
-                            if provider == "custom" {
-                                TextField("Server address, https://...", text: $baseURL)
-                                    .keyboardType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled()
-                                    .padding(theme.spacing.m)
-                                    .background(c.background, in: .rect(cornerRadius: theme.radius.bubble))
-                            }
-                            if chosen?.needsModel == true || provider == "custom" {
-                                TextField("Model name", text: $model)
-                                    .textInputAutocapitalization(.never).autocorrectionDisabled()
-                                    .padding(theme.spacing.m)
-                                    .background(c.background, in: .rect(cornerRadius: theme.radius.bubble))
-                            }
-                            Button {
-                                Task {
-                                    await run {
-                                        try await store.setModelKey(provider: provider, key: key.trimmingCharacters(in: .whitespacesAndNewlines),
-                                                                    model: model.trimmingCharacters(in: .whitespaces),
-                                                                    baseURL: baseURL.trimmingCharacters(in: .whitespaces))
-                                        key = ""
-                                        saved = true
-                                    }
-                                }
-                            } label: {
-                                Label(working ? "Checking the key" : "Save key", systemImage: "checkmark")
-                                    .font(theme.font(theme.type.body, .bold)).foregroundStyle(c.ink)
-                                    .frame(maxWidth: .infinity).padding(.vertical, theme.spacing.m)
-                                    .background(c.background, in: .rect(cornerRadius: theme.radius.bubble))
-                            }
-                            .buttonStyle(BounceButtonStyle())
-                            .disabled(working || key.isEmpty)
-                            Text("Your key goes to Yui's server once and is kept locked away there. The app never shows it again.")
-                                .font(theme.font(theme.type.caption)).foregroundStyle(c.inkSoft)
-                                .fixedSize(horizontal: false, vertical: true)
+                            ModelKeyForm(status: status) { saved = true; await load() }
                         }
                     } else {
                         ProgressView()
