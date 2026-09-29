@@ -66,9 +66,22 @@ export function handedIn(rows: Row[]): boolean {
 /** The group a row belongs to, or null for the agent's own thread. */
 export const threadOf = (r: Row): string | null => r.thread_id ?? r.meta?.group?.thread ?? null;
 
-/** One turn answers one thread: the oldest waiting row's, the rest wait for the next turn. */
+/** The chat (YUI-169) a row belongs to: the column, else the stamp the database put in meta.chat. None: an old row. */
+export const chatOf = (r: Row | null | undefined): string | null => {
+  const c = r?.chat_id ?? r?.meta?.chat?.id ?? (typeof r?.meta?.chat === "string" ? r.meta.chat : null);
+  return typeof c === "string" && c ? c : null;
+};
+
+/** One turn answers one thread and one chat: the oldest waiting row's, the rest wait for the next turn. */
 export function oneThread(rows: Row[]): Row[] {
   if (!rows.length) return rows;
   const t = threadOf(rows[0]);
-  return rows.filter((r) => threadOf(r) === t);
+  const c = chatOf(rows[0]);
+  return rows.filter((r) => threadOf(r) === t && chatOf(r) === c);
 }
+
+/** True when the turn's first row opens a fresh chat: the database marks it new and not the first one. */
+export const chatIsNew = (rows: Row[]): boolean => {
+  const c = rows[0]?.meta?.chat;
+  return !!c && typeof c === "object" && c.new === true && c.first !== true;
+};

@@ -206,7 +206,7 @@ async function notify(req: Request, b: Body): Promise<Response> {
   if (!connector) return json({ error: "unauthorized" }, 401);
   if (typeof b.message_id !== "string") return json({ error: "invalid_message_id" }, 400);
 
-  const { data: msg } = await db.from("yui_messages").select("id, user_id, agent_id, sender, body, kind, meta, created_at")
+  const { data: msg } = await db.from("yui_messages").select("id, user_id, agent_id, chat_id, sender, body, kind, meta, created_at")
     .eq("id", b.message_id).maybeSingle();
   const { data: agent } = msg
     ? await db.from("yui_agents").select("id, name, connector_id, push_muted, client_safe").eq("id", msg.agent_id).maybeSingle()

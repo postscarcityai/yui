@@ -101,15 +101,17 @@ export class SupabaseStore implements Store {
   }
 
   async pending(agentId: string) {
-    return await this.rest("GET", `yui_messages?select=id,user_id,sender,kind,body,meta,created_at,thread_id`
+    return await this.rest("GET", `yui_messages?select=id,user_id,sender,kind,body,meta,created_at,thread_id,chat_id`
       + `&agent_id=eq.${agentId}&sender=eq.user&handled_at=is.null&kind=in.(text,event)`
       + `&order=created_at.asc,id.asc&limit=50`) as Row[];
   }
 
-  async history(agentId: string, before: string, limit: number, thread: string | null = null) {
-    const rows = await this.rest("GET", `yui_messages?select=id,sender,kind,body,meta,created_at,thread_id`
+  async history(agentId: string, before: string, limit: number, thread: string | null = null, chat: string | null = null) {
+    const rows = await this.rest("GET", `yui_messages?select=id,sender,kind,body,meta,created_at,thread_id,chat_id`
       + `&agent_id=eq.${agentId}&kind=in.(text,event)&created_at=lt.${encodeURIComponent(before)}`
       + `&thread_id=${thread ? `eq.${thread}` : "is.null"}`
+      // One chat (YUI-169): a turn that names one reads only that chat. No chat (an old row): the whole thread.
+      + (chat && !thread ? `&chat_id=eq.${chat}` : "")
       + `&order=created_at.desc,id.desc&limit=${limit}`) as Row[];
     return rows.reverse();
   }
@@ -302,9 +304,11 @@ export class SupabaseStore implements Store {
     await this.rest("PATCH", `yui_native_jobs?id=eq.${id}`, { status, result: result ?? null, finished_at: new Date().toISOString() }, "return=minimal");
   }
 
-  async stoppedSince(agentId: string, userId: string, since: string) {
+  async stoppedSince(agentId: string, userId: string, since: string, chat: string | null = null) {
+    // A Stop in another chat (YUI-169) does not stop this one; a Stop with no chat (an old app) stops all.
     const r = await this.rest("GET", `yui_messages?select=id&agent_id=eq.${agentId}&user_id=eq.${userId}&sender=eq.user&kind=eq.control`
-      + `&meta->>op=eq.stop&created_at=gte.${encodeURIComponent(since)}&limit=1`);
+      + `&meta->>op=eq.stop&created_at=gte.${encodeURIComponent(since)}`
+      + (chat ? `&or=(chat_id.eq.${chat},chat_id.is.null)` : "") + `&limit=1`);
     return r.length > 0;
   }
 

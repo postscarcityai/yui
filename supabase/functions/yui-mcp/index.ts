@@ -353,15 +353,24 @@ function unfence(s: string): string {
   return (m ? m[1] : s).trim();
 }
 
-async function write(db: DB, c: Connector, agent: Agent, body: string): Promise<{ id: string; created_at: string }> {
+// The optional `chat` argument (YUI-169): a chat id from a yui_answers item. Not given, the row goes to the
+// agent's newest chat (the database decides); a chat that is not this agent's falls back to the same.
+const CHAT_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+function chatArgOf(a: Json): string | null {
+  if (a.chat === undefined || a.chat === null || a.chat === "") return null;
+  if (typeof a.chat !== "string" || !CHAT_ID.test(a.chat)) throw new ToolError("`chat` is the chat id yui_answers returned.");
+  return a.chat.toLowerCase();
+}
+
+async function write(db: DB, c: Connector, agent: Agent, body: string, chat: string | null = null): Promise<{ id: string; created_at: string; chat_id: string | null }> {
   const { data, error } = await db.from("yui_messages").insert({
     user_id: c.user_id,
     agent_id: agent.id,
     sender: "agent",
     kind: "text",
     body,
-    meta: { via: "mcp" },
-  }).select("id, created_at").single();
+    meta: chat ? { via: "mcp", chat } : { via: "mcp" },
+  }).select("id, created_at, chat_id").single();
   if (error) throw error;
   await notify(c, data.id);
   return data;
@@ -394,10 +403,11 @@ async function show(db: DB, c: Connector, a: Json): Promise<Json> {
   const text = typeof a.text === "string" ? a.text.trim() : "";
   const body = `${text ? text + "\n" : ""}\`\`\`yui\n${lines}\n\`\`\``;
   if (body.length > MAX_BODY) return bad(`Too long: ${body.length} characters, the limit is ${MAX_BODY}.`);
+  const chat = chatArgOf(a);
   const agent = await pick(db, c, a.agent);
-  const row = await write(db, c, agent, body);
+  const row = await write(db, c, agent, body, chat);
   const ids = ops.filter((o: Json) => o.op === "add").map((o: Json) => ({ id: o.id, preset: o.preset }));
-  const data = { screen_id: row.id, agent: agent.name, ids };
+  const data = { screen_id: row.id, agent: agent.name, ids, ...(row.chat_id ? { chat: row.chat_id } : {}) };
   return {
     ...ok(
       `On ${agent.name}'s screen in Yui. Screen id ${row.id}. Taps come back as [yui] <id> <preset> key=value; ` +
@@ -413,9 +423,10 @@ async function say(db: DB, c: Connector, a: Json): Promise<Json> {
   const text = typeof a.text === "string" ? a.text.trim() : "";
   if (!text) return bad("`text` is required.");
   if (text.length > MAX_BODY) return bad(`Too long: ${text.length} characters, the limit is ${MAX_BODY}.`);
+  const chat = chatArgOf(a);
   const agent = await pick(db, c, a.agent);
-  const row = await write(db, c, agent, text);
-  return ok(`Sent to ${agent.name}'s thread in Yui.`, { message_id: row.id, agent: agent.name });
+  const row = await write(db, c, agent, text, chat);
+  return ok(`Sent to ${agent.name}'s thread in Yui.`, { message_id: row.id, agent: agent.name, ...(row.chat_id ? { chat: row.chat_id } : {}) });
 }
 
 async function answers(db: DB, c: Connector, a: Json): Promise<Json> {
@@ -433,14 +444,16 @@ async function answers(db: DB, c: Connector, a: Json): Promise<Json> {
   } else {
     agent = await pick(db, c, a.agent);
   }
+  const chat = chatArgOf(a);
   const wait = Math.max(0, Math.min(MAX_WAIT, Number(a.wait) || 0));
   const end = Date.now() + wait * 1000;
   let rows: Json[] = [];
   for (;;) {
-    let q = db.from("yui_messages").select("id, body, kind, meta, created_at")
+    let q = db.from("yui_messages").select("id, body, kind, meta, created_at, chat_id")
       .eq("agent_id", agent.id).eq("user_id", c.user_id).eq("sender", "user").is("handled_at", null)
       .order("created_at", { ascending: true }).order("id", { ascending: true }).limit(50);
     if (since) q = q.gt("created_at", since);
+    if (chat) q = q.eq("chat_id", chat);
     const { data, error } = await q;
     if (error) throw error;
     rows = data ?? [];
@@ -456,6 +469,7 @@ async function answers(db: DB, c: Connector, a: Json): Promise<Json> {
   const out = [];
   for (const r of rows) {
     const item: Json = { id: r.id, at: r.created_at, kind: r.kind, text: r.body };
+    if (r.chat_id) item.chat = r.chat_id; // pass it back as `chat` to answer in the same chat
     if (r.kind === "event") item.event = r.meta;
     const photos = await signPhotos(db, c, agent, r);
     if (photos.length) item.photos = photos;
@@ -513,7 +527,7 @@ async function tap(db: DB, c: Connector, a: Json): Promise<Json> {
   }
   if (JSON.stringify(ev).length > MAX_EVENT) return bad(`Event too large (limit ${MAX_EVENT} characters).`);
   const list = await agents(db, c);
-  const { data: screen } = await db.from("yui_messages").select("agent_id, body")
+  const { data: screen } = await db.from("yui_messages").select("agent_id, body, chat_id")
     .eq("id", a.screen_id).eq("user_id", c.user_id).eq("sender", "agent").maybeSingle();
   const agent = screen && list.find((x) => x.id === screen.agent_id);
   if (!agent) return bad(`No screen ${a.screen_id} in a thread this token serves.`);
@@ -535,6 +549,8 @@ async function tap(db: DB, c: Connector, a: Json): Promise<Json> {
     kind: "event",
     body: eventLine(ev),
     meta,
+    // A tap belongs to the chat its screen is in (YUI-169); a screen with no chat: the newest one.
+    ...(screen.chat_id ? { chat_id: screen.chat_id } : {}),
     ...(told ? { delivered_at: now, handled_at: now } : {}),
   }).select("id, body").single();
   if (error) throw error;
@@ -593,6 +609,11 @@ Options are ONE token joined by | with no spaces: choose "Where?" "Camera roll"|
 
 Tap ids: the @id you gave (timer@hiit -> hiit), else n1, n2... in line order. A tap arrives as [yui] n1 choose choice=Legs: treat it as their reply and act on it. Ready-made screens and whole flows (an intake, a check-in): yui_library. Full guide: prompt yui_guide.`;
 
+const chatArg = {
+  type: "string",
+  description: "Optional. A chat id (yui_answers returns one with each answer) to write in, or read from, that chat only. Default: the agent's newest chat.",
+};
+
 const agentArg = {
   type: "string",
   description: "Which agent's thread (id, handle or name) when this token serves several. Default: the first. See yui_threads.",
@@ -609,6 +630,7 @@ const TOOLS = [
         lines: { type: "string", description: "Yui Lines, one component per line, no ``` fence." },
         text: { type: "string", description: "Optional short chat line shown above the screen (under about 50 words)." },
         agent: agentArg,
+        chat: chatArg,
       },
       required: ["lines"],
     },
@@ -634,6 +656,7 @@ const TOOLS = [
         screen_id: { type: "string", description: "The screen id yui_show returned." },
         wait: { type: "number", minimum: 0, maximum: MAX_WAIT, description: "Seconds to wait for an answer (0-25). Default 0." },
         agent: agentArg,
+        chat: chatArg,
       },
     },
     securitySchemes: SECURITY,
@@ -650,7 +673,7 @@ const TOOLS = [
     description: "Send a plain chat message to the person's Yui thread (their phone buzzes unless the thread is open). For anything they would tap, use yui_show instead. Keep it under about 50 words.",
     inputSchema: {
       type: "object",
-      properties: { text: { type: "string", description: "The message." }, agent: agentArg },
+      properties: { text: { type: "string", description: "The message." }, agent: agentArg, chat: chatArg },
       required: ["text"],
     },
     securitySchemes: SECURITY,

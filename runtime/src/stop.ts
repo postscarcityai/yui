@@ -8,6 +8,7 @@
 //     once a stop landed, and a watcher aborts the model call mid-answer. A stopped
 //     turn writes nothing: no reply, no table rows, no memory, no job.
 import type { Store } from "./store.ts";
+import { chatOf } from "./handoff.ts";
 import type { NativeAgent, Row } from "./types.ts";
 
 export class Stopped extends Error {
@@ -26,7 +27,10 @@ export function isStop(row: Pick<Row, "kind" | "sender" | "meta"> | null | undef
  *  dropped. Someone the agent is shared with (YUI-95) stops only their own. */
 export async function stopTurns(store: Store, agent: NativeAgent, stop: Row & { user_id: string }): Promise<{ rows: number; jobs: number }> {
   const mine = (r: Row) => ((r as Row & { user_id?: string }).user_id ?? agent.userId) === stop.user_id;
-  const rows = (await store.pending(agent.id)).filter((r) => r.created_at <= stop.created_at && mine(r)).map((r) => r.id);
+  // A Stop from one chat (YUI-169) ends that chat's waiting rows only; a Stop with no chat (an old app) ends all of them.
+  const chat = chatOf(stop);
+  const inChat = (r: Row) => !chat || !chatOf(r) || chatOf(r) === chat;
+  const rows = (await store.pending(agent.id)).filter((r) => r.created_at <= stop.created_at && mine(r) && inChat(r)).map((r) => r.id);
   if (rows.length) await store.markHandled(rows);
   const jobs = await store.stopJobs(agent.id, stop.user_id, stop.created_at);
   await store.controlAnswer(agent, stop.id, "controls: stop", { ok: true, op: "stop", rows: rows.length, jobs });
@@ -48,16 +52,18 @@ export interface Guard {
 
 /**
  * Watches for this person's stop on this agent sent at or after `since` (the first row of the turn,
- * or the job's queue time). `poll` ms between looks while the model answers.
+ * or the job's queue time). `poll` ms between looks while the model answers. `chat` (YUI-169): only a Stop
+ * sent from that chat, or from an app with no chats, counts.
  */
-export function guard(store: Store, agentId: string, userId: string, since: string, opts: { fetch?: typeof fetch; poll?: number } = {}): Guard {
+export function guard(store: Store, agentId: string, userId: string, since: string,
+                      opts: { fetch?: typeof fetch; poll?: number; chat?: string | null } = {}): Guard {
   const ctl = new AbortController();
   const check = async () => {
-    if (!ctl.signal.aborted && await store.stoppedSince(agentId, userId, since)) ctl.abort(new Stopped());
+    if (!ctl.signal.aborted && await store.stoppedSince(agentId, userId, since, opts.chat)) ctl.abort(new Stopped());
     if (ctl.signal.aborted) throw new Stopped();
   };
   let timer: ReturnType<typeof setInterval> | undefined = setInterval(() => {
-    store.stoppedSince(agentId, userId, since).then((s) => { if (s && !ctl.signal.aborted) ctl.abort(new Stopped()); }, () => {});
+    store.stoppedSince(agentId, userId, since, opts.chat).then((s) => { if (s && !ctl.signal.aborted) ctl.abort(new Stopped()); }, () => {});
   }, opts.poll ?? 1500);
   const base = opts.fetch ?? fetch;
   const guarded = new Proxy(store, {

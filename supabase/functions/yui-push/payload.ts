@@ -3,7 +3,7 @@
 // (YUI-143) build exactly what yui-push sends.
 
 export interface PushAgent { id: string; name: string }
-export interface PushMessage { id: string; body: string; meta?: Record<string, unknown> | null }
+export interface PushMessage { id: string; body: string; meta?: Record<string, unknown> | null; chat_id?: string | null }
 export interface PushOptions { from?: string | null; handoff?: boolean }
 
 // Text outside ```yui fences, squashed to one line.
@@ -24,6 +24,8 @@ export function apnsPayload(agent: PushAgent, msg: PushMessage, o: PushOptions =
     aps: { alert: alertFor(agent, msg, o), sound: "default", "thread-id": agent.id, "mutable-content": 1 },
     agent_id: agent.id,
     message_id: msg.id,
+    // The chat the reply is in (YUI-169), so the app opens that chat and not the newest. An old app ignores the key.
+    ...(msg.chat_id ? { chat: msg.chat_id } : {}),
     url: `yui://agent/${agent.id}/thread`,
   };
 }

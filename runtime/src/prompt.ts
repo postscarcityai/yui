@@ -131,6 +131,7 @@ export interface PromptInput {
   history: Row[];
   turn: Row[];
   images?: string[]; // signed URLs of photos in this turn (one per turn)
+  chatNew?: boolean; // the turn opens a fresh chat (YUI-169): the model is told, on one leading line
   photosLeftOut?: number; // photos in this turn the model is not shown
   now?: number; // ms; the prompt says the time in the person's zone
   tz?: string;
@@ -194,6 +195,9 @@ export function buildTurn(input: PromptInput): { messages: ChatMessage[]; droppe
   const system = `${input.guide.trim()}\n\n${systemPrompt(input.agent.profile, input.memory, input.agent.id, input.crew,
                                                            { now: input.now, tz: input.tz, schedules: input.schedules, tables: input.tables })}`;
   const now = alternate(input.turn.map(toMessage).filter((m): m is ChatMessage => !!m));
+  // A fresh chat (YUI-169) starts `[yui] chat new`, the same line the Hermes plugin sends: the thread is empty,
+  // the agent's memory is not, so it does not carry on the last chat's subject.
+  if (input.chatNew && now[0]?.role === "user") now[0] = { ...now[0], content: `[yui] chat new\n${now[0].content}` };
   let budget = (input.context ?? 32768) - (input.reserve ?? 2048) - tokens(system)
     - now.reduce((n, m) => n + tokens(String(m.content)), 0) - (input.images?.length ?? 0) * 1200;
   const past = input.history.map(toMessage).filter((m): m is ChatMessage => !!m);

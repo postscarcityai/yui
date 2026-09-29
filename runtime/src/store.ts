@@ -8,6 +8,7 @@ import { DEFAULT_ROUTES } from "./types.ts";
 import { HOME_META, homeBody } from "./home.ts";
 import { type TableChange, type TableStore, emptyStore, fromSeeds } from "./tables.ts";
 import type { JobItem } from "./meals.ts";
+import { chatOf } from "./handoff.ts";
 
 export interface Store {
   agent(agentId: string): Promise<NativeAgent | null>;
@@ -20,7 +21,7 @@ export interface Store {
   removeAgent(agentId: string): Promise<void>;
   /** Person rows not handled yet, oldest first (text and taps only). */
   pending(agentId: string): Promise<Row[]>;
-  history(agentId: string, before: string, limit: number, thread?: string | null): Promise<Row[]>; // oldest first, one thread
+  history(agentId: string, before: string, limit: number, thread?: string | null, chat?: string | null): Promise<Row[]>; // oldest first, one thread; chat set: that chat only (YUI-169)
   others(userId: string): Promise<{ handle: string; name: string }[]>; // the person's connected agents (Hermes and others)
   markDelivered(ids: string[]): Promise<void>;
   markHandled(ids: string[]): Promise<void>;
@@ -65,7 +66,7 @@ export interface Store {
   claimJob(id: string): Promise<JobItem | null>;
   finishJob(id: string, status: "done" | "failed" | "queued", result?: Record<string, unknown>): Promise<void>;
   /** Stop (YUI-190): true when this person tapped Stop on this agent at or after `since`. */
-  stoppedSince(agentId: string, userId: string, since: string): Promise<boolean>;
+  stoppedSince(agentId: string, userId: string, since: string, chat?: string | null): Promise<boolean>;
   /** Stop (YUI-190): this agent's jobs for this person queued at or before `before` and not finished fail as stopped. How many. */
   stopJobs(agentId: string, userId: string, before: string): Promise<number>;
 }
@@ -166,10 +167,10 @@ export class LocalStore implements Store {
   async pending(agentId: string) {
     return this.data.rows.filter((r) => r.agent_id === agentId && r.sender === "user" && !r.handled_at && r.kind !== "control");
   }
-  async history(agentId: string, before: string, limit: number, thread: string | null = null) {
+  async history(agentId: string, before: string, limit: number, thread: string | null = null, chat: string | null = null) {
     // <= in file order: rows written in the same millisecond still count (the turn drops its own rows).
     return this.data.rows.filter((r) => r.agent_id === agentId && r.kind !== "control" && r.created_at <= before
-                                        && (r.thread_id ?? null) === thread).slice(-limit);
+                                        && (r.thread_id ?? null) === thread && (!chat || chatOf(r) === chat)).slice(-limit);
   }
   async others(userId: string) {
     return (this.data.others ?? []).filter((o) => !o.userId || o.userId === userId).map(({ handle, name }) => ({ handle, name }));
@@ -190,8 +191,10 @@ export class LocalStore implements Store {
     // The database puts a reply to a group row in that group (yui_group_accept); so does this.
     const turn = Array.isArray(meta.turn) ? meta.turn : [];
     const thread = this.data.rows.find((r) => turn.includes(r.id) && r.thread_id)?.thread_id;
+    // ...and a reply to a person's row goes in that row's chat (YUI-169).
+    const chat = thread ? null : chatOf(this.data.rows.find((r) => turn.includes(r.id) && chatOf(r)));
     this.data.rows.push({ id, agent_id: agent.id, sender: "agent", kind: "text", body, meta, created_at: new Date().toISOString(),
-                          ...(thread ? { thread_id: thread } : {}) });
+                          ...(thread ? { thread_id: thread } : {}), ...(chat ? { chat_id: chat } : {}) });
     this.changed();
     return id;
   }
@@ -285,10 +288,12 @@ export class LocalStore implements Store {
     if (j) Object.assign(j, { status, ...(result ? { result } : {}) });
     this.changed();
   }
-  async stoppedSince(agentId: string, userId: string, since: string) {
+  async stoppedSince(agentId: string, userId: string, since: string, chat: string | null = null) {
     const owner = this.data.agents[agentId]?.userId;
+    // A Stop from one chat (YUI-169) stops that chat's work; a Stop with no chat (an old app) stops all of it.
     return this.data.rows.some((r) => r.agent_id === agentId && r.sender === "user" && r.kind === "control" && r.meta?.op === "stop"
-                                      && ((r as any).user_id ?? owner) === userId && r.created_at >= since);
+                                      && ((r as any).user_id ?? owner) === userId && r.created_at >= since
+                                      && (!chat || !chatOf(r) || chatOf(r) === chat));
   }
   async stopJobs(agentId: string, userId: string, before: string) {
     const open = (this.data.jobs ?? []).filter((j) => j.agentId === agentId && j.userId === userId && (j.status === "queued" || j.status === "running") && j.createdAt <= before);

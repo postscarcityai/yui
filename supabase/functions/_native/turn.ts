@@ -35,7 +35,7 @@ import { applyBar, applyLearn, applyOpen, applyPracticed, applySave, applyScale,
 import { ADD_BODY as TODO_BODY, TASKS, addTasks, applyMove, applyOrder, applyPlan as applyWeekPlan, applyReview, clockText, dayWord, drawnShape as plannerShape,
          ensureTools as ensurePlanner, moveBody, nextText, nextTask, planAsks, planBody as weekPlanBody, plansWeeks, remindLead, reminderMeta, reviewBody,
          screenLines as plannerScreenLines, syncReminders, tickTask, type Page as PlannerPage, type PlanAsk } from "./planner.ts";
-import { card as handoffCard, cards as handoffCards, handedIn, handlesIn, oneThread, threadOf, withCard } from "./handoff.ts";
+import { card as handoffCard, cards as handoffCards, chatIsNew, chatOf, handedIn, handlesIn, oneThread, threadOf, withCard } from "./handoff.ts";
 import { LESSON_PROMPT, PROBLEM_PROMPT, answerStep, applyQuiz, applyReview as applyCardReview, drawnShape as studyShape,
          ensureTools as ensureStudy, keepLesson, keepProblem, learnBody as lessonPlanBody, lessonAsk, lessonBody, nextText as dueText, parseLesson, parseProblem,
          problemAsk, problemBody, problems as problemRows, readLearn, readProblem, reviewBody as cardReviewBody, screenLines as studyScreenLines,
@@ -181,7 +181,7 @@ async function stoppable(store: Store, agent: NativeAgent, rows: Row[], opts: Tu
   const real = rows.filter((r) => !r.id.startsWith(SYNTHETIC));
   if (!real.length) return run(store, opts);
   const who = (real[0] as Row & { user_id?: string }).user_id ?? agent.userId;
-  const g = guard(store, agent.id, who, real[0].created_at, { fetch: opts.fetch, poll: opts.stopPoll });
+  const g = guard(store, agent.id, who, real[0].created_at, { fetch: opts.fetch, poll: opts.stopPoll, chat: chatOf(real[0]) });
   try {
     return await run(g.store, { ...opts, fetch: g.fetch, signal: g.signal });
   } catch (e) {
@@ -306,7 +306,7 @@ async function oneTurn(store: Store, agent: NativeAgent, rows: Row[], opts: Turn
   if (last) await store.doing(last, "Thinking");
   const thread = threadOf(rows[0]);
   const [history, memory, guide, routes, tzRaw, schedules, mine, tables0, others] = await Promise.all([
-    store.history(agent.id, rows[0].created_at, opts.historyRows ?? HISTORY_ROWS, thread),
+    store.history(agent.id, rows[0].created_at, opts.historyRows ?? HISTORY_ROWS, thread, chatOf(rows[0])),
     store.memory(agent.userId, agent.id),
     store.guide(),
     store.routes(),
@@ -340,7 +340,7 @@ async function oneTurn(store: Store, agent: NativeAgent, rows: Row[], opts: Turn
   // A turn with a picture goes to the model that sees (spec/NATIVE.md section 6).
   const model = provider.model ?? (images.length ? routes.vision : p.model && p.model !== "default" ? p.model : routes.text);
   const { messages } = buildTurn({
-    guide, agent, memory, crew, history: history.filter((h) => !real.includes(h.id)), turn: turnRows, images, photosLeftOut: Math.max(photos.length - 1, 0),
+    guide, agent, memory, crew, history: history.filter((h) => !real.includes(h.id)), turn: turnRows, chatNew: chatIsNew(rows), images, photosLeftOut: Math.max(photos.length - 1, 0),
     context: opts.context, reserve: (opts.maxTokens ?? 2000) + (provider.reasoning ?? 0), now, tz: tzRaw ? tz : undefined, schedules,
     tables: tablesPrompt(tables, clk),
   });
@@ -574,7 +574,7 @@ export async function runJob(store: Store, jobId: string, opts: TurnOptions): Pr
 /** Meal-question taps: each finds its question in the thread and the log is updated, no model turn. */
 async function mealFixes(store: Store, agent: NativeAgent, taps: { row: Row; id: string; choice: string }[], before: string, now: number,
                          say: (body: string, meta: Record<string, unknown>) => Promise<string>, log: (m: string) => void): Promise<void> {
-  const history = await store.history(agent.id, before, HISTORY_ROWS);
+  const history = await store.history(agent.id, before, HISTORY_ROWS, null, chatOf(taps[0]?.row));
   const clk = clock(now, validZone(await store.timezone(agent.userId)));
   let tables = await store.tables(agent.id);
   for (const t of taps) {
@@ -1083,7 +1083,7 @@ async function studyTools(store: Store, agent: NativeAgent, asks: StudyAsk[], no
     if (a.kind === "learned") {
       let l = readLearn(a.answers);
       if (!l.topic) {
-        const hist = await store.history(agent.id, a.row.created_at, 20);
+        const hist = await store.history(agent.id, a.row.created_at, 20, null, chatOf(a.row));
         const named = [...hist].reverse().find((h) => h.sender === "agent" && h.meta?.native?.studytool === "learn");
         if (named?.meta?.native?.topic) l = { ...l, topic: String(named.meta.native.topic) };
       }
@@ -1160,7 +1160,7 @@ async function workoutTools(store: Store, agent: NativeAgent, asks: WorkoutAsk[]
     }
     let text: string;
     if (a.kind === "runner") {
-      history ??= await store.history(agent.id, before, HISTORY_ROWS);
+      history ??= await store.history(agent.id, before, HISTORY_ROWS, null, chatOf(a.row));
       let s: Session | undefined = [...history].reverse().find((h) => h.sender === "agent" && h.meta?.native?.workout?.id === a.id)?.meta.native.workout;
       if (!s) {
         // Not in the thread any more: the same session again from the id (wk-<yyyymmdd>-<day>).

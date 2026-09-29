@@ -55,6 +55,7 @@ export interface Row {
   meta?: any;
   created_at: string;
   thread_id?: string | null; // a group thread (YUI-93); none: the agent's own thread
+  chat_id?: string | null; // the chat of the agent's own thread (YUI-169); none: an old row, the whole thread
 }
 
 /** Something an agent remembers. agentId null: the shared "about you" card. */
