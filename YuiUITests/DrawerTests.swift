@@ -101,8 +101,8 @@ final class DrawerTests: XCTestCase {
         sleep(1)
         shot("5-about")
 
-        // No agent picker in the drawer (YUI-167): the pill top left is the one way to switch.
-        XCTAssertFalse(app.buttons["drawer-agent-bar"].exists, "the drawer still has its own agent picker")
+        // The agent bar sits at the bottom of the drawer (YUI-194).
+        XCTAssertTrue(app.buttons["drawer-agent-bar"].exists, "the agent bar is missing from the bottom of the drawer")
         close.tap()
         waitGone(close, "Close did not close the drawer")
         XCTAssertTrue(app.pickAgent("Coach"), "the pill did not offer Coach")

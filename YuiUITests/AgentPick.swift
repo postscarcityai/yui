@@ -1,7 +1,7 @@
 import XCTest
 
 extension XCUIApplication {
-    /// Switches agent the one way there is (YUI-193): the picker at the bottom of the drawer on
+    /// Switches agent the one way there is (YUI-193): the agent bar at the bottom of the drawer (it opens the switcher) on
     /// the stage (the menu top left opens it), the pill in the record's nav bar. A row can carry
     /// a tagline under the name, so it is found by the start of its label. False when the picker
     /// or the row is missing.
@@ -17,7 +17,7 @@ extension XCUIApplication {
             let end = Date().addingTimeInterval(timeout)
             while buttons["drawer-close"].exists, Date() < end { usleep(200_000) }
             menu.tap()
-            pill = buttons["drawer-agents"]
+            pill = buttons["drawer-agent-bar"]
         }
         guard pill.waitForExistence(timeout: timeout) else { return false }
         pill.tap()
@@ -35,7 +35,7 @@ extension XCUIApplication {
         let menu = buttons["stage-menu"]
         guard menu.waitForExistence(timeout: timeout) else { return "" }
         menu.tap()
-        let pill = buttons["drawer-agents"]
+        let pill = buttons["drawer-agent-bar"]
         guard pill.waitForExistence(timeout: timeout) else { return "" }
         let label = pill.label
         buttons["drawer-close"].tap()

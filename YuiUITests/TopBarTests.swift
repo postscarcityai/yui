@@ -27,13 +27,14 @@ final class TopBarTests: XCTestCase {
 
         // The agent picker lives at the bottom of the drawer: every agent, tap one to switch.
         menu.tap()
-        let agents = app.buttons["drawer-agents"]
+        let agents = app.buttons["drawer-agent-bar"]
         XCTAssertTrue(agents.waitForExistence(timeout: 5), "the drawer has no agent picker")
         XCTAssertTrue(agents.label.hasPrefix("Talking to Yui"), "the picker does not say who: \(agents.label)")
         agents.tap()
-        let coach = app.buttons["Coach"]
-        XCTAssertTrue(coach.waitForExistence(timeout: 5), "the picker did not list the agents")
-        XCTAssertTrue(app.buttons["Manage agents"].exists, "no Manage agents in the picker")
+        let coach = app.buttons["switch-Coach"]
+        XCTAssertTrue(coach.waitForExistence(timeout: 5), "the switcher did not list the agents")
+        XCTAssertTrue(app.buttons["switch-manage"].exists, "no Edit list in the switcher")
+        XCTAssertTrue(app.buttons["switch-add"].exists, "no Add an agent in the switcher")
         sleep(1)
         shot("2-switch-agent", appearance)
         coach.tap()

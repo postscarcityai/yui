@@ -47,7 +47,7 @@ final class MeetTheAgentTests: XCTestCase {
 
         // 2. The drawer's picker is the one picker: every agent, each with what it does under its name.
         app.buttons["stage-menu"].tap()
-        app.buttons["drawer-agents"].tap()
+        app.buttons["drawer-agent-bar"].tap()
         XCTAssertTrue(text("Eat better without counting everything").waitForExistence(timeout: 5), "no tagline under Basil")
         sleep(1)
         shot("03-picker-taglines")
@@ -65,11 +65,11 @@ final class MeetTheAgentTests: XCTestCase {
         sleep(1)
         shot("05-arnold-again")
 
-        // 4. The drawer has no agent picker; About says what Arnold does, and a starter sends.
+        // 4. The drawer keeps the agent bar; About says what Arnold does, and a starter sends.
         app.buttons["stage-menu"].tap()
         let close = app.buttons["drawer-close"]
         XCTAssertTrue(close.waitForExistence(timeout: 5), "the menu did not open the drawer")
-        XCTAssertFalse(app.buttons["drawer-agent-bar"].exists, "the drawer still has its own agent picker")
+        XCTAssertTrue(app.buttons["drawer-agent-bar"].exists, "the agent bar is missing from the bottom of the drawer")
         app.buttons["drawer-tab-about"].tap()
         let tagline = app.descendants(matching: .any)["about-tagline"]
         XCTAssertTrue(tagline.waitForExistence(timeout: 5), "About has no tagline")
@@ -81,9 +81,9 @@ final class MeetTheAgentTests: XCTestCase {
         shot("06-about")
         let can = app.buttons["about-can-0"]
         XCTAssertTrue(can.exists, "no starters on About")
-        XCTAssertTrue(can.label.contains("Build my training week"), "the first starter is wrong: \(can.label)")
+        XCTAssertTrue(can.label.contains("Start today's workout"), "the first starter is wrong: \(can.label)")
         can.tap()
-        XCTAssertTrue(app.descendants(matching: .any).matching(NSPredicate(format: "identifier == 'stage-you' AND label CONTAINS 'Build my training week'"))
+        XCTAssertTrue(app.descendants(matching: .any).matching(NSPredicate(format: "identifier == 'stage-you' AND label CONTAINS %@", "Start today's workout"))
                         .firstMatch.waitForExistence(timeout: 10), "the starter was not sent")
         XCTAssertTrue(text("Here is your week.").waitForExistence(timeout: 10), "Arnold never answered the starter")
         sleep(2)

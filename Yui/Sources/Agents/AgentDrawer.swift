@@ -8,7 +8,7 @@ import YuiLines
 // so the chat stays in view, and a tap on that sliver or a drag back closes it.
 // Tabs: Home (pinned screens, what's next, the agent's backlog and screens,
 // shortcuts), Review (what's waiting on you, answered in place), Controls, About.
-// Switching agents is the picker at the bottom of the drawer (YUI-193; it was the top pill's, YUI-167).
+// The agent sits at the bottom; a tap there opens the switcher, which springs up (YUI-194, back as it was).
 // The agent fills three lists itself with `menu` lines (YUI-86): review items
 // sit under the thread's asks in Review, backlog and shortcuts on Home.
 
@@ -116,7 +116,7 @@ extension ChatStore {
 
 struct AgentDrawer: View {
     let store: ChatStore
-    /// Every agent, for the switcher at the bottom (YUI-193; YUI-194 styles it).
+    /// Every agent, for the switcher that rises from the bar at the bottom (YUI-194).
     var agents: [YuiAgent] = []
     var unshared: [String] = []
     /// Opens a page beside the chat, or the stage for a pinned screen: the drawer closes first.
@@ -138,6 +138,7 @@ struct AgentDrawer: View {
     @Environment(\.yuiTheme) private var theme
     @Environment(\.colorScheme) private var scheme
     @State private var tab = DrawerTab.home
+    @State private var switching = ProcessInfo.processInfo.arguments.contains("-yuiDrawerSwitcher")
     @Namespace private var tabs
 
     var body: some View {
@@ -167,14 +168,24 @@ struct AgentDrawer: View {
             }
             .scrollIndicators(.hidden)
             .animation(reduceMotion ? nil : theme.spring, value: tab)
-            // The agent picker left the top bar (YUI-193): switching agents lives down here.
-            AgentPicker(agent: store.agent, agents: agents, unshared: unshared,
-                        pick: { id in pick(id); close() }, add: add.map { a in { close(); a() } }, manage: manage)
-                .accessibilityIdentifier("drawer-agents")
-                .padding(.horizontal, theme.spacing.l)
-                .padding(.vertical, theme.spacing.m)
+            // Switching agents lives down here, as it did before the top pill (YUI-194).
+            AgentBar(agent: store.agent) { switching = true }
+                .padding(.horizontal, theme.spacing.m)
+                .padding(.bottom, theme.spacing.s)
         }
         .background(c.background)
+        .overlay {
+            if switching {
+                Switcher(current: store.agent, agents: agents, unshared: unshared, reduceMotion: reduceMotion,
+                         done: { switching = false },
+                         pick: { id in switching = false; pick(id); close() },
+                         add: add.map { a in { switching = false; close(); a() } },
+                         manage: { switching = false; manage() })
+                    .transition(.opacity)
+            }
+        }
+        .animation(reduceMotion ? .easeInOut(duration: 0.2) : theme.spring, value: switching)
+        .sensoryFeedback(.selection, trigger: switching)
         .onChange(of: store.agent?.id, initial: true) {
             if !DrawerTab.shown(for: store.agent).contains(tab) { tab = .home }
         }
@@ -922,6 +933,166 @@ private struct DrawerAbout: View {
         .padding(.horizontal, theme.spacing.l)
         .padding(.vertical, theme.spacing.s)
         .accessibilityElement(children: .combine)
+    }
+}
+
+// MARK: The agent at the bottom, and the switcher
+
+private struct AgentBar: View {
+    let agent: YuiAgent?
+    let open: () -> Void
+    @Environment(\.yuiTheme) private var theme
+    @Environment(\.colorScheme) private var scheme
+
+    var body: some View {
+        let c = theme.swatch(scheme)
+        Button(action: open) {
+            HStack(spacing: theme.spacing.m) {
+                if let agent { AgentBadge(agent: agent, size: 42) } else { YuiAvatar(size: 42) }
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(agent?.name ?? "Yui").font(theme.font(theme.type.body, theme.strong)).foregroundStyle(c.ink)
+                    if let agent { StatusLine(agent: agent) }
+                }
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.up")
+                    .font(theme.font(14, .heavy)).foregroundStyle(c.inkSoft)
+            }
+            .padding(theme.spacing.m)
+            .background(c.surface, in: .rect(cornerRadius: 24))
+            .overlay(RoundedRectangle(cornerRadius: 24).stroke(c.outline, lineWidth: 1))
+            .shadow(color: .black.opacity(0.06), radius: 10, y: 2)
+        }
+        .buttonStyle(BounceButtonStyle())
+        .accessibilityLabel("Talking to \(agent?.name ?? "Yui"). Switch agent")
+        .accessibilityIdentifier("drawer-agent-bar")
+    }
+}
+
+/// Every agent, rising from the bar one at a time. Search once there are many.
+private struct Switcher: View {
+    let current: YuiAgent?
+    let agents: [YuiAgent]
+    var unshared: [String] = []
+    let reduceMotion: Bool
+    let done: () -> Void
+    let pick: (String) -> Void
+    /// Nil for an invited account, which starts with what it was given (YUI-97).
+    let add: (() -> Void)?
+    let manage: () -> Void
+    @Environment(\.yuiTheme) private var theme
+    @Environment(\.colorScheme) private var scheme
+    @State private var shown = false
+    @State private var query = ""
+
+    private var list: [YuiAgent] {
+        let q = query.trimmingCharacters(in: .whitespaces)
+        return q.isEmpty ? agents : agents.filter { $0.name.localizedCaseInsensitiveContains(q) }
+    }
+
+    var body: some View {
+        let c = theme.swatch(scheme)
+        ZStack(alignment: .bottom) {
+            Rectangle().fill(.ultraThinMaterial)
+                .overlay(c.background.opacity(0.35))
+                .ignoresSafeArea()
+                .onTapGesture(perform: done)
+                .accessibilityLabel("Close the agent list")
+                .accessibilityAddTraits(.isButton)
+            ScrollView {
+                VStack(spacing: theme.spacing.s) {
+                    Spacer(minLength: 0)
+                    if agents.count > 6 {
+                        HStack(spacing: theme.spacing.s) {
+                            Image(systemName: "magnifyingglass").foregroundStyle(c.inkSoft)
+                            TextField("Find an agent", text: $query)
+                                .font(theme.font(theme.type.body))
+                        }
+                        .padding(theme.spacing.m)
+                        .background(c.surface, in: Capsule())
+                        .overlay(Capsule().stroke(c.outline, lineWidth: 1))
+                        .rise(shown, 0, reduceMotion)
+                    }
+                    ForEach(Array(list.enumerated()), id: \.element.id) { i, a in
+                        Button { pick(a.id) } label: { row(a, c) }
+                            .buttonStyle(BounceButtonStyle())
+                            .accessibilityAddTraits(a.id == current?.id ? .isSelected : [])
+                            .accessibilityIdentifier("switch-\(a.name)")
+                            .rise(shown, list.count - i, reduceMotion)
+                    }
+                    // A shared agent gone since the app opened (YUI-97): one quiet line each.
+                    ForEach(unshared, id: \.self) { name in
+                        Text(AgentStore.unsharedLine(name))
+                            .font(theme.font(theme.type.caption, .semibold)).foregroundStyle(c.inkSoft)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .accessibilityIdentifier("switch-unshared")
+                    }
+                    HStack(spacing: theme.spacing.s) {
+                        if let add {
+                            Button(action: add) {
+                                Label("Add an agent", systemImage: "plus")
+                                    .font(theme.font(15, .bold)).foregroundStyle(c.onAccent)
+                                    .frame(maxWidth: .infinity).padding(.vertical, 13)
+                                    .background(c.accent, in: Capsule())
+                            }
+                            .accessibilityIdentifier("switch-add")
+                        }
+                        Button(action: manage) {
+                            Label("Edit list", systemImage: "list.bullet")
+                                .font(theme.font(15, .bold)).foregroundStyle(c.ink)
+                                .frame(maxWidth: .infinity).padding(.vertical, 13)
+                                .background(c.surface, in: Capsule())
+                                .overlay(Capsule().stroke(c.outline, lineWidth: 1))
+                        }
+                        .accessibilityIdentifier("switch-manage")
+                    }
+                    .buttonStyle(BounceButtonStyle())
+                    .rise(shown, 0, reduceMotion)
+                }
+                .padding(.horizontal, theme.spacing.m)
+                .padding(.bottom, theme.spacing.s)
+                .frame(minHeight: 0, alignment: .bottom)
+            }
+            .defaultScrollAnchor(.bottom)
+            .scrollIndicators(.hidden)
+        }
+        .onAppear { shown = true }
+        .accessibilityIdentifier("agent-switcher")
+    }
+
+    private func row(_ a: YuiAgent, _ c: Swatch) -> some View {
+        HStack(spacing: theme.spacing.m) {
+            AgentBadge(agent: a, size: 40)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(a.name).font(theme.font(theme.type.body, theme.strong)).foregroundStyle(c.ink)
+                // What it does, when it says (a native agent's tagline, YUI-167).
+                if let line = a.line {
+                    Text(line).font(theme.font(13, .semibold)).foregroundStyle(c.inkSoft).lineLimit(1)
+                }
+                StatusLine(agent: a)
+            }
+            Spacer(minLength: 0)
+            if a.id == current?.id {
+                Image(systemName: "checkmark.circle.fill")
+                    .font(theme.font(22, .bold)).foregroundStyle(c.accent)
+            }
+        }
+        .padding(theme.spacing.m)
+        .background(c.surface, in: .rect(cornerRadius: 22))
+        .overlay(RoundedRectangle(cornerRadius: 22).stroke(a.id == current?.id ? c.accent.opacity(0.6) : c.outline,
+                                                           lineWidth: a.id == current?.id ? 2 : 1))
+    }
+}
+
+private extension View {
+    /// Rises into place after the ones below it (the nearest the bar go first), with a soft bounce.
+    /// Reduce Motion: a fade, all together.
+    func rise(_ shown: Bool, _ order: Int, _ reduceMotion: Bool) -> some View {
+        self
+            .opacity(shown ? 1 : 0)
+            .offset(y: shown || reduceMotion ? 0 : 60)
+            .scaleEffect(shown || reduceMotion ? 1 : 0.85, anchor: .bottom)
+            .animation(reduceMotion ? .easeOut(duration: 0.2)
+                       : .spring(response: 0.42, dampingFraction: 0.62).delay(Double(order) * 0.035), value: shown)
     }
 }
 
