@@ -764,7 +764,12 @@ struct ChatView: View {
             } action: { _, screens in
                 // Every frame of a scroll lands here: write state only when it changes.
                 let bottom = screens < 0.04
-                if atBottom != bottom { atBottom = bottom }
+                if atBottom != bottom {
+                    atBottom = bottom
+                    // Arrived by the arrow or a programmatic scroll: no drag ends here, so the
+                    // older rows drawn on the way up would stay alive (YUI-207).
+                    if bottom, !dragging, window > Self.windowStep { window = Self.windowStep }
+                }
                 followScroll(screens: screens)
             }
             // Content or insets changed size (a sent photo, the composer, the keyboard):
