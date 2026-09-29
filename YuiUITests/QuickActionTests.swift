@@ -30,14 +30,11 @@ final class QuickActionTests: XCTestCase {
 
     /// The real thing: leave the app, hold its icon on the home screen, Basil's "Log food" is there.
     func testHoldingTheIconShowsLogFood() {
-        // Log food was the last one used, so it leads the icon menu.
-        let app = launch("demo-basil/log-food/Log food: ")
-        let composer = app.textFields["composer"].exists ? app.textFields["composer"] : app.textViews["composer"]
-        XCTAssertTrue(composer.waitForExistence(timeout: 20))
+        // Log food was the last one used, so it leads the icon menu (its stored words end in a space).
+        let app = launch("demo-basil/log-food/Log food")
+        // Sent, not typed, so no keyboard hangs over the icon menu in the shot.
+        XCTAssertTrue(app.staticTexts["Log food"].firstMatch.waitForExistence(timeout: 20))
         sleep(2)
-        // Keyboard down so the menu shot is clean.
-        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.45)).tap()
-        sleep(1)
         XCUIDevice.shared.press(.home)
         let home = XCUIApplication(bundleIdentifier: "com.apple.springboard")
         let icon = home.icons["Yui"]
