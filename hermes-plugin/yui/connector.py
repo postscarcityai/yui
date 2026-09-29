@@ -437,6 +437,11 @@ def build_parser(ap: argparse.ArgumentParser, with_profile: bool = True) -> None
     except ImportError:  # run as a script
         import tables
     tables.add_cli(sub)
+    try:
+        from . import vault
+    except ImportError:  # run as a script
+        import vault
+    vault.add_cli(sub)
     if with_profile:
         for sp in (p, a, c, m, ho):
             sp.add_argument("--profile", "-p", help="Hermes profile (default: the active one)")
