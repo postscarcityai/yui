@@ -98,14 +98,12 @@ struct StoryPage: View {
             }
             if let body {
                 Group {
-                    if statement {
+                    if statement, ReadingType.role(body) == .headline {
                         headline(body, width: width, statement: true).foregroundStyle(s.ink)
                     } else {
-                        Text(body)
-                            .font(theme.font(voice, .medium))
-                            .foregroundStyle(s.ink.opacity(0.72))
-                            .lineSpacing(voice * 0.18)
-                            .padding(.top, theme.spacing.l)
+                        // Longer than a line or two: body type, markdown drawn (YUI-196).
+                        ReadingText(text: body, ink: statement ? s.ink : s.ink.opacity(0.78), soft: s.inkSoft, accent: s.accent)
+                            .padding(.top, statement ? 0 : theme.spacing.l)
                     }
                 }
                 .fixedSize(horizontal: false, vertical: true)
@@ -146,7 +144,7 @@ struct StoryPage: View {
     private func headline(_ text: String, width: CGFloat, statement: Bool) -> some View {
         let size = Self.headlineSize(text, width: width, display: theme.type.display, floor: voice + 3, statement: statement)
         return Text(text)
-            .font(theme.font(size, statement && LongText.wordCount(text) > 12 ? .bold : theme.strong))
+            .font(theme.font(size, theme.strong))
             .tracking(-size * 0.02)
             .fixedSize(horizontal: false, vertical: true)
     }

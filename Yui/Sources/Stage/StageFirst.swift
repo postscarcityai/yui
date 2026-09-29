@@ -723,17 +723,15 @@ struct StageFirstView: View {
                             .environment(\.ylScope, k.scope)
                     }
                     if let line = k.line, !line.isEmpty {
-                        Text(line)
-                            .font(theme.font(k.pic == nil ? theme.type.display + 4 : theme.type.display, .heavy))
-                            .foregroundStyle(c.ink)
-                            .fixedSize(horizontal: false, vertical: true)
+                        // Big type is for one short line; longer words read as body (YUI-196).
+                        ReadingText(text: line, ink: c.ink, soft: c.inkSoft, accent: c.accent,
+                                    headlineSize: k.pic == nil ? theme.type.display + 4 : theme.type.display)
                             .accessibilityIdentifier("stage-line")
                             .onGeometryChange(for: CGFloat.self, of: { $0.frame(in: .global).minY }) { wordsTop = $0 }
                     }
                     if let page = k.page {
                         if let body = page.string("body") {
-                            Text(body).font(theme.font(theme.type.body)).foregroundStyle(c.inkSoft)
-                                .fixedSize(horizontal: false, vertical: true)
+                            ReadingText(text: body, ink: c.inkSoft, soft: c.inkSoft, accent: c.accent)
                                 .onGeometryChange(for: CGFloat.self, of: { $0.frame(in: .global).minY }) { top in
                                     if k.line?.isEmpty != false { wordsTop = top }
                                 }

@@ -302,10 +302,13 @@ struct CardPreset: View {
             Text(sub).font(theme.font(theme.type.caption, .semibold)).foregroundStyle(s.inkSoft)
         }
         if let b = c.string("body") {
-            Text(b).font(theme.font(theme.type.body)).foregroundStyle(folded ? s.inkSoft : s.ink)
-                .lineLimit(folded ? 1 : nil)
-                .multilineTextAlignment(.leading)
-                .fixedSize(horizontal: false, vertical: true)
+            if folded {
+                Text(BubbleMarkdown.plain(b).components(separatedBy: "\n").first ?? "")
+                    .font(theme.font(theme.type.body)).foregroundStyle(s.inkSoft)
+                    .lineLimit(1)
+            } else {
+                ReadingText(text: b, ink: s.ink, soft: s.inkSoft, accent: s.accent)
+            }
         }
     }
 

@@ -57,10 +57,16 @@ enum BubbleMarkdown {
                 i = end + 1
                 continue
             }
-            add(block(line))
+            add(block(line, soleItem: isSoleItem(lines)))
             i += 1
         }
         return out
+    }
+
+    /// One hyphen line on its own reads as nothing (YUI-196): a list needs two items.
+    static func isSoleItem(_ lines: [String]) -> Bool {
+        let filled = lines.filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
+        return filled.count == 1 && match(bullet, filled[0]) != nil
     }
 
     /// The words with the marks taken off: what Copy, Select text, VoiceOver and
@@ -80,13 +86,14 @@ enum BubbleMarkdown {
         return lang.contains("`") ? nil : lang
     }
 
-    private static let bullet = try! NSRegularExpression(pattern: #"^(\s*)[-*+]\s+(.*)$"#)
-    private static let number = try! NSRegularExpression(pattern: #"^(\s*)(\d{1,3})[.)]\s+(.*)$"#)
-    private static let heading = try! NSRegularExpression(pattern: #"^\s{0,3}#{1,6}\s+(.*?)\s*#*\s*$"#)
+    static let bullet = try! NSRegularExpression(pattern: #"^(\s*)[-*+]\s+(.*)$"#)
+    static let number = try! NSRegularExpression(pattern: #"^(\s*)(\d{1,3})[.)]\s+(.*)$"#)
+    static let heading = try! NSRegularExpression(pattern: #"^\s{0,3}#{1,6}\s+(.*?)\s*#*\s*$"#)
 
     /// One line: a list item keeps its marker (a dot for a bullet), a heading reads bold.
-    private static func block(_ line: String) -> AttributedString {
+    private static func block(_ line: String, soleItem: Bool = false) -> AttributedString {
         if let m = match(bullet, line) {
+            if soleItem { return inline(m[1]) }
             var a = AttributedString(indent(m[0]) + "•  ")
             a.append(inline(m[1]))
             return a
@@ -111,7 +118,7 @@ enum BubbleMarkdown {
         String(repeating: "   ", count: min(3, s.count / 2))
     }
 
-    private static func match(_ re: NSRegularExpression, _ s: String) -> [String]? {
+    static func match(_ re: NSRegularExpression, _ s: String) -> [String]? {
         guard let m = re.firstMatch(in: s, range: NSRange(s.startIndex..., in: s)) else { return nil }
         return (1..<m.numberOfRanges).map { Range(m.range(at: $0), in: s).map { String(s[$0]) } ?? "" }
     }

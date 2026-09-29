@@ -550,9 +550,7 @@ struct SayPreset: View {
 
     var body: some View {
         let s = theme.swatch(scheme)
-        Text(text)
-            .font(theme.font(theme.type.body, .medium))
-            .foregroundStyle(s.agentInk)
+        ReadingText(text: text, ink: s.agentInk, accent: s.accent)
             .padding(.horizontal, theme.spacing.l)
             .padding(.vertical, theme.spacing.m)
             .background(s.agentBubble, in: .rect(cornerRadius: theme.radius.bubble))

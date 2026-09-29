@@ -113,23 +113,41 @@ enum StageChunks {
         return (chunks, qs, plan)
     }
 
-    /// Plain chat text on the stage: one chunk per paragraph, and a long
-    /// paragraph split after every second sentence, so no chunk is a wall.
-    static func text(_ text: String, most: Int = 40) -> [String] {
+    /// Plain chat text on the stage: one chunk per paragraph. A whole thought stays on one
+    /// page (SITE-97, YUI-196: "we're almost speaking like a caveman"): up to 3 sentences
+    /// and 70 words. Longer splits after every second sentence, so no chunk is a wall.
+    /// A paragraph that is markdown (a list, a heading, `Label: value` lines) keeps its
+    /// lines: it is one block to read, never flattened into a run of words.
+    static func text(_ text: String, most: Int = 70) -> [String] {
         var out: [String] = []
         let paras = text.components(separatedBy: paragraphBreak)
-            .map { $0.split(whereSeparator: \.isWhitespace).joined(separator: " ") }
+            .map { p -> String in
+                let lines = p.components(separatedBy: "\n").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+                return lines.count > 1 && isStructured(lines) ? lines.joined(separator: "\n")
+                    : p.split(whereSeparator: \.isWhitespace).joined(separator: " ")
+            }
             .filter { !$0.isEmpty }
         for para in paras {
-            if para.split(separator: " ").count <= most { out.append(para); continue }
+            if para.contains("\n") { out.append(para); continue }
             let ns = para as NSString
             var sentences = sentence.matches(in: para, range: NSRange(location: 0, length: ns.length)).map { ns.substring(with: $0.range) }
             if sentences.isEmpty { sentences = [para] }
+            if para.split(separator: " ").count <= most, sentences.count <= 3 { out.append(para); continue }
             for i in stride(from: 0, to: sentences.count, by: 2) {
                 out.append(sentences[i..<min(i + 2, sentences.count)].joined().trimmingCharacters(in: .whitespaces))
             }
         }
         return out
+    }
+
+    /// Whether lines that share a paragraph are markdown blocks: a list item, a heading
+    /// or a `Label: value` line among them.
+    private static func isStructured(_ lines: [String]) -> Bool {
+        lines.contains { l in
+            BubbleMarkdown.match(BubbleMarkdown.bullet, l) != nil || BubbleMarkdown.match(BubbleMarkdown.number, l) != nil
+                || BubbleMarkdown.match(BubbleMarkdown.heading, l) != nil
+                || { if case .label = ReadingBlock.parse(l).first { return true } else { return false } }()
+        }
     }
 
     private static let paragraphBreak = try! NSRegularExpression(pattern: #"\n\s*\n"#)
