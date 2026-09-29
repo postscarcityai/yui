@@ -111,6 +111,17 @@ final class StageFirstModel {
         opened += 1
     }
 
+    /// Back to the agent's home (YUI-195): the answer goes down, nothing is sent and nothing is
+    /// lost. The person's answers so far stay, and the reply's pill in the chat plays it again.
+    func dismiss() {
+        hello = nil
+        ask = nil
+        at = 0
+        back = false
+        typing = false
+        foundUntil = nil
+    }
+
     /// A new thread: the greeting.
     func home() {
         ask = nil
@@ -230,6 +241,8 @@ struct StageFirstView: View {
     @State private var side = 1
     @State private var pagerWidth: CGFloat = 0
     @State private var releasedAt: CGFloat?
+    /// How far the finger has pulled the answer down toward home (YUI-195).
+    @State private var pull: CGFloat = 0
 
     static let small = BarButtons.small, touch = BarButtons.touch
 
@@ -244,6 +257,8 @@ struct StageFirstView: View {
                     listening(c)
                 } else {
                     pager(turn, c)
+                        .modifier(PullHome(pull: $pull, enabled: closable(turn), reduceMotion: look.reduced,
+                                           surface: c.surface, outline: c.outline, radius: theme.radius.card) { goHome() })
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -311,6 +326,30 @@ struct StageFirstView: View {
         .accessibilityElement(children: .contain)
         .accessibilityAddTraits(.isModal)
         .accessibilityIdentifier("stage-first")
+    }
+
+    // MARK: Back home (YUI-195)
+
+    /// An answer is up on screen 1, with something to leave: a way out is always there.
+    private func closable(_ t: StageTurn?) -> Bool {
+        guard let t, t.ask != nil || t.hello, at == 1, !mic.live, !model.typing else { return false }
+        return t.pages > 0 || !store.waiting
+    }
+
+    /// The last page (the questions, or the last chunk) with nothing more coming: the end.
+    private func atEnd(_ t: StageTurn?) -> Bool {
+        guard closable(t), let t, t.pages > 0, !store.waiting, model.foundUntil == nil else { return false }
+        return min(model.at, t.pages - 1) == t.pages - 1
+    }
+
+    /// Down to the agent's home. Local only: no event, no turn, no tokens. Every question
+    /// answered so far stays, and the reply's pill in the chat plays it again.
+    private func goHome() {
+        focus.wrappedValue = false
+        withAnimation(look.reduced ? .easeInOut(duration: 0.2) : theme.spring) {
+            model.dismiss()
+            pull = 0
+        }
     }
 
     // MARK: Sideways between screens
@@ -892,6 +931,9 @@ struct StageFirstView: View {
                 let pages = turn?.pages ?? 0
                 let arrows = pages > 1 && !mic.live
                 HStack(spacing: 8) {
+                    if closable(turn), !atEnd(turn) {
+                        small("xmark", c, filled: false, label: "Close", id: "stage-close") { goHome() }
+                    }
                     if arrows {
                         let at = min(model.at, pages - 1)
                         small("chevron.left", c, filled: false, label: "Back", id: "stage-back") { step(-1) }
@@ -914,6 +956,7 @@ struct StageFirstView: View {
         .animation(reduceMotion ? .easeInOut(duration: 0.2) : theme.spring, value: model.typing)
         .animation(reduceMotion ? .easeInOut(duration: 0.2) : theme.spring, value: mic.on)
         .animation(reduceMotion ? .easeInOut(duration: 0.2) : theme.spring, value: (turn?.pages ?? 0) > 1)
+        .animation(reduceMotion ? .easeInOut(duration: 0.2) : theme.spring, value: closable(turn))
     }
 
     private func small(_ icon: String, _ c: Swatch, filled: Bool, label: String, id: String,
@@ -940,6 +983,7 @@ struct StageFirstView: View {
             withAnimation(reduceMotion ? .easeInOut(duration: 0.2) : theme.spring) { model.typing = true }
             focus.wrappedValue = true
         }
+        if atEnd(model.turn(store.messages)) { a.home = { goHome() } }
         return a
     }
 
@@ -1037,4 +1081,56 @@ struct StageFirstView: View {
         // The field grows out of T, bottom right, and folds back into it.
         .transition(reduceMotion ? .opacity : .scale(scale: 0.2, anchor: .bottomTrailing).combined(with: .opacity))
     }
+}
+
+/// The answer is a card you pull down to home (YUI-195, Chris: "should we be able to pull it
+/// down like we were before? Re-introduce the card that can be pulled away"). It follows the
+/// finger with a rubber band, turns into a rounded card as it goes, and springs back if the
+/// pull is short. Mostly down only, so pages, sliders and the sideways swipes keep theirs.
+private struct PullHome: ViewModifier {
+    @Binding var pull: CGFloat
+    let enabled: Bool
+    let reduceMotion: Bool
+    let surface: Color
+    let outline: Color
+    let radius: CGFloat
+    let close: () -> Void
+
+    func body(content: Content) -> some View {
+        let t = min(pull / 300, 1)
+        content
+            .background {
+                RoundedRectangle(cornerRadius: radius, style: .continuous)
+                    .fill(surface).opacity(t)
+            }
+            .clipShape(RoundedRectangle(cornerRadius: pull > 0 ? radius : 0, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: radius, style: .continuous)
+                    .stroke(outline, lineWidth: 1.5).opacity(t).allowsHitTesting(false)
+            }
+            .scaleEffect(reduceMotion ? 1 : 1 - 0.06 * t, anchor: .top)
+            .offset(y: pull)
+            .opacity(1 - 0.35 * t)
+            .simultaneousGesture(
+                DragGesture(minimumDistance: 24)
+                    .onChanged { v in
+                        guard enabled, v.translation.height > 0,
+                              v.translation.height > abs(v.translation.width) * 1.5 else { return }
+                        // The rubber band: it gives more the further it goes.
+                        pull = reduceMotion ? 0 : rubber(v.translation.height)
+                    }
+                    .onEnded { v in
+                        guard enabled, v.translation.height > 0 else { pull = 0; return }
+                        if v.translation.height > 120 || v.predictedEndTranslation.height > 400,
+                           v.translation.height > abs(v.translation.width) * 1.5 {
+                            close()
+                        } else {
+                            withAnimation(.spring(duration: 0.35, bounce: 0.3)) { pull = 0 }
+                        }
+                    }
+            )
+            .accessibilityAction(named: "Back home") { if enabled { close() } }
+    }
+
+    private func rubber(_ d: CGFloat) -> CGFloat { 220 * (1 - 1 / (d / 220 + 1)) * 1.4 }
 }

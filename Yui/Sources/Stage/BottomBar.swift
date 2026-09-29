@@ -23,6 +23,8 @@ struct BarActions {
     var micTap: () -> Void
     /// Set while the agent works (YUI-190): the mic is a stop square and a tap stops it.
     var stop: (() -> Void)? = nil
+    /// Set at the end of a full-screen answer (YUI-195): Back home takes the mic's place. Local only.
+    var home: (() -> Void)? = nil
 }
 
 /// + T and the mic, bottom right. While the mic is on only the mic shows.
@@ -64,10 +66,13 @@ struct BarButtons: View {
             if showType || !showMic, !micOn { type(c).transition(pop) }
             // Chris on TestFlight (YUI-190): "Find the best place to put a cancel button... I'm
             // leaning towards the main screen." The mic's own spot, always under the thumb.
-            if let stop = actions.stop { stopButton(c, stop).transition(swap) } else if showMic { mic(c).transition(swap) }
+            if let stop = actions.stop { stopButton(c, stop).transition(swap) }
+            else if let home = actions.home { homeButton(c, home).transition(swap) }
+            else if showMic { mic(c).transition(swap) }
         }
         .animation(reduceMotion ? .easeInOut(duration: 0.2) : theme.spring, value: micOn)
         .animation(reduceMotion ? .easeInOut(duration: 0.2) : theme.spring, value: actions.stop != nil)
+        .animation(reduceMotion ? .easeInOut(duration: 0.2) : theme.spring, value: actions.home != nil)
     }
 
     /// The mic and the stop square trade places where they stand.
@@ -131,6 +136,27 @@ struct BarButtons: View {
         .accessibilityLabel("Stop")
         .accessibilityHint("Stops the agent's answer.")
         .accessibilityIdentifier("\(prefix)-stop")
+    }
+
+    /// Back home (YUI-195, Chris: "when I go back home I feel resolved"): where Stop sits, the
+    /// mic's height and color, a pill so it reads. Sends nothing: the agent never hears of it.
+    private func homeButton(_ c: Swatch, _ home: @escaping () -> Void) -> some View {
+        Button(action: home) {
+            Label("Back home", systemImage: "house.fill")
+                .font(.system(size: 17, weight: .heavy))
+                .lineLimit(1)
+                .fixedSize()
+                .foregroundStyle(c.onAccent)
+                .padding(.horizontal, 20)
+                .frame(height: Self.micSize)
+                .background(c.accent, in: Capsule())
+                .shadow(color: c.accent.opacity(0.45), radius: 9, y: 6)
+                .contentShape(Capsule())
+        }
+        .buttonStyle(BounceButtonStyle())
+        .accessibilityLabel("Back home")
+        .accessibilityHint("Closes this and goes to the agent's home. Sends nothing.")
+        .accessibilityIdentifier("\(prefix)-home")
     }
 
     /// A tap talks hands-free; a hold talks until the finger lets go. The drag runs in

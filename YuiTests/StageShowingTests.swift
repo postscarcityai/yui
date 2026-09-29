@@ -69,3 +69,29 @@ final class StageShowingTests: XCTestCase {
         XCTAssertEqual(store.messages.map { $0.yl?.isBlank }, [false, false, false, false])
     }
 }
+
+/// Back home (YUI-195): closing an answer is local. The stage goes to the agent's home, the
+/// person's answers so far stay, and nothing is added to the thread.
+@MainActor
+final class StageDismissTests: XCTestCase {
+    func testDismissGoesHomeKeepsAnswersAndSendsNothing() {
+        let store = ChatStore()
+        store.load([StageShowingTests.agent("r1", #"say "Hi.""#, at: "2026-09-25T08:00:00Z")])
+        let rows = store.messages.count
+        let model = StageFirstModel()
+        model.follow("m1")
+        model.at = 2
+        model.typing = true
+        model.answers["q1"] = YLEvent(id: "q1", preset: "choose", value: ["choice": .string("Keys")], echo: nil)
+
+        model.dismiss()
+
+        XCTAssertNil(model.ask)
+        XCTAssertNil(model.turn(store.messages), "home has no turn on it")
+        XCTAssertEqual(model.at, 0)
+        XCTAssertFalse(model.typing)
+        XCTAssertNotNil(model.answers["q1"], "answers so far are kept for when it opens again")
+        XCTAssertEqual(store.messages.count, rows, "closing added a row to the thread")
+        XCTAssertTrue(model.open, "the stage itself stays up: this is home, not the chat")
+    }
+}
