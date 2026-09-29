@@ -45,8 +45,9 @@ final class MeetTheAgentTests: XCTestCase {
         sleep(1)
         shot("02-arnold-questions")
 
-        // 2. The pill is the one picker: every agent, each with what it does under its name.
-        app.buttons["stage-agents"].tap()
+        // 2. The drawer's picker is the one picker: every agent, each with what it does under its name.
+        app.buttons["stage-menu"].tap()
+        app.buttons["drawer-agents"].tap()
         XCTAssertTrue(text("Eat better without counting everything").waitForExistence(timeout: 5), "no tagline under Basil")
         sleep(1)
         shot("03-picker-taglines")

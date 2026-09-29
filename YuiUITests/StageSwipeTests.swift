@@ -36,7 +36,7 @@ final class StageSwipeTests: XCTestCase {
         field.typeText("Cooking bibimbap, keep me on track")
         app.buttons["stage-send-text"].tap()
         waitScreens(app, 3, "the stage has no screen 3")
-        XCTAssertTrue(app.pagePosition.isHittable, "no dots on the stage")
+        XCTAssertTrue(app.buttons["screen-pill-3"].isHittable, "no screen pills on the stage")
         // The reply turns the stage to its last screen; start from the answer.
         let screen = { (n: Int) in app.descendants(matching: .any)["stage-screen-\(n)"] }
         XCTAssertTrue(screen(3).waitForExistence(timeout: 10), "the reply did not show screen 3")
@@ -85,69 +85,123 @@ final class StageSwipeTests: XCTestCase {
         bar("screen 2 from the chat")
     }
 
-    /// The dots (YUI-187, Chris Sep 28: "the dots we removed ... i also want those to slide, not
-    /// fade between them and the dots should animate"). A slow drag moves the page with the
-    /// finger: short of a fifth of the screen it springs back, past it the next page lands where
-    /// the finger took it. The dots say where you are, and a tap on one goes there.
-    func testDotsFollowTheDrag() throws { try dots(reduceMotion: false) }
+    // MARK: Screen pills (YUI-193)
 
-    /// Reduce Motion: the pages cross-fade instead of sliding, and the dots stay.
-    func testDotsReduceMotion() throws { try dots(reduceMotion: true) }
+    /// Chris Sep 28: "some pills for the screens ... kind of like tabs on an internet browser. If
+    /// there are no screens we shouldn't have them ... They fade out to the right and I can slide
+    /// them back and forth. And when I swipe left and right through the screens, it just shows me
+    /// which screen I'm on with an active pill." Top bar, right of the menu; the dots are gone.
+    func testNoScreensNoPills() throws {
+        for appearance in ["light", "dark"] {
+            let app = pillsApp(appearance, reply: nil)
+            XCTAssertTrue(app.buttons["stage-type"].waitForExistence(timeout: 15), "no stage")
+            sleep(1)
+            XCTAssertFalse(app.descendants(matching: .any)["screen-pills"].exists, "pills with no screens")
+            XCTAssertFalse(app.buttons["screen-pill-1"].exists, "a Home pill with no screens")
+            XCTAssertFalse(app.buttons["stage-agents"].exists, "the agent pill is still in the top bar")
+            XCTAssertTrue(app.buttons["stage-menu"].exists && app.buttons["stage-record"].exists, "the bar lost a button")
+            shot("pills-0-\(appearance)")
+            app.terminate()
+        }
+    }
 
-    private func dots(reduceMotion: Bool) throws {
+    func testOneScreen() throws {
+        for appearance in ["light", "dark"] {
+            let app = pillsApp(appearance, reply: ["say Your timer is on screen 2.", ">2 timer 25m Focus"].joined(separator: "\\n"))
+            try sendCooking(app)
+            waitScreens(app, 2, "the stage has no screen 2")
+            let home = app.buttons["screen-pill-1"], two = app.buttons["screen-pill-2"]
+            XCTAssertTrue(two.waitForExistence(timeout: 5) && home.exists, "Home and screen 2 have no pills")
+            XCTAssertFalse(app.buttons["screen-pill-3"].exists, "a pill for a screen that is not there")
+            XCTAssertLessThan(app.buttons["stage-menu"].frame.maxX, home.frame.minX, "the pills are not right of the menu")
+            XCTAssertLessThan(home.frame.minY, 120, "the pills are not in the top bar")
+            let on = app.screenShown ?? 1
+            XCTAssertTrue((on == 2 ? two : home).isSelected && !(on == 2 ? home : two).isSelected, "the active pill is not screen \(on)")
+            shot("pills-1-\(appearance)")
+            if on != 2 {
+                two.tap()
+                waitScreen(app, 2, "a tap on the pill did not go to screen 2")
+                XCTAssertTrue(two.isSelected && !home.isSelected, "the tap did not move the active pill")
+            }
+            home.tap()
+            waitScreen(app, 1, "a tap on Home did not go home")
+            XCTAssertTrue(home.isSelected && !two.isSelected, "Home's pill is not active")
+            app.terminate()
+        }
+    }
+
+    /// Eight screens: the row overflows and fades out at the right, a tap jumps, a swipe moves
+    /// the active pill and scrolls it into view.
+    func testEightScreensLight() throws { try eight("light") }
+    func testEightScreensDark() throws { try eight("dark") }
+
+    private func eight(_ appearance: String) throws {
+        let lines = ["say Eight screens."] + (2...8).map { ">\($0) list@s\($0) \"Plan \($0)\" Eggs|Milk +check" }
+        let app = pillsApp(appearance, reply: lines.joined(separator: "\\n"))
+        try sendCooking(app)
+        waitScreens(app, 8, "the stage has no screen 8")
+        let pill = { (n: Int) in app.buttons["screen-pill-\(n)"] }
+        let win = app.windows.firstMatch.frame
+        XCTAssertTrue(pill(8).waitForExistence(timeout: 10), "no pill for screen 8")
+        waitScreen(app, 8, "the reply did not turn to screen 8")
+        XCTAssertTrue(pill(8).isSelected, "screen 8 is on show but its pill is not active")
+        XCTAssertTrue(pill(8).isHittable, "the active pill did not scroll into view")
+        XCTAssertLessThanOrEqual(pill(8).frame.maxX, win.maxX, "the active pill is off the right edge")
+        sleep(1)
+        shot("pills-8-\(appearance)-last")
+
+        // Home first: the pills slid back, and the far ones are past the fade.
+        app.goToScreen(1)
+        waitScreen(app, 1, "did not get home")
+        XCTAssertTrue(pill(1).isSelected, "Home is on show but its pill is not active")
+        XCTAssertTrue(pill(1).isHittable, "the Home pill scrolled out of view")
+        sleep(1)
+        XCTAssertFalse(pill(8).isHittable, "eight pills fit with nothing to scroll or fade")
+        shot("pills-8-\(appearance)-home")
+
+        // A tap jumps.
+        XCTAssertTrue(pill(3).isHittable, "the third pill is not reachable")
+        pill(3).tap()
+        waitScreen(app, 3, "a tap on the third pill did not go to screen 3")
+        XCTAssertTrue(pill(3).isSelected && !pill(1).isSelected, "the tap did not move the active pill")
+
+        // A swipe moves the active pill along.
+        app.swipeLeft()
+        waitScreen(app, 4, "a swipe left did not go to screen 4")
+        XCTAssertTrue(pill(4).isSelected && !pill(3).isSelected, "the swipe did not move the active pill")
+        app.swipeLeft(); app.swipeLeft(); app.swipeLeft()
+        waitScreen(app, 7, "three swipes did not reach screen 7")
+        XCTAssertTrue(pill(7).isSelected, "the active pill is not screen 7")
+        XCTAssertTrue(pill(7).isHittable, "the active pill did not scroll into view on the swipe")
+        app.swipeRight()
+        waitScreen(app, 6, "a swipe right did not go back to screen 6")
+        XCTAssertTrue(pill(6).isSelected, "the swipe back did not move the active pill")
+        sleep(1)
+        shot("pills-8-\(appearance)-swiped")
+
+        // The pills scroll by hand too.
+        let row = app.descendants(matching: .any)["screen-pills"]
+        row.swipeLeft()
+        sleep(1)
+        XCTAssertTrue(pill(8).isHittable, "a swipe on the pills did not slide the row")
+    }
+
+    private func pillsApp(_ appearance: String, reply: String?) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments = ["-yuiStageFirst", "YES", "-yuiDemoAccount", "-yuiDemoAgents", "-yuiAgent", "yui",
-                               "-appearance", "light", "-yuiDemoReply", StagePagesTests.reply,
-                               "-yuiDemoPickupAfter", "0.5", "-yuiDemoReplyAfter", "2"]
-            + (reduceMotion ? ["-yuiReduceMotion"] : [])
+                               "-appearance", appearance]
+            + (reply.map { ["-yuiDemoReply", $0, "-yuiDemoPickupAfter", "0.5", "-yuiDemoReplyAfter", "2"] } ?? [])
         app.launch()
+        return app
+    }
+
+    private func sendCooking(_ app: XCUIApplication) throws {
         XCTAssertTrue(app.buttons["stage-type"].waitForExistence(timeout: 15), "no stage")
         app.buttons["stage-type"].tap()
         let field = app.textFields["stage-field"]
         XCTAssertTrue(field.waitForExistence(timeout: 5))
         field.typeText("Cooking bibimbap, keep me on track")
         app.buttons["stage-send-text"].tap()
-        waitScreens(app, 3, "the stage has no screen 3")
-        let screen = { (n: Int) in app.descendants(matching: .any)["stage-screen-\(n)"] }
-        XCTAssertTrue(screen(3).waitForExistence(timeout: 10), "the reply did not show screen 3")
-        let dots = app.pagePosition
-        XCTAssertTrue(dots.isHittable, "no dots")
-        XCTAssertEqual(dots.value as? String, "3 of 3", "the dots are not on screen 3")
-
-        // A tap on the first dot goes home.
-        tapDot(app, 0)
-        waitScreen(app, 1, "the first dot did not go to the answer")
-        XCTAssertEqual(dots.value as? String, "1 of 3")
-
-        // A slow, short drag: the page goes with the finger and comes back.
-        let mid = app.coordinate(withNormalizedOffset: CGVector(dx: 0.7, dy: 0.45))
-        mid.press(forDuration: 0.1, thenDragTo: mid.withOffset(CGVector(dx: -50, dy: 0)),
-                  withVelocity: 60, thenHoldForDuration: 0.3)
-        sleep(1)
-        waitScreen(app, 1, "a short slow drag turned the page")
-
-        // A slow, long drag: the next page lands, whole, where it belongs.
-        mid.press(forDuration: 0.1, thenDragTo: mid.withOffset(CGVector(dx: -200, dy: 0)),
-                  withVelocity: 150, thenHoldForDuration: 0.1)
-        waitScreen(app, 2, "a long slow drag did not turn to screen 2")
-        XCTAssertTrue(screen(2).waitForExistence(timeout: 3), "screen 2 is not on show")
-        sleep(1)
-        let two = screen(2).frame, stage = app.windows.firstMatch.frame
-        XCTAssertLessThan(abs(two.midX - stage.midX), 30, "screen 2 did not settle in the middle (\(two))")
-        XCTAssertFalse(screen(3).exists, "the page beside it is still drawn")
-        XCTAssertEqual(dots.value as? String, "2 of 3", "the dots did not follow")
-        shot("dots-\(reduceMotion ? "still" : "slide")-screen2")
-
-        // The third dot jumps.
-        tapDot(app, 2)
-        waitScreen(app, 3, "the third dot did not go to screen 3")
-        XCTAssertEqual(dots.value as? String, "3 of 3")
-        sleep(1)
-        shot("dots-\(reduceMotion ? "still" : "slide")-screen3")
-
-        // The drag back comes the other way.
-        app.swipeRight()
-        waitScreen(app, 2, "a drag right on screen 3 did not go back to screen 2")
     }
 
     /// Two chunks (so the page arrows show) and two more screens.
@@ -162,91 +216,6 @@ final class StageSwipeTests: XCTestCase {
         ">2 timer 25m Focus",
         ">3 list@shop Shopping Eggs|Spinach|Rice|Gochujang +check",
     ].joined(separator: "\\n")
-
-    /// The dots live in the bottom bar (YUI-189, Chris Sep 28: "I put three little dots in the
-    /// bottom bar ... They should be centered there and they should adjust when the page arrows
-    /// appear"). Centered between the bar's leading edge and +, T and the mic with no arrows;
-    /// centered between the arrows and +, T and the mic with them; never touching a button.
-    /// Nothing is left above the bar. Run on a 440 pt and a 375 pt phone.
-    func testDotsInTheBarWithoutArrows() throws { try dotsInTheBar(arrows: false, "light") }
-    func testDotsInTheBarWithArrows() throws { try dotsInTheBar(arrows: true, "light") }
-    func testDotsInTheBarWithArrowsDark() throws { try dotsInTheBar(arrows: true, "dark") }
-
-    private func dotsInTheBar(arrows: Bool, _ appearance: String) throws {
-        let app = XCUIApplication()
-        app.launchArguments = ["-yuiStageFirst", "YES", "-yuiDemoAccount", "-yuiDemoAgents", "-yuiAgent", "yui",
-                               "-appearance", appearance,
-                               "-yuiDemoReply", arrows ? Self.chunked : StagePagesTests.reply,
-                               "-yuiDemoPickupAfter", "0.5", "-yuiDemoReplyAfter", "2"]
-        app.launch()
-        XCTAssertTrue(app.buttons["stage-type"].waitForExistence(timeout: 15), "no stage")
-        app.buttons["stage-type"].tap()
-        let field = app.textFields["stage-field"]
-        XCTAssertTrue(field.waitForExistence(timeout: 5))
-        field.typeText("Cooking bibimbap, keep me on track")
-        app.buttons["stage-send-text"].tap()
-        waitScreens(app, 3, "the stage has no screen 3")
-        app.goToScreen(1)
-        waitScreen(app, 1, "did not get back to the answer")
-        let dots = app.pagePosition
-        XCTAssertTrue(dots.waitForExistence(timeout: 5), "no dots")
-        let next = app.buttons["stage-next"]
-        if arrows {
-            XCTAssertTrue(next.waitForExistence(timeout: 10), "no page arrows on a two-chunk answer")
-        } else {
-            XCTAssertFalse(next.exists, "arrows on a one-chunk answer")
-        }
-        sleep(2)
-        let width = Int(app.windows.firstMatch.frame.width)
-        check(app, arrows: arrows, "on the answer at \(width) pt")
-        shot("dots-bar-\(arrows ? "arrows" : "plain")-\(width)-\(appearance)")
-
-        // Paging the answer keeps the arrows; the dots stay put and still read right.
-        if arrows {
-            next.tap()
-            sleep(1)
-            check(app, arrows: true, "after Next at \(width) pt")
-        }
-        // A dot tap still jumps from the bar, and the dots stay centered on screen 3.
-        tapDot(app, 2)
-        waitScreen(app, 3, "the third dot did not go to screen 3")
-        XCTAssertEqual(dots.value as? String, "3 of 3")
-        sleep(1)
-        check(app, arrows: arrows, "on screen 3 at \(width) pt")
-        shot("dots-bar-\(arrows ? "arrows" : "plain")-\(width)-\(appearance)-screen3")
-    }
-
-    /// The dots sit in the bar, centered in the room left between the arrows (or the bar's
-    /// leading edge) and the first of +, T and the mic, overlapping neither.
-    private func check(_ app: XCUIApplication, arrows: Bool, _ where_: String,
-                       file: StaticString = #filePath, line: UInt = #line) {
-        let d = app.pagePosition.frame
-        let win = app.windows.firstMatch.frame
-        let right = ["stage-attach", "stage-type", "stage-mic"]
-            .map { app.buttons[$0] }.filter { $0.exists }.map { $0.frame.minX }.min() ?? win.maxX
-        let left = arrows ? app.buttons["stage-next"].frame.maxX : win.minX + 16
-        XCTAssertGreaterThanOrEqual(d.minX, left, "the dots overlap the arrows \(where_)", file: file, line: line)
-        XCTAssertLessThanOrEqual(d.maxX, right, "the dots overlap + or T \(where_)", file: file, line: line)
-        XCTAssertEqual(d.midX, (left + right) / 2, accuracy: 2, "the dots are not centered \(where_) (\(d), \(left)-\(right))",
-                       file: file, line: line)
-        let mic = app.buttons["stage-mic"].frame
-        XCTAssertEqual(d.midY, mic.midY, accuracy: 6, "the dots are not in the bar \(where_)", file: file, line: line)
-        XCTAssertGreaterThan(d.minY, mic.minY - 12, "something of the dots sits above the bar \(where_)", file: file, line: line)
-    }
-
-    /// Taps dot `k` (0 is the first) inside the dots' row: 8 points of padding, then a dot
-    /// every pitch from the pill's half width. The row may be tight in the bar (YUI-189), so the
-    /// pitch comes from its width: `(width - 16 - pill) / (n - 1)` with the pill 2 wider than a
-    /// tight pitch; with room it is 14 and the pill 16.
-    private func tapDot(_ app: XCUIApplication, _ k: Int, of n: Int = 3) {
-        let row = app.pagePosition
-        let inner = row.frame.width - 16
-        let full = CGFloat(n - 1) * 14 + 16
-        let pitch = inner >= full - 0.5 ? 14 : (inner - 2) / CGFloat(n)
-        let pill = inner >= full - 0.5 ? 16 : pitch + 2
-        let x = 8 + pill / 2 + CGFloat(k) * pitch
-        row.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: x, dy: row.frame.height / 2)).tap()
-    }
 
     private func waitGone(_ e: XCUIElement, timeout: TimeInterval = 5) -> Bool {
         let end = Date().addingTimeInterval(timeout)

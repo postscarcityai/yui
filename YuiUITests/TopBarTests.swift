@@ -1,8 +1,8 @@
 import XCTest
 
-/// The top bar (YUI-122): the menu and the agent top left, the record top right, the
+/// The top bar (YUI-122, YUI-193): the menu top left, the screen pills after it when there are screens, the record top right, the
 /// same on the full screen and in the record. The menu opens the drawer, and Settings
-/// lives in it; the agent pill switches who you talk to; the record button opens the
+/// lives in it; the agent picker at the bottom of the drawer switches who you talk to; the record button opens the
 /// thread and its top right comes back. Demo account, no network. Screenshots go to
 /// `YUI_SHOTS` when set, and always into the result bundle.
 final class TopBarTests: XCTestCase {
@@ -11,29 +11,34 @@ final class TopBarTests: XCTestCase {
 
     private func topBar(_ appearance: String) throws {
         let app = launch(appearance)
-        let menu = app.buttons["stage-menu"], agents = app.buttons["stage-agents"], record = app.buttons["stage-record"]
+        let menu = app.buttons["stage-menu"], record = app.buttons["stage-record"]
         XCTAssertTrue(app.descendants(matching: .any)["stage-greeting"].waitForExistence(timeout: 15), "no stage at launch")
 
-        // Menu, then the agent, top left; the record top right.
-        XCTAssertTrue(menu.exists && agents.exists && record.exists, "the stage's top bar is missing a button")
-        XCTAssertLessThan(menu.frame.maxX, agents.frame.minX, "the menu is not left of the agent")
-        XCTAssertLessThan(agents.frame.minX, app.frame.width / 3, "the agent is not top left")
+        // The menu top left, the record top right, and nothing between them with no screens:
+        // the agent picker left the bar (YUI-193) and the screen pills only show with screens.
+        XCTAssertTrue(menu.exists && record.exists, "the stage's top bar is missing a button")
+        XCTAssertFalse(app.buttons["stage-agents"].exists, "the agent pill is still in the top bar")
+        XCTAssertFalse(app.descendants(matching: .any)["screen-pills"].exists, "screen pills with no screens")
+        XCTAssertLessThan(menu.frame.maxX, app.frame.width / 3, "the menu is not top left")
         XCTAssertGreaterThan(record.frame.maxX, app.frame.width - 40, "the record is not top right")
-        for e in [menu, agents, record] { XCTAssertLessThan(e.frame.minY, 120, "\(e.identifier) is not at the top") }
-        XCTAssertTrue(agents.label.hasPrefix("Talking to Yui"), "the pill does not say who: \(agents.label)")
+        for e in [menu, record] { XCTAssertLessThan(e.frame.minY, 120, "\(e.identifier) is not at the top") }
         sleep(1)
         shot("1-stage-top", appearance)
 
-        // The agent pill: every agent, tap one to switch.
+        // The agent picker lives at the bottom of the drawer: every agent, tap one to switch.
+        menu.tap()
+        let agents = app.buttons["drawer-agents"]
+        XCTAssertTrue(agents.waitForExistence(timeout: 5), "the drawer has no agent picker")
+        XCTAssertTrue(agents.label.hasPrefix("Talking to Yui"), "the picker does not say who: \(agents.label)")
         agents.tap()
         let coach = app.buttons["Coach"]
-        XCTAssertTrue(coach.waitForExistence(timeout: 5), "the pill did not list the agents")
-        XCTAssertTrue(app.buttons["Manage agents"].exists, "no Manage agents in the pill")
+        XCTAssertTrue(coach.waitForExistence(timeout: 5), "the picker did not list the agents")
+        XCTAssertTrue(app.buttons["Manage agents"].exists, "no Manage agents in the picker")
         sleep(1)
         shot("2-switch-agent", appearance)
         coach.tap()
-        let coachPill = app.buttons.matching(NSPredicate(format: "identifier == 'stage-agents' AND label BEGINSWITH 'Talking to Coach'")).firstMatch
-        XCTAssertTrue(coachPill.waitForExistence(timeout: 5), "the stage did not switch to Coach")
+        XCTAssertTrue(waitGone(app.buttons["drawer-close"]), "the drawer stayed open after the switch")
+        XCTAssertTrue(app.talkingTo().hasPrefix("Talking to Coach"), "the stage did not switch to Coach")
         XCTAssertTrue(app.descendants(matching: .any)["stage-greeting"].exists, "the stage left after the switch")
         sleep(1)
         shot("3-switched", appearance)
@@ -43,7 +48,6 @@ final class TopBarTests: XCTestCase {
         let settings = app.buttons["drawer-settings"], close = app.buttons["drawer-close"]
         XCTAssertTrue(settings.waitForExistence(timeout: 5), "the menu did not open the drawer")
         waitHittable(settings, "Settings in the drawer is not tappable over the stage")
-        XCTAssertFalse(app.buttons["drawer-agent-bar"].exists, "the drawer has its own agent picker again")
         sleep(1)
         shot("4-menu-on-stage", appearance)
         settings.tap()

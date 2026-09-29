@@ -8,8 +8,7 @@ import YuiLines
 // so the chat stays in view, and a tap on that sliver or a drag back closes it.
 // Tabs: Home (pinned screens, what's next, the agent's backlog and screens,
 // shortcuts), Review (what's waiting on you, answered in place), Controls, About.
-// Switching agents is the top pill's job alone (YUI-167, Chris: "I like where you
-// have the agent picker in the main ... get rid of the agent picker from the left side bar").
+// Switching agents is the picker at the bottom of the drawer (YUI-193; it was the top pill's, YUI-167).
 // The agent fills three lists itself with `menu` lines (YUI-86): review items
 // sit under the thread's asks in Review, backlog and shortcuts on Home.
 
@@ -117,8 +116,14 @@ extension ChatStore {
 
 struct AgentDrawer: View {
     let store: ChatStore
+    /// Every agent, for the switcher at the bottom (YUI-193; YUI-194 styles it).
+    var agents: [YuiAgent] = []
+    var unshared: [String] = []
     /// Opens a page beside the chat, or the stage for a pinned screen: the drawer closes first.
     let close: () -> Void
+    /// Switches agent, from the picker at the bottom. `add` is nil for an invited account.
+    var pick: (String) -> Void = { _ in }
+    var add: (() -> Void)? = nil
     /// Puts words in the composer (a shortcut that takes more after it).
     let compose: (String) -> Void
     let manage: () -> Void
@@ -162,6 +167,12 @@ struct AgentDrawer: View {
             }
             .scrollIndicators(.hidden)
             .animation(reduceMotion ? nil : theme.spring, value: tab)
+            // The agent picker left the top bar (YUI-193): switching agents lives down here.
+            AgentPicker(agent: store.agent, agents: agents, unshared: unshared,
+                        pick: { id in pick(id); close() }, add: add.map { a in { close(); a() } }, manage: manage)
+                .accessibilityIdentifier("drawer-agents")
+                .padding(.horizontal, theme.spacing.l)
+                .padding(.vertical, theme.spacing.m)
         }
         .background(c.background)
         .onChange(of: store.agent?.id, initial: true) {

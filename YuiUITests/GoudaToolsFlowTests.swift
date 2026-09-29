@@ -319,8 +319,8 @@ Logged 1 minute: Stand By Me.
             XCTAssertTrue(app.pickAgent("Gouda"), "could not switch back to Gouda (trip \(i))")
             XCTAssertEqual(app.state, .runningForeground, "the app died on trip \(i)")
         }
-        let pill = [app.buttons["stage-agents"], app.buttons["record-agents"]].first { $0.exists } ?? app.buttons["stage-agents"]
-        XCTAssertTrue(pill.label.contains("Gouda"), "not back on Gouda: \(pill.label)")
+        let who = app.talkingTo()
+        XCTAssertTrue(who.contains("Gouda"), "not back on Gouda: \(who)")
         try kept(app, "after 5 switches")
         shot("11-after-switches")
     }

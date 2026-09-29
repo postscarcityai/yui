@@ -296,8 +296,8 @@ Dinner is Beef tacos now, 620 kcal. Your list follows.
             XCTAssertTrue(app.pickAgent("Basil"), "could not switch back to Basil (trip \(i))")
             XCTAssertEqual(app.state, .runningForeground, "the app died on trip \(i)")
         }
-        let pill = [app.buttons["stage-agents"], app.buttons["record-agents"]].first { $0.exists } ?? app.buttons["stage-agents"]
-        XCTAssertTrue(pill.label.contains("Basil"), "not back on Basil: \(pill.label)")
+        let who = app.talkingTo()
+        XCTAssertTrue(who.contains("Basil"), "not back on Basil: \(who)")
         app.goToScreen(4)
         XCTAssertTrue(item(app, "Spinach").waitForExistence(timeout: 8), "the grocery list is gone after the switches")
         XCTAssertTrue(item(app, "Spinach").isSelected, "Spinach lost its tick after 5 switches")

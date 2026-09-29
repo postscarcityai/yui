@@ -597,7 +597,8 @@ struct ChatView: View {
 
     /// The drawer itself; `DrawerLayer` slides it and dims the chat.
     private var drawerContent: some View {
-        AgentDrawer(store: store, close: closeDrawer,
+        AgentDrawer(store: store, agents: agents.agents, unshared: agents.unshared, close: closeDrawer,
+                    pick: { agents.selectedID = $0 }, add: agents.onlyShared ? nil : { addFirst = true },
                     compose: { composer.draft = $0; stageFirstOn && stageFirst.open ? typeOnStage() : typeHere() },
                     manage: { settleDrawer(open: false); showAgents = true },
                     edit: { editingAgent = $0 },
@@ -1440,7 +1441,8 @@ struct ChatView: View {
             focus: $stageFocused, photos: photos, sending: sending, mic: stageMicState,
             showMic: stageMic || !stageType, showType: stageType || !stageMic, showAttach: stageAttach,
             unread: max(0, store.shown.count - stageFirst.seen), waiting: store.waitingCount, reduceMotion: reduceMotion,
-            screens: store.screens, screen: store.screens.contains(page ?? 1) ? (page ?? 1) : 1, style: agentStyle,
+            screens: store.screens, screen: store.screens.contains(page ?? 1) ? (page ?? 1) : 1,
+            screenTitle: { store.pageTitle($0) }, style: agentStyle,
             look: store.agent?.motionLook(reduced: reduceMotion) ?? MotionLook(character: "bouncy", reduced: reduceMotion),
             actions: StageActions(
                 menu: { settleDrawer(open: true) },

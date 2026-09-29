@@ -56,9 +56,9 @@ final class StageFirstTests: XCTestCase {
     private func playRelease(appearance: String) throws {
         let app = launch(appearance, reply: Self.releaseReply)
 
-        // At rest: the greeting, the agent top left, the chat top right, mic T and + bottom right.
+        // At rest: the greeting, the menu top left, the chat top right, mic T and + bottom right.
         XCTAssertTrue(app.descendants(matching: .any)["stage-greeting"].waitForExistence(timeout: 15), "no stage at launch")
-        for id in ["stage-menu", "stage-agents", "stage-record", "stage-mic", "stage-type", "stage-attach"] {
+        for id in ["stage-menu", "stage-record", "stage-mic", "stage-type", "stage-attach"] {
             XCTAssertTrue(app.descendants(matching: .any)[id].exists, "\(id) is missing")
         }
         let mic = app.buttons["stage-mic"].frame, type = app.buttons["stage-type"].frame

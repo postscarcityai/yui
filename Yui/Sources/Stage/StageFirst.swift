@@ -200,9 +200,11 @@ struct StageFirstView: View {
     var waiting = 0
     let reduceMotion: Bool
     /// The agent's screens (YUI-31): 1 is the answer playing here, 2... each screen it put
-    /// something on. A swipe apart, with a dot each (YUI-187).
+    /// something on. A swipe apart, with a pill each in the top bar (YUI-193).
     var screens: [Int] = [1]
     var screen = 1
+    /// What a screen's pill says: its title, or "Screen N".
+    var screenTitle: (Int) -> String = { "Screen \($0)" }
     var style: [String: String] = [:]
     /// How this agent moves (YUI-120): its character and the look said in words. Reduce Motion gives the still look.
     let look: MotionLook
@@ -228,12 +230,6 @@ struct StageFirstView: View {
     @State private var side = 1
     @State private var pagerWidth: CGFloat = 0
     @State private var releasedAt: CGFloat?
-    /// How many dots the last turn crossed: a tap on the fourth dot from the second slides one
-    /// page but moves the pill two.
-    @State private var span: CGFloat = 1
-    /// The room the dots have in the bar (YUI-189): between the page arrows (or the bar's
-    /// leading edge) and +, T and the mic.
-    @State private var dotsRoom: CGFloat?
 
     static let small = BarButtons.small, touch = BarButtons.touch
 
@@ -416,13 +412,6 @@ struct StageFirstView: View {
         return side < 0 ? [b, shown] : [shown, b]
     }
 
-    /// Where the dots stand, in screens: the page on show, less how far the finger has taken it.
-    private var dotsAt: CGFloat {
-        let i = CGFloat(screens.firstIndex(of: shown) ?? 0)
-        guard pagerWidth > 0 else { return i }
-        return i - slide / pagerWidth * span
-    }
-
     /// The finger is down and has moved `x`: the page goes with it, the next one (`toward` +1)
     /// or the one before (-1) comes in from that side. Past the last screen it gives a little.
     private func follow(_ x: CGFloat, toward step: Int) {
@@ -434,7 +423,6 @@ struct StageFirstView: View {
             beside = n
             side = step
             slide = x
-            span = 1
         }
     }
 
@@ -475,7 +463,6 @@ struct StageFirstView: View {
             slide = (released ?? 0) + step * pagerWidth
             beside = before
             side = forward ? -1 : 1
-            span = CGFloat(max(1, abs(to - from)))
         }
         settle()
     }
@@ -535,9 +522,14 @@ struct StageFirstView: View {
             circle("line.3.horizontal", c, label: "Menu", id: "stage-menu", action: actions.menu)
                 .modifier(WaitingDot(waiting: waiting > 0, reduceMotion: reduceMotion, x: 1, y: 1))
                 .accessibilityValue(waiting > 0 ? "\(waiting) waiting on you" : "")
-            AgentPicker(agent: agent, agents: agents, unshared: unshared, pick: actions.pick, add: actions.add, manage: actions.manage,
-                        title: store.chatTitle, openDrawer: actions.openDrawer, menuID: "stage-agents")
-            Spacer(minLength: 0)
+            // The screens as pills (YUI-193, Chris Sep 28: "some pills for the screens ... kind of
+            // like tabs on an internet browser"). None with only the one screen.
+            if screens.count > 1 {
+                ScreenPills(screens: screens, page: shown, title: screenTitle, go: actions.goScreen)
+                    .transition(.opacity)
+            } else {
+                Spacer(minLength: 0)
+            }
             // The pen on a page starts a new chat (YUI-169); the chat itself, the record, is the bubble beside it.
             circle("bubble.left", c, label: "Chat", id: "stage-record", action: actions.record)
                 .overlay(alignment: .topTrailing) {
@@ -558,6 +550,7 @@ struct StageFirstView: View {
         }
         .padding(.horizontal, theme.spacing.l)
         .padding(.top, theme.spacing.xs)
+        .animation(reduceMotion ? .easeInOut(duration: 0.2) : theme.spring, value: screens.count > 1)
     }
 
     private func circle(_ icon: String, _ c: Swatch, label: String, id: String, action: @escaping () -> Void) -> some View {
@@ -908,22 +901,7 @@ struct StageFirstView: View {
                             .opacity(at == pages - 1 ? 0.35 : 1)
                             .disabled(at == pages - 1)
                     }
-                    // The dots live in the bar (YUI-189, Chris Sep 28: "I put three little dots in
-                    // the bottom bar ... They should be centered there and they should adjust when
-                    // the page arrows appear"): centered in the room between the arrows and +, T and
-                    // the mic, sliding over when the arrows come or go. Only with somewhere to go.
-                    Color.clear
-                        .frame(maxWidth: .infinity, minHeight: 30, maxHeight: 30)
-                        .onGeometryChange(for: CGFloat.self, of: { $0.size.width }) { dotsRoom = $0 }
-                        .overlay {
-                            if screens.count > 1, !mic.live {
-                                PageDots(screens: screens, progress: dotsAt, page: at, room: dotsRoom,
-                                         go: actions.goScreen)
-                                    .transition(.opacity)
-                            }
-                        }
-                        // With no arrows, the same gap at the bar's edge as before the +.
-                        .padding(.leading, arrows ? 0 : 8)
+                    Spacer(minLength: 0)
                     BarButtons(prefix: "stage", showMic: showMic, showType: showType, showAttach: showAttach,
                                micOn: mic.on, micLive: mic.live, armed: mic.armed,
                                attachDisabled: sending || photos.count >= Attachments.maxPhotos,
@@ -936,7 +914,6 @@ struct StageFirstView: View {
         .animation(reduceMotion ? .easeInOut(duration: 0.2) : theme.spring, value: model.typing)
         .animation(reduceMotion ? .easeInOut(duration: 0.2) : theme.spring, value: mic.on)
         .animation(reduceMotion ? .easeInOut(duration: 0.2) : theme.spring, value: (turn?.pages ?? 0) > 1)
-        .animation(reduceMotion ? .easeInOut(duration: 0.2) : theme.spring, value: screens.count > 1)
     }
 
     private func small(_ icon: String, _ c: Swatch, filled: Bool, label: String, id: String,

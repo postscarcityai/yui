@@ -409,8 +409,8 @@ Day wrapped: 1 done. First up tomorrow: book a haircut.
             XCTAssertTrue(app.pickAgent("Penny"), "could not switch back to Penny (trip \(i))")
             XCTAssertEqual(app.state, .runningForeground, "the app died on trip \(i)")
         }
-        let pill = [app.buttons["stage-agents"], app.buttons["record-agents"]].first { $0.exists } ?? app.buttons["stage-agents"]
-        XCTAssertTrue(pill.label.contains("Penny"), "not back on Penny: \(pill.label)")
+        let who = app.talkingTo()
+        XCTAssertTrue(who.contains("Penny"), "not back on Penny: \(who)")
         checkWeek("after 5 switches")
         app.goToScreen(3)
         shot("15-after-switches")
