@@ -145,9 +145,10 @@ struct BarButtons: View {
             Label("Back home", systemImage: "house.fill")
                 .font(.system(size: 17, weight: .heavy))
                 .lineLimit(1)
-                .fixedSize()
+                // Never wider than the room left: a fixed-size pill pushed the whole stage past the screen (YUI-205).
+                .minimumScaleFactor(0.7)
                 .foregroundStyle(c.onAccent)
-                .padding(.horizontal, 20)
+                .padding(.horizontal, 16)
                 .frame(height: Self.micSize)
                 .background(c.accent, in: Capsule())
                 .shadow(color: c.accent.opacity(0.45), radius: 9, y: 6)

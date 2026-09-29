@@ -83,6 +83,10 @@ final class BodyTextTests: XCTestCase {
             next.tap()
             sleep(2)
             shot("chart-text", appearance)
+            // YUI-205: the last page's Back home pill once made the whole stage wider than the phone.
+            XCTAssertGreaterThan(app.buttons["stage-menu"].frame.minX, 8, "the stage is wider than the screen on the last page")
+            XCTAssertLessThan(app.buttons["stage-new-chat"].frame.maxX, app.windows.firstMatch.frame.width - 8,
+                              "the stage is wider than the screen on the last page")
         }
     }
 
