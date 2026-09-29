@@ -73,4 +73,55 @@ final class PushToTalkTests: XCTestCase {
         let words = await ptt.stop()
         XCTAssertEqual(words, "", "stop after cancel still returned words")
     }
+
+    /// YUI-209: the classic recognizer starts over after a pause. Nothing said before it is lost.
+    func testClassicRestartKeepsEarlierWords() {
+        var w = PushToTalk.Transcript()
+        w.takeRestarting("one", final: false)
+        w.takeRestarting("one two three", final: false)
+        w.takeRestarting("four", final: false)
+        w.takeRestarting("four five", final: false)
+        XCTAssertEqual(w.text, "one two three four five")
+        w.takeRestarting("six", final: false)
+        w.takeRestarting("six seven eight", final: false)
+        w.takeRestarting("nine", final: true)
+        XCTAssertEqual(w.text, "one two three four five six seven eight nine")
+    }
+
+    /// A revision of the same sentence is not a restart, even when the first word is recased.
+    func testClassicRevisionDoesNotDuplicate() {
+        var w = PushToTalk.Transcript()
+        w.takeRestarting("hello there wor", final: false)
+        w.takeRestarting("Hello there world", final: false)
+        w.takeRestarting("Hello there world", final: true)
+        XCTAssertEqual(w.text, "Hello there world")
+        w.takeRestarting("", final: true)
+        XCTAssertEqual(w.text, "Hello there world")
+    }
+
+    /// Analyzer: a settled segment is never dropped, and a newer volatile that beats an
+    /// older final to the screen survives it.
+    func testAnalyzerKeepsSettledAndNewerVolatile() {
+        var w = PushToTalk.Transcript()
+        w.take("one two", final: false, at: 0, end: 2)
+        w.take("one two three", final: true, at: 0, end: 3)
+        w.take("four", final: false, at: 3, end: 4)
+        w.take("four five", final: true, at: 3, end: 5)
+        XCTAssertEqual(w.text, "one two three four five")
+        w.take("six", final: false, at: 8, end: 9)     // newer volatile arrives first
+        w.take("five and", final: true, at: 5, end: 6) // late final for an older range
+        XCTAssertEqual(w.text, "one two three four five five and six")
+    }
+
+    /// A 60 s prompt with pauses: every segment, in order.
+    func testLongPromptWithPausesKeepsEverything() {
+        var w = PushToTalk.Transcript()
+        var expected: [String] = []
+        for seg in 0..<12 {
+            let words = (0..<8).map { "w\(seg)x\($0)" }
+            expected += words
+            for n in 1...words.count { w.takeRestarting(words[0..<n].joined(separator: " "), final: false) }
+        }
+        XCTAssertEqual(w.text, expected.joined(separator: " "))
+    }
 }

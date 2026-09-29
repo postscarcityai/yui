@@ -45,6 +45,8 @@ final class PushToTalk {
     // Classic.
     private var request: SFSpeechAudioBufferRecognitionRequest?
     private var task: SFSpeechRecognitionTask?
+    /// The classic recognizer starts a fresh transcription after a pause: this keeps what came before.
+    private var classicWords = Transcript()
     // Analyzer.
     private var analyzer: SpeechAnalyzer?
     private var feed: AsyncStream<AnalyzerInput>.Continuation?
@@ -119,6 +121,7 @@ final class PushToTalk {
     func start() async {
         guard phase != .listening else { return }
         transcript = ""
+        classicWords = Transcript()
         lastFinalMs = nil
         resetMeters()
         #if DEBUG
@@ -179,7 +182,8 @@ final class PushToTalk {
             var words = Transcript()
             do {
                 for try await r in transcriber.results {
-                    words.take(String(r.text.characters), final: r.isFinal)
+                    words.take(String(r.text.characters), final: r.isFinal,
+                               at: r.range.start.seconds, end: r.range.end.seconds)
                     self?.hear(words.text)
                 }
             } catch {}
@@ -200,7 +204,10 @@ final class PushToTalk {
                          block: Self.tap(req) { [weak self] level in self?.take(level: level) })
         task = recognizer.recognitionTask(with: req, resultHandler: Self.heard { [weak self] text, done in
             guard let self else { return }
-            if let text { self.hear(text) }
+            if let text {
+                self.classicWords.takeRestarting(text, final: done)
+                self.hear(self.classicWords.text)
+            }
             if done { self.finish?.resume(); self.finish = nil }
         })
     }
@@ -284,8 +291,42 @@ final class PushToTalk {
         private(set) var volatile = ""
         var text: String { Self.join(settled, volatile) }
 
-        mutating func take(_ words: String, final: Bool) {
-            if final { settled = Self.join(settled, words); volatile = "" } else { volatile = words }
+        /// `at` is where in the audio the result starts (seconds), `end` where it ends. A final
+        /// only clears the volatile words when they are inside its range: a newer volatile that
+        /// arrived first stays.
+        mutating func take(_ words: String, final: Bool, at start: Double? = nil, end: Double? = nil) {
+            if final {
+                settled = Self.join(settled, words)
+                if let start = volatileStart, let end, start >= end { return }
+                volatile = ""; volatileStart = nil
+            } else {
+                volatile = words; volatileStart = start
+            }
+        }
+
+        private var volatileStart: Double?
+
+        /// The classic recognizer's partials: each is the whole current transcription. After a
+        /// pause it may start over with only the new words; then the old ones settle first
+        /// (YUI-209: a long held prompt came through as only its last few words).
+        mutating func takeRestarting(_ words: String, final: Bool) {
+            if !volatile.isEmpty, Self.restarted(from: volatile, to: words) {
+                settled = Self.join(settled, volatile)
+            }
+            if words.trimmingCharacters(in: .whitespaces).isEmpty {
+                if final { settled = Self.join(settled, volatile); volatile = "" }
+                return
+            }
+            take(words, final: final)
+        }
+
+        /// A new partial that does not begin with the same word and is shorter (or the old one was
+        /// long enough that its first word is settled) is not a
+        /// revision of the last one; it is a new stretch of speech.
+        private static func restarted(from old: String, to new: String) -> Bool {
+            let o = old.split(separator: " "), n = new.split(separator: " ")
+            guard let of = o.first, let nf = n.first else { return false }
+            return (n.count < o.count || o.count >= 3) && of.caseInsensitiveCompare(nf) != .orderedSame
         }
 
         private static func join(_ a: String, _ b: String) -> String {
