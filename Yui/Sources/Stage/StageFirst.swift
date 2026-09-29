@@ -915,7 +915,24 @@ struct StageFirstView: View {
         for q in t.questions where !planned.contains(q.id) {
             if let e = model.answers[q.id], YLComponent.answerValue(e) != nil { store.emit(e) }
         }
+        finishDecks(t)
         if let id = t.ask?.id { withAnimation(theme.spring) { _ = model.sent.insert(id) } }
+    }
+
+    /// A lesson's quiz lands on this screen, not inside its deck, so the deck never saw the answers
+    /// (YUI-186: Quill's score and Last quiz would never come). Once every quiz question of a deck is
+    /// answered, the deck's done goes with the score, as the inline deck sends it.
+    private func finishDecks(_ t: StageTurn) {
+        var seen: Set<String> = []
+        for q in t.questions {
+            guard let g = q.c.inGroup, seen.insert("\(q.scope)#\(g)").inserted,
+                  let deck = q.all.last(where: { $0.ylID == g && $0.preset == "deck" && $0.serial < q.c.serial }) else { continue }
+            let quizzes = t.questions.filter { $0.scope == q.scope && $0.c.inGroup == g && $0.c.quizAnswer != nil }
+            guard !quizzes.isEmpty, quizzes.allSatisfy({ model.answers[$0.id].flatMap(YLComponent.answerValue) != nil }) else { continue }
+            let right = quizzes.filter { model.answers[$0.id]?.value["correct"]?.bool == true }.count
+            store.emit(deck.event(["done": .bool(true), "pages": .number(Double(q.all.steps(of: deck).count)),
+                                   "score": .number(Double(right)), "of": .number(Double(quizzes.count))]))
+        }
     }
 
     // MARK: Bottom bar: back and on at the left, + T and the mic at the right

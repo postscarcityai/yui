@@ -525,8 +525,8 @@ final class ChatStore {
         // task done in her tables and patches Today and This week. No working row: nothing is owed.
         let quietTick = !e.relays && e.keepsPage && agent?.kind == "hosted"
         #if DEBUG
-        // -yuiDemoReplyTaps: a tap the agent would get is answered with -yuiDemoReply too (YUI-145).
-        if client == nil, e.relays, e.echo != nil, ProcessInfo.processInfo.arguments.contains("-yuiDemoReplyTaps"),
+        // -yuiDemoReplyTaps: a tap the agent would get (an answer, or a deck's done: YUI-186) is answered with -yuiDemoReply too (YUI-145).
+        if client == nil, e.relays, e.echo != nil || e.value["done"] == .bool(true), ProcessInfo.processInfo.arguments.contains("-yuiDemoReplyTaps"),
            let reply = ChatStore.demoText("yuiDemoReply") {
             demoAnswer(reply)
             return
