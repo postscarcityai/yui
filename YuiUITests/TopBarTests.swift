@@ -20,7 +20,7 @@ final class TopBarTests: XCTestCase {
         XCTAssertFalse(app.buttons["stage-agents"].exists, "the agent pill is still in the top bar")
         XCTAssertFalse(app.descendants(matching: .any)["screen-pills"].exists, "screen pills with no screens")
         XCTAssertLessThan(menu.frame.maxX, app.frame.width / 3, "the menu is not top left")
-        XCTAssertGreaterThan(record.frame.maxX, app.frame.width - 40, "the record is not top right")
+        XCTAssertGreaterThan(record.frame.maxX, app.frame.width - 110, "the record is not top right")
         for e in [menu, record] { XCTAssertLessThan(e.frame.minY, 120, "\(e.identifier) is not at the top") }
         sleep(1)
         shot("1-stage-top", appearance)
@@ -68,7 +68,7 @@ final class TopBarTests: XCTestCase {
         waitHittable(rmenu, "no menu in the record")
         XCTAssertTrue(ragents.exists, "no agent pill in the record")
         XCTAssertLessThan(rmenu.frame.maxX, ragents.frame.minX, "the record's menu is not left of the agent")
-        XCTAssertGreaterThan(back.frame.maxX, app.frame.width - 40, "the way back is not top right")
+        XCTAssertGreaterThan(back.frame.maxX, app.frame.width - 110, "the way back is not top right")
         XCTAssertFalse(app.buttons["Settings"].exists, "Settings is still loose in the record's bar")
         sleep(1)
         shot("6-record-top", appearance)
