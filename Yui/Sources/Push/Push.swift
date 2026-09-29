@@ -257,6 +257,14 @@ final class YuiAppDelegate: NSObject, UIApplicationDelegate {
         return true
     }
 
+    /// Quick actions on the icon (YUI-191) arrive through the scene.
+    func application(_ application: UIApplication, configurationForConnecting connectingSceneSession: UISceneSession,
+                     options: UIScene.ConnectionOptions) -> UISceneConfiguration {
+        let config = UISceneConfiguration(name: nil, sessionRole: connectingSceneSession.role)
+        config.delegateClass = YuiSceneDelegate.self
+        return config
+    }
+
     func application(_ application: UIApplication, didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data) {
         PushCenter.shared.didRegister(deviceToken)
     }

@@ -35,6 +35,7 @@ struct SettingsView: View {
                     .background(c.surface, in: .rect(cornerRadius: theme.radius.card))
                     .overlay(RoundedRectangle(cornerRadius: theme.radius.card).stroke(c.outline, lineWidth: 1.5))
                     StageFirstSection()
+                    HomeActionsSection()
                     LookSection()
                     AgentAccessSection()
                     ModelKeySection().id("key")

@@ -19,7 +19,8 @@ struct YuiApp: App {
     var body: some Scene {
         WindowGroup {
             AgentThemed {
-                if account.isSignedIn { ChatView() } else { SignInView() }
+                Group { if account.isSignedIn { ChatView() } else { SignInView() } }
+                    .modifier(QuickActionHooks())
             }
             .animation(.default, value: account.isSignedIn)
             // An invite that didn't work says so for a moment (YUI-56).

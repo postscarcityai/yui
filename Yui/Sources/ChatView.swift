@@ -143,6 +143,15 @@ struct ChatView: View {
     private var composing: Bool { onChat || talkPage != nil }
 
     var body: some View {
+        chatBody
+        // A quick action on the icon (YUI-191): that agent's thread, its words sent as if typed.
+        .onChange(of: QuickActionTap.shared.pending, initial: true) { openQuickAction() }
+        .onChange(of: store.loaded ? store.agent?.id : nil) { sendQuickAction() }
+        // The icon menu follows the drawer: a new or finished shortcut redraws it.
+        .onChange(of: store.menu) { QuickActions.refresh(agents: agents.agents, signedIn: account.isSignedIn) }
+    }
+
+    @ViewBuilder private var chatBody: some View {
         let c = theme.swatch(scheme)
         let _ = BodyLog.hit("ChatView")
         // The layers and the thread are erased (AnyView): as one type, the body nested
@@ -561,6 +570,30 @@ struct ChatView: View {
                 Task { try? await Task.sleep(for: .seconds(0.6)); store.demoAnswer(reply) }
             }
             #endif
+    }
+
+    /// A quick action tapped: go to its agent's thread, then send once that thread is up.
+    private func openQuickAction() {
+        guard let tap = QuickActionTap.shared.pending else { return }
+        showAgents = false
+        showSettings = false
+        settleDrawer(open: false)
+        let target = agents.idFor(tap.agentID)
+        if agents.selectedID != target { agents.selectedID = target }
+        if !agents.agents.contains(where: { $0.id == target }) { Task { await agents.refresh() } }
+        sendQuickAction()
+    }
+
+    /// Same path as a drawer shortcut tap: words ending in a space fill the composer, the rest send.
+    private func sendQuickAction() {
+        guard let tap = QuickActionTap.shared.pending, store.loaded, store.agent?.id == agents.idFor(tap.agentID) else { return }
+        QuickActionTap.shared.pending = nil
+        // The words the icon showed win; the drawer's item adds `url=` and the rest.
+        var item = store.menu.shortcuts.first { $0.id == tap.itemID } ?? YLMenuItem(id: tap.itemID, label: tap.label)
+        if let say = tap.say { item.say = say }
+        // The composer still holds the last thread's words: hand it this thread first, or its own draft wins.
+        composer.show(agent: store.agent?.id)
+        MenuAction.shortcut(item, store: store, compose: { composer.draft = $0; stageFirstOn && stageFirst.open ? typeOnStage() : typeHere() })
     }
 
     /// A tap on a notification lands on what came, not on the agent's home (YUI-199, Chris: "I was
