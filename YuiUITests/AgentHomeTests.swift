@@ -110,6 +110,68 @@ final class AgentHomeTests: XCTestCase {
                       "a drag right from the edge over the keys did not go back")
     }
 
+    /// YUI-200 (Chris, TestFlight: "play a loop and switch around to the other screens without it
+    /// stopping"): the loop and the click keep going while the person swipes between Gouda's screens.
+    func testGoudaMusicKeepsPlayingAcrossScreens() throws {
+        let app = launch("gouda", "dark")
+        XCTAssertTrue(app.buttons["home-chip-jam"].waitForExistence(timeout: 15), "no Jam chip")
+        app.goToScreen(2)
+        let play = app.descendants(matching: .any)["stage-screen-2"].buttons["loop-play"]
+        XCTAssertTrue(play.waitForExistence(timeout: 5), "no looper on screen 2")
+        play.tap()
+        XCTAssertEqual(play.label, "Stop", "the looper did not start")
+        // The click on Chords, over the loop.
+        app.goToScreen(3)
+        let click = app.descendants(matching: .any)["stage-screen-3"].buttons["metronome-play"]
+        XCTAssertTrue(click.waitForExistence(timeout: 5), "no click on screen 3")
+        click.tap()
+        XCTAssertEqual(click.label, "Stop", "the click did not start")
+        // Away to the keys and the practice page, then home and back.
+        app.goToScreen(4)
+        XCTAssertTrue(app.descendants(matching: .any)["stage-screen-4"].waitForExistence(timeout: 5))
+        app.goToScreen(5)
+        XCTAssertTrue(app.descendants(matching: .any)["stage-screen-5"].waitForExistence(timeout: 5))
+        sleep(1)
+        app.goToScreen(2)
+        let again = app.descendants(matching: .any)["stage-screen-2"].buttons["loop-play"]
+        XCTAssertTrue(again.waitForExistence(timeout: 5))
+        XCTAssertEqual(again.label, "Stop", "the loop stopped when the person left its screen")
+        shot("gouda-dark-loop-still-playing")
+        app.goToScreen(3)
+        let clickAgain = app.descendants(matching: .any)["stage-screen-3"].buttons["metronome-play"]
+        XCTAssertTrue(clickAgain.waitForExistence(timeout: 5))
+        XCTAssertEqual(clickAgain.label, "Stop", "the click stopped when the person left its screen")
+        // Stop works from the screen it is on now.
+        clickAgain.tap()
+        XCTAssertEqual(clickAgain.label, "Start")
+        app.goToScreen(2)
+        let stop = app.descendants(matching: .any)["stage-screen-2"].buttons["loop-play"]
+        XCTAssertTrue(stop.waitForExistence(timeout: 5))
+        stop.tap()
+        XCTAssertEqual(stop.label, "Play")
+    }
+
+    /// YUI-200 (Chris: "If I just push that button, it should really just take me to the screen. The
+    /// guitar tuner should always live at the end of the Gouda screen list."): Tune up opens the
+    /// tuner, the last screen, and sends no message.
+    func testGoudaTuneUpOpensTheTunerWithNoTurn() throws {
+        let app = launch("gouda", "dark")
+        let tune = app.buttons["home-chip-tune"]
+        XCTAssertTrue(tune.waitForExistence(timeout: 15), "no Tune up chip")
+        XCTAssertEqual(app.pagePosition.value as? String, "1 of 6", "the tuner is not the sixth and last screen")
+        tune.tap()
+        let screen = app.descendants(matching: .any)["stage-screen-6"]
+        XCTAssertTrue(screen.waitForExistence(timeout: 5), "Tune up did not open screen 6")
+        XCTAssertEqual(app.pagePosition.value as? String, "6 of 6", "the tuner is not last")
+        XCTAssertFalse(app.descendants(matching: .any)["stage-working"].exists, "Tune up started a turn")
+        XCTAssertFalse(app.staticTexts["Tune my guitar"].exists, "Tune up sent its words as a message")
+        XCTAssertFalse(app.staticTexts["You: Tune my guitar"].exists, "Tune up sent its words as a message")
+        sleep(1)
+        shot("gouda-dark-tuner-no-turn")
+        app.goToScreen(1)
+        XCTAssertTrue(tune.waitForExistence(timeout: 5), "could not page back home")
+    }
+
     /// One sideways gesture: from five places on the home a drag left lands on screen 2, over
     /// the words, a chip, an ask, the edge and the bottom bar.
     func testOneSidewaysGesture() throws {

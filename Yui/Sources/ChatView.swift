@@ -887,7 +887,10 @@ struct ChatView: View {
             #endif
             if PushToTalk.allowed { handsFreeDo(.tap) }
         }
-        .onDisappear { handsFreeDo(.stop) }
+        .onDisappear {
+            handsFreeDo(.stop)
+            MusicHost.shared.leavingAgent()
+        }
         .animation(theme.spring, value: photos)
         .animation(reduceMotion ? .easeInOut(duration: 0.2) : theme.spring, value: store.replying)
         .fullScreenCover(isPresented: $shooting) {

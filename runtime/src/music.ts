@@ -23,7 +23,7 @@
 // 3. Sessions: the Looper's Send (or a drum take) opens a short plan to name
 //    it; the Send keeps it in `sessions`, and "Open a beat" on the Looper, or
 //    "open <name>", puts it back on the looper as they left it.
-// 4. The screens: >2 Looper, >3 Chords, >4 Keys, >5 Practice. Answers patch them.
+// 4. The screens: >2 Looper, >3 Chords, >4 Keys, >5 Practice, >6 Tuner (always last). Answers patch them.
 import type { NativeAgent, Row } from "./types.ts";
 import { type Cell, type Clock, type TableSeed, type TableStore, write } from "./tables.ts";
 import { readEvent, shift } from "./workouts.ts";
@@ -583,7 +583,20 @@ const PAGE_AT: Record<Page, { at: number; save: string; draw: (s: TableStore, c:
 };
 
 /** The page shape: which song Chords holds. A new song (or none) redraws Chords; the rest are always patches. */
-export const shapeText = (store: TableStore) => `v1;${lesson(store) ? slug(lesson(store)!.song) : "none"}`;
+export const shapeText = (store: TableStore) => `v2;${lesson(store) ? slug(lesson(store)!.song) : "none"}`;
+
+/**
+ * The tuner, the last of Gouda's screens (YUI-200). "Tune up" opens it with no turn: the shortcut
+ * shows its saved screen, so the model is never asked. A Gouda from before is upgraded once (his shape is v1).
+ */
+export const TUNER_AT = 6;
+export const tunerLines = (): string[] => [
+  `menu shortcut@tune "Tune up" show=tuner`,
+  `>${TUNER_AT} clear`,
+  `>${TUNER_AT}`,
+  `tuner@tuner guitar +inline`,
+  "save tuner",
+];
 
 /**
  * The shape as the phone has it: what the runtime last drew, or for a Gouda whose home is this one (YUI-184, the
@@ -591,6 +604,7 @@ export const shapeText = (store: TableStore) => `v1;${lesson(store) ? slug(lesso
  */
 export function drawnShape(p: { musicScreens?: string; home?: string }): string | undefined {
   if (p.musicScreens) return p.musicScreens;
+  if (/\btuner@tuner\b/.test(p.home ?? "")) return "v2;none";
   return /\bchart@practice-chart\b/.test(p.home ?? "") ? "v1;none" : undefined;
 }
 
@@ -600,16 +614,19 @@ export function drawnShape(p: { musicScreens?: string; home?: string }): string 
  */
 export function screenLines(store: TableStore, clk: Clock, was: string | undefined, only: Page[] = PAGES): { lines: string[]; shape: string } {
   const now = shapeText(store);
-  const first = !was?.startsWith("v1;");
+  const first = !/^v[12];/.test(was ?? "");
+  const song = (t?: string) => t?.replace(/^v\d;/, "");
   const patch = (lines: string[]) => lines.map((l) => l.replace(/^[a-z]+@/, "~"));
   const out: string[] = [];
   for (const page of PAGES) {
     const { at, save, draw } = PAGE_AT[page];
-    const redraw = first || (page === "chords" && was !== now);
+    const redraw = first || (page === "chords" && song(was) !== song(now));
     if (!redraw && !only.includes(page)) continue;
     if (redraw) out.push(`>${at} clear`, `>${at}`, ...draw(store, clk), `save ${save}`);
     else out.push(...patch(draw(store, clk)));
   }
+  // The tuner goes up once, with the first draw or when a v1 Gouda is upgraded; never again.
+  if (!was?.startsWith("v2;")) out.push(...tunerLines());
   return { lines: out, shape: now };
 }
 

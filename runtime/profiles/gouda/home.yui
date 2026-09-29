@@ -1,6 +1,6 @@
 # Gouda's home (YUI-168, yuigui spec/HOME.md). Played once when he joins; the runtime patches it after (YUI-184, src/music.ts).
 # Chips show newest first, so the most important one goes last.
-menu shortcut@tune "Tune up" say="Tune my guitar"
+menu shortcut@tune "Tune up" show=tuner
 menu shortcut@jam "Jam" say="Make me a beat to jam on"
 menu shortcut@log "Log practice" say="Log practice"
 menu shortcut@learn "Learn a song" say="Learn a song"
@@ -24,3 +24,6 @@ chart@practice-chart bar "Minutes a day" x=Mon|Tue|Wed|Thu|Fri|Sat|Sun y=0|0|0|0
 card@next-up "Next: ten minutes" "Pick a song on Chords and play along with the click. It all counts toward your streak." cta="Log practice"
 list@recent title="Lately" "Nothing logged yet"
 save practice
+>6
+tuner@tuner guitar +inline
+save tuner

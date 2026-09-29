@@ -55,13 +55,38 @@ final class MusicHost {
     /// Stops the clicking metronome and sends its practice (YUI-184).
     @ObservationIgnored var metroStop: (() -> Void)?
 
-    /// The thread is about to show another agent: the click stops now, while its practice
-    /// still goes to the agent it clicked for. One store serves every agent, so a click
-    /// stopped by its view going away would log Gouda's minutes on the next agent.
+    /// The click that is going: when it began and its tempo, so a screen that comes back
+    /// (the pager draws one page at a time) picks the click up where it is (YUI-200).
+    struct Click { var owner: Int; var startedAt: Date; var bpm: Int; var sub: Int }
+    @ObservationIgnored var click: Click?
+
+    /// What keeps the engine open while it plays with no instrument on screen (YUI-200): a
+    /// loop or a click goes on across an agent's screens, so the view's own hold is not enough.
+    @ObservationIgnored private var held: Set<String> = []
+
+    func hold(_ key: String) {
+        if held.insert(key).inserted { YuiSound.shared.acquire() }
+    }
+
+    func drop(_ key: String) {
+        if held.remove(key) != nil { YuiSound.shared.release() }
+    }
+
+    /// The thread is about to show another agent, or is closing: everything stops now. The
+    /// click still sends its practice to the agent it clicked for. One store serves every
+    /// agent, so a click stopped by its view going away would log Gouda's minutes on the next
+    /// agent. Between one agent's own screens nothing stops (YUI-200).
     func leavingAgent() {
         let stop = metroStop
         metroStop = nil
         stop?()
+        click = nil
+        if loopOwner != nil {
+            YuiSound.shared.stopLoop()
+            loopOwner = nil
+        }
+        drop("loop")
+        drop("metro")
     }
 }
 
@@ -241,7 +266,6 @@ struct LoopPreset: View {
             sent = true
         }
         .onAppear { if c.flag("play") && host.loopOwner == nil { start() } }
-        .onDisappear { if playing { stop() } }
     }
 
     private func controls(compact: Bool) -> some View {
@@ -338,6 +362,7 @@ struct LoopPreset: View {
 
     private func start() {
         host.loopOwner = c.serial
+        host.hold("loop")
         sync()
         YuiSound.shared.startLoop()
     }
@@ -346,6 +371,7 @@ struct LoopPreset: View {
         guard playing else { return }
         YuiSound.shared.stopLoop()
         host.loopOwner = nil
+        host.drop("loop")
     }
 
     private func send() {

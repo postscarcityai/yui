@@ -306,6 +306,8 @@ struct MetronomePreset: View {
 
     private var beats: Int { c.whole("beats", 1...12, 4) }
     private var playing: Bool { host.metroOwner == c.serial }
+    /// The click going for this view, kept by the host across screens (YUI-200).
+    private var live: MusicHost.Click? { host.click.flatMap { $0.owner == c.serial ? $0 : nil } }
     private static let subNames = ["", "Beats", "Eighths", "Triplets", "Sixteenths"]
 
     var body: some View {
@@ -366,13 +368,16 @@ struct MetronomePreset: View {
         }
         .modifier(SoundHold())
         .sensoryFeedback(.selection, trigger: tapped)
-        .onChange(of: c.props["bpm"], initial: true) { bpm = c.whole("bpm", 30...300, 100) }
-        .onChange(of: c.props["sub"], initial: true) { sub = c.whole("sub", 1...4, 1) }
+        .onChange(of: c.props["bpm"], initial: true) { bpm = live?.bpm ?? c.whole("bpm", 30...300, 100) }
+        .onChange(of: c.props["sub"], initial: true) { sub = live?.sub ?? c.whole("sub", 1...4, 1) }
         .onChange(of: bpm) { sync() }
         .onChange(of: sub) { sync() }
         .onChange(of: c.props["beats"]) { sync() }
-        .onAppear { if c.flag("play") && host.metroOwner == nil { start() } }
-        .onDisappear { if playing { stop() } }
+        .onAppear {
+            if c.flag("play") && host.metroOwner == nil { start() }
+            // Back from another screen with the click still going: this view takes it over.
+            if let live { startedAt = live.startedAt; host.metroStop = { stop() } }
+        }
     }
 
     private func controls(compact: Bool) -> some View {
@@ -395,15 +400,19 @@ struct MetronomePreset: View {
 
     private func sync() {
         guard playing else { return }
+        host.click?.bpm = bpm
+        host.click?.sub = sub
         YuiSound.shared.setMetronome(bpm: bpm, beats: beats, sub: sub)
     }
 
     private func start() {
         if let other = host.metroOwner, other != c.serial { YuiSound.shared.stopMetronome() }
         host.metroOwner = c.serial
+        host.hold("metro")
         YuiSound.shared.setMetronome(bpm: bpm, beats: beats, sub: sub)
         YuiSound.shared.startMetronome()
         startedAt = Date()
+        host.click = .init(owner: c.serial, startedAt: startedAt ?? Date(), bpm: bpm, sub: sub)
         said = nil
         host.metroStop = { stop() }
     }
@@ -411,9 +420,13 @@ struct MetronomePreset: View {
     private func stop() {
         guard playing else { return }
         YuiSound.shared.stopMetronome()
+        // The host's start time: this view may be a new one, and the one that started the click gone.
+        let began = host.click?.startedAt ?? startedAt
         host.metroOwner = nil
         host.metroStop = nil
-        let seconds = Int(Date().timeIntervalSince(startedAt ?? Date()).rounded())
+        host.click = nil
+        host.drop("metro")
+        let seconds = Int(Date().timeIntervalSince(began ?? Date()).rounded())
         startedAt = nil
         guard seconds >= 10 else { return }
         let time = seconds >= 60 ? "\(seconds / 60) min \(seconds % 60) s" : "\(seconds) s"

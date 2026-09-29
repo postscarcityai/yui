@@ -9,7 +9,7 @@ import { LocalStore } from "../src/store.ts";
 import { clock, fromSeeds } from "../src/tables.ts";
 import { homeLines } from "../src/home.ts";
 import { crew } from "../src/profiles.ts";
-import { KEY_OPTS, SPEED_OPTS, chordsScreen, guessKey, keyShift, keysScreen, lessonChords, looperScreen, musicAsks, practiceScreen, readChords,
+import { KEY_OPTS, SPEED_OPTS, chordsScreen, guessKey, keyShift, keysScreen, lessonChords, looperScreen, musicAsks, drawnShape, practiceScreen, readChords, screenLines, tunerLines,
          readKey, streak, transpose } from "../src/music.ts";
 import { fakeModel, freshYui, provider } from "./helpers.ts";
 // @ts-ignore: the parser the app and the site share, as the MCP server ships it
@@ -78,7 +78,7 @@ test("Gouda's home draws exactly what his tools draw from his starter tables: Lo
   const clk = clock(MON, "UTC");
   const pages = home.slice(home.indexOf(">2"));
   assert.deepEqual(pages, [">2", ...looperScreen(s), "save looper", ">3", ...chordsScreen(s), "save chords", ">4", ...keysScreen(s), "save keys",
-                           ">5", ...practiceScreen(s, clk), "save practice"]);
+                           ">5", ...practiceScreen(s, clk), "save practice", ">6", ...tunerLines().slice(3)]);
   assert.deepEqual(home.filter((l) => l.startsWith("menu")).map((l) => l.match(/"([^"]+)"/)![1]), ["Tune up", "Jam", "Log practice", "Learn a song"]);
   const ops = parse(home.join("\n"), {});
   assert.deepEqual(ops.filter((o: any) => o.op === "error"), []);
@@ -86,6 +86,27 @@ test("Gouda's home draws exactly what his tools draw from his starter tables: Lo
   for (const [id, preset] of Object.entries({ looper: "loop", chords: "chords", keys: "keys", click: "metronome", streak: "stat", "practice-chart": "chart" })) {
     assert.equal(ids[id], preset, id);
   }
+});
+
+test("Tune up opens the tuner screen with no turn, and the tuner is the last screen (YUI-200)", () => {
+  const home = homeLines(crew().gouda.home!);
+  const tune = home.find((l) => l.startsWith("menu shortcut@tune"))!;
+  assert.match(tune, /show=tuner/);
+  assert.doesNotMatch(tune, /say=/, "no words go to the model");
+  const screens = home.filter((l) => /^>\d+$/.test(l)).map((l) => Number(l.slice(1)));
+  assert.equal(screens.at(-1), 6);
+  assert.equal(home.at(-1), "save tuner");
+  assert.deepEqual(parse(home.join("\n"), {}).filter((o: any) => o.op === "error"), []);
+  const s = fromSeeds(crew().gouda.tables);
+  const clk = clock(MON, "UTC");
+  // A new Gouda already has it: nothing more is drawn. A Gouda from before gets it once, the shortcut with it.
+  assert.equal(drawnShape({ home: crew().gouda.home }), "v2;none");
+  assert.deepEqual(screenLines(s, clk, "v2;none", []).lines, []);
+  const up = screenLines(s, clk, "v1;none", []);
+  assert.deepEqual(up.lines, tunerLines(), "only the tuner and its shortcut, no page redrawn");
+  assert.equal(up.shape, "v2;none");
+  assert.deepEqual(screenLines(s, clk, up.shape, []).lines, []);
+  assert.ok(screenLines(s, clk, undefined, []).lines.join("\n").includes(">6\ntuner@tuner"), "the first draw ends with the tuner");
 });
 
 test("Learn a song: the shortcut's words open one full-screen flow, what happens first, the questions last, one Send", async () => {
