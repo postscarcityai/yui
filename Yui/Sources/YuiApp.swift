@@ -65,6 +65,16 @@ struct YuiApp: App {
                 guard account.isSignedIn, account.session?.userID != "demo" else { return }
                 Outbox.shared.start(account: account)
             }
+            #if DEBUG
+            // -yuiDemoPushTap <agent> [-yuiDemoPushTapAfter <s>]: a notification tap for that agent, as
+            // the payload the server sends (YUI-199 tests and shots).
+            .task {
+                let d = UserDefaults.standard
+                guard let agent = d.string(forKey: "yuiDemoPushTap") else { return }
+                try? await Task.sleep(for: .seconds(d.object(forKey: "yuiDemoPushTapAfter") == nil ? 3 : d.double(forKey: "yuiDemoPushTapAfter")))
+                PushCenter.shared.tapped(["agent_id": agent, "url": "yui://agent/\(agent)/thread"])
+            }
+            #endif
             .onOpenURL { url in
                 if let connect = ConnectRequestID.parse(url) { agents.pendingConnect = connect }
                 else if !account.open(url) { _ = PushCenter.shared.open(url) }

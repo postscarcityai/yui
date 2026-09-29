@@ -23,6 +23,8 @@ final class PushCenter: NSObject {
     var pendingAgentID: String?
     /// The chat a notification came from (YUI-169, the payload's `chat`): opened with the agent's thread.
     var pendingChatID: String?
+    /// The message a notification is about (the payload's `message_id`, YUI-199): the thread opens on it, not on the home.
+    var pendingMessageID: String?
     /// Settings to open from a link (`yui://settings/search`, YUI-142): the section, "" for the top. ChatView consumes it.
     var pendingSettings: String?
     /// `yui://snap` (YUI-166): hold to snap and say, in the thread on screen. ChatView consumes it.
@@ -203,20 +205,32 @@ extension PushCenter: UNUserNotificationCenterDelegate {
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter,
                                             didReceive response: UNNotificationResponse,
                                             withCompletionHandler done: @escaping @Sendable () -> Void) {
+        // Only the words cross to the main thread: the payload dictionary itself is not Sendable.
         let info = response.notification.request.content.userInfo
-        let link = (info["url"] as? String).flatMap(URL.init(string:))
-        let agent = info["agent_id"] as? String
-        let chat = (info["chat"] as? String)?.lowercased()
+        let words = ["url", "agent_id", "chat", "message_id"].reduce(into: [String: String]()) { $0[$1] = info[$1] as? String }
         DispatchQueue.main.async {
             MainActor.assumeIsolated {
-                // Before the agent, so the thread that opens is that chat.
-                if chat != nil { PushCenter.shared.pendingChatID = chat }
-                if let link, PushCenter.shared.open(link) {
-                } else if let agent {
-                    PushCenter.shared.pendingAgentID = agent
-                }
+                PushCenter.shared.tapped(words)
                 done()
             }
+        }
+    }
+}
+
+extension PushCenter {
+    /// A tap on a notification (YUI-199): its agent's thread opens on the message that came,
+    /// from a cold start and from the background alike. The payload names the agent
+    /// (`agent_id`, or the `yui://agent/<id>/thread` link), the chat and the message.
+    func tapped(_ info: [AnyHashable: Any]) {
+        let link = (info["url"] as? String).flatMap(URL.init(string:))
+        let chat = (info["chat"] as? String)?.lowercased()
+        let message = info["message_id"] as? String
+        // Before the agent, so the thread that opens is that chat and lands on that message.
+        if chat != nil { pendingChatID = chat }
+        if message != nil { pendingMessageID = message }
+        if let link, open(link) {
+        } else if let agent = info["agent_id"] as? String {
+            pendingAgentID = agent
         }
     }
 }

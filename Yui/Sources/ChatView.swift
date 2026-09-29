@@ -79,6 +79,8 @@ struct ChatView: View {
     @State private var chatNotice: String?
     /// Stage first (YUI-119): Yui lives on the full screen and the chat is the record.
     @State private var stageFirst = StageFirstModel()
+    /// A notification tap waiting for its thread to load: the agent and the message it came with (YUI-199).
+    @State private var pushLanding: (agent: String, message: String?)?
     @AppStorage(StageFirstModel.key) private var stageFirstStored = true
     @AppStorage(StageFirstModel.micKey) private var stageMic = true
     @AppStorage(StageFirstModel.typeKey) private var stageType = true
@@ -527,6 +529,8 @@ struct ChatView: View {
         .onChange(of: showSettings) { if !showSettings { settingsFocus = nil } }
         // A notification tap or yui://agent/<id>/thread: straight to that thread.
         .onChange(of: push.pendingAgentID, initial: true) { openPushedThread() }
+        // ...and on the message that came (YUI-199), once that thread has loaded.
+        .onChange(of: [store.loaded ? store.agent?.id : nil, store.messages.last?.id]) { landPushed() }
         .tint(c.accent)
     }
 
@@ -539,6 +543,8 @@ struct ChatView: View {
             settleDrawer(open: false)
             // A hand-off card names the agent by handle (yui://agent/basil, YUI-144).
             let target = agents.idFor(id)
+            pushLanding = (agent: target, message: push.pendingMessageID)
+            push.pendingMessageID = nil
             // A push names the chat it came from (YUI-169): that one opens, not the newest.
             if let chat = push.pendingChatID {
                 push.pendingChatID = nil
@@ -547,12 +553,24 @@ struct ChatView: View {
             }
             agents.selectedID = target
             if !agents.agents.contains(where: { $0.id == target }) { Task { await agents.refresh() } }
+            if store.agent?.id == target { Task { await store.refresh(); landPushed() } }
             #if DEBUG
             // -yuiDemoHandoffReply "<lines>": on the demo account the agent handed to answers with these (YUI-144 shots).
             if account.session?.userID == "demo", let reply = UserDefaults.standard.string(forKey: "yuiDemoHandoffReply") {
                 Task { try? await Task.sleep(for: .seconds(0.6)); store.demoAnswer(reply) }
             }
             #endif
+    }
+
+    /// A tap on a notification lands on what came, not on the agent's home (YUI-199, Chris: "I was
+    /// taken JUST to the home screen and nothing opened up"): the stage plays that message, or the
+    /// newest thing the agent said when it is not in the thread. Waits for the thread to load.
+    private func landPushed() {
+        guard let want = pushLanding, store.loaded, store.agent?.id == want.agent else { return }
+        let said = store.messages.filter { !$0.fromUser && !$0.home }
+        guard let id = said.first(where: { $0.id == want.message })?.id ?? said.last?.id else { return }
+        pushLanding = nil
+        openStage(id)
     }
 
     // MARK: The agent's drawer (YUI-54)
