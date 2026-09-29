@@ -63,3 +63,46 @@ final class SettingsLinkTests: XCTestCase {
         }
     }
 }
+
+/// Per-agent model key (YUI-139 step 2g): the payloads yui-native takes, and who the pick offers.
+final class AgentKeyTests: XCTestCase {
+    @MainActor func testOpPayloadsMatchTheServer() {
+        let id = "9f2c7d1e-0000-4000-8000-000000000001"
+        XCTAssertEqual(AgentStore.agentKeyBody(agentID: id, use: "anthropic") as NSDictionary,
+                       ["action": "agent_key", "agent_id": id, "use": "anthropic"] as NSDictionary)
+        XCTAssertEqual(AgentStore.agentKeyBody(agentID: id, use: "yui")["use"] as? String, "yui")
+        let one = AgentStore.keySetBody(provider: "openai", key: "sk-1234", model: nil, baseURL: nil, agentID: id)
+        XCTAssertEqual(one as NSDictionary, ["action": "key_set", "provider": "openai", "key": "sk-1234", "agent_id": id] as NSDictionary)
+        let all = AgentStore.keySetBody(provider: "openai", key: "sk-1234", model: "", baseURL: "")
+        XCTAssertNil(all["agent_id"], "a key for everyone names no agent")
+        XCTAssertNil(all["model"])
+        XCTAssertEqual(AgentStore.keyRemoveBody() as NSDictionary, ["action": "key_remove"] as NSDictionary)
+        XCTAssertEqual(AgentStore.keyRemoveBody(provider: "anthropic") as NSDictionary,
+                       ["action": "key_remove", "provider": "anthropic"] as NSDictionary)
+    }
+
+    private func status(_ json: String) throws -> NativeStatus {
+        let d = JSONDecoder()
+        d.keyDecodingStrategy = .convertFromSnakeCase
+        return try d.decode(NativeStatus.self, from: Data(json.utf8))
+    }
+
+    func testStatusReadsKeysAndEachAgentsPick() throws {
+        let s = try status(#"{"key":{"provider":"anthropic","hint":"ab12"},"keys":[{"provider":"anthropic","hint":"ab12","base_url":null},{"provider":"groq","hint":"zz99"}],"agent_keys":{"a1":"openai","a2":"default","a3":"yui"},"providers":[{"id":"anthropic","label":"Claude","needsModel":false},{"id":"openai","label":"ChatGPT","needsModel":false},{"id":"groq","label":"Groq","needsModel":false}],"turns":{"used":1,"limit":100}}"#)
+        XCTAssertEqual(s.runsOn("a1"), "openai")
+        XCTAssertEqual(s.runsOn("a2"), "anthropic", "default follows the person's default key")
+        XCTAssertEqual(s.runsOn("a3"), "yui")
+        XCTAssertEqual(s.runsOn("new", reported: "yui"), "yui", "no pick in status uses the Controls answer")
+        let ids = KeyChoice.choices(s).map(\.id)
+        XCTAssertEqual(ids, ["yui", "anthropic", "openai", "groq"], "Yui's, Claude, ChatGPT, then any other key they hold")
+        XCTAssertEqual(KeyChoice.choices(s).map(\.hint), [nil, "ab12", nil, "zz99"])
+        XCTAssertFalse(KeyChoice.choices(s)[2].held, "ChatGPT has no key yet, the tap adds one")
+        XCTAssertTrue(KeyChoice.choices(s)[0].held)
+    }
+
+    func testAnOlderServerStillGivesTheThreeWayPick() throws {
+        let s = try status(#"{"key":null,"providers":[{"id":"anthropic","label":"Claude","needsModel":false}],"turns":{"used":0,"limit":100}}"#)
+        XCTAssertEqual(KeyChoice.choices(s).map(\.label), ["Yui's key", "Claude", "ChatGPT"])
+        XCTAssertEqual(s.runsOn("any"), "yui")
+    }
+}

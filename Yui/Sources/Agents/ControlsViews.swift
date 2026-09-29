@@ -22,7 +22,7 @@ struct ControlsSheet: View {
                 case .memory: MemoryScreen(model: model, agentID: agentID)
                 case .skills: SkillsScreen(model: model, agentID: agentID)
                 case .schedules: SchedulesScreen(model: model, agentID: agentID)
-                case .model: ModelScreen(model: model)
+                case .model: ModelScreen(model: model, agentID: agentID)
                 case .channels: ChannelsScreen(model: model)
                 }
             }
@@ -934,7 +934,12 @@ private struct TimePicker: View {
 
 private struct ModelScreen: View {
     let model: ControlsModel
-    @State private var bringKey = false
+    let agentID: String
+    @Environment(AgentStore.self) private var store
+    @State private var status: NativeStatus?
+    @State private var addFor: KeyChoice?
+    @State private var working = false
+    @State private var error: String?
     @Environment(\.yuiTheme) private var theme
     @Environment(\.colorScheme) private var scheme
 
@@ -963,15 +968,7 @@ private struct ModelScreen: View {
                         }
                     }
                     if m.profile != nil {
-                        Button { bringKey = true } label: {
-                            Label("Run on your own key", systemImage: "key.fill")
-                                .font(theme.font(theme.type.body, .bold)).foregroundStyle(c.ink)
-                                .frame(maxWidth: .infinity).padding(.vertical, theme.spacing.m)
-                                .background(c.surface, in: .rect(cornerRadius: theme.radius.bubble))
-                                .overlay(RoundedRectangle(cornerRadius: theme.radius.bubble).stroke(c.outline, lineWidth: 1.5))
-                        }
-                        .buttonStyle(BounceButtonStyle())
-                        .accessibilityIdentifier("model-own-key")
+                        keyPick(m, c)
                     }
                     Text(m.profile != nil ? "Yui only runs models that pass its screen test. Keys never show here."
                          : "Switching the model comes later, once your Mac can test one first. Keys never show here.")
@@ -984,7 +981,66 @@ private struct ModelScreen: View {
                 }
                 .padding(theme.spacing.l)
             }
-            .sheet(isPresented: $bringKey) { ModelKeySheet() }
+            .sheet(item: $addFor) { pick in
+                ModelKeySheet(agentID: agentID, agentName: model.agentName, provider: pick.id) { await load() }
+            }
+            .task { await load() }
+        }
+    }
+
+    private func load() async {
+        do { status = try await store.nativeStatus() } catch { self.error = error.localizedDescription }
+    }
+
+    /// Which key this agent runs on (YUI-139 step 2g): Yui's, Claude, ChatGPT, or another they hold. A provider
+    /// with no key yet opens the key sheet for this agent; one they hold switches on the tap.
+    @ViewBuilder private func keyPick(_ m: ControlItem, _ c: Swatch) -> some View {
+        Text("RUNS ON").font(theme.font(theme.type.caption, .heavy)).kerning(0.8).foregroundStyle(c.inkSoft)
+        if let status {
+            let now = status.runsOn(agentID, reported: m.key)
+            Card {
+                ForEach(KeyChoice.choices(status)) { choice in
+                    Button { Task { await pick(choice) } } label: {
+                        HStack {
+                            Image(systemName: now == choice.id ? "largecircle.fill.circle" : "circle")
+                                .foregroundStyle(now == choice.id ? c.accent : c.inkSoft)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(choice.label).font(theme.font(15, .bold)).foregroundStyle(c.ink)
+                                Text(sub(choice, status)).font(theme.font(theme.type.caption)).foregroundStyle(c.inkSoft)
+                            }
+                            Spacer(minLength: 0)
+                        }
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(working)
+                    .accessibilityElement(children: .combine)
+                    .accessibilityAddTraits(now == choice.id ? [.isSelected] : [])
+                    .accessibilityIdentifier("model-key-\(choice.id)")
+                }
+            }
+            Text("Only \(model.agentName) runs on the one you pick. Your other agents stay as they are.")
+                .font(theme.font(theme.type.caption)).foregroundStyle(c.inkSoft)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        if let error { Text(error).font(theme.font(theme.type.caption, .semibold)).foregroundStyle(.red) }
+    }
+
+    private func sub(_ choice: KeyChoice, _ s: NativeStatus) -> String {
+        if choice.id == "yui" { return "\(max(s.turns.limit - s.turns.used, 0)) of \(s.turns.limit) free turns left this month" }
+        return choice.hint.map { "Your key, ends in \($0)" } ?? "Add a key"
+    }
+
+    private func pick(_ choice: KeyChoice) async {
+        if !choice.held { addFor = choice; return }
+        working = true
+        error = nil
+        defer { working = false }
+        do {
+            try await store.setAgentKey(agentID: agentID, use: choice.id)
+            self.status = try await store.nativeStatus()
+        } catch {
+            self.error = error.localizedDescription
         }
     }
 }

@@ -79,6 +79,8 @@ struct ControlItem: Decodable, Equatable, Identifiable, Sendable {
     // model
     var model: String?
     var provider: String?
+    /// A native agent's key pick (YUI-139 step 2g): "yui", a provider id, or "default".
+    var key: String?
     var toolsets: [Toolset]?
     /// A native agent's profile and its version (YUI-145): "Basil", 1.
     var profile: String?
@@ -96,7 +98,7 @@ struct ControlItem: Decodable, Equatable, Identifiable, Sendable {
 
     enum CodingKeys: String, CodingKey {
         case id, title, sub, group, description, text, outline, enabled, bundled, updated, rev, when, schedule
-        case paused, deliver, model, provider, toolsets, live, profile, version
+        case paused, deliver, model, provider, key, toolsets, live, profile, version
         case readOnly = "read_only", nextRun = "next_run", lastRun = "last_run", lastOk = "last_ok"
         case lastError = "last_error", runningSoon = "running_soon"
     }

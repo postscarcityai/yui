@@ -19,17 +19,26 @@ enum ModelKeyWords {
 /// where to make a key, and the other road (add Yui inside Claude or ChatGPT).
 struct ModelKeyForm: View {
     let status: NativeStatus
+    /// Set when the key is for one agent only (Controls > Model): it runs on it, the rest keep their default.
+    var agentID: String? = nil
     /// Called after the provider accepted the key and it is saved.
     var saved: () async -> Void = {}
     @Environment(AgentStore.self) private var store
     @Environment(\.yuiTheme) private var theme
     @Environment(\.colorScheme) private var scheme
-    @State private var provider = "openrouter"
+    @State private var provider: String
     @State private var key = ""
     @State private var model = ""
     @State private var baseURL = ""
     @State private var working = false
     @State private var error: String?
+
+    init(status: NativeStatus, agentID: String? = nil, provider: String = "openrouter", saved: @escaping () async -> Void = {}) {
+        self.status = status
+        self.agentID = agentID
+        self.saved = saved
+        _provider = State(initialValue: provider)
+    }
 
     private var chosen: NativeStatus.Provider? { status.providers.first { $0.id == provider } }
 
@@ -109,7 +118,7 @@ struct ModelKeyForm: View {
         do {
             try await store.setModelKey(provider: provider, key: key.trimmingCharacters(in: .whitespacesAndNewlines),
                                         model: model.trimmingCharacters(in: .whitespaces),
-                                        baseURL: baseURL.trimmingCharacters(in: .whitespaces))
+                                        baseURL: baseURL.trimmingCharacters(in: .whitespaces), agentID: agentID)
             key = ""
             await saved()
         } catch {
@@ -121,6 +130,11 @@ struct ModelKeyForm: View {
 /// The key form on its own sheet, for the places that aren't Settings: Add agent and Controls > Model.
 /// Once a key is saved it says so and closes.
 struct ModelKeySheet: View {
+    /// Set from Controls > Model: the key is for this agent only, and the sheet always shows the form.
+    var agentID: String? = nil
+    var agentName: String? = nil
+    var provider: String = "openrouter"
+    var saved: () async -> Void = {}
     @Environment(AgentStore.self) private var store
     @Environment(\.dismiss) private var dismiss
     @Environment(\.yuiTheme) private var theme
@@ -134,7 +148,12 @@ struct ModelKeySheet: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: theme.spacing.m) {
                     if let status {
-                        if let k = status.key {
+                        if let agentID {
+                            Text("Only \(agentName ?? "this agent") runs on it. Your other agents stay as they are.")
+                                .font(theme.font(theme.type.caption, .semibold)).foregroundStyle(c.inkSoft)
+                                .accessibilityIdentifier("key-agent-only")
+                            ModelKeyForm(status: status, agentID: agentID, provider: provider) { await saved(); dismiss() }
+                        } else if let k = status.key {
                             Label("\(status.providers.first { $0.id == k.provider }?.label ?? k.provider) key is on, ends in \(k.hint).",
                                   systemImage: "key.fill")
                                 .font(theme.font(theme.type.body, .bold)).foregroundStyle(c.ink)

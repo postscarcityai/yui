@@ -720,6 +720,35 @@ struct NativeStatus: Decodable, Equatable, Sendable {
     let providers: [Provider]
     let turns: Turns
     let search: Search? // older servers leave it out
+    /// Every key they hold, one per provider, and each agent's pick: "yui", a provider id, or "default" (follow `key`).
+    /// Older servers leave both out (YUI-139 step 2g).
+    var keys: [Key]? = nil
+    var agentKeys: [String: String]? = nil
+
+    /// What one agent runs on: "yui" or a provider id. `reported` is the Controls answer's `key`, used when status has no pick.
+    func runsOn(_ agentID: String, reported: String? = nil) -> String {
+        let pick = agentKeys?[agentID] ?? reported ?? "default"
+        return pick == "default" ? (key?.provider ?? "yui") : pick
+    }
+
+    func holds(_ provider: String) -> Bool { (keys ?? key.map { [$0] } ?? []).contains { $0.provider == provider } }
+    func held(_ provider: String) -> Key? { (keys ?? key.map { [$0] } ?? []).first { $0.provider == provider } }
+}
+
+/// The three-way pick on Controls > Model: Yui's key, Claude, ChatGPT, plus any other provider they hold a key for.
+struct KeyChoice: Equatable, Identifiable, Sendable {
+    let id: String   // "yui" or a provider id
+    let label: String
+    let hint: String? // last four of the key, nil when there is none yet
+    var held: Bool { id == "yui" || hint != nil }
+
+    static func choices(_ s: NativeStatus) -> [KeyChoice] {
+        func label(_ id: String) -> String { s.providers.first { $0.id == id }?.label ?? ["anthropic": "Claude", "openai": "ChatGPT"][id] ?? id }
+        var ids = ["anthropic", "openai"]
+        for k in s.keys ?? s.key.map({ [$0] }) ?? [] where !ids.contains(k.provider) { ids.append(k.provider) }
+        return [KeyChoice(id: "yui", label: "Yui's key", hint: nil)]
+            + ids.map { KeyChoice(id: $0, label: label($0), hint: s.held($0)?.hint) }
+    }
 }
 
 /// A refusal from `yui-native`, in its own words ("the provider turned this key down").
@@ -731,12 +760,23 @@ struct NativeError: LocalizedError {
 extension AgentStore {
     func nativeStatus() async throws -> NativeStatus {
         #if DEBUG
-        if isDemo, ProcessInfo.processInfo.arguments.contains("-yuiDemoNative") { return Self.demoNative }
+        if isDemo, ProcessInfo.processInfo.arguments.contains("-yuiDemoNative") { return Self.demoStatus }
         #endif
         return try await nativeCall(["action": "status"])
     }
 
     #if DEBUG
+    /// The demo's own keys and picks, so the pick can be tapped through with no network (-yuiDemoNative).
+    /// MainActor like the store; a key the person "adds" here is only kept for the run.
+    static var demoHeld: [NativeStatus.Key] = []
+    static var demoPicks: [String: String] = [:]
+    static var demoStatus: NativeStatus {
+        var s = demoNative
+        s.keys = demoHeld
+        s.agentKeys = demoPicks
+        return s
+    }
+
     static let demoNative = NativeStatus(key: nil, providers: [
         .init(id: "openrouter", label: "OpenRouter", needsModel: false),
         .init(id: "anthropic", label: "Claude", needsModel: false, keyUrl: "https://console.anthropic.com/settings/keys",
@@ -748,15 +788,52 @@ extension AgentStore {
     #endif
 
     /// Checked with the provider first; a key that doesn't work is never kept.
-    func setModelKey(provider: String, key: String, model: String?, baseURL: String?) async throws {
+    /// With `agentID` the key is kept for that one agent (it switches to it, the rest keep their default).
+    func setModelKey(provider: String, key: String, model: String?, baseURL: String?, agentID: String? = nil) async throws {
+        #if DEBUG
+        if demoNative(), let agentID {
+            Self.demoHeld.removeAll { $0.provider == provider }
+            Self.demoHeld.append(.init(provider: provider, model: nil, hint: String(key.suffix(4))))
+            Self.demoPicks[agentID] = provider
+            return
+        }
+        #endif
+        let _: NativeOK = try await nativeCall(Self.keySetBody(provider: provider, key: key, model: model, baseURL: baseURL, agentID: agentID))
+    }
+
+    func removeModelKey(provider: String? = nil) async throws {
+        let _: NativeOK = try await nativeCall(Self.keyRemoveBody(provider: provider))
+    }
+
+    /// Which key one agent runs on: "yui", a provider they hold a key for, or "default" (follow their default key).
+    func setAgentKey(agentID: String, use: String) async throws {
+        #if DEBUG
+        if demoNative() { Self.demoPicks[agentID] = use; return }
+        #endif
+        let _: NativeOK = try await nativeCall(Self.agentKeyBody(agentID: agentID, use: use))
+    }
+
+    #if DEBUG
+    private func demoNative() -> Bool { isDemo && ProcessInfo.processInfo.arguments.contains("-yuiDemoNative") }
+    #endif
+
+    // The payloads yui-native takes (one place, so a test can hold them to the server's shape).
+    static func keySetBody(provider: String, key: String, model: String?, baseURL: String?, agentID: String? = nil) -> [String: Any] {
         var body: [String: Any] = ["action": "key_set", "provider": provider, "key": key]
         if let model, !model.isEmpty { body["model"] = model }
         if let baseURL, !baseURL.isEmpty { body["base_url"] = baseURL }
-        let _: NativeOK = try await nativeCall(body)
+        if let agentID { body["agent_id"] = agentID }
+        return body
     }
 
-    func removeModelKey() async throws {
-        let _: NativeOK = try await nativeCall(["action": "key_remove"])
+    static func keyRemoveBody(provider: String? = nil) -> [String: Any] {
+        var body: [String: Any] = ["action": "key_remove"]
+        if let provider { body["provider"] = provider }
+        return body
+    }
+
+    static func agentKeyBody(agentID: String, use: String) -> [String: Any] {
+        ["action": "agent_key", "agent_id": agentID, "use": use]
     }
 
     /// Their own Firecrawl key: checked with Firecrawl first, kept in Yui's vault, lifts the free search cap.
@@ -806,5 +883,7 @@ extension AgentStore {
         "invalid_base_url": "The server address needs to start with https://.",
         "model_required": "Add the model name this provider should run.",
         "unknown_provider": "Pick a provider.",
+        "no_key": "Add a key for that provider first.",
+        "not_found": "Yui couldn't find that agent.",
     ]
 }
