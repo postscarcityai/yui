@@ -187,7 +187,7 @@ from gateway.config import Platform, PlatformConfig
 from gateway.platforms.base import (BasePlatformAdapter, MessageEvent, MessageType, ProcessingOutcome,
                                     SendResult)
 
-from . import board, compat, connector, controls, doing, flywheel, groups, media, mentions, needs, outbox, restyle, sandbox, tables, talk, textbomb
+from . import board, compat, connector, controls, doing, flywheel, groups, media, mentions, needs, outbox, restyle, sandbox, tables, talk, textbomb, vault
 from . import commands as slash
 
 logger = logging.getLogger(__name__)
@@ -650,7 +650,7 @@ class YuiAdapter(BasePlatformAdapter):
                         logger.info("[yui] %s was answered before a restart, not replaying", row["id"][:8])
                         self._acks.add(row["id"])
                         continue
-                    if (await self._stop(aid, row) or await self._control(aid, row) or await self._owner_only(aid, row)
+                    if (await self._stop(aid, row) or await self._key_answer(aid, row) or await self._control(aid, row) or await self._owner_only(aid, row)
                             or await self._board_order(aid, row)
                             or await self._need_answer(aid, row)
                             or await self._need_open(aid, row)
@@ -834,6 +834,22 @@ class YuiAdapter(BasePlatformAdapter):
         if time.time() - halted[1] > STOP_HOLD_SECONDS:
             self._halted.pop(key, None)
             return False
+        return True
+
+    async def _key_answer(self, aid: str, row: dict) -> bool:
+        """The person's answer to a key_ask (YUI-34): no turn. The agent hears one line on its next turn,
+        never the key. Only the owner's answer counts; anyone else's is dropped."""
+        ans = vault.answer_of(row)
+        if ans is None:
+            return False
+        await self._mark([row["id"]], "delivered_at")
+        if row.get("user_id") == self._user_id and self._base_key(row) == aid:
+            line = await asyncio.to_thread(vault.take, ans)
+            self._notes.setdefault(aid, []).append(line)
+            logger.info("[yui] key answer %s: %s %s", row["id"][:8], ans["provider"], ans["decision"])
+        else:
+            logger.info("[yui] key answer %s from a non-owner, dropped", row["id"][:8])
+        self._acks.add(row["id"])
         return True
 
     async def _control(self, aid: str, row: dict) -> bool:
@@ -1602,6 +1618,10 @@ def register(ctx) -> None:
     from . import tables  # tables for any agent (YUI-171)
     ctx.register_tool(name="yui_tables", toolset="yui", schema=tables.SCHEMA, handler=tables.tool_handler,
                       description=tables.SCHEMA["description"], emoji="🐰")
+    ctx.register_tool(name="yui_key_ask", toolset="yui", schema=vault.SCHEMA, handler=vault.tool_handler,
+                      description=vault.SCHEMA["description"], emoji="🐰")  # key vault (YUI-34)
+    ctx.register_tool(name="vault_call", toolset="yui", schema=vault.CALL_SCHEMA, handler=vault.call_handler,
+                      description=vault.CALL_SCHEMA["description"], emoji="🐰")
     ctx.register_command("yui", handoff.slash_command,
                          description="Hand what we're doing to the Yui app, with a push to your phone",
                          args_hint="[note]")
