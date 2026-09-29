@@ -215,7 +215,8 @@ class Talk:
             with self._state() as st:
                 turn, owner_user = dict(st.get("turn") or {}), st.get("owner_user") or ""
             if chat:  # the tool knows its session: a shared thread's chat id is `<agent>~<user>`
-                turn = {**turn, "key": chat, "owner": "~" not in chat, "agent": chat.split("~")[0],
+                head = chat.split(":")[0]  # a chat's session key is `<thread key>:<chat id>` (YUI-169)
+                turn = {**turn, "key": chat, "owner": "~" not in head, "agent": head.split("~")[0],
                         "at": turn.get("at", 0) if turn.get("key") == chat else self.clock()}
             if not turn.get("owner") or self.clock() - turn.get("at", 0) > TURN_SECONDS:
                 raise Refused("Only the owner's own chat can propose a change to this agent.")

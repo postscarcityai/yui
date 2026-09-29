@@ -136,6 +136,21 @@ Transport: the gateway dials OUT to Supabase (the yuigui project). No inbound po
      stopped turn still says is held back until it ends (STOP_HOLD_SECONDS at
      most). One kind='control' answer row, no push.
 
+ 20. Chats (YUI-169): an agent has several chats. The database stamps every
+     person row with meta.chat {id, first, new}. Each chat is its own Hermes
+     session: the key is `<base key>` for the agent's first chat (and for an
+     old row with no meta.chat, so a session in progress carries on) and
+     `<base key>:<chat id>` for every other, where the base key is item 14's
+     (`<agent id>` or `<agent id>~<user id>`). Ownership, sandbox and the
+     notes queues (board, mention, controls) go by the base key or the agent
+     id, so a second chat is still the owner's and reads the next notes. Busy,
+     Stop, the working row and the queue are per session. The first row of a
+     new non-first chat starts the turn with one line `[yui] chat new`. An
+     agent reply names its chat through meta.turn; a reply with no turn (Stop
+     answer, paused card, late send, `hermes yui send` to `<agent>:<chat>`)
+     names it with meta.chat = the chat id, only when a row taught it. Hermes
+     memory stays per profile, so every chat shares it.
+
 The channel guide (CHANNEL.md, synced verbatim from yuigui/spec/CHANNEL.md by
 ../sync_channel.py) is this platform's system-prompt hint, so it is in the
 system prompt on every turn on the Yui channel, and only there. Its restyle
@@ -333,6 +348,7 @@ class YuiAdapter(BasePlatformAdapter):
         self._queue: Dict[str, List[dict]] = {}       # agent id -> rows waiting for the next turn
         self._busy: Dict[str, tuple] = {}             # agent id -> (row ids of the running turn, started)
         self._turns: Dict[int, tuple] = {}            # id(event) -> (agent id, row ids)
+        self._chats: Dict[str, str] = {}              # session key -> chat id learned from its rows (YUI-169)
         self._halted: Dict[str, tuple] = {}           # chat key -> (row ids of a turn the person stopped, when)
         self._acks: set = set()                       # handled, not yet written
         self._outbox = outbox.Outbox(self._state_dir() / "outbox.jsonl")
@@ -555,15 +571,35 @@ class YuiAdapter(BasePlatformAdapter):
 
     # -- threads: one per (agent, person) (YUI-95) ----------------------------
 
-    def _key(self, row: dict) -> str:
-        """The Hermes chat for a row: the agent id for the owner's thread,
-        `<agent id>~<user id>` for someone the agent is shared with."""
+    def _base_key(self, row: dict) -> str:
+        """The thread without its chat: the agent id for the owner, `<agent id>~<user id>`
+        for someone the agent is shared with. Ownership, sandbox and notes go by this."""
         uid = row.get("user_id")
         return row["agent_id"] if not uid or uid == self._user_id else f"{row['agent_id']}~{uid}"
 
+    @staticmethod
+    def _chat_of(row: dict) -> Optional[dict]:
+        """meta.chat the database stamped on a person's row: {"id", "first", "new"}, or None (an old row)."""
+        c = (row.get("meta") or {}).get("chat")
+        return c if isinstance(c, dict) and isinstance(c.get("id"), str) and c["id"] else None
+
+    def _key(self, row: dict) -> str:
+        """The Hermes session for a row (YUI-169): the base key for an agent's first chat (and for an
+        old row with no chat), `<base key>:<chat id>` for every other chat."""
+        base, chat = self._base_key(row), self._chat_of(row)
+        if chat and not chat.get("first"):
+            return f"{base}:{chat['id']}"
+        return base
+
     def _split(self, key: str) -> tuple[str, str]:
-        aid, _, uid = key.partition("~")
+        """(agent id, user id) of a session key, chat suffix or not."""
+        aid, _, uid = key.partition(":")[0].partition("~")
         return aid, uid or self._user_id
+
+    def _key_chat(self, key: str) -> Optional[str]:
+        """The chat id a session key names, None for a first chat's key."""
+        _, sep, chat = key.partition(":")
+        return chat if sep and chat else None
 
     def _rest_headers(self) -> dict:
         return {"apikey": connector.PUBLISHABLE, "authorization": f"Bearer {self._token}"}
@@ -621,7 +657,7 @@ class YuiAdapter(BasePlatformAdapter):
                             or await self._talk_tap(aid, row)):
                         continue
                     self._queue.setdefault(self._key(row), []).append(row)
-                for key in [k for k in self._queue if k.split("~")[0] == aid]:
+                for key in [k for k in self._queue if self._split(k)[0] == aid]:
                     await self._pump(key)
             await self._flush_acks()
             if len(self._dispatched) > 5000:
@@ -776,11 +812,15 @@ class YuiAdapter(BasePlatformAdapter):
         if busy:
             self._halted[key] = (list(busy[0]), time.time())
             self._acks.update(busy[0])
-            await self._dispatch([{**row, "kind": "text", "body": "/stop", "meta": {}}])
+            chat = self._chat_of(row)  # the same session: its key carries the chat
+            await self._dispatch([{**row, "kind": "text", "body": "/stop", "meta": {"chat": chat} if chat else {}}])
         self._acks.update(dropped)
         reply = {"id": str(uuid.uuid4()), "user_id": row.get("user_id") or self._user_id, "agent_id": aid,
                  "sender": "agent", "body": "controls: stop", "kind": "control",
                  "meta": {"ok": True, "op": "stop", "rows": len(dropped) + (len(busy[0]) if busy else 0), "for": row["id"]}}
+        chat = self._chat_of(row)
+        if chat:  # no meta.turn on a control row: name the chat the Stop came from
+            reply["meta"]["chat"] = chat["id"]
         await self._write_row(reply)
         self._acks.add(row["id"])
         logger.info("[yui] stop %s: %s, %d waiting dropped", row["id"][:8], "turn stopped" if busy else "nothing running", len(dropped))
@@ -805,7 +845,7 @@ class YuiAdapter(BasePlatformAdapter):
         await self._mark([row["id"]], "delivered_at")
         if self._controls is None:
             self._controls = controls.Host(self._state_dir().parent)
-        owner = row.get("user_id") == self._user_id and self._key(row) == aid
+        owner = row.get("user_id") == self._user_id and self._base_key(row) == aid
         ans, change = await asyncio.to_thread(self._controls.handle, req, owner=owner,
                                               who=row.get("user_id") or "", agent=aid)
         if change:
@@ -834,7 +874,7 @@ class YuiAdapter(BasePlatformAdapter):
         tap = talk.Talk.tap_of(row)
         if not tap:
             return False
-        owner = row.get("user_id") == self._user_id and self._key(row) == aid
+        owner = row.get("user_id") == self._user_id and self._base_key(row) == aid
         t = self._talky()
         if owner and tap["kind"] == "again":
             body = await asyncio.to_thread(t.again, tap["pid"])
@@ -937,7 +977,10 @@ class YuiAdapter(BasePlatformAdapter):
         row = rows[-1]
         agent = self._agents.get(row["agent_id"], {})
         key = self._key(row)
-        owner = key == row["agent_id"]
+        owner = self._base_key(row) == row["agent_id"]
+        chat = self._chat_of(row)
+        if chat:
+            self.__dict__.setdefault("_chats", {})[key] = chat["id"]  # so a reply with no turn can name it
         if not owner and not texts_are_commands(rows):
             # Someone the agent is shared with: only while this profile is still sandboxed.
             fails = sandbox.failures(await asyncio.to_thread(sandbox.current))
@@ -991,6 +1034,9 @@ class YuiAdapter(BasePlatformAdapter):
                 notes += await self._group_notes(row["agent_id"], tid, row.get("created_at"))
         if notes and not texts[0].lstrip().startswith("/"):
             texts = notes + texts
+        first_chat = self._chat_of(rows[0])
+        if first_chat and first_chat.get("new") and not first_chat.get("first") and not rows[0]["body"].lstrip().startswith("/"):
+            texts = ["[yui] chat new"] + texts  # the agent's first line in a new chat (YUI-169)
         event = MessageEvent(
             text="\n".join(texts),
             message_type=MessageType.PHOTO if photos else MessageType.TEXT,
@@ -1026,8 +1072,12 @@ class YuiAdapter(BasePlatformAdapter):
             body = ("```yui\ncard \"" + f"{name} is paused for the people you shared it with" + "\" body=\""
                     + "It no longer runs in a sandbox: " + said.replace('"', "'")
                     + ". Turn those off in its Hermes profile and restart its gateway.\"\n```")
-            await self._write_row({"id": str(uuid.uuid4()), "user_id": self._user_id, "agent_id": aid,
-                                   "sender": "agent", "body": body, "kind": "text"})
+            card = {"id": str(uuid.uuid4()), "user_id": self._user_id, "agent_id": aid,
+                    "sender": "agent", "body": body, "kind": "text"}
+            chat = self._chat_of(rows[-1])
+            if chat and self._base_key(rows[-1]) == aid:  # the owner's chat, only when this row is theirs
+                card["meta"] = {"chat": chat["id"]}
+            await self._write_row(card)
         self._spawn(self._connect_call({"action": "heartbeat", "serving": self._serving,
                                         "sandbox": await self._sandbox()}))
         await self._flush_acks()
@@ -1163,9 +1213,12 @@ class YuiAdapter(BasePlatformAdapter):
             if note is not None:
                 reads[key] = reads.get(key, 0) + 1
                 logger.info("[yui] %s read its tables, rows go back as its next turn", agent_id[:8])
+                chat = self._key_chat(key)
                 self._queue.setdefault(key, []).append({
                     "id": str(uuid.uuid4()), "user_id": user_id, "agent_id": agent_id, "sender": "user",
-                    "kind": "text", "body": note, "meta": {}, "created_at": datetime.now(tz=timezone.utc).isoformat()})
+                    "kind": "text", "body": note,
+                    "meta": {"chat": {"id": chat, "first": False, "new": False}} if chat else {},
+                    "created_at": datetime.now(tz=timezone.utc).isoformat()})
                 self._poke()
                 return SendResult(success=True, message_id=None)
             body = (text or "").strip()
@@ -1203,6 +1256,8 @@ class YuiAdapter(BasePlatformAdapter):
             found = found[:mentions.MAX_MENTIONS]
             if found and user_id == self._user_id:
                 row["meta"]["mentions"] = found
+        elif not sender and self.__dict__.get("_chats", {}).get(key):
+            row["meta"] = {"chat": self._chats[key]}  # no turn to answer: name the chat the session is in
         handoff = bool(sender) or time.time() - self._last_inbound.get(key, 0) > HANDOFF_AFTER_SECONDS
         mid = row["id"]
         # Older replies still waiting go first: never overtake them.
@@ -1327,11 +1382,14 @@ class YuiAdapter(BasePlatformAdapter):
     def _agent_for(self, chat_id: str) -> tuple[Optional[str], Optional[str]]:
         """(thread key, sending profile's name when the thread is another agent's).
         A shared thread's chat id `<agent id>~<user id>` goes back to that person."""
-        base, _, uid = (chat_id or "").partition("~")
-        if uid and base in self._agents and re.fullmatch(r"[0-9a-f-]{36}", uid):
-            return chat_id, None
+        head, chat = split_chat(chat_id or "")
+        base, _, uid = head.partition("~")
+        if base in self._agents and (chat or (uid and re.fullmatch(r"[0-9a-f-]{36}", uid))):
+            return chat_id, None  # a session key of ours: `a:c`, `a~u`, `a~u:c`
         agents = self._all_agents or list(self._agents.values())
         a, sender = connector.pick_agent(agents, self._remote_ref, base)
+        if a and chat and not sender and not uid:
+            return f"{a['id']}:{chat}", None
         return (a["id"] if a else None), sender
 
     async def send(self, chat_id: str, content: str, reply_to: Optional[str] = None,
@@ -1360,8 +1418,18 @@ class YuiAdapter(BasePlatformAdapter):
         return None
 
     async def get_chat_info(self, chat_id: str) -> Dict[str, Any]:
-        a = next((x for x in self._all_agents if x.get("id") == chat_id), self._agents.get(chat_id, {}))
+        aid = self._split(chat_id)[0] if chat_id else chat_id
+        a = next((x for x in self._all_agents if x.get("id") == aid), self._agents.get(aid, {}))
         return {"name": f"Yui: {a.get('name', chat_id)}", "type": "dm", "chat_id": chat_id}
+
+
+_UUID = r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
+
+
+def split_chat(key: str) -> tuple[str, Optional[str]]:
+    """("a~u", "c") from `a~u:c`; the key unchanged and None when it names no chat."""
+    m = re.fullmatch(rf"(.+):({_UUID})", key or "", re.I)
+    return (m.group(1), m.group(2)) if m else (key, None)
 
 
 def save_session_cache(session: dict) -> None:
@@ -1400,6 +1468,7 @@ async def _standalone_send(pconfig, chat_id: str, message: str, *, thread_id: Op
     message = doing.split(message or "")[0]  # out of process there is no turn to show a doing on (YUI-63)
     if not message.strip() and not media_files:
         return {"success": True, "platform": "yui", "chat_id": chat_id, "message_id": None}
+    chat_id, named_chat = split_chat(chat_id)  # `<agent>:<chat id>`: the session's chat, named on the row
     ref = ((getattr(pconfig, "extra", None) or {}).get("remote_ref") or os.getenv("YUI_REMOTE_REF")
            or connector.current_profile() or "default")
     async with httpx.AsyncClient(timeout=20.0) as c:
@@ -1424,7 +1493,8 @@ async def _standalone_send(pconfig, chat_id: str, message: str, *, thread_id: Op
             if not text:
                 return {"success": True, "platform": "yui", "chat_id": target["id"], "message_id": None}
             outbox.Outbox().add({"id": mid, "user_id": cache["user_id"], "agent_id": target["id"],
-                                 "sender": "agent", "body": text[:MAX_MESSAGE_LENGTH], "kind": "text"},
+                                 "sender": "agent", "body": text[:MAX_MESSAGE_LENGTH], "kind": "text",
+                                 **({"meta": {"chat": named_chat}} if named_chat and not sender else {})},
                                 sender, True)
             return {"success": True, "platform": "yui", "chat_id": target["id"], "message_id": mid, "queued": True}
         save_session_cache(s)
@@ -1461,6 +1531,8 @@ async def _standalone_send(pconfig, chat_id: str, message: str, *, thread_id: Op
             media.rewrite, body, lambda src: media.host(s["access_token"], s["user_id"], target["id"], src), logger)
         row = {"id": str(uuid.uuid4()), "user_id": s["user_id"], "agent_id": target["id"], "sender": "agent",
                "body": body[:MAX_MESSAGE_LENGTH], "kind": "text"}
+        if named_chat and not sender:
+            row["meta"] = {"chat": named_chat}
         mid = row["id"]
         try:
             r = await c.post(f"{REST}/yui_messages", json=row,
