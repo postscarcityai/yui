@@ -97,7 +97,7 @@ final class ListeningTests: XCTestCase {
         let answer = text("echo: hi Bravo, are you there?")
         XCTAssertTrue(answer.waitForExistence(timeout: 90), "Bravo never answered once its gateway started")
         XCTAssertTrue(waits.waitForNonExistence(timeout: 10), "the waiting note stayed after the answer")
-        XCTAssertTrue(app.buttons["Talking to Bravo, online"].waitForExistence(timeout: 20), "the header still says not listening")
+        XCTAssertTrue(app.recordTitle("Bravo, online").waitForExistence(timeout: 20), "the header still says not listening")
         sleep(2)
         shot("06-answered-dark")
     }

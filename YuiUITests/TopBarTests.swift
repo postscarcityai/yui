@@ -64,12 +64,13 @@ final class TopBarTests: XCTestCase {
         // The record, top right: the same top left, the way back top right.
         record.tap()
         let back = app.buttons["back-to-stage"], rmenu = app.buttons["Agent menu"]
-        let ragents = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Talking to Coach'")).firstMatch
+        let ragents = app.recordTitle("Coach")
         XCTAssertTrue(back.waitForExistence(timeout: 5), "the record has no way back")
         waitHittable(rmenu, "no menu in the record")
-        XCTAssertTrue(ragents.exists, "no agent pill in the record")
+        XCTAssertTrue(ragents.exists, "no agent title in the record")
         XCTAssertLessThan(rmenu.frame.maxX, ragents.frame.minX, "the record's menu is not left of the agent")
         XCTAssertGreaterThan(back.frame.maxX, app.frame.width - 110, "the way back is not top right")
+        XCTAssertFalse(app.buttons["record-agents"].exists, "the chip is back in the record's bar")
         XCTAssertFalse(app.buttons["Settings"].exists, "Settings is still loose in the record's bar")
         sleep(1)
         shot("6-record-top", appearance)

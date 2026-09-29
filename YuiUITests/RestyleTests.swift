@@ -98,14 +98,14 @@ final class RestyleTests: XCTestCase {
     /// An agent's thread keeps its own look under an app look; the switch off, it wears the app's.
     func testAgentThreadsKeepTheirLooks() throws {
         let app = launch(["-yuiDemoAgents", "-yuiAgent", "wizard", "-yuiAppLookDemo", "autumn"], "light")
-        XCTAssertTrue(app.buttons["Talking to Wizard, online"].waitForExistence(timeout: 15))
+        XCTAssertTrue(app.recordTitle("Wizard, online").waitForExistence(timeout: 15))
         sleep(1)
         shot("restyle-agent-keeps-look-light")
         app.terminate()
 
         let off = launch(["-yuiDemoAgents", "-yuiAgent", "wizard", "-yuiAppLookDemo", "autumn",
                           "-yuiAgentsOwnLooks", "NO"], "light")
-        XCTAssertTrue(off.buttons["Talking to Wizard, online"].waitForExistence(timeout: 15))
+        XCTAssertTrue(off.recordTitle("Wizard, online").waitForExistence(timeout: 15))
         sleep(1)
         shot("restyle-agents-wear-app-look-light")
         off.terminate()

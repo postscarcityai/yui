@@ -106,7 +106,7 @@ final class DrawerTests: XCTestCase {
         close.tap()
         waitGone(close, "Close did not close the drawer")
         XCTAssertTrue(app.pickAgent("Coach"), "the pill did not offer Coach")
-        let header = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Talking to Coach")).firstMatch
+        let header = app.recordTitle("Coach")
         XCTAssertTrue(header.waitForExistence(timeout: 5), "the chat did not switch to Coach")
         sleep(1)
         shot("7-coach")

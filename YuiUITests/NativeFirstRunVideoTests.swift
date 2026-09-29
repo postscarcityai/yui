@@ -28,13 +28,7 @@ final class NativeFirstRunVideoTests: XCTestCase {
             return (try? String(contentsOf: file, encoding: .utf8)) ?? ""
         }
         func talkTo(_ name: String) {
-            let picker = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Talking to")).firstMatch
-            XCTAssertTrue(picker.waitForExistence(timeout: 10), "no agent picker")
-            picker.tap()
-            let row = app.buttons[name].firstMatch
-            XCTAssertTrue(row.waitForExistence(timeout: 5), "\(name) is not in the picker")
-            sleep(1)
-            row.tap()
+            XCTAssertTrue(app.pickAgent(name, timeout: 10), "\(name) is not in the drawer's picker")
             sleep(2)
         }
         func say(_ words: String) {
@@ -61,12 +55,12 @@ final class NativeFirstRunVideoTests: XCTestCase {
         shot("01-yui-first")
 
         // 2. The crew is there: the picker lists them. Close it and tap Yui's first choice.
-        let picker = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Talking to")).firstMatch
-        picker.tap()
-        XCTAssertTrue(app.buttons["Basil"].waitForExistence(timeout: 5), "the crew is not in the picker")
+        app.buttons["Agent menu"].tap()
+        app.buttons["drawer-agent-bar"].tap()
+        XCTAssertTrue(app.buttons["switch-Basil"].waitForExistence(timeout: 5), "the crew is not in the picker")
         sleep(2)
         shot("02-crew")
-        app.buttons["Yui"].firstMatch.tap()
+        app.buttons["switch-Yui"].firstMatch.tap()
         sleep(1)
         let getFit = app.buttons["Get fit"].firstMatch
         XCTAssertTrue(getFit.waitForExistence(timeout: 10), "Yui's first choice is missing")

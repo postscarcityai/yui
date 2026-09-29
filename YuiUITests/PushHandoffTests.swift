@@ -117,7 +117,7 @@ final class PushHandoffTests: XCTestCase {
         banner.tap()
 
         XCTAssertTrue(app.wait(for: .runningForeground, timeout: 20))
-        let header = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Talking to \(other)")).firstMatch
+        let header = app.recordTitle(other)
         XCTAssertTrue(header.waitForExistence(timeout: 20), "the tap did not open \(other)'s thread")
         XCTAssertTrue(app.buttons["Ship it"].firstMatch.waitForExistence(timeout: 20), "the thread opened without the answer")
         sleep(2)

@@ -240,15 +240,12 @@ struct ChatView: View {
                 }
             }
             .navigationBarTitleDisplayMode(.inline)
-            // The top bar (YUI-122): the menu and the agent top left, as on the stage.
+            // The top bar (YUI-122): the menu and who you talk to top left. The title is plain; the drawer is the one picker.
             // Settings is in the menu's drawer; top right is the way back to the full screen.
             .toolbar {
                 menuItem(c)
                 ToolbarItem(placement: .topBarLeading) {
-                    AgentPicker(agent: store.agent, agents: agents.agents, framed: false, unshared: agents.unshared,
-                                pick: { agents.selectedID = $0 }, add: agents.onlyShared ? nil : { addFirst = true },
-                                manage: { showAgents = true },
-                                title: store.chatTitle, openDrawer: { settleDrawer(open: true) }, menuID: "record-agents")
+                    AgentTitle(agent: store.agent, title: store.chatTitle)
                 }
                 if stageFirstOn {
                     // The record's way back to the full screen (YUI-119).

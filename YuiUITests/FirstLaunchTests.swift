@@ -30,7 +30,7 @@ final class FirstLaunchTests: XCTestCase {
         let all = app.descendants(matching: .any)["crew-all"]
         XCTAssertTrue(all.waitForExistence(timeout: 15), "the empty list does not offer the crew")
         XCTAssertFalse(app.buttons["Add your first agent"].exists, "the pairing first run shows")
-        XCTAssertFalse(app.buttons["record-agents"].exists, "the agent picker shows with no agents")
+        XCTAssertFalse(app.recordTitle().exists, "the agent title shows with no agents")
         XCTAssertTrue(app.buttons["first-run-pair"].exists, "pairing your own is gone")
         sleep(1)
         shot("07-pick")

@@ -58,24 +58,25 @@ final class SharedClientTests: XCTestCase {
 
     func testARevokeClosesTheOpenThread() {
         launch(["-yuiDemoShared", "-yuiAgent", "basil", "-yuiDemoRevoke", "4"], "light")
-        XCTAssertTrue(app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Talking to Basil")).firstMatch
+        XCTAssertTrue(app.recordTitle("Basil")
             .waitForExistence(timeout: 10), "Basil's thread is not open")
         let note = app.descendants(matching: .any)["agentNotice"]
         XCTAssertTrue(note.waitForExistence(timeout: 10), "no quiet line when the open thread was revoked")
         XCTAssertEqual(note.label, "Basil is no longer shared with you.")
-        XCTAssertFalse(app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Talking to Basil")).firstMatch.exists,
+        XCTAssertFalse(app.recordTitle("Basil").exists,
                        "the revoked thread is still open")
         shot("yui97-03-revoked-notice")
         // The line sits over the nav bar for a moment: let it go first.
         let gone = expectation(for: NSPredicate(format: "exists == false"), evaluatedWith: note)
         wait(for: [gone], timeout: 10)
         // The thread fell back to Penny. The pill's list says Basil went, and offers no Add.
-        let penny = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Talking to Penny")).firstMatch
+        let penny = app.recordTitle("Penny")
         XCTAssertTrue(penny.waitForExistence(timeout: 5), "the chat did not fall back to Penny")
-        app.buttons["record-agents"].tap()
+        app.buttons["Agent menu"].tap()
+        app.buttons["drawer-agent-bar"].tap()
         XCTAssertTrue(text("Basil is no longer shared with you.").waitForExistence(timeout: 5), "the picker has no quiet line")
-        XCTAssertFalse(app.buttons["Basil"].exists, "Basil is still in the picker")
-        XCTAssertFalse(app.buttons["Add an agent"].exists, "an invited account can add agents")
+        XCTAssertFalse(app.buttons["switch-Basil"].exists, "Basil is still in the picker")
+        XCTAssertFalse(app.buttons["switch-add"].exists, "an invited account can add agents")
         sleep(1)
         shot("yui97-04-revoked-list")
     }
