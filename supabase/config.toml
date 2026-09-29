@@ -32,3 +32,7 @@ verify_jwt = false
 # NATIVE-1: called by the database (pg_net) with its own secret header.
 [functions.yui-native]
 verify_jwt = false
+
+# The key vault's proxy (YUI-34): agents call it with their connection token.
+[functions.yui-vault]
+verify_jwt = false
