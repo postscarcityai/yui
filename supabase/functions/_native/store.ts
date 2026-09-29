@@ -51,8 +51,8 @@ export interface Store {
   takeSearch(userId: string, own: boolean): Promise<SearchTake>;
   /** The person's own Firecrawl key, when they added one in Settings. */
   searchKey(userId: string): Promise<string | null>;
-  /** The person's own model key, when they added one. */
-  ownKey(userId: string): Promise<OwnKey | null>;
+  /** The person's own model key, when they added one. `use` is an agent's pick (Profile.keyUse): "yui" takes none, a provider id takes that provider's key (null when they have none), unset takes their default key. */
+  ownKey(userId: string, use?: string): Promise<OwnKey | null>;
   /** One row of any kind, with its owner (control requests). */
   row(id: string): Promise<(Row & { agent_id: string; user_id: string }) | null>;
   /** A control answer (kind control, no push); marks the request handled. */
@@ -81,7 +81,8 @@ export interface LocalData {
   routes?: Routes;
   schedules?: ScheduleItem[];
   timezones?: Record<string, string>;
-  keys?: Record<string, OwnKey>;
+  keys?: Record<string, OwnKey>; // a person's default key
+  moreKeys?: Record<string, OwnKey>; // their other keys, by "<user>:<provider>"
   searches?: Record<string, number>; // "<user>:<day>" and "<user>:<month>" -> count
   searchKeys?: Record<string, string>; // a person's own Firecrawl key
   tables?: Record<string, TableStore>; // by agent id
@@ -322,8 +323,11 @@ export class LocalStore implements Store {
   async searchKey(userId: string) {
     return this.data.searchKeys?.[userId] ?? null;
   }
-  async ownKey(userId: string) {
-    return this.data.keys?.[userId] ?? null;
+  async ownKey(userId: string, use?: string) {
+    const dflt = this.data.keys?.[userId] ?? null;
+    if (!use) return dflt;
+    if (use === "yui") return null;
+    return dflt?.provider === use ? dflt : this.data.moreKeys?.[`${userId}:${use}`] ?? null;
   }
   /** Due check-ins, for the CLI's clock. */
   due(now: number): ScheduleItem[] {

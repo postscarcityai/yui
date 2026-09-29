@@ -36,6 +36,7 @@ export interface Profile {
   meals?: boolean; // logs meals from a photo in the background (YUI-103, meals.ts); base basil always does
   home?: string; // its home (YUI-168, profiles/<name>/home.yui): shortcuts and starter screens, played once
   home_at?: string; // when its home was written into the thread
+  keyUse?: string; // which model key it runs on (YUI-139 step 2f): "yui" for Yui's, a provider id for that key of the person's; unset follows their default key
   visual?: VisualDefault; // its own quiet visual on the stage (YUI-180, visual.ts): look, what it hears, strength, pace
 }
 

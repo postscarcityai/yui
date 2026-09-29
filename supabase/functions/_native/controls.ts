@@ -118,7 +118,7 @@ export async function answerControl(store: Store, rowId: string): Promise<boolea
     await stopTurns(store, agent, row);
     return true;
   }
-  const own = await store.ownKey(agent.userId);
+  const own = await store.ownKey(agent.userId, agent.profile.keyUse);
   const provider = own ? (own.provider === "custom" ? "your own computer" : `your own ${providerLabel(own.provider)} key`)
     : "OpenRouter, on Yui";
   const req = row.meta ?? {};
@@ -301,7 +301,7 @@ export function modelLabel(id: string | undefined): string {
 
 function modelInfo(ctx: ControlContext) {
   const p = ctx.agent.profile;
-  return { id: "model", model: modelLabel(p.model), provider: ctx.provider,
+  return { id: "model", model: modelLabel(p.model), provider: ctx.provider, key: ctx.agent.profile.keyUse ?? "default",
            // Which profile it runs, and its version (YUI-145): "Basil" v1.
            profile: p.name, version: p.version ?? 1,
            toolsets: [{ name: "Every Yui screen", on: true }, { name: "Memory", on: true }, { name: "Check-ins", on: true },

@@ -336,8 +336,9 @@ export class SupabaseStore implements Store {
     return typeof k === "string" && k ? k : null;
   }
 
-  async ownKey(userId: string): Promise<OwnKey | null> {
-    const r = await this.rpc("yui_native_key_get", { uid: userId });
+  async ownKey(userId: string, use?: string): Promise<OwnKey | null> {
+    if (use === "yui") return null;
+    const r = await this.rpc("yui_native_key_get", { uid: userId, ...(use ? { prov: use } : {}) });
     const k = Array.isArray(r) ? r[0] : r;
     return k?.secret ? { provider: k.provider, baseUrl: k.base_url, model: k.model ?? null, key: k.secret } : null;
   }

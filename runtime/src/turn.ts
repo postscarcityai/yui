@@ -307,7 +307,7 @@ async function oneTurn(store: Store, agent: NativeAgent, rows: Row[], opts: Turn
   }
 
   // A person's own key: their model, no monthly cap. Otherwise Yui's key and free turns.
-  const own = await store.ownKey(agent.userId);
+  const own = await store.ownKey(agent.userId, agent.profile.keyUse);
   const provider = own ? ownProvider(own) : opts.provider;
   const budget = own ? { ok: true, left: Infinity, limit: 0 } : await store.takeTurn(agent.userId);
   if (!budget.ok) {
@@ -546,7 +546,7 @@ export async function runJob(store: Store, jobId: string, opts: TurnOptions): Pr
     await store.finishJob(job.id, "failed", { gone: true });
     return result;
   }
-  const own = await store.ownKey(agent.userId);
+  const own = await store.ownKey(agent.userId, agent.profile.keyUse);
   const provider = own ? ownProvider(own) : opts.provider;
   const routes = await store.routes();
   if (own && job.input.photo && blindKey(own)) {
@@ -999,7 +999,7 @@ async function withStudyScreens(store: Store, agent: NativeAgent, body: string, 
 async function studyModel<T>(store: Store, agent: NativeAgent, opts: TurnOptions, system: string, user: string, read: (text: string) => T | null,
                              log: (m: string) => void): Promise<{ value?: T; model?: string; say?: string }> {
   const p = agent.profile;
-  const own = await store.ownKey(agent.userId);
+  const own = await store.ownKey(agent.userId, agent.profile.keyUse);
   const provider = own ? ownProvider(own) : opts.provider;
   const budget = own ? { ok: true, limit: 0 } : await store.takeTurn(agent.userId);
   if (!budget.ok) return { say: outOfTurns(budget.limit) };
@@ -1419,7 +1419,7 @@ async function lookUp(store: Store, agent: NativeAgent, opts: TurnOptions, provi
   const theirs = await store.searchKey(agent.userId);
   const key = theirs ?? opts.search?.key;
   // Their own key on a provider with no web search: the lookup still runs, on Yui's Firecrawl, and the card says so.
-  const own = await store.ownKey(agent.userId);
+  const own = await store.ownKey(agent.userId, agent.profile.keyUse);
   const noWeb = !!own && !theirs && !PROVIDERS.find((x) => x.id === own.provider)?.web;
   const fc = key ? new Firecrawl(key, opts.search?.fetch ?? fetch, opts.search?.base) : null;
   const out: Looked = { sources: [] };

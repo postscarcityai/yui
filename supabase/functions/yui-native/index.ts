@@ -20,7 +20,12 @@
 //                                              openrouter.ai/auth with its own challenge, gets ?code= back on
 //                                              its callback, and hands the code and verifier here. Yui trades
 //                                              them for a key, checks it and keeps it in Vault like a pasted one.
-//   {action: "key_remove"}
+//   {action: "key_set", ..., agent_id}         the same, for one agent only: the key is kept alongside the person's
+//                                              others and that agent runs on it; the rest keep their default
+//   {action: "key_remove", provider?}          one provider's key, or (none named) all of them; agents on a removed
+//                                              key fall back to Yui's
+//   {action: "agent_key", agent_id, use}       which key an agent runs on: "yui" (Yui's), a provider they have a
+//                                              key for, or "default" (follow the person's default key)
 //   {action: "search_key_set", key}            their own Firecrawl key: checked with Firecrawl, kept in Vault,
 //                                              lifts the free monthly web search cap
 //   {action: "search_key_remove"}
@@ -134,6 +139,22 @@ async function exchangeOpenRouterCode(code: string, verifier: string): Promise<s
   }
 }
 
+/** One of the person's native agents' profile, or null when it isn't theirs. */
+// deno-lint-ignore no-explicit-any
+async function ownAgent(db: any, userId: string, agentId: string): Promise<Body | null> {
+  const { data } = await db.from("yui_native_profiles").select("profile").eq("agent_id", agentId).eq("user_id", userId).maybeSingle();
+  return data?.profile ?? null;
+}
+
+/** Writes an agent's key pick into its profile: "yui", a provider id, or null to follow the default. */
+// deno-lint-ignore no-explicit-any
+async function setAgentKey(db: any, userId: string, agentId: string, profile: Body, use: string | null) {
+  const { keyUse: _old, ...rest } = profile;
+  const { error } = await db.from("yui_native_profiles").update({ profile: use ? { ...rest, keyUse: use } : rest, updated_at: new Date().toISOString() })
+    .eq("agent_id", agentId).eq("user_id", userId);
+  if (error) throw error;
+}
+
 /** Checks a person's own key with its provider, then keeps it in Vault (a pasted key and a signed-in one take this same road). */
 // deno-lint-ignore no-explicit-any
 async function keepKey(db: any, userId: string, b: Body): Promise<Response> {
@@ -151,9 +172,16 @@ async function keepKey(db: any, userId: string, b: Body): Promise<Response> {
   if (p.needsModel && !model) return json({ error: "model_required" }, 400);
   const problem = await checkKey(baseUrl, key, model ?? p.model, p.id);
   if (problem) return json({ error: "key_check_failed", message: p.id === "custom" ? `couldn't reach your computer: ${problem}` : problem }, 400);
-  const { error } = await db.rpc("yui_native_key_set", { uid: userId, prov: p.id, url: baseUrl, mdl: model, secret: key });
+  // One agent's key: kept beside the others, that agent switched to it, the default left alone.
+  const agentId = typeof b.agent_id === "string" ? b.agent_id : "";
+  if (agentId && !UUID.test(agentId)) return json({ error: "invalid_agent" }, 400);
+  const mine = agentId ? await ownAgent(db, userId, agentId) : null;
+  if (agentId && !mine) return json({ error: "not_found" }, 404);
+  const { error } = await db.rpc("yui_native_key_set", { uid: userId, prov: p.id, url: baseUrl, mdl: model, secret: key, every: !agentId });
   if (error) throw error;
-  return json({ ok: true, key: { provider: p.id, model, hint: p.keyless && key === "no-key-needed" ? "" : key.slice(-4), base_url: baseUrl } });
+  if (mine) await setAgentKey(db, userId, agentId, mine, p.id);
+  return json({ ok: true, key: { provider: p.id, model, hint: p.keyless && key === "no-key-needed" ? "" : key.slice(-4), base_url: baseUrl },
+                ...(mine ? { agent_id: agentId, use: p.id } : {}) });
 }
 
 async function fromApp(req: Request, b: Body): Promise<Response> {
@@ -168,15 +196,25 @@ async function fromApp(req: Request, b: Body): Promise<Response> {
   await take(db, `agents:u:${userId}`, "agents_api");
   switch (b.action) {
     case "status": {
-      const [{ data: key }, { data: user }, { data: usage }, { data: searchKey }, { data: lims }] = await Promise.all([
-        db.from("yui_native_keys").select("provider, model, hint, base_url").eq("user_id", userId).maybeSingle(),
+      const [{ data: keys }, { data: user }, { data: usage }, { data: searchKey }, { data: lims }, { data: profiles }] = await Promise.all([
+        db.from("yui_native_keys").select("provider, model, hint, base_url, everywhere").eq("user_id", userId),
         db.from("yui_users").select("timezone").eq("id", userId).maybeSingle(),
         db.from("yui_native_usage").select("turns, searches").eq("user_id", userId).eq("month", new Date().toISOString().slice(0, 7) + "-01").maybeSingle(),
         db.from("yui_native_search_keys").select("hint").eq("user_id", userId).maybeSingle(),
         db.from("yui_limits").select("name, value").in("name", ["native_free_turns", "native_searches_per_month"]),
+        db.from("yui_native_profiles").select("agent_id, profile").eq("user_id", userId),
       ]);
       const lim = (n: string, d: number) => Number(lims?.find((l: { name: string }) => l.name === n)?.value ?? d);
-      return json({ key: key ?? null, providers: PROVIDERS.filter((p) => p.scored), models: MODELS, timezone: user?.timezone ?? null,
+      // `key` is the default agents follow; `keys` is every key they hold; `agent_keys` is each agent's pick
+      // ("yui", a provider id, or "default" when it follows the default). A pick whose key is gone reads "yui": that is what runs.
+      const held = new Set((keys ?? []).map((k: { provider: string }) => k.provider));
+      const agentKeys: Record<string, string> = {};
+      for (const r of profiles ?? []) {
+        const u = r.profile?.keyUse;
+        agentKeys[r.agent_id] = !u ? "default" : u === "yui" || held.has(u) ? u : "yui";
+      }
+      const key = (keys ?? []).find((k: { everywhere: boolean }) => k.everywhere) ?? null;
+      return json({ key, keys: (keys ?? []).map(({ everywhere: _e, ...k }: Body) => k), agent_keys: agentKeys, providers: PROVIDERS.filter((p) => p.scored), models: MODELS, timezone: user?.timezone ?? null,
                     turns: { used: usage?.turns ?? 0, limit: lim("native_free_turns", 100) },
                     search: { used: usage?.searches ?? 0, limit: lim("native_searches_per_month", 50), key: searchKey ?? null } });
     }
@@ -205,9 +243,23 @@ async function fromApp(req: Request, b: Body): Promise<Response> {
     case "key_set":
       return await keepKey(db, userId, b);
     case "key_remove": {
-      const { error } = await db.rpc("yui_native_key_remove", { uid: userId });
+      const prov = typeof b.provider === "string" ? b.provider : null;
+      if (prov && !PROVIDERS.some((p) => p.id === prov)) return json({ error: "unknown_provider" }, 400);
+      const { error } = await db.rpc("yui_native_key_remove", { uid: userId, prov });
       if (error) throw error;
       return json({ ok: true });
+    }
+    case "agent_key": {
+      if (typeof b.agent_id !== "string" || !UUID.test(b.agent_id)) return json({ error: "invalid_agent" }, 400);
+      const use = typeof b.use === "string" ? b.use : "";
+      const mine = await ownAgent(db, userId, b.agent_id);
+      if (!mine) return json({ error: "not_found" }, 404);
+      if (use !== "yui" && use !== "default") {
+        const { data: k } = await db.from("yui_native_keys").select("provider").eq("user_id", userId).eq("provider", use).maybeSingle();
+        if (!k) return json({ error: "no_key", message: "Add a key for that provider first." }, 400);
+      }
+      await setAgentKey(db, userId, b.agent_id, mine, use === "default" ? null : use);
+      return json({ ok: true, use });
     }
     case "timezone": {
       const tz = typeof b.tz === "string" ? b.tz : "";
