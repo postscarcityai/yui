@@ -231,7 +231,10 @@ final class VisualRenderer: NSObject, MTKViewDelegate {
             view.enableSetNeedsDisplay = true
             if old != plan { view.setNeedsDisplay() }
         } else {
-            view.preferredFramesPerSecond = plan.fps
+            // A quiet default starts at its idle rate; render() lifts it while something is heard.
+            if old == nil || old?.fps != plan.fps || old?.idleFps != plan.idleFps || old?.still == true {
+                view.preferredFramesPerSecond = plan.idleFps
+            }
             view.enableSetNeedsDisplay = false
             if view.isPaused { lastFrame = 0; view.isPaused = false }
         }
@@ -260,6 +263,9 @@ final class VisualRenderer: NSObject, MTKViewDelegate {
             let ms = dt * 1000, env = plan.env
             heard = .init(level: env.follow(heard.level, raw.level, dt: ms), low: env.follow(heard.low, raw.low, dt: ms),
                           mid: env.follow(heard.mid, raw.mid, dt: ms), high: env.follow(heard.high, raw.high, dt: ms))
+            let silent = max(heard.level, heard.low, heard.mid, heard.high) < 0.02
+            let want = silent ? plan.idleFps : plan.fps
+            if view.preferredFramesPerSecond != want { view.preferredFramesPerSecond = want }
         }
         count(now)
 

@@ -24,6 +24,8 @@ struct VisualPlan: Equatable, Sendable {
     /// The frame budget (VISUAL.md section 5). fps 0 is one still frame.
     enum Budget {
         static let aloneFps = 60, behindFps = 30
+        /// A quiet default (YUI-180) draws at 30 fps and at 15 while nothing is heard.
+        static let quietIdleFps = 15
         static let scale = 0.5, grainScale = 0.75
         static let meterHz = 30.0
         /// Behind words: the picture at this strength, the scrim over the words' zone
@@ -105,6 +107,9 @@ struct VisualPlan: Equatable, Sendable {
         }
     }
     var fps: Int
+    /// The rate while nothing is heard: below `fps` only for a quiet default.
+    var idleFps: Int
+    var quiet: Bool
     var scale: Double
     var why: Why?
     var still: Bool { why != nil }
@@ -120,21 +125,28 @@ struct VisualPlan: Equatable, Sendable {
     ///   accent, ground, ink  the agent's color and the stage's paper and ink in this appearance
     ///   words                a chunk with words is on the stage (dim and scrim)
     ///   hidden               the stage is closed or the app is in the background
+    ///   quiet                the agent's default (YUI-180): its strength, at the slower of its pace and the
+    ///                        agent's, at 30 fps and 15 while nothing is heard
     init?(_ v: YLVisual?, accent: String, ground: String, ink: String, motion: MotionLook,
-          words: Bool = false, zone: Zone = .spec, lowPower: Bool = false, thermal: ProcessInfo.ThermalState = .nominal, hidden: Bool = false) {
+          words: Bool = false, zone: Zone = .spec, lowPower: Bool = false, thermal: ProcessInfo.ThermalState = .nominal, hidden: Bool = false,
+          quiet def: VisualDefault? = nil) {
         guard let v else { return nil }
+        var motion = motion
+        if let def, let k = MotionLook.paces[def.motionPace], k > (MotionLook.paces[motion.pace] ?? 1) { motion.pace = def.motionPace }
         look = v.look.flatMap { YuiLines.visualLooks.contains($0) ? $0 : nil } ?? "orb"
         react = v.react.flatMap { YuiLines.visualReact.contains($0) ? $0 : nil } ?? "voice"
         tone = Self.tone(v.tone, accent: accent)
         colors = Self.colors(tone, ground: ground, ink: ink)
-        dim = words ? Budget.behindDim : 1
+        dim = (def?.level ?? 1) * (words ? Budget.behindDim : 1)
+        quiet = def != nil
         why = motion.reduced ? .reduceMotion : lowPower ? .lowPower
             : thermal == .serious || thermal == .critical ? .hot : hidden ? .hidden : nil
         env = why != nil || react == "off" ? .still : Envelope(motion)
         speed = why != nil ? 0 : 1 / (MotionLook.paces[motion.pace] ?? 1)
         scrim = words ? Self.scrim(colors, dim: dim) : 0
         self.zone = zone
-        fps = why != nil ? 0 : words || thermal == .fair ? Budget.behindFps : Budget.aloneFps
+        fps = why != nil ? 0 : def != nil || words || thermal == .fair ? Budget.behindFps : Budget.aloneFps
+        idleFps = why != nil ? 0 : def != nil ? Budget.quietIdleFps : fps
         scale = look == "grain" ? Budget.grainScale : Budget.scale
     }
 

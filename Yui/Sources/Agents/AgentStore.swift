@@ -72,13 +72,15 @@ struct YuiAgent: Codable, Identifiable, Equatable, Sendable {
     var tagline: String? = nil
     var about: String? = nil
     var can: [String]? = nil
+    /// Its quiet visual, picked for it (YUI-180). Nil from older servers and for agents that never said.
+    var visual: VisualDefault? = nil
 
     enum CodingKeys: String, CodingKey {
         case id, name, handle, color, avatar, kind, status, sort, theme
         case connectorID = "connector_id", connectorName = "connector_name", remoteRef = "remote_ref"
         case lastSeenAt = "last_seen_at", isDefault = "is_default", pushMuted = "push_muted", presence, commands, shared
         case sharedBy = "shared_by", firstMessage = "first_message", clientSafe = "client_safe", shareWhy = "share_why"
-        case controls, tagline, about, can
+        case controls, tagline, about, can, visual
     }
 
     /// Its tagline, or nil when it has none worth showing.

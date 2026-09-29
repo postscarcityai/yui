@@ -50,15 +50,16 @@ final class VisualUITests: XCTestCase {
         write("frames-soak.txt", "orb alone, \(secs) s: \(frames(app))\n")
     }
 
-    /// No visual until the reply says so; then the label VoiceOver reads.
+    /// A paired agent starts on the soft default orb (YUI-180); the reply's line changes it, and the label says so.
     func testTheReplysLinePutsItUp() throws {
         let app = launch(agent: "zen", reply: "visual aurora tone=mint react=music\\nsay \"Winding down.\"", appearance: "dark")
         send(app, "Help me wind down")
         XCTAssertTrue(app.descendants(matching: .any)["stage-working"].waitForExistence(timeout: 5))
         let visual = app.descendants(matching: .any)["stage-visual"]
-        XCTAssertFalse(visual.exists, "no visual before a reply asks for one")
-        XCTAssertTrue(visual.waitForExistence(timeout: 15), "the reply's visual line put nothing up")
-        XCTAssertEqual(visual.label, "Aurora, moving with the music")
+        XCTAssertTrue(visual.waitForExistence(timeout: 5), "an agent has its quiet default before a reply")
+        XCTAssertEqual(visual.label, "Orb, listening to your voice")
+        XCTAssertTrue(NSPredicate(format: "label == %@", "Aurora, moving with the music")
+            .evaluate(with: visual) || waitLabel(visual, "Aurora, moving with the music"), "the reply's visual line put nothing up")
         XCTAssertTrue(app.staticTexts["Winding down."].waitForExistence(timeout: 5), "the words play over it")
     }
 
@@ -92,6 +93,12 @@ final class VisualUITests: XCTestCase {
         app.launchArguments = args + extra
         app.launch()
         return app
+    }
+
+    private func waitLabel(_ e: XCUIElement, _ label: String, timeout: TimeInterval = 15) -> Bool {
+        let end = Date().addingTimeInterval(timeout)
+        while Date() < end { if e.label == label { return true }; usleep(300_000) }
+        return false
     }
 
     private func send(_ app: XCUIApplication, _ words: String) {

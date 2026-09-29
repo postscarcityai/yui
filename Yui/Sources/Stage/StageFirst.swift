@@ -517,25 +517,39 @@ struct StageFirstView: View {
 
     // MARK: The visual (YUI-124)
 
-    /// The thread's visual, or nil. DEBUG `-yuiDemoVisual "aurora tone=mint"` puts one up with no reply.
-    private var visual: YLVisual? {
+    /// What the stage draws for this thread (YUI-180): the person's switch, then the agent's
+    /// own `visual` line, then its quiet default. DEBUG `-yuiDemoVisual "aurora tone=mint"`
+    /// puts one up with no reply.
+    private var choice: StageVisualChoice {
         #if DEBUG
-        if let s = UserDefaults.standard.string(forKey: "yuiDemoVisual") {
-            return YuiLines.visual(of: YuiLines.parse("visual " + s)) ?? store.visual
-        }
+        if let s = UserDefaults.standard.string(forKey: "yuiDemoVisual"),
+           let v = YuiLines.visual(of: YuiLines.parse("visual " + s)) { return .said(v) }
         #endif
-        return store.visual
+        return .choose(default: VisualDefault.of(agent), said: store.visual, saidAny: store.visualSaid,
+                       personOff: agent.map { VisualSwitch.isOff($0.id) } ?? false)
+    }
+
+    /// The agent's own line is up (not its default): the orb is the mark then.
+    private var saidOrb: Bool {
+        if case .said(let v) = choice { return (v.look ?? "orb") == "orb" }
+        return false
     }
 
     /// What the visual draws now: dimmed with a scrim behind words, full strength alone
     /// (the agent working, nothing to read yet), still when the app is not on screen.
+    /// A default stays quiet either way.
     private func visualPlan(_ turn: StageTurn?) -> VisualPlan? {
-        guard let v = visual else { return nil }
+        let v: YLVisual, def: VisualDefault?
+        switch choice {
+        case .none: return nil
+        case .said(let s): v = s; def = nil
+        case .quiet(let d): v = d.line; def = d
+        }
         let p = theme.palette(for: scheme)
         let conditions = VisualConditions.shared
         return VisualPlan(v, accent: p.accent, ground: p.background, ink: p.ink, motion: look,
                           words: !working(turn), zone: wordsZone(turn), lowPower: conditions.lowPower, thermal: conditions.thermal,
-                          hidden: phase != .active)
+                          hidden: phase != .active, quiet: def)
     }
 
     /// Where the scrim lies: under the chunk's words, over the whole stage for the questions
@@ -767,7 +781,7 @@ struct StageFirstView: View {
         return VStack(spacing: theme.spacing.xl) {
             // The orb visual sits where the mark lives: it is the mark then.
             StageMark(color: c.accent, mood: mood, flavor: flavor, look: look, since: moodSince)
-                .opacity(visual != nil && (visual?.look ?? "orb") == "orb" ? 0 : 1)
+                .opacity(saidOrb ? 0 : 1)
                 .frame(width: 170, height: 170)
             workingLine(c, big: true)
         }

@@ -73,6 +73,7 @@ final class ChatStore {
         var talking: Set<Int>
         var restyleNewest: String?
         var visual: YLVisual?
+        var visualSaid: Bool
     }
     @ObservationIgnored private var derived: Derived?
 
@@ -98,12 +99,14 @@ final class ChatStore {
             for c in yl.top where c.page != 1 && !c.onStage(style) { on.insert(c.page) }
             if yl.restyle != nil { restyle = m.id }
         }
+        let visualLines = messages.flatMap { $0.yl?.visualLines ?? [] }
         let d = Derived(shown: messages.filter { $0.yl?.isBlank != true && !$0.home },
                         wearers: Set(lastInRow.values.map { $0.text ?? $0.any }),
                         screens: [1] + on.sorted(),
                         talking: Set(YuiLines.talking((scoped + messages).flatMap { $0.yl?.talkLines ?? [] })),
                         restyleNewest: restyle,
-                        visual: YuiLines.visual(of: messages.flatMap { $0.yl?.visualLines ?? [] }))
+                        visual: YuiLines.visual(of: visualLines),
+                        visualSaid: !visualLines.isEmpty)
         derived = d
         return d
     }
@@ -113,6 +116,8 @@ final class ChatStore {
 
     /// The visual behind the stage (YUI-124): the thread's newest `visual` line, until `visual off`.
     var visual: YLVisual? { derive.visual }
+    /// The agent has sent a `visual` line (or `visual off`): its word beats its default (YUI-180).
+    var visualSaid: Bool { derive.visualSaid }
 
     /// The newest reply offering Yui a new look (RESTYLE.md).
     var restyleNewest: String? { derive.restyleNewest }

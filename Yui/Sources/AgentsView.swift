@@ -827,6 +827,8 @@ struct EditAgentSheet: View {
     @State private var notify = true
     /// Talk or type when the thread opens (YUI-14), kept on this phone.
     @State private var mode = TalkMode.type
+    /// The quiet picture behind its stage (YUI-180), on unless switched off here.
+    @State private var visualizer = true
     @State private var confirmRemove = false
     @State private var code: PairingCode?
 
@@ -868,6 +870,7 @@ struct EditAgentSheet: View {
                             if !agent.isShared, look != agent.theme?.preset { await store.setLook(agent, preset: look) }
                             if notify == agent.muted { await store.update(agent, pushMuted: !notify) }
                             TalkMode.set(mode, for: agent.id)
+                            VisualSwitch.set(on: visualizer, for: agent.id)
                             dismiss()
                         }
                     }
@@ -884,7 +887,7 @@ struct EditAgentSheet: View {
         }
         .environment(\.yuiTheme, theme)
         .animation(theme.spring, value: theme)
-        .onAppear { name = agent.name; look = agent.theme?.preset; notify = !agent.muted; mode = TalkMode.of(agent.id) }
+        .onAppear { name = agent.name; look = agent.theme?.preset; notify = !agent.muted; mode = TalkMode.of(agent.id); visualizer = !VisualSwitch.isOff(agent.id) }
     }
 
     /// "full screen, stacked buttons": the agent's style profile in words.
@@ -915,6 +918,7 @@ struct EditAgentSheet: View {
             if agent.isShared {
                 sharedCard(c)
                 notifications(c)
+                visualizerRow(c)
                 talkOrType(c)
             } else {
                 owned(c)
@@ -978,6 +982,25 @@ struct EditAgentSheet: View {
         .accessibilityIdentifier("agent-talk-mode")
     }
 
+    /// Its own quiet visual, named ("Orb, listening to your voice"), and the switch (YUI-180).
+    private func visualizerRow(_ c: Swatch) -> some View {
+        let d = VisualDefault.of(live)
+        let what = "\(VisualPlan.names[d.look] ?? "Orb"), \(VisualPlan.hears[d.hears] ?? VisualPlan.hears["voice"]!)"
+        return Toggle(isOn: $visualizer) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Visualizer").font(theme.font(theme.type.body, .bold)).foregroundStyle(c.ink)
+                Text(visualizer ? "A quiet picture behind \(agent.name): \(what.lowercased()). \(agent.name) can change it."
+                                : "Nothing moves behind \(agent.name), whatever it sends.")
+                    .font(theme.font(theme.type.caption)).foregroundStyle(c.inkSoft)
+            }
+        }
+        .tint(c.accent)
+        .padding(theme.spacing.l)
+        .background(c.surface, in: .rect(cornerRadius: theme.radius.card))
+        .overlay(RoundedRectangle(cornerRadius: theme.radius.card).stroke(c.outline, lineWidth: 1.5))
+        .accessibilityIdentifier("agent-visualizer")
+    }
+
     private func notifications(_ c: Swatch) -> some View {
         Toggle(isOn: $notify) {
             VStack(alignment: .leading, spacing: 2) {
@@ -1020,6 +1043,7 @@ struct EditAgentSheet: View {
                     .font(theme.font(theme.type.caption)).foregroundStyle(c.inkSoft)
             }
             notifications(c)
+            visualizerRow(c)
             talkOrType(c)
             VStack(spacing: 0) {
                 if !agent.isDefault {
