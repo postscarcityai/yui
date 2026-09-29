@@ -198,10 +198,16 @@ private struct VisualUniforms {
 
 @MainActor
 final class VisualRenderer: NSObject, MTKViewDelegate {
-    let device = MTLCreateSystemDefaultDevice()
-    private lazy var queue = device?.makeCommandQueue()
-    private lazy var library = device?.makeDefaultLibrary()
-    private var pipelines: [String: MTLRenderPipelineState] = [:]
+    /// One device, queue, library and pipeline cache for every renderer: a thread's stage
+    /// makes a new renderer each time it opens, and each one compiling its own is the growth
+    /// the 0.6.0 memory run caught once every agent had a default visual.
+    private static let device = MTLCreateSystemDefaultDevice()
+    private static let queue = device?.makeCommandQueue()
+    private static let library = device?.makeDefaultLibrary()
+    private static var pipelines: [String: MTLRenderPipelineState] = [:]
+    var device: MTLDevice? { Self.device }
+    private var queue: MTLCommandQueue? { Self.queue }
+    private var library: MTLLibrary? { Self.library }
     private var plan: VisualPlan?
     var meter: (() -> LevelMeter.Reading)?
 
@@ -292,7 +298,7 @@ final class VisualRenderer: NSObject, MTKViewDelegate {
     }
 
     private func pipeline(_ look: String, format: MTLPixelFormat) -> MTLRenderPipelineState? {
-        if let p = pipelines[look] { return p }
+        if let p = Self.pipelines[look] { return p }
         guard let device, let library,
               let frag = library.makeFunction(name: "visual" + look.prefix(1).uppercased() + look.dropFirst()) else { return nil }
         let d = MTLRenderPipelineDescriptor()
@@ -300,7 +306,7 @@ final class VisualRenderer: NSObject, MTKViewDelegate {
         d.fragmentFunction = frag
         d.colorAttachments[0].pixelFormat = format
         let p = try? device.makeRenderPipelineState(descriptor: d)
-        pipelines[look] = p
+        Self.pipelines[look] = p
         return p
     }
 
