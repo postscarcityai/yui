@@ -611,7 +611,16 @@ private struct PairingStep: View {
     @Environment(AgentStore.self) private var store
     @Environment(\.yuiTheme) private var theme
     @Environment(\.colorScheme) private var scheme
+    @Environment(\.scenePhase) private var scenePhase
     @State private var since = Date.now
+    /// When the computer paired: the one-minute wait for its gateway counts from here (YUI-192).
+    @State private var pairedAt: Date?
+    @State private var attempt = 0
+    private var wait: GatewayWait.Phase {
+        guard let pairedAt else { return .waiting }
+        return GatewayWait.phase(agent?.liveness ?? .pending, waited: Date.now.timeIntervalSince(pairedAt))
+    }
+    @State private var gaveUp = false
 
     private var agent: YuiAgent? { store.agents.first { $0.id == agentID } }
     /// The host claimed the code.
@@ -655,11 +664,28 @@ private struct PairingStep: View {
             } else if paired, let agent {
                 VStack(alignment: .leading, spacing: theme.spacing.l) {
                     RestartStep(agent: agent)
-                    HStack(spacing: theme.spacing.s) {
-                        ProgressView()
-                        Text("Waiting for its gateway…").font(theme.font(theme.type.caption, .semibold)).foregroundStyle(c.inkSoft)
+                    if gaveUp {
+                        VStack(alignment: .leading, spacing: theme.spacing.s) {
+                            Text("Still nothing from its gateway.")
+                                .font(theme.font(theme.type.body, .bold)).foregroundStyle(c.ink)
+                            Text("Run the command above on that computer, then tap Try again.")
+                                .font(theme.font(theme.type.caption)).foregroundStyle(c.inkSoft)
+                                .fixedSize(horizontal: false, vertical: true)
+                            PillButton(title: "Try again", systemImage: "arrow.clockwise") {
+                                gaveUp = false
+                                pairedAt = .now
+                                attempt += 1
+                                Task { await store.refresh() }
+                            }
+                        }
+                        .accessibilityIdentifier("gateway-gave-up")
+                    } else {
+                        HStack(spacing: theme.spacing.s) {
+                            ProgressView()
+                            Text("Waiting for its gateway…").font(theme.font(theme.type.caption, .semibold)).foregroundStyle(c.inkSoft)
+                        }
+                        .accessibilityElement(children: .combine)
                     }
-                    .accessibilityElement(children: .combine)
                     GuideLink()
                 }
                 .transition(.opacity)
@@ -696,10 +722,14 @@ private struct PairingStep: View {
         .animation(theme.spring, value: connected)
         .animation(theme.spring, value: paired)
         .onChange(of: code) { since = .now }
-        .task {
+        .onChange(of: paired, initial: true) { if paired && pairedAt == nil { pairedAt = .now } }
+        // Back from the terminal: ask at once, the request that was in flight may have died in the background.
+        .onChange(of: scenePhase) { if scenePhase == .active { Task { await store.refresh() } } }
+        .task(id: attempt) {
             while !Task.isCancelled && !connected {
-                try? await Task.sleep(for: .seconds(2))
+                try? await Task.sleep(for: GatewayWait.pollEvery)
                 await store.refresh()
+                gaveUp = paired && wait == .gaveUp && !connected
             }
         }
     }

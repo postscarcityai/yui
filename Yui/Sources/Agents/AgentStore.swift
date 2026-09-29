@@ -557,6 +557,7 @@ final class AgentStore {
         req.setValue(YuiBackend.publishableKey, forHTTPHeaderField: "apikey")
         req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         req.httpBody = payload
+        req.timeoutInterval = 15
         let (data, response) = try await URLSession.shared.data(for: req)
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
             let code = (try? JSONDecoder().decode(ErrorReply.self, from: data))?.error ?? "error"
