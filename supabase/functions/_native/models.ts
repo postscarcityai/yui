@@ -18,6 +18,8 @@ export interface ProviderChoice {
   id: ProviderId; label: string; url: string; needsModel: boolean; web: boolean;
   model?: string; vision?: string | null; scored: boolean;
   keyUrl?: string; // where to make a key, shown as a link in the key sheet
+  signIn?: boolean; // one tap sign-in (OAuth PKCE) instead of a pasted key
+  keyless?: boolean; // a server on their own computer may need no key (Ollama, LM Studio)
   plan?: string; // one line when a chat plan can't pay for it
 }
 export type ProviderId = "openrouter" | "trustedrouter" | "groq" | "custom" | "anthropic" | "openai" | "gemini" | "xai";
@@ -25,11 +27,12 @@ export type ProviderId = "openrouter" | "trustedrouter" | "groq" | "custom" | "a
 const PLAN = "A Claude Pro or Max plan can't pay for another app. Only an API key can.";
 
 export const PROVIDERS: ProviderChoice[] = [
-  { id: "openrouter", label: "OpenRouter", url: "https://openrouter.ai/api/v1", needsModel: false, web: true, scored: true },
+  { id: "openrouter", label: "OpenRouter", url: "https://openrouter.ai/api/v1", needsModel: false, web: true, scored: true, signIn: true,
+    keyUrl: "https://openrouter.ai/keys" },
   // TrustedRouter takes OpenRouter's model ids, so Yui's picks work there unless you name another.
   { id: "trustedrouter", label: "TrustedRouter", url: "https://api.trustedrouter.com/v1", needsModel: false, web: false, scored: true },
   { id: "groq", label: "Groq", url: "https://api.groq.com/openai/v1", needsModel: true, web: false, scored: true },
-  { id: "custom", label: "Another server", url: "", needsModel: true, web: false, scored: true },
+  { id: "custom", label: "My computer", url: "", needsModel: true, web: false, scored: true, keyless: true },
   { id: "anthropic", label: "Claude", url: "https://api.anthropic.com/v1", needsModel: false, web: false, scored: false,
     model: "claude-sonnet-5-5", vision: "claude-sonnet-5-5", keyUrl: "https://console.anthropic.com/settings/keys", plan: PLAN },
   { id: "openai", label: "ChatGPT", url: "https://api.openai.com/v1", needsModel: false, web: false, scored: false,
@@ -42,7 +45,7 @@ export const PROVIDERS: ProviderChoice[] = [
 
 /** The words for "your own ___ key" (controls, errors). */
 export function providerLabel(id: string): string {
-  return id === "custom" ? "model server" : PROVIDERS.find((p) => p.id === id)?.label ?? id;
+  return id === "custom" ? "computer" : PROVIDERS.find((p) => p.id === id)?.label ?? id;
 }
 
 /** The model a key runs a turn on: the one they named, else the provider's default (the seeing one for a photo). Null: the caller's own routing. */

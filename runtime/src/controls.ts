@@ -118,7 +118,7 @@ export async function answerControl(store: Store, rowId: string): Promise<boolea
     return true;
   }
   const own = await store.ownKey(agent.userId);
-  const provider = own ? `your own ${providerLabel(own.provider)} key`
+  const provider = own ? (own.provider === "custom" ? "your own computer" : `your own ${providerLabel(own.provider)} key`)
     : "OpenRouter, on Yui";
   const req = row.meta ?? {};
   const searchKey = !!(await store.searchKey(agent.userId));

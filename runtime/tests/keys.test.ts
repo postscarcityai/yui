@@ -36,7 +36,7 @@ test("a model they named wins, else the provider's default (the seeing one for a
   assert.equal(keyModel("xai", null, false), PROVIDERS.find((p) => p.id === "xai")!.model);
   assert.equal(keyModel("groq", null, true), null); // no default: the caller's route
   assert.equal(providerLabel("anthropic"), "Claude");
-  assert.equal(providerLabel("custom"), "model server");
+  assert.equal(providerLabel("custom"), "computer");
 });
 
 for (const p of PROVIDERS.filter((x) => ["anthropic", "openai", "gemini", "xai"].includes(x.id))) {
@@ -61,3 +61,13 @@ for (const p of PROVIDERS.filter((x) => ["anthropic", "openai", "gemini", "xai"]
     assert.ok(!JSON.stringify(store.data.rows).includes(KEY), "the key is in no row");
   });
 }
+
+test("OpenRouter signs in with a tap, and My computer may need no key", () => {
+  const or = PROVIDERS.find((p) => p.id === "openrouter")!;
+  assert.equal(or.signIn, true);
+  const mine = PROVIDERS.find((p) => p.id === "custom")!;
+  assert.equal(mine.label, "My computer");
+  assert.equal(mine.keyless, true);
+  assert.equal(mine.needsModel, true);
+  assert.ok(!PROVIDERS.some((p) => p.id !== "openrouter" && p.signIn), "paste stays for the rest");
+});

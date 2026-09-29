@@ -15,6 +15,11 @@
 //   {action: "status"}                         their key (provider, last four), models, time zone
 //   {action: "key_set", provider, key, model?, base_url?}
 //                                              checks the key with the provider, then keeps it in Vault
+//   {action: "openrouter_signin", code, code_verifier}
+//                                              one tap sign-in (OAuth PKCE): the app sends the person to
+//                                              openrouter.ai/auth with its own challenge, gets ?code= back on
+//                                              its callback, and hands the code and verifier here. Yui trades
+//                                              them for a key, checks it and keeps it in Vault like a pasted one.
 //   {action: "key_remove"}
 //   {action: "search_key_set", key}            their own Firecrawl key: checked with Firecrawl, kept in Vault,
 //                                              lifts the free monthly web search cap
@@ -111,6 +116,46 @@ async function checkKey(baseUrl: string, key: string, model?: string, provider?:
   }
 }
 
+/** OpenRouter's PKCE trade: the code from its redirect plus the verifier the app made for its challenge, for a key. */
+async function exchangeOpenRouterCode(code: string, verifier: string): Promise<string | null> {
+  try {
+    const r = await fetch("https://openrouter.ai/api/v1/auth/keys", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ code, code_verifier: verifier, code_challenge_method: "S256" }),
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!r.ok) return null;
+    // deno-lint-ignore no-explicit-any
+    const d: any = await r.json().catch(() => null);
+    return typeof d?.key === "string" && d.key.length >= 8 && d.key.length <= 400 && !/\s/.test(d.key) ? d.key : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Checks a person's own key with its provider, then keeps it in Vault (a pasted key and a signed-in one take this same road). */
+// deno-lint-ignore no-explicit-any
+async function keepKey(db: any, userId: string, b: Body): Promise<Response> {
+  const p = PROVIDERS.find((x) => x.id === b.provider && x.scored);
+  if (!p) return json({ error: "unknown_provider" }, 400);
+  let key = typeof b.key === "string" ? b.key.trim() : "";
+  // A server on their own computer may need no key (Ollama, LM Studio): Vault still keeps a stand-in.
+  if (!key && p.keyless) key = "no-key-needed";
+  if (key.length < 8 || key.length > 400 || /\s/.test(key)) return json({ error: "invalid_key" }, 400);
+  const baseUrl = p.id === "custom" ? String(b.base_url ?? "").trim().replace(/\/+$/, "").replace(/\/chat\/completions$/, "") : p.url;
+  if (!/^https:\/\/[A-Za-z0-9.-]+(:\d+)?(\/[A-Za-z0-9._\/-]*)?$/.test(baseUrl) || /^https:\/\/(localhost|[\d.]+|\[)/i.test(baseUrl)) {
+    return json({ error: "invalid_base_url" }, 400);
+  }
+  const model = typeof b.model === "string" && b.model.trim() ? b.model.trim().slice(0, 120) : null;
+  if (p.needsModel && !model) return json({ error: "model_required" }, 400);
+  const problem = await checkKey(baseUrl, key, model ?? p.model, p.id);
+  if (problem) return json({ error: "key_check_failed", message: p.id === "custom" ? `couldn't reach your computer: ${problem}` : problem }, 400);
+  const { error } = await db.rpc("yui_native_key_set", { uid: userId, prov: p.id, url: baseUrl, mdl: model, secret: key });
+  if (error) throw error;
+  return json({ ok: true, key: { provider: p.id, model, hint: p.keyless && key === "no-key-needed" ? "" : key.slice(-4), base_url: baseUrl } });
+}
+
 async function fromApp(req: Request, b: Body): Promise<Response> {
   let userId: string;
   try {
@@ -149,23 +194,16 @@ async function fromApp(req: Request, b: Body): Promise<Response> {
       if (error) throw error;
       return json({ ok: true });
     }
-    case "key_set": {
-      const p = PROVIDERS.find((x) => x.id === b.provider && x.scored);
-      if (!p) return json({ error: "unknown_provider" }, 400);
-      const key = typeof b.key === "string" ? b.key.trim() : "";
-      if (key.length < 8 || key.length > 400 || /\s/.test(key)) return json({ error: "invalid_key" }, 400);
-      const baseUrl = p.id === "custom" ? String(b.base_url ?? "").trim().replace(/\/+$/, "").replace(/\/chat\/completions$/, "") : p.url;
-      if (!/^https:\/\/[A-Za-z0-9.-]+(:\d+)?(\/[A-Za-z0-9._\/-]*)?$/.test(baseUrl) || /^https:\/\/(localhost|[\d.]+|\[)/i.test(baseUrl)) {
-        return json({ error: "invalid_base_url" }, 400);
-      }
-      const model = typeof b.model === "string" && b.model.trim() ? b.model.trim().slice(0, 120) : null;
-      if (p.needsModel && !model) return json({ error: "model_required" }, 400);
-      const problem = await checkKey(baseUrl, key, model ?? p.model, p.id);
-      if (problem) return json({ error: "key_check_failed", message: problem }, 400);
-      const { error } = await db.rpc("yui_native_key_set", { uid: userId, prov: p.id, url: baseUrl, mdl: model, secret: key });
-      if (error) throw error;
-      return json({ ok: true, key: { provider: p.id, model, hint: key.slice(-4), base_url: baseUrl } });
+    case "openrouter_signin": {
+      const code = typeof b.code === "string" ? b.code.trim() : "";
+      const verifier = typeof b.code_verifier === "string" ? b.code_verifier.trim() : "";
+      if (!/^[A-Za-z0-9._~-]{8,512}$/.test(code) || !/^[A-Za-z0-9._~-]{43,128}$/.test(verifier)) return json({ error: "invalid_request" }, 400);
+      const key = await exchangeOpenRouterCode(code, verifier);
+      if (!key) return json({ error: "signin_failed", message: "OpenRouter didn't accept that sign-in. Try again." }, 400);
+      return await keepKey(db, userId, { provider: "openrouter", key });
     }
+    case "key_set":
+      return await keepKey(db, userId, b);
     case "key_remove": {
       const { error } = await db.rpc("yui_native_key_remove", { uid: userId });
       if (error) throw error;
