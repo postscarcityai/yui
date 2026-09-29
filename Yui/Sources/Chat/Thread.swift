@@ -191,6 +191,22 @@ struct ThreadClient {
         return try JSONDecoder().decode([Row].self, from: data).first?.meta
     }
 
+    /// The host's `key_ask` rows from the last two days (YUI-34). The caller drops the ones already answered.
+    func keyAsks() async throws -> [ThreadRow] {
+        var c = URLComponents(url: YuiBackend.url.appending(path: "rest/v1/yui_messages"), resolvingAgainstBaseURL: false)!
+        let since = ISO8601DateFormatter().string(from: .now.addingTimeInterval(-2 * 86_400))
+        c.queryItems = [URLQueryItem(name: "select", value: Self.columns),
+                        URLQueryItem(name: "agent_id", value: "eq.\(agentID)"),
+                        URLQueryItem(name: "kind", value: "eq.control"),
+                        URLQueryItem(name: "sender", value: "eq.agent"),
+                        URLQueryItem(name: "meta->>op", value: "eq.key_ask"),
+                        URLQueryItem(name: "created_at", value: "gt.\(since)"),
+                        URLQueryItem(name: "order", value: "created_at.asc"),
+                        URLQueryItem(name: "limit", value: "20")]
+        c.percentEncodedQuery = c.percentEncodedQuery?.replacingOccurrences(of: "+", with: "%2B")
+        return try JSONDecoder().decode([ThreadRow].self, from: try await request(URLRequest(url: c.url!)))
+    }
+
     func post(id: String, body: String, kind: String = "text", meta: YLValue? = nil) async throws {
         guard let user = account.session?.userID else { throw AccountError.signedOut }
         var row: [String: YLValue] = ["id": .string(id), "user_id": .string(user), "agent_id": .string(agentID),

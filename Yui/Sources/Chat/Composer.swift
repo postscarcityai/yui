@@ -67,7 +67,8 @@ enum Drafts {
 
     static func save(_ words: String, for agent: String?) {
         guard let agent else { return }
-        if words.isEmpty {
+        // A key pasted into the composer is never kept on disk (YUI-34).
+        if words.isEmpty || KeyShape.find(in: words) != nil {
             UserDefaults.standard.removeObject(forKey: prefix + agent)
         } else {
             UserDefaults.standard.set(words, forKey: prefix + agent)

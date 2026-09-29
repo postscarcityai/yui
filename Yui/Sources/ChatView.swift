@@ -79,6 +79,10 @@ struct ChatView: View {
     private var cancelArmed: Bool { talk.listening && micDragX <= -Self.cancelDistance }
     private var lockArmed: Bool { talk.listening && !handsFree.on && !cancelArmed && micLift >= Self.lockDistance }
     @State private var composerNote: String?
+    /// Key-shaped words in the composer, held (YUI-34): Move it to Keys, or Send anyway for a mere lookalike.
+    @State private var keyHeld: KeyShape?
+    @State private var keySendAnyway = false
+    @State private var keyMove: KeyShape?
     /// A word in plain language over the top of the screen (a chat Yui refused), for a few seconds.
     @State private var chatNotice: String?
     /// Stage first (YUI-119): Yui lives on the full screen and the chat is the record.
@@ -279,6 +283,19 @@ struct ChatView: View {
             .sheet(isPresented: $showSettings) {
                 SettingsView(focus: settingsFocus)
                     .presentationDetents([.medium, .large], selection: $settingsDetent)
+                    .presentationCornerRadius(appTheme.radius.card)
+                    .environment(\.yuiTheme, appTheme)
+            }
+            .sheet(item: $keyMove) { shape in
+                KeyMoveSheet(text: shape.key) {
+                    composer.draft = composer.draft.replacingOccurrences(of: shape.key, with: "")
+                    keyHeld = nil
+                }
+                .environment(\.yuiTheme, appTheme)
+            }
+            .sheet(item: Binding(get: { store.keyAsk }, set: { store.keyAsk = $0 })) { ask in
+                KeyAskSheet(ask: ask, agent: store.agent) { answer in await store.answerKeyAsk(answer, purpose: ask.purpose) }
+                    .presentationDetents([.medium, .large])
                     .presentationCornerRadius(appTheme.radius.card)
                     .environment(\.yuiTheme, appTheme)
             }
@@ -894,6 +911,11 @@ struct ChatView: View {
                     .transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
             }
             if !photos.isEmpty { attachmentStrip(c) }
+            if let held = keyHeld {
+                KeyHoldBanner(shape: held, move: { keyMove = held }, sendAnyway: { keySendAnyway = true; send() })
+                    .transition(.opacity)
+            }
+            KeyHoldWatch(composer: composer, held: $keyHeld)
             if let note = composerNote {
                 Label(note, systemImage: "info.circle")
                     .font(theme.font(theme.type.caption, .semibold))
@@ -1352,6 +1374,14 @@ struct ChatView: View {
         let tapped = CACurrentMediaTime()
         let text = composer.draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty || !photos.isEmpty, !sending else { return }
+        // Key-shaped words never leave the phone in the composer (YUI-34): held, and a known provider's shape can't be sent at all.
+        if let shape = KeyShape.find(in: text), shape.isKnown || !keySendAnyway {
+            keySendAnyway = false
+            withAnimation { keyHeld = shape }
+            return
+        }
+        keySendAnyway = false
+        keyHeld = nil
         if account.session?.userID != "demo" {
             guard store.agent != nil else { return }
             let to = mentioning

@@ -4,7 +4,7 @@ struct SettingsView: View {
     /// A section to open at (`yui://settings/search`).
     var focus: String? = nil
     /// The sections a `yui://settings/<section>` link can open at.
-    static let sections: Set<String> = ["search", "key"]
+    static let sections: Set<String> = ["search", "key", "keys"]
 
     @AppStorage("appearance") private var appearance: Appearance = .system
     @Environment(\.yuiTheme) private var theme
@@ -38,6 +38,7 @@ struct SettingsView: View {
                     HomeActionsSection()
                     LookSection()
                     AgentAccessSection()
+                    KeysSection().id("keys")
                     ModelKeySection().id("key")
                     SearchKeySection().id("search")
                     HelpSection()

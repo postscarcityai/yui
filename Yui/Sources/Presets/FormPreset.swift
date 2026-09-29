@@ -18,6 +18,9 @@ struct FormPreset: View {
     let c: YLComponent
     @State private var values: [String: YLValue] = [:]
     @State private var sent = false
+    /// A key-shaped word typed into a field is held (YUI-34): Move it to Keys, or Send anyway for a mere lookalike.
+    @State private var anyway = false
+    @State private var moving: KeyShape?
     @Environment(\.ylScope) private var scope
     @Environment(\.ylAnswers) private var answers
     @Environment(\.yuiTheme) private var theme
@@ -30,11 +33,16 @@ struct FormPreset: View {
     var body: some View {
         let s = theme.swatch(scheme)
         let fields = fields
-        let ready = fields.allSatisfy { !$0.required || filled($0) }
+        let shape = keyShape(fields)
+        let blocked = shape.map { $0.isKnown || !anyway } ?? false
+        let ready = fields.allSatisfy { !$0.required || filled($0) } && !blocked
         PresetCard {
             if let t = c.string("title") { PresetTitle(text: t) }
             ForEach(fields) { f in
                 FieldRow(field: f, value: Binding(get: { values[f.key] ?? f.initial }, set: { values[f.key] = $0 }))
+            }
+            if let shape, blocked {
+                KeyHoldBanner(shape: shape, move: { moving = shape }, sendAnyway: { anyway = true })
             }
             if !hosted {
                 OptionPill(text: sent ? "Sent" : c.string("submit") ?? "Submit", fill: s.accent, ink: s.onAccent, on: ready && !sent,
@@ -46,6 +54,11 @@ struct FormPreset: View {
             }
         }
         .disabled(sent)
+        .sheet(item: $moving) { shape in
+            KeyMoveSheet(text: shape.key) {
+                for (k, v) in values { if let t = v.string, t.contains(shape.key) { values[k] = .string(t.replacingOccurrences(of: shape.key, with: "")) } }
+            }
+        }
         // Reopened thread: a sent form comes back filled in and sent. Hosted,
         // its answer is inside the plan's.
         .onChange(of: answers(scope, c.ylID), initial: true) { _, v in
@@ -60,7 +73,27 @@ struct FormPreset: View {
         }
         // No debounce: a Send right after the last key must carry it.
         .onChange(of: values, initial: true) {
+            emitHosted(fields, ready: ready)
+        }
+        .onChange(of: anyway) { emitHosted(fields, ready: ready) }
+    }
+
+    /// The first key-shaped word in what was typed.
+    private func keyShape(_ fields: [FormField]) -> KeyShape? {
+        for f in fields { if let t = (values[f.key] ?? f.initial).string, let k = KeyShape.find(in: t) { return k } }
+        return nil
+    }
+
+    private func emitHosted(_ fields: [FormField], ready: Bool) {
+        do {
             guard hosted else { return }
+            // Held: the key-shaped words go nowhere, not even into the plan's answer.
+            if let k = keyShape(fields), k.isKnown || !anyway {
+                var e = c.event([:])
+                e.value["missing"] = .bool(true)
+                emit(e)
+                return
+            }
             // A date or a slider starts with a value; only what the person set counts.
             let any = fields.contains { values[$0.key] != nil && filled($0) }
             var e = any ? event(fields) : c.event([:])

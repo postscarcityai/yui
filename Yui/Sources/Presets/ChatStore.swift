@@ -304,6 +304,9 @@ final class ChatStore {
     private var demoThreads: [String: [ChatMessage]] = [:]
     private var scopeCursor: String?
     private var scopePass = 0
+    /// A host's key ask waiting for an answer (YUI-34): the app draws the sheet, one at a time.
+    var keyAsk: KeyAsk?
+    private var keyPass = 0
     /// Chats saved from this phone that a list fetched before them may not hold yet.
     private var justSaved: [String: ChatInfo] = [:]
     /// When the newest agent row in this chat landed, and how far seen_at was reported.
@@ -657,6 +660,57 @@ final class ChatStore {
     static let demoControls = DemoControls()
     #endif
 
+    // MARK: Key asks (YUI-34, spec/VAULT.md section 3)
+
+    /// The host's `key_ask` control rows not yet answered on this phone. One shows at a time.
+    private func checkKeyAsks(_ client: ThreadClient) async {
+        guard keyAsk == nil, let agent, let rows = try? await client.keyAsks() else { return }
+        for row in rows.sorted(by: { $0.createdAt < $1.createdAt }) {
+            guard case .object(let o)? = row.meta, let req = o["req"]?.string, !KeyAsks.answered(req) else { continue }
+            switch KeyAsk.parse(row.meta) {
+            case .ask(let ask):
+                // A shared agent never spends its client's keys (contract decision 4): a no, nothing shown.
+                if agent.isShared { await answerKeyAsk(KeyAnswer(req: ask.req, decision: .deny, provider: ask.provider.rawValue), purpose: ask.purpose); continue }
+                keyAsk = ask
+                return
+            case .refuse(let req, let provider):
+                await answerKeyAsk(KeyAnswer(req: req, decision: .deny, provider: provider), purpose: "")
+            case .ignore:
+                KeyAsks.markAnswered(req)
+            }
+        }
+    }
+
+    /// Sends the `key_answer` control row; the relay writes the one `[yui]` line into the agent's next turn.
+    func answerKeyAsk(_ answer: KeyAnswer, purpose: String) async {
+        if let client {
+            do { try await client.post(id: UUID().uuidString.lowercased(), body: "controls: key_answer", kind: "control", meta: answer.meta) }
+            catch { return }  // not sent: the ask stays up, and comes back on the next look
+        } else {
+            #if DEBUG
+            // The demo account has no relay: show the line the relay would hand the agent.
+            messages.append(ChatMessage(text: answer.line(purpose: purpose), fromUser: false))
+            #endif
+        }
+        if client != nil { KeyAsks.markAnswered(answer.req) }  // the demo account asks again next launch
+        if keyAsk?.req == answer.req { keyAsk = nil }
+    }
+
+    #if DEBUG
+    /// `-yuiDemoKeyAsk "fal|Draw your agent avatars|5|about 4 images a week"`: a host's ask on the demo account
+    /// (provider, the for line, suggested cap, estimate).
+    func demoKeyAsk() {
+        guard let spec = UserDefaults.standard.string(forKey: "yuiDemoKeyAsk") else { return }
+        let p = spec.split(separator: "|", omittingEmptySubsequences: false).map(String.init)
+        guard p.count >= 2 else { return }
+        var meta: [String: YLValue] = ["v": .number(1), "req": .string("k-demo-" + p[0]), "op": .string("key_ask"),
+                                       "provider": .string(p[0]), "for": .string(p[1])]
+        if p.count > 2, let cap = Double(p[2]) { meta["cap"] = .number(cap) }
+        if p.count > 3 { meta["est"] = .string(p[3]) }
+        if case .ask(let ask) = KeyAsk.parse(.object(meta)) { keyAsk = ask }
+    }
+    #endif
+
     /// The demo account: show `agent`'s face on the local demo chat, no thread.
     /// It has one local chat; New chat starts a local empty one (YUI-169).
     func demo(_ agent: YuiAgent?) {
@@ -672,6 +726,10 @@ final class ChatStore {
         chats.reset()
         chatID = nil
         guard let agent else { return }
+        keyAsk = nil
+        #if DEBUG
+        Task { try? await Task.sleep(for: .seconds(1)); demoKeyAsk() }
+        #endif
         var items = [ChatInfo(id: "demo-\(agent.id)", isFirst: true, lastAt: ISO8601DateFormatter().string(from: .now))]
         #if DEBUG
         if let fixture = ChatList.debugChats() { items = fixture }
@@ -701,6 +759,7 @@ final class ChatStore {
     /// The parts of a thread that are one chat's: its rows, its answers, the working row.
     /// The agent's shelf, drawer rows and the page it was on stay.
     private func resetThread() {
+        keyAsk = nil
         messages = []
         scoped = []
         answers = [:]
@@ -1038,6 +1097,8 @@ final class ChatStore {
             // arrive_drawn (YUI-102) starts when the rows are here and ends on the frame that shows them.
             let arrived = CACurrentMediaTime()
             guard agent?.id == agentID, chatID == chat else { return }
+            keyPass += 1
+            if first || keyPass % 3 == 0 { await checkKeyAsks(client) }
             for row in scopedRows { addScoped(row) }
             if let last = scopedRows.last?.createdAt, last > (scopeCursor ?? "") { scopeCursor = last }
             var landed = false

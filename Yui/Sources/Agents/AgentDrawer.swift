@@ -733,6 +733,8 @@ private struct DrawerControls: View {
     let edit: (YuiAgent) -> Void
     /// The area on show, with its model: one value, so the sheet never opens without it.
     @State private var open: Opened?
+    /// Controls > Keys (YUI-34): the keys this agent may use, an app screen, not the host's.
+    @State private var keysFor: YuiAgent?
 
     struct Opened: Identifiable {
         let section: ControlSection
@@ -771,13 +773,19 @@ private struct DrawerControls: View {
                     .opacity(live ? 1 : 0.45)
                     .accessibilityIdentifier("controls-\(s.rawValue)")
                 }
+                keysRow(agent, c)
             } else {
                 ControlsAboutCard(agent: store.agent) { if let a = store.agent { edit(a) } }
                 Text("This agent's host doesn't share its settings yet.")
                     .font(theme.font(15)).foregroundStyle(c.inkSoft)
                     .padding(.top, theme.spacing.s)
                     .accessibilityIdentifier("controls-not-shared")
+                if let agent = store.agent { keysRow(agent, c) }
             }
+        }
+        .sheet(item: $keysFor) { a in
+            AgentKeysSheet(agent: a)
+                .environment(\.yuiTheme, theme)
         }
         .sheet(item: $open) { o in
             ControlsSheet(model: o.model, section: o.section, agentID: store.agent?.id ?? "")
@@ -787,6 +795,17 @@ private struct DrawerControls: View {
                     store.talkAbout(item)
                     close()
                 }
+        }
+    }
+
+    /// A person's own agent only: a shared agent never uses its client's keys (YUI-34).
+    @ViewBuilder private func keysRow(_ agent: YuiAgent, _ c: Swatch) -> some View {
+        if !agent.isShared {
+            DrawerHeading(text: "Keys")
+            DrawerRow(icon: "key.horizontal.fill", title: "Keys", sub: "What \(agent.name) may spend, and Revoke", tint: c.butter) {
+                keysFor = agent
+            }
+            .accessibilityIdentifier("controls-keys")
         }
     }
 
