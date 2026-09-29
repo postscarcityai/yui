@@ -32,6 +32,8 @@ struct ChatMessage: Identifiable, Equatable {
     var home = false
     /// The person stopped the agent here (YUI-190): a quiet "Stopped" in the record, nothing on the stage.
     var stopped = false
+    /// When it was sent (YUI-202): the row's time, or now for what this phone made.
+    var sentAt = Date.now
 }
 
 /// The chat's messages and the events going back to the agent.
@@ -136,7 +138,7 @@ final class ChatStore {
     /// "Read as pages" on a folded bubble: its words as a deck, full screen.
     func readAsPages(_ m: ChatMessage) {
         let id = m.id + "#pages"
-        if reading?.id != id { reading = ChatMessage(id: id, text: "", fromUser: false, yl: LongText.deck(m.plain)) }
+        if reading?.id != id { reading = ChatMessage(id: id, text: "", fromUser: false, yl: LongText.deck(m.plain), sentAt: m.sentAt) }
         openStage(id)
     }
 
@@ -838,7 +840,7 @@ final class ChatStore {
     }
 
     /// A person's text row (or outbox item) as a bubble, photos and reply quote included.
-    static func userMessage(id: String, body: String, meta: YLValue?) -> ChatMessage {
+    static func userMessage(id: String, body: String, meta: YLValue?, sentAt: Date = .now) -> ChatMessage {
         let paths = Attachments.paths(meta)
         let arrived = Mentions.arrived(meta: meta)
         let words = arrived != nil ? Mentions.arrivedWords(body: body)
@@ -847,7 +849,7 @@ final class ChatStore {
         return ChatMessage(id: id, text: Attachments.caption(body: words, photos: paths.count), fromUser: true,
                            photos: paths.map { .stored($0) }, replyTo: ReplyQuote.from(meta: meta),
                            mentionTo: Mentions.to(meta: meta).map { "To \($0)" } ?? arrived,
-                           fromScreen: ScreenTalk.screen(meta: meta), about: TalkAbout.title(meta: meta))
+                           fromScreen: ScreenTalk.screen(meta: meta), about: TalkAbout.title(meta: meta), sentAt: sentAt)
     }
 
     /// Into the outbox first (on disk), then out: a dropped network or a killed
@@ -997,9 +999,9 @@ final class ChatStore {
             if item.kind == "event" {
                 record(meta: item.meta)
                 applyReaction(meta: item.meta)
-                if let echo = item.meta?.object?["echo"]?.string { new.append(ChatMessage(id: item.id, text: echo, fromUser: true)) }
+                if let echo = item.meta?.object?["echo"]?.string { new.append(ChatMessage(id: item.id, text: echo, fromUser: true, sentAt: item.queuedAt)) }
             } else {
-                new.append(Self.userMessage(id: item.id, body: item.body, meta: item.meta))
+                new.append(Self.userMessage(id: item.id, body: item.body, meta: item.meta, sentAt: item.queuedAt))
             }
         }
         guard !new.isEmpty else { return }
@@ -1164,15 +1166,16 @@ final class ChatStore {
             withAnimation(spring) { about = nil }  // its proposal was applied (YUI-69)
         }
         var new: [ChatMessage] = []
+        let sent = YuiTime.date(row.createdAt) ?? .now
         /// A live reply's lines: they can bring a page forward.
         var live: [YLNode] = []
         if row.sender == "user" {
             if row.kind == "event" {
                 record(meta: row.meta)
                 applyReaction(meta: row.meta)
-                if let echo = row.meta?.object?["echo"]?.string { new.append(ChatMessage(id: id, text: echo, fromUser: true)) }
+                if let echo = row.meta?.object?["echo"]?.string { new.append(ChatMessage(id: id, text: echo, fromUser: true, sentAt: sent)) }
             } else {
-                new.append(Self.userMessage(id: id, body: row.body, meta: row.meta))
+                new.append(Self.userMessage(id: id, body: row.body, meta: row.meta, sentAt: sent))
             }
         } else if let from = Mentions.from(meta: row.meta) {
             // Another agent's answer to a mention (YUI-44): its words here, in its look.
@@ -1180,9 +1183,9 @@ final class ChatStore {
             if let r = row.reaction { reactions[id] = r }
             for (i, seg) in YuiFence.split(row.body).enumerated() {
                 switch seg {
-                case .text(let t): new.append(ChatMessage(id: "\(id)#\(i)", text: t, fromUser: false, from: from))
+                case .text(let t): new.append(ChatMessage(id: "\(id)#\(i)", text: t, fromUser: false, from: from, sentAt: sent))
                 case .yl: new.append(ChatMessage(id: "\(id)#\(i)", text: "Sent a screen. It's in \(from.name)'s thread.",
-                                                 fromUser: false, from: from))
+                                                 fromUser: false, from: from, sentAt: sent))
                 }
             }
         } else {
@@ -1193,7 +1196,7 @@ final class ChatStore {
             let home = row.meta?.object?["native"]?.string == "home"
             for (i, seg) in YuiFence.split(row.body).enumerated() {
                 switch seg {
-                case .text(let t): new.append(ChatMessage(id: "\(id)#\(i)", text: t, fromUser: false, hello: hello))
+                case .text(let t): new.append(ChatMessage(id: "\(id)#\(i)", text: t, fromUser: false, hello: hello, sentAt: sent))
                 case .yl(let y):
                     var screen = YLScreen()
                     let known = lastingIds
@@ -1219,7 +1222,7 @@ final class ChatStore {
                     file(screen.shelfOps, at: at)
                     fileMenu(screen.menuLines, at: at)
                     if let agentID = agent?.id { for look in screen.looks { onLook?(agentID, look, row.createdAt) } }
-                    new.append(ChatMessage(id: "\(id)#\(i)", text: "", fromUser: false, yl: screen, hello: hello, home: home))
+                    new.append(ChatMessage(id: "\(id)#\(i)", text: "", fromUser: false, yl: screen, hello: hello, home: home, sentAt: sent))
                     // The home fills its pages quietly: it never brings one forward (YUI-168).
                     if loaded, !home { live += nodes }
                 }
@@ -1617,7 +1620,7 @@ extension ChatStore {
             }
             file(screen.shelfOps, at: at)
             fileMenu(screen.menuLines, at: at)
-            new.append(ChatMessage(id: "\(id)#\(i)", text: "", fromUser: false, yl: screen))
+            new.append(ChatMessage(id: "\(id)#\(i)", text: "", fromUser: false, yl: screen, sentAt: at))
         }
         guard !new.isEmpty else { return }
         scoped.append(contentsOf: new)

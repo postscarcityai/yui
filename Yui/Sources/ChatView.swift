@@ -326,7 +326,7 @@ struct ChatView: View {
         .background(Color.black.ignoresSafeArea())
         if let m = store.stageMessage, let yl = m.yl, !store.stageComponents.isEmpty {
             StageView(components: store.stageComponents, scope: m.id, agent: store.agent, open: store.stageOpen,
-                      close: store.closeStage)
+                      sentAt: m.sentAt, close: store.closeStage)
                 .environment(\.ylEmit, m.id == store.reading?.id ? ChatStore.quiet : store.emit)
                 .environment(\.ylComponents, yl.components)
                 .id(m.id)
@@ -657,7 +657,11 @@ struct ChatView: View {
                 VStack(spacing: theme.spacing.m) {
                     // A reply with nothing left to draw gets no row, not a lone face (YUI-80).
                     let all = store.shown
-                    ForEach(all.count > window ? Array(all.suffix(window)) : all) { m in
+                    let visible = all.count > window ? Array(all.suffix(window)) : all
+                    let marks = SentTimes.marks(visible)
+                    ForEach(visible) { m in
+                        VStack(spacing: theme.spacing.xs) {
+                        if let day = marks.day[m.id] { DayDivider(label: day) }
                         Group {
                             if m.stopped {
                                 QuietNote(text: "Stopped", icon: "stop.circle", id: "stopped-note")
@@ -703,6 +707,8 @@ struct ChatView: View {
                             }
                         }
                         .id(m.id)
+                        if let time = marks.time[m.id] { SentTime(text: time, fromUser: m.fromUser) }
+                        }
                     }
                     if let agent = store.agent, outbox.offline, !outbox.pending(agentID: agent.id).isEmpty {
                         // On the phone, not on Yui yet: it sends itself when the connection is back.
@@ -1951,6 +1957,20 @@ struct ChatView: View {
 
     /// `-yuiDemo` seeds a chat; `-yuiYL <sample>` seeds one YL reply (see `YLSamples`).
     static var seed: [ChatMessage] {
+        // -yuiDemoDays (YUI-202): a thread across three days, for the day dividers and times.
+        if ProcessInfo.processInfo.arguments.contains("-yuiDemoDays") {
+            let cal = Calendar.current
+            func at(_ daysAgo: Int, _ hour: Int, _ minute: Int) -> Date {
+                let day = cal.date(byAdding: .day, value: -daysAgo, to: .now) ?? .now
+                return cal.date(bySettingHour: hour, minute: minute, second: 0, of: day) ?? day
+            }
+            return [ChatMessage(text: "Can you set up Saturday?", fromUser: true, sentAt: at(3, 9, 15)),
+                    ChatMessage(text: "Squats 5x5 at 185, then a 20 minute tabata.", fromUser: false, sentAt: at(3, 9, 16)),
+                    ChatMessage(text: "Make it lighter", fromUser: true, sentAt: at(1, 18, 40)),
+                    ChatMessage(text: "Done. Squats 5x5 at 165 now.", fromUser: false, sentAt: at(1, 18, 41)),
+                    ChatMessage(text: "Anything new today?", fromUser: true, sentAt: at(0, 7, 5)),
+                    ChatMessage(text: "Chats are built and on main. Tests pass.", fromUser: false, sentAt: at(0, 7, 6))]
+        }
         if UserDefaults.standard.string(forKey: "yuiReactDemo") != nil {
             return [ChatMessage(text: "Saturday workout?", fromUser: true),
                     ChatMessage(text: "Want me to set up Saturday? Squats 5x5 at 185, then a 20 minute tabata, done by 10.",

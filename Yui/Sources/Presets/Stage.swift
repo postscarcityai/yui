@@ -69,6 +69,8 @@ struct StageView: View {
     let scope: String
     var agent: YuiAgent?
     let open: Bool
+    /// When this answer was sent, in small type under the name (YUI-202).
+    var sentAt: Date? = nil
     let close: () -> Void
     @State private var drag: CGFloat = 0
     @Environment(\.yuiTheme) private var theme
@@ -132,9 +134,17 @@ struct StageView: View {
                 .padding(.top, theme.spacing.s)
             HStack(spacing: theme.spacing.s) {
                 if let agent { AgentBadge(agent: agent, size: 26) }
-                Text(agent?.name ?? "Yui")
-                    .font(theme.font(theme.type.body, theme.strong))
-                    .foregroundStyle(c.ink)
+                VStack(alignment: agent == nil ? .center : .leading, spacing: 0) {
+                    Text(agent?.name ?? "Yui")
+                        .font(theme.font(theme.type.body, theme.strong))
+                        .foregroundStyle(c.ink)
+                    if let sentAt {
+                        Text(SentTimes.stamp(sentAt))
+                            .font(theme.font(theme.type.caption, .regular))
+                            .foregroundStyle(c.inkSoft)
+                            .accessibilityIdentifier("stage-sent-time")
+                    }
+                }
             }
             HStack {
                 Spacer()
