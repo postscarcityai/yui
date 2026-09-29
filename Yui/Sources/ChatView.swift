@@ -72,8 +72,12 @@ struct ChatView: View {
     @State private var holdStart: Task<Void, Never>?
     /// The bar's mic went down while hands-free was on: its let-go is a tap, never a hold.
     @State private var micTapOnly = false
+    /// How far up the finger is, 0 or more. Past `lockDistance` (and not on the trash) the lock is armed.
+    @State private var micLift: CGFloat = 0
     private static let cancelDistance: CGFloat = 110
+    private static let lockDistance: CGFloat = 80
     private var cancelArmed: Bool { talk.listening && micDragX <= -Self.cancelDistance }
+    private var lockArmed: Bool { talk.listening && !handsFree.on && !cancelArmed && micLift >= Self.lockDistance }
     @State private var composerNote: String?
     /// A word in plain language over the top of the screen (a chat Yui refused), for a few seconds.
     @State private var chatNotice: String?
@@ -930,6 +934,7 @@ struct ChatView: View {
             if let words = UserDefaults.standard.string(forKey: "yuiPTTDemo") { talk.demo(words) }
             // -yuiPTTDemoCancel: the demo, slid to the trash.
             if ProcessInfo.processInfo.arguments.contains("-yuiPTTDemoCancel") { micDragX = -Self.cancelDistance - 30 }
+            if ProcessInfo.processInfo.arguments.contains("-yuiPTTDemoLock") { micLift = Self.lockDistance + 10 }
             talk.fakeWords = UserDefaults.standard.string(forKey: "yuiPTTFake")
             // -yuiHandsFreeDemo listening|sending|waiting|reading|paused: that state, for screenshots.
             if let at = UserDefaults.standard.string(forKey: "yuiHandsFreeDemo"), let hf = HandsFree.demo(at) {
@@ -951,7 +956,8 @@ struct ChatView: View {
                 if handsFree.on { handsFreeField(c) } else if talk.listening { listeningField(c) } else { Spacer(minLength: 0) }
                 BarButtons(prefix: "record", showMic: stageMic || !stageType, showType: stageType || !stageMic,
                            showAttach: stageAttach, micOn: handsFree.on || talk.listening, micLive: talk.listening,
-                           armed: cancelArmed, attachDisabled: sending || photos.count >= Attachments.maxPhotos,
+                           armed: cancelArmed, held: talk.listening && !handsFree.on, lockArmed: lockArmed,
+                           attachDisabled: sending || photos.count >= Attachments.maxPhotos,
                            reduceMotion: reduceMotion, actions: barActions(tap: stageMicTap, type: typeHere))
             } else if handsFree.on {
                 handsFreeField(c)
@@ -1507,7 +1513,7 @@ struct ChatView: View {
         let held = talk.listening && !handsFree.on
         let live = handsFree.micOpen || handsFree.state == .finishing || handsFree.state == .sending || held
         return StageMic(on: handsFree.on && note == nil || held, live: live, held: held, armed: cancelArmed,
-                        words: talk.transcript, note: note)
+                        locking: lockArmed, words: talk.transcript, note: note)
     }
 
     /// The bar's buttons (YUI-121), on the stage and in the record. `tap` is the mic's
@@ -1526,11 +1532,21 @@ struct ChatView: View {
             },
             micDrag: { x in if !micTapOnly { micDragX = x } },
             micUp: {
-                if micTapOnly { micTapOnly = false; micDragX = 0; tap(); return }
+                if micTapOnly { micTapOnly = false; micDragX = 0; micLift = 0; tap(); return }
+                // Dropped on the lock: the mic stays open and hands-free takes it from here.
+                if lockArmed {
+                    micHeld = false
+                    micDragX = 0
+                    micLift = 0
+                    handsFreeDo(.tap)
+                    return
+                }
+                micLift = 0
                 micUp(quick: tap)
             },
             micTap: tap,
-            stop: canStop ? { stopTurn() } : nil)
+            stop: canStop ? { stopTurn() } : nil,
+            micLift: { y in if !micTapOnly { micLift = y } })
     }
 
     /// The agent is on something and the mic is free (YUI-190): the mic is a stop square.

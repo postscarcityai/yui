@@ -103,6 +103,61 @@ final class BottomBarTests: XCTestCase {
         XCTAssertFalse(app.keyboards.firstMatch.exists, "a voice send brought the keyboard up")
     }
 
+    /// Hold, then slide left and let go: the words are thrown away, nothing is sent (YUI-201).
+    func testSlideLeftCancels() {
+        let words = "Never mind this one"
+        let app = launch("light", ["-yuiPTTFake", words])
+        let mic = app.buttons["stage-mic"]
+        XCTAssertTrue(mic.waitForExistence(timeout: 15))
+        let from = mic.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+        from.press(forDuration: 1.0, thenDragTo: from.withOffset(CGVector(dx: -200, dy: 0)))
+        sleep(2)
+        XCTAssertFalse(app.descendants(matching: .any)["stage-you"].exists, "a cancelled recording was sent")
+        XCTAssertFalse(app.descendants(matching: .any)["stage-listening"].exists, "still listening after cancel")
+        XCTAssertTrue(app.buttons["stage-mic"].exists, "the mic did not come back")
+    }
+
+    /// Hold, then slide up onto the lock and let go: the mic stays open hands-free, and a pause sends (YUI-201).
+    func testSlideUpLocksTheRecording() {
+        let words = "Is my morning free tomorrow"
+        let app = launch("light", ["-yuiPTTFake", words])
+        let mic = app.buttons["stage-mic"]
+        XCTAssertTrue(mic.waitForExistence(timeout: 15))
+        let from = mic.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+        from.press(forDuration: 0.5, thenDragTo: from.withOffset(CGVector(dx: 0, dy: -130)))
+        // Let go on the lock did not send by itself: it is still listening, then the pause sends.
+        XCTAssertTrue(app.descendants(matching: .any)["stage-listening"].firstMatch.waitForExistence(timeout: 2),
+                      "let go on the lock stopped the recording")
+        let you = app.descendants(matching: .any)["stage-you"].firstMatch
+        XCTAssertTrue(you.waitForExistence(timeout: 8), "a locked recording never sent on the pause")
+        XCTAssertTrue(you.label.contains("morning"), "sent something else: \(you.label)")
+    }
+
+    /// A plain tap still toggles recording (YUI-201).
+    func testTapStillToggles() {
+        let app = launch("light", ["-yuiPTTFake", "Hello there"])
+        let mic = app.buttons["stage-mic"]
+        XCTAssertTrue(mic.waitForExistence(timeout: 15))
+        mic.tap()
+        XCTAssertTrue(app.descendants(matching: .any)["stage-listening"].firstMatch.waitForExistence(timeout: 3), "a tap did not record")
+    }
+
+    /// The lock sits over the mic while it is held, and the stray orb is gone (YUI-201).
+    func testLockShowsAndNoStrayBubble() {
+        let app = launch("dark", ["-yuiPTTDemo", "Book me a haircut Friday at four"])
+        XCTAssertTrue(app.descendants(matching: .any)["stage-listening"].firstMatch.waitForExistence(timeout: 20))
+        XCTAssertTrue(app.descendants(matching: .any)["stage-lock"].firstMatch.exists, "no lock over the mic")
+        sleep(1)
+        shot("10-lock-waiting", "dark")
+    }
+
+    func testLockArmedWhenSlidUp() {
+        let app = launch("dark", ["-yuiPTTDemo", "Book me a haircut Friday at four", "-yuiPTTDemoLock"])
+        XCTAssertTrue(app.descendants(matching: .any)["stage-lock-armed"].firstMatch.waitForExistence(timeout: 20), "the lock did not arm")
+        sleep(1)
+        shot("11-lock-armed", "dark")
+    }
+
     /// While typing, two pictures sit above the field and go with the message.
     func testTwoPicturesGoWithTheMessage() throws {
         let app = launch("light", ["-yuiComposerPhoto", try photo(.systemOrange) + "|" + photo(.systemTeal)])

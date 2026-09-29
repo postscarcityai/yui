@@ -187,6 +187,8 @@ struct StageMic: Equatable {
     var held = false
     /// Held and slid to the trash: let go throws the words away.
     var armed = false
+    /// Held and slid up onto the lock: let go keeps it recording, hands-free.
+    var locking = false
     var words = ""
     /// Why it stopped, in plain words.
     var note: String?
@@ -647,17 +649,13 @@ struct StageFirstView: View {
     /// Hands-free is open: what it hears, big, as it hears it.
     private func listening(_ c: Swatch) -> some View {
         VStack(spacing: theme.spacing.m) {
-            // listen: the mark shrinks toward the mic, bottom right.
-            StageMark(color: c.accent, mood: .listen, flavor: nil, look: look, since: moodSince)
-                .frame(width: 64, height: 64)
-                .frame(maxWidth: .infinity, alignment: .trailing)
-                .transition(look.reduced ? .opacity : .scale(scale: 2.4, anchor: .bottomTrailing).combined(with: .opacity))
             Label("Listening", systemImage: "waveform")
                 .font(theme.font(theme.type.caption, .heavy))
                 .foregroundStyle(c.accent)
                 .symbolEffect(.variableColor.iterative, isActive: !reduceMotion)
             let hint = mic.armed ? "Let go to cancel"
-                : mic.held ? "Let go to send. Slide left to cancel." : "Just talk. A short pause sends it."
+                : mic.locking ? "Let go to keep recording"
+                : mic.held ? "Let go to send. Slide left to cancel, up to lock." : "Just talk. A short pause sends it."
             Text(mic.words.isEmpty || mic.armed ? hint : mic.words)
                 .font(theme.font(mic.words.isEmpty || mic.armed ? theme.type.body : theme.type.display,
                                  mic.words.isEmpty || mic.armed ? .semibold : .bold))
@@ -958,6 +956,7 @@ struct StageFirstView: View {
                     Spacer(minLength: 0)
                     BarButtons(prefix: "stage", showMic: showMic, showType: showType, showAttach: showAttach,
                                micOn: mic.on, micLive: mic.live, armed: mic.armed,
+                               held: mic.held, lockArmed: mic.locking,
                                attachDisabled: sending || photos.count >= Attachments.maxPhotos,
                                reduceMotion: reduceMotion, actions: barActions, look: look, voice: voice)
                 }

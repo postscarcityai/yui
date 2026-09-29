@@ -25,6 +25,8 @@ struct BarActions {
     var stop: (() -> Void)? = nil
     /// Set at the end of a full-screen answer (YUI-195): Back home takes the mic's place. Local only.
     var home: (() -> Void)? = nil
+    /// How far up the finger is on the mic (points, 0 or more): the lock is above it.
+    var micLift: (CGFloat) -> Void = { _ in }
 }
 
 /// + T and the mic, bottom right. While the mic is on only the mic shows.
@@ -40,6 +42,10 @@ struct BarButtons: View {
     let micLive: Bool
     /// Held and slid to the trash: let go throws the words away.
     let armed: Bool
+    /// Held to talk: the lock waits just above the mic.
+    var held = false
+    /// Held and slid up onto the lock: let go keeps it recording, hands-free.
+    var lockArmed = false
     let attachDisabled: Bool
     let reduceMotion: Bool
     let actions: BarActions
@@ -49,7 +55,7 @@ struct BarButtons: View {
     var voice = 0
     @Environment(\.yuiTheme) private var theme
     @Environment(\.colorScheme) private var scheme
-    @GestureState private var press: CGFloat?
+    @GestureState private var press: CGSize?
     /// Counts Stop taps: each one is a firm tap under the thumb.
     @State private var stops = 0
 
@@ -160,6 +166,27 @@ struct BarButtons: View {
         .accessibilityIdentifier("\(prefix)-home")
     }
 
+    private func lock(_ c: Swatch) -> some View {
+        VStack(spacing: 4) {
+            Image(systemName: lockArmed ? "lock.fill" : "lock.open.fill")
+                .font(.system(size: 17, weight: .bold))
+                .foregroundStyle(lockArmed ? c.onAccent : c.ink)
+                .frame(width: Self.small, height: Self.small)
+                .background(lockArmed ? c.accent : c.surface, in: Circle())
+                .overlay(Circle().stroke(lockArmed ? .clear : c.outline, lineWidth: 1.5))
+                .scaleEffect(lockArmed && !reduceMotion ? 1.2 : 1)
+                .animation(reduceMotion ? nil : theme.spring, value: lockArmed)
+            Image(systemName: "chevron.up")
+                .font(.system(size: 11, weight: .heavy))
+                .foregroundStyle(c.inkSoft)
+        }
+        .allowsHitTesting(false)
+        .transition(.opacity)
+        .accessibilityElement()
+        .accessibilityLabel(lockArmed ? "Locked. Let go to keep recording" : "Slide up to keep recording")
+        .accessibilityIdentifier(lockArmed ? "\(prefix)-lock-armed" : "\(prefix)-lock")
+    }
+
     /// A tap talks hands-free; a hold talks until the finger lets go. The drag runs in
     /// global space so the finger sliding off the circle still counts.
     private func mic(_ c: Swatch) -> some View {
@@ -179,14 +206,17 @@ struct BarButtons: View {
             .animation(reduceMotion ? nil : theme.spring, value: micLive)
             .contentShape(Circle())
             .gesture(DragGesture(minimumDistance: 0, coordinateSpace: .global)
-                .updating($press) { v, state, _ in state = v.translation.width })
+                .updating($press) { v, state, _ in state = v.translation })
             .onChange(of: press) { old, new in
                 if old == nil, new != nil { actions.micDown() }
-                if let x = new { actions.micDrag(min(0, x)) }
+                if let t = new { actions.micDrag(min(0, t.width)); actions.micLift(max(0, -t.height)) }
                 if old != nil, new == nil { actions.micUp() }
             }
             .sensoryFeedback(.impact(weight: .light), trigger: micLive) { _, now in now }
             .sensoryFeedback(.impact(weight: .medium), trigger: armed)
+            .sensoryFeedback(.impact(weight: .medium), trigger: lockArmed)
+            // The lock: a spot just above the mic. Slide up onto it and let go to keep recording.
+            .overlay(alignment: .top) { if held, !armed { lock(c).offset(y: -(Self.micSize + 26)) } }
             .accessibilityElement()
             .accessibilityAddTraits(.isButton)
             .accessibilityLabel(micOn ? "Stop talking" : "Talk")
