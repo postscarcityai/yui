@@ -47,7 +47,7 @@ import YuiLines
 
     func testGoudasInstrumentsSitOnTheirPages() {
         let store = load("gouda")
-        XCTAssertEqual(store.screens, [1, 2, 3, 4, 5])
+        XCTAssertEqual(store.screens, [1, 2, 3, 4, 5, 6])
         XCTAssertEqual(store.onPage(2).flatMap { $0.yl?.onPage(2, style: [:]) ?? [] }.map(\.preset), ["loop", "choose"])
         XCTAssertEqual(store.onPage(4).flatMap { $0.yl?.onPage(4, style: [:]) ?? [] }.map(\.preset), ["keys", "choose"])
     }

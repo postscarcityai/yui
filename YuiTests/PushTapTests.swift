@@ -10,6 +10,11 @@ final class PushTapTests: XCTestCase {
         p.pendingAgentID = nil; p.pendingChatID = nil; p.pendingMessageID = nil
     }
 
+    override func tearDown() {
+        let p = PushCenter.shared
+        p.pendingAgentID = nil; p.pendingChatID = nil; p.pendingMessageID = nil
+    }
+
     func testTheTapKeepsTheAgentTheChatAndTheMessage() {
         PushCenter.shared.tapped(["agent_id": "basil", "message_id": "m-7", "chat": "C-1", "url": "yui://agent/basil/thread"])
         XCTAssertEqual(PushCenter.shared.pendingAgentID, "basil")

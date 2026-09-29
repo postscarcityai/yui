@@ -227,7 +227,7 @@ Saved Night drive. It's on your Looper.
 
     func testASongLandsOnChordsReadyToPlay() throws {
         let store = learned()
-        XCTAssertEqual(store.screens, [1, 2, 3, 4, 5])
+        XCTAssertEqual(store.screens, [1, 2, 3, 4, 5, 6])
         let chords = try one(store, 3, "chords")
         XCTAssertEqual(buttons(chords), ["A", "F#m", "D", "E"], "the home's C I-V-vi-IV is still on the buttons")
         XCTAssertEqual(chords.string("title"), "Stand By Me")
