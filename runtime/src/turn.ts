@@ -19,6 +19,7 @@ import { Firecrawl, LookupError, searchInvite, sourceCards, type Source } from "
 import type { Store } from "./store.ts";
 import { Stopped, guard } from "./stop.ts";
 import { crew } from "./profiles.ts";
+import { keyModel } from "./models.ts";
 import { type Clock, type TableStore, LIMITS, applyHeld, applyTables, asText, changed, clock, diff, draw, emptyStore, fromSeeds, pretty,
          readQueries, tablesPrompt } from "./tables.ts";
 import type { NativeAgent, OwnKey, Row, ScheduleItem } from "./types.ts";
@@ -67,8 +68,14 @@ export function openRouter(key: string): Provider {
 
 /** A person's own key: OpenRouter keeps Yui's routes; any other server runs the model they named. */
 export function ownProvider(k: OwnKey): Provider {
-  if (k.provider === "openrouter") return { ...openRouter(k.key), ...(k.model ? { model: k.model } : {}) };
-  return { url: k.baseUrl, key: k.key, ...(k.model ? { model: k.model } : {}) };
+  const model = keyModel(k.provider, k.model, false);
+  if (k.provider === "openrouter") return { ...openRouter(k.key), ...(model ? { model } : {}) };
+  return { url: k.baseUrl, key: k.key, ...(model ? { model } : {}) };
+}
+
+/** The model a photo turn runs on for a person's own key: the one they named, else the provider's seeing default. Null: Yui's vision route. */
+export function ownVision(k: OwnKey): string | null {
+  return keyModel(k.provider, k.model, true);
 }
 
 export interface TurnOptions {
@@ -337,7 +344,7 @@ async function oneTurn(store: Store, agent: NativeAgent, rows: Row[], opts: Turn
   const photos = photoPaths(rows);
   const images = (await Promise.all(photos.slice(-1).map((x) => store.signMedia(x)))).filter((u): u is string => !!u);
   // A turn with a picture goes to the model that sees (spec/NATIVE.md section 6).
-  const model = provider.model ?? (images.length ? routes.vision : p.model && p.model !== "default" ? p.model : routes.text);
+  const model = (images.length && own ? ownVision(own) : provider.model) ?? (images.length ? routes.vision : p.model && p.model !== "default" ? p.model : routes.text);
   const { messages } = buildTurn({
     guide, agent, memory, crew, history: history.filter((h) => !real.includes(h.id)), turn: turnRows, chatNew: chatIsNew(rows), images, photosLeftOut: Math.max(photos.length - 1, 0),
     context: opts.context, reserve: (opts.maxTokens ?? 2000) + (provider.reasoning ?? 0), now, tz: tzRaw ? tz : undefined, schedules,
@@ -531,7 +538,7 @@ export async function runJob(store: Store, jobId: string, opts: TurnOptions): Pr
     const done = await runMealJob(g.store, job, {
       // The job answers JSON: no thinking budget, the answer's room is enough.
       ask: (req) => ask(jobOpts, provider, provider.reasoning ? { ...req, reasoning: { enabled: false } } : req),
-      route: (photo) => provider.model ?? (photo ? routes.vision : routes.text),
+      route: (photo) => (photo && own ? ownVision(own) : provider.model) ?? (photo ? routes.vision : routes.text),
       inline: (messages) => inlineImages(messages, opts.fetchMedia ?? fetch),
       log: (m) => log(`${agent.profile.name}: ${m}`),
       now: opts.now ?? Date.now,

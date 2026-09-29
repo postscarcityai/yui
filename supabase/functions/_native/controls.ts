@@ -5,7 +5,7 @@
 // Personality (the soul), Memory (the about-you card and the agent's notes),
 // Schedules (check-ins), Tables (YUI-170: the agent's own tables with their
 // row counts, read and delete) and Model (read only). No turn, no model call.
-import { MODELS } from "./models.ts";
+import { MODELS, providerLabel } from "./models.ts";
 import type { Store } from "./store.ts";
 import { isStop, stopTurns } from "./stop.ts";
 import { describe, next, parseLine } from "./schedule.ts";
@@ -119,7 +119,7 @@ export async function answerControl(store: Store, rowId: string): Promise<boolea
     return true;
   }
   const own = await store.ownKey(agent.userId);
-  const provider = own ? `your own ${({ openrouter: "OpenRouter", trustedrouter: "TrustedRouter", groq: "Groq", custom: "model server" } as Record<string, string>)[own.provider]} key`
+  const provider = own ? `your own ${providerLabel(own.provider)} key`
     : "OpenRouter, on Yui";
   const req = row.meta ?? {};
   const searchKey = !!(await store.searchKey(agent.userId));

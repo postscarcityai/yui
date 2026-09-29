@@ -84,7 +84,7 @@ export interface ScheduleItem {
 
 /** A person's own model key (yui_native_keys), when they added one. */
 export interface OwnKey {
-  provider: "openrouter" | "trustedrouter" | "groq" | "custom";
+  provider: "openrouter" | "trustedrouter" | "groq" | "custom" | "anthropic" | "openai" | "gemini" | "xai";
   baseUrl: string;
   model: string | null;
   key: string;

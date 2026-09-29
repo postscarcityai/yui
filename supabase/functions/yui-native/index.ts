@@ -93,14 +93,17 @@ async function fromDatabase(body: { agent_id?: string; schedule_id?: string; mes
 type Body = Record<string, any>;
 
 /** Asks the provider for its models with the key: a bad key or a wrong address says so before it is kept. */
-async function checkKey(baseUrl: string, key: string, model?: string): Promise<string | null> {
+async function checkKey(baseUrl: string, key: string, model?: string, provider?: string): Promise<string | null> {
   try {
-    const r = await fetch(`${baseUrl}/models`, { headers: { authorization: `Bearer ${key}` }, signal: AbortSignal.timeout(10_000) });
+    // Claude's own list wants x-api-key; the others take the bearer.
+    const headers: Record<string, string> = { authorization: `Bearer ${key}` };
+    if (provider === "anthropic") Object.assign(headers, { "x-api-key": key, "anthropic-version": "2023-06-01" });
+    const r = await fetch(`${baseUrl}/models`, { headers, signal: AbortSignal.timeout(10_000) });
     if (r.status === 401 || r.status === 403) return "the provider turned this key down";
     if (!r.ok) return `the provider answered ${r.status}`;
     // deno-lint-ignore no-explicit-any
     const d: any = await r.json().catch(() => null);
-    const ids: string[] = (d?.data ?? []).map((m: { id?: string }) => String(m.id ?? ""));
+    const ids: string[] = (d?.data ?? []).map((m: { id?: string }) => String(m.id ?? "").replace(/^models\//, "")); // Gemini lists "models/<id>"
     if (model && ids.length && !ids.includes(model)) return `this provider has no model called ${model}`;
     return null;
   } catch {
@@ -128,7 +131,7 @@ async function fromApp(req: Request, b: Body): Promise<Response> {
         db.from("yui_limits").select("name, value").in("name", ["native_free_turns", "native_searches_per_month"]),
       ]);
       const lim = (n: string, d: number) => Number(lims?.find((l: { name: string }) => l.name === n)?.value ?? d);
-      return json({ key: key ?? null, providers: PROVIDERS, models: MODELS, timezone: user?.timezone ?? null,
+      return json({ key: key ?? null, providers: PROVIDERS.filter((p) => p.scored), models: MODELS, timezone: user?.timezone ?? null,
                     turns: { used: usage?.turns ?? 0, limit: lim("native_free_turns", 100) },
                     search: { used: usage?.searches ?? 0, limit: lim("native_searches_per_month", 50), key: searchKey ?? null } });
     }
@@ -147,7 +150,7 @@ async function fromApp(req: Request, b: Body): Promise<Response> {
       return json({ ok: true });
     }
     case "key_set": {
-      const p = PROVIDERS.find((x) => x.id === b.provider);
+      const p = PROVIDERS.find((x) => x.id === b.provider && x.scored);
       if (!p) return json({ error: "unknown_provider" }, 400);
       const key = typeof b.key === "string" ? b.key.trim() : "";
       if (key.length < 8 || key.length > 400 || /\s/.test(key)) return json({ error: "invalid_key" }, 400);
@@ -157,7 +160,7 @@ async function fromApp(req: Request, b: Body): Promise<Response> {
       }
       const model = typeof b.model === "string" && b.model.trim() ? b.model.trim().slice(0, 120) : null;
       if (p.needsModel && !model) return json({ error: "model_required" }, 400);
-      const problem = await checkKey(baseUrl, key, model ?? undefined);
+      const problem = await checkKey(baseUrl, key, model ?? p.model, p.id);
       if (problem) return json({ error: "key_check_failed", message: problem }, 400);
       const { error } = await db.rpc("yui_native_key_set", { uid: userId, prov: p.id, url: baseUrl, mdl: model, secret: key });
       if (error) throw error;
