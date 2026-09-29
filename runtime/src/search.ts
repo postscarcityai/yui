@@ -141,6 +141,11 @@ export function searchInvite(why: "month" | "day", limit: number): string {
   return `card "Free web searches used" body=${q(body)} cta="Open Settings" url=yui://settings/search`;
 }
 
+/** A lookup on a key with no web search of its own runs on Yui's free allowance (20 a day): the card says so. */
+export function searchOnYui(provider: string): string {
+  return `card "Looked up on Yui" body=${q(`Your ${provider} key has no web search, so that lookup used Yui's free ones (20 a day).`)}`;
+}
+
 function q(s: string): string {
   return `"${s.replace(/"/g, "'").replace(/\s+/g, " ").trim()}"`;
 }

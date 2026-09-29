@@ -15,11 +15,11 @@ import { applyMemory } from "./memory.ts";
 import { applyAgentOps } from "./agents.ts";
 import { buildTurn, photoPaths, type CrewEntry } from "./prompt.ts";
 import { next, parseLine, validZone } from "./schedule.ts";
-import { Firecrawl, LookupError, searchInvite, sourceCards, type Source } from "./search.ts";
+import { Firecrawl, LookupError, searchInvite, searchOnYui, sourceCards, type Source } from "./search.ts";
 import type { Store } from "./store.ts";
 import { Stopped, guard } from "./stop.ts";
 import { crew } from "./profiles.ts";
-import { keyModel } from "./models.ts";
+import { keyModel, providerLabel, PROVIDERS } from "./models.ts";
 import { type Clock, type TableStore, LIMITS, applyHeld, applyTables, asText, changed, clock, diff, draw, emptyStore, fromSeeds, pretty,
          readQueries, tablesPrompt } from "./tables.ts";
 import type { NativeAgent, OwnKey, Row, ScheduleItem } from "./types.ts";
@@ -76,6 +76,16 @@ export function ownProvider(k: OwnKey): Provider {
 /** The model a photo turn runs on for a person's own key: the one they named, else the provider's seeing default. Null: Yui's vision route. */
 export function ownVision(k: OwnKey): string | null {
   return keyModel(k.provider, k.model, true);
+}
+
+/** No seeing model for this key and no Yui route that works on its server (OpenRouter and TrustedRouter take Yui's ids). */
+export function blindKey(k: OwnKey): boolean {
+  return !ownVision(k) && k.provider !== "openrouter" && k.provider !== "trustedrouter";
+}
+
+/** A photo on a key with no seeing model: said out loud, never sent to a model that can't see it (and never to Yui's route). */
+export function cantSee(k: OwnKey): string {
+  return `Your ${providerLabel(k.provider)} pick can't see photos. Choose a photo-capable model in Settings > Your model key, then send it again.`;
 }
 
 export interface TurnOptions {
@@ -344,6 +354,14 @@ async function oneTurn(store: Store, agent: NativeAgent, rows: Row[], opts: Turn
   const photos = photoPaths(rows);
   const images = (await Promise.all(photos.slice(-1).map((x) => store.signMedia(x)))).filter((u): u is string => !!u);
   // A turn with a picture goes to the model that sees (spec/NATIVE.md section 6).
+  if (images.length && own && blindKey(own)) {
+    // No seeing model for this key: one line, not a silent fail and not a call on Yui's route.
+    if (last) await store.doing(last, null);
+    await say(cantSee(own), { turn: real, native: { cant_see: own.provider } });
+    if (real.length) await store.markHandled(real);
+    log(`${p.name}: photo on ${own.provider}, which has no seeing model`);
+    return { handled: true };
+  }
   const model = (images.length && own ? ownVision(own) : provider.model) ?? (images.length ? routes.vision : p.model && p.model !== "default" ? p.model : routes.text);
   const { messages } = buildTurn({
     guide, agent, memory, crew, history: history.filter((h) => !real.includes(h.id)), turn: turnRows, chatNew: chatIsNew(rows), images, photosLeftOut: Math.max(photos.length - 1, 0),
@@ -466,7 +484,7 @@ async function oneTurn(store: Store, agent: NativeAgent, rows: Row[], opts: Turn
     body = withCard(body, `card@slip ${JSON.stringify(slip)} cta="Try again"`);
   }
   // Sources the answer didn't link, and the invite to add a Firecrawl key when the free lookups ran out.
-  const cards = [...sourceCards(body, looked.sources), ...(looked.capped ? [searchInvite(looked.capped.why, looked.capped.limit)] : [])];
+  const cards = [...sourceCards(body, looked.sources), ...(looked.onYui && own ? [searchOnYui(providerLabel(own.provider))] : []), ...(looked.capped ? [searchInvite(looked.capped.why, looked.capped.limit)] : [])];
   if (cards.length && body.trim()) body = `${body.trim()}\n\`\`\`yui\n${cards.join("\n")}\n\`\`\``;
   // Basil's pages follow what the answer wrote to his log, plan, goal or grocery list (YUI-183): patches under it.
   const pages = plansMeals(agent) ? mealPages(tchange) : [];
@@ -499,7 +517,7 @@ async function oneTurn(store: Store, agent: NativeAgent, rows: Row[], opts: Turn
       ...(real.length ? { turn: real } : {}),
       ...(mentions.length ? { mentions } : {}),
       native: { model, ...(answer.usage ? { usage: answer.usage } : {}), ...(budget.left <= 10 ? { left: budget.left } : {}),
-                ...(looked.sources.length ? { sources: looked.sources.slice(0, 8) } : {}), ...(looked.capped ? { search_capped: looked.capped.why } : {}),
+                ...(looked.sources.length ? { sources: looked.sources.slice(0, 8) } : {}), ...(looked.capped ? { search_capped: looked.capped.why } : {}), ...(looked.onYui ? { search_on_yui: true } : {}),
                 ...(t.held ? { held: t.held } : {}), ...(reminded ? { reminders: reminded } : {}),
                 ...(slip ? { slips: [...new Set([...t.problems, ...notes])].slice(0, 6) } : {}) },
       ...(depth === 0 && !real.length && rows[0]?.body.startsWith("[yui] check-in") ? { checkin: true } : {}),
@@ -531,6 +549,13 @@ export async function runJob(store: Store, jobId: string, opts: TurnOptions): Pr
   const own = await store.ownKey(agent.userId);
   const provider = own ? ownProvider(own) : opts.provider;
   const routes = await store.routes();
+  if (own && job.input.photo && blindKey(own)) {
+    // A meal photo on a key with no seeing model: said, never sent to Yui's route or a model that can't see it.
+    result.replies.push(await store.reply(agent, cantSee(own), { native: { meal: job.id, cant_see: own.provider } }));
+    await store.finishJob(job.id, "failed", { cantSee: own.provider });
+    result.turns++;
+    return result;
+  }
   // The person's Stop (YUI-190) reaches a job too: nothing logged, no breakdown.
   const g = guard(store, job.agentId, job.userId, job.createdAt, { fetch: opts.fetch, poll: opts.stopPoll });
   const jobOpts = { ...opts, fetch: g.fetch, signal: g.signal };
@@ -1374,6 +1399,7 @@ interface Looked {
   messages?: any[]; // the conversation the last answer came from, lookups and all
   sources: Source[];
   capped?: { why: "month" | "day"; limit: number }; // Yui's free lookups ran out this turn
+  onYui?: { used: number; limit: number }; // a lookup ran on Yui's free allowance because their own key has no web search
 }
 
 function hasLookup(text: string): boolean {
@@ -1392,6 +1418,9 @@ async function lookUp(store: Store, agent: NativeAgent, opts: TurnOptions, provi
   const p = agent.profile;
   const theirs = await store.searchKey(agent.userId);
   const key = theirs ?? opts.search?.key;
+  // Their own key on a provider with no web search: the lookup still runs, on Yui's Firecrawl, and the card says so.
+  const own = await store.ownKey(agent.userId);
+  const noWeb = !!own && !theirs && !PROVIDERS.find((x) => x.id === own.provider)?.web;
   const fc = key ? new Firecrawl(key, opts.search?.fetch ?? fetch, opts.search?.base) : null;
   const out: Looked = { sources: [] };
   let messages = req.messages;
@@ -1418,6 +1447,7 @@ async function lookUp(store: Store, agent: NativeAgent, opts: TurnOptions, provi
         try {
           const found = look.kind === "search" ? await fc.search(look.q) : await fc.fetchPage(look.q);
           out.sources.push(...found.sources);
+          if (noWeb) out.onYui = { used: take.used, limit: take.limit };
           note = `[yui] ${look.kind === "search" ? `Web results for "${look.q}"` : "The page"}:\n\n${found.text}\n\n`
             + "[yui] Answer the person now from these, and name where it came from. If one page is worth reading in full, "
             + "you may write a fetch block with its link instead.";
