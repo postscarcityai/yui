@@ -39,13 +39,8 @@ public final class PitchListener {
             state = .denied
             return state
         }
-        let feed = Feed(tuning: tuning, sampleRate: format.sampleRate) { [weak self] r in
-            Task { @MainActor in self?.deliver(r) }
-        }
-        input.installTap(onBus: 0, bufferSize: 1024, format: format) { buffer, _ in
-            guard let ch = buffer.floatChannelData?[0] else { return }
-            feed.append(ch, count: Int(buffer.frameLength))
-        }
+        let feed = Feed(tuning: tuning, sampleRate: format.sampleRate, out: Self.relay(self))
+        input.installTap(onBus: 0, bufferSize: 1024, format: format, block: Self.tapBlock(feed))
         do {
             engine.prepare()
             try engine.start()
@@ -62,14 +57,26 @@ public final class PitchListener {
         return state
     }
 
+    /// The block is made outside any actor: the tap calls it on the audio
+    /// thread, and a main-actor closure there traps (YUI-206).
+    nonisolated static func tapBlock(_ feed: Feed) -> AVAudioNodeTapBlock {
+        { buffer, _ in
+            guard let ch = buffer.floatChannelData?[0] else { return }
+            feed.append(ch, count: Int(buffer.frameLength))
+        }
+    }
+
+    /// Readings come off the tuner's queue; hop to the main actor from there.
+    nonisolated static func relay(_ listener: PitchListener) -> @Sendable (Pitch.Reading?) -> Void {
+        { [weak listener] r in Task { @MainActor in listener?.deliver(r) } }
+    }
+
     /// Listens to a made-up string instead of the mic (UI tests and demos):
     /// each step is a pitch held for some seconds, then the last one holds.
     public func startFake(_ steps: [(hz: Double, seconds: Double)], tuning: Tuning) {
         stop()
         let rate = 48000.0
-        let feed = Feed(tuning: tuning, sampleRate: rate) { [weak self] r in
-            Task { @MainActor in self?.deliver(r) }
-        }
+        let feed = Feed(tuning: tuning, sampleRate: rate, out: Self.relay(self))
         self.feed = feed
         state = .on
         fakeTask = Task.detached(priority: .userInitiated) {
@@ -146,9 +153,9 @@ final class Feed: @unchecked Sendable {
     private var filled = 0
     private var sinceRead = 0
     private var busy = false
-    private let out: (Pitch.Reading?) -> Void
+    private let out: @Sendable (Pitch.Reading?) -> Void
 
-    init(tuning: Tuning, sampleRate: Double, out: @escaping (Pitch.Reading?) -> Void) {
+    init(tuning: Tuning, sampleRate: Double, out: @escaping @Sendable (Pitch.Reading?) -> Void) {
         // The table's windows are for 48 kHz; keep the same span at other rates.
         let w = Double(tuning.window) * sampleRate / 48000
         window = 1 << Int(log2(w).rounded())

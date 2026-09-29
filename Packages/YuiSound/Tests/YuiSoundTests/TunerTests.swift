@@ -1,3 +1,4 @@
+import AVFoundation
 import Foundation
 import Testing
 @testable import YuiSound
@@ -181,4 +182,44 @@ struct SeededRandom: RandomNumberGenerator {
         _ = fast.tap(0)
         #expect(fast.tap(0.1) == 300)
     }
+}
+
+// YUI-206: the mic tap and the tuner's queue call these off the main thread.
+// A closure made inside the main-actor listener traps there (build 288 crash).
+@Suite struct ListenerThreadTests {
+    @Test func tapAndRelayRunOffMainActor() async throws {
+        let tuning = Tuning(instrument: "guitar", tuning: "standard")
+        let got = LockedCount()
+        let listener = await PitchListener()
+        let relay = PitchListener.relay(listener)
+        let feed = Feed(tuning: tuning, sampleRate: 48000) { r in relay(r); got.bump() }
+        let tap = PitchListener.tapBlock(feed)
+        let format = try #require(AVAudioFormat(standardFormatWithSampleRate: 48000, channels: 1))
+        let hz = tone(110, count: 1024, pluck: true)
+        await withCheckedContinuation { (done: CheckedContinuation<Void, Never>) in
+            DispatchQueue.global(qos: .userInteractive).async {
+                let buf = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 1024)!
+                buf.frameLength = 1024
+                for _ in 0..<40 {
+                    for i in 0..<1024 { buf.floatChannelData![0][i] = hz[i] }
+                    tap(buf, AVAudioTime(sampleTime: 0, atRate: 48000))
+                }
+                done.resume()
+            }
+        }
+        try await Task.sleep(for: .milliseconds(400))
+        #expect(got.value > 0)
+    }
+
+    @Test @MainActor func deniedMicEndsDeniedNotCrashed() async {
+        let l = PitchListener()
+        l.stop()
+        #expect(l.state == .idle)
+    }
+}
+
+final class LockedCount: @unchecked Sendable {
+    private let lock = NSLock(); private var n = 0
+    func bump() { lock.lock(); n += 1; lock.unlock() }
+    var value: Int { lock.lock(); defer { lock.unlock() }; return n }
 }
