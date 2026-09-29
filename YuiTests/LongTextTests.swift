@@ -23,6 +23,22 @@ final class LongTextTests: XCTestCase {
         XCTAssertEqual(LongText.sentences("One line\nTwo line."), ["One line", "Two line."])
     }
 
+    func testAVersionNumberNeverEndsASentence() {
+        XCTAssertEqual(LongText.sentences("0.6.0 ships and is built for agents."), ["0.6.0 ships and is built for agents."])
+        XCTAssertEqual(LongText.sentences("Build 0.6. Next up."), ["Build 0.6.", "Next up."])
+        XCTAssertEqual(LongText.sentences("Yui is at v1.2 and 3.5 stars. See https://www.yuigui.com/a.b now."),
+                       ["Yui is at v1.2 and 3.5 stars.", "See https://www.yuigui.com/a.b now."])
+        XCTAssertEqual(LongText.sentences("It beat approx. five rivals vs. the rest."), ["It beat approx. five rivals vs. the rest."])
+    }
+
+    func testStageChunksSplitLikeTheDeck() {
+        let filler = Array(repeating: "word", count: 30).joined(separator: " ")
+        let t = "Yui 0.6.0 is out and is built to work for other agents too. \(filler). Second. Third. Fourth."
+        let chunks = StageChunks.text(t)
+        XCTAssertTrue(chunks.allSatisfy { !$0.hasPrefix("0 ") && !$0.hasPrefix("6 ") }, "\(chunks)")
+        XCTAssertEqual(chunks.first?.hasPrefix("Yui 0.6.0 is out and is built to work for other agents too."), true)
+    }
+
     func testExcerptIsTheFirstWholeSentences() {
         let e = LongText.excerpt(Self.report)
         XCTAssertEqual(e, "A2A bridge: add any A2A agent to Yui by its Agent Card. node adapters/a2a/yui-a2a.ts pair <code> "

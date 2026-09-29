@@ -129,12 +129,12 @@ enum StageChunks {
             .filter { !$0.isEmpty }
         for para in paras {
             if para.contains("\n") { out.append(para); continue }
-            let ns = para as NSString
-            var sentences = sentence.matches(in: para, range: NSRange(location: 0, length: ns.length)).map { ns.substring(with: $0.range) }
+            // The deck's splitter: a period inside 0.6.0, a URL or "e.g." ends nothing (YUI-198).
+            var sentences = LongText.sentences(para)
             if sentences.isEmpty { sentences = [para] }
             if para.split(separator: " ").count <= most, sentences.count <= 3 { out.append(para); continue }
             for i in stride(from: 0, to: sentences.count, by: 2) {
-                out.append(sentences[i..<min(i + 2, sentences.count)].joined().trimmingCharacters(in: .whitespaces))
+                out.append(sentences[i..<min(i + 2, sentences.count)].joined(separator: " "))
             }
         }
         return out
@@ -151,7 +151,6 @@ enum StageChunks {
     }
 
     private static let paragraphBreak = try! NSRegularExpression(pattern: #"\n\s*\n"#)
-    private static let sentence = try! NSRegularExpression(pattern: #"[^.!?]+[.!?]+["')\]]*\s*|[^.!?]+$"#)
 
     /// The turn that starts at the person's message `ask` (their newest when nil):
     /// every reply after it, up to the next thing they said.

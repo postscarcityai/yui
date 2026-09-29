@@ -261,12 +261,18 @@ enum LongText {
             }
             cur.append(ch)
             guard ".!?".contains(ch), i + 1 == chars.count || chars[i + 1].isWhitespace else { continue }
-            if ch == ".", abbreviation(cur) { continue }
+            if ch == ".", abbreviation(cur) || continues(chars, after: i) { continue }
             push(&out, cur)
             cur = ""
         }
         push(&out, cur)
         return out
+    }
+
+    /// A period followed by a lowercase word ("vs. the", "approx. 5 min") does not end the sentence.
+    private static func continues(_ chars: [Character], after i: Int) -> Bool {
+        guard let next = chars[(i + 1)...].first(where: { !$0.isWhitespace }) else { return false }
+        return next.isLowercase
     }
 
     /// Words that end in a period without ending the sentence.
