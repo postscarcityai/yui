@@ -25,6 +25,10 @@ final class Outbox {
         let kind: String
         let meta: YLValue?
         let queuedAt: Date
+        /// The chat it is said in (YUI-169). Nil: an item from before chats, which lands in the newest.
+        var chatID: String? = nil
+        /// A chat made on this phone: the chat goes to the server first, then the row.
+        var createChat: Bool? = nil
     }
 
     private(set) var items: [Item] = []
@@ -52,6 +56,10 @@ final class Outbox {
 
     func isPending(_ id: String) -> Bool { items.contains { $0.id == id.lowercased() } }
     func pending(agentID: String) -> [Item] { items.filter { $0.agentID == agentID } }
+    /// What is waiting for one chat of an agent (an item from before chats waits for any).
+    func pending(agentID: String, chatID: String?) -> [Item] {
+        items.filter { $0.agentID == agentID && ($0.chatID == nil || chatID == nil || $0.chatID == chatID) }
+    }
 
     /// Signed in: send what is waiting.
     func start(account: Account) {
@@ -108,11 +116,16 @@ final class Outbox {
         guard let user = account.session?.userID else { return .stop }
         if user != item.userID { return .drop }  // another account's leftover
         do {
-            try await ThreadClient(account: account, agentID: item.agentID)
+            if item.createChat == true, let chat = item.chatID {
+                try await ChatsClient(account: account, agentID: item.agentID).insert(id: chat)
+            }
+            try await ThreadClient(account: account, agentID: item.agentID, chatID: item.chatID)
                 .post(id: item.id, body: item.body, kind: item.kind, meta: item.meta)
             return .sent
         } catch AccountError.signedOut {
             return .stop
+        } catch is ChatError {
+            return .drop  // the chat was refused or is gone: nothing to retry
         } catch AccountError.server(let code) {
             switch code {
             case "http_409": return .sent  // an earlier try landed before its answer was lost

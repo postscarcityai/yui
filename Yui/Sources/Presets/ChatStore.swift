@@ -39,7 +39,19 @@ struct ChatMessage: Identifiable, Equatable {
 /// yuigui/spec/RELAY.md); detached, it is the local demo chat.
 @Observable @MainActor
 final class ChatStore {
-    var messages: [ChatMessage] { didSet { derived = nil; waitingCache = nil } }
+    var messages: [ChatMessage] {
+        didSet {
+            derived = nil
+            waitingCache = nil
+            // The demo account keeps no server: a chat made here is saved the moment something is said in it.
+            if client == nil, chats.openIsDraft, messages.contains(where: \.fromUser) { chats.saveDraft() }
+        }
+    }
+    /// The agent's screens (`>2` and up), patches, saves and drawer lines said in its OTHER chats
+    /// (YUI-169). Screens belong to the agent, so every chat draws them; the thread never does.
+    private(set) var scoped: [ChatMessage] = [] { didSet { derived = nil; waitingCache = nil } }
+    /// Every message a screen can be on: the agent's from other chats first, then this chat's.
+    var pool: [ChatMessage] { scoped.isEmpty ? messages : scoped + messages }
     var spring: Animation = .default
     /// An agent reply carried a `theme` line: (agent id, props, message time).
     var onLook: (@MainActor (String, [String: String], String) -> Void)?
@@ -64,11 +76,15 @@ final class ChatStore {
 
     private var derive: Derived {
         // Reading `messages` and `style` keeps the views that ask observing them.
-        let messages = messages, style = style
+        let messages = messages, style = style, scoped = scoped
         if let derived { return derived }
         var lastInRow: [String: (text: String?, any: String)] = [:]
         var on = Set<Int>()
         var restyle: String?
+        for m in scoped {
+            guard let yl = m.yl else { continue }
+            for c in yl.top where c.page != 1 && !c.onStage(style) { on.insert(c.page) }
+        }
         for m in messages {
             if !m.fromUser {
                 var r = lastInRow[m.rowID] ?? (nil, m.id)
@@ -83,7 +99,7 @@ final class ChatStore {
         let d = Derived(shown: messages.filter { $0.yl?.isBlank != true && !$0.home },
                         wearers: Set(lastInRow.values.map { $0.text ?? $0.any }),
                         screens: [1] + on.sorted(),
-                        talking: Set(YuiLines.talking(messages.flatMap { $0.yl?.talkLines ?? [] })),
+                        talking: Set(YuiLines.talking((scoped + messages).flatMap { $0.yl?.talkLines ?? [] })),
                         restyleNewest: restyle,
                         visual: YuiLines.visual(of: messages.flatMap { $0.yl?.visualLines ?? [] }))
         derived = d
@@ -213,7 +229,7 @@ final class ChatStore {
     /// What is on page `n`: each reply with something there, oldest first.
     /// A page keeps what lands on it across replies until `>2 clear`.
     func onPage(_ n: Int) -> [ChatMessage] {
-        messages.filter { $0.yl.map { !$0.onPage(n, style: style).isEmpty } ?? false }
+        (n == 1 ? messages : pool).filter { $0.yl.map { !$0.onPage(n, style: style).isEmpty } ?? false }
     }
 
     /// A live reply added something to a page: bring the newest such page forward.
@@ -236,7 +252,7 @@ final class ChatStore {
     /// and the war room patches a panel instead of re-sending the page.
     var lastingIds: [String: String] {
         var out: [String: String] = [:]
-        for m in messages { for c in m.yl?.components ?? [] where c.lasts { out[c.ylID] = c.preset } }
+        for m in pool { for c in m.yl?.components ?? [] where c.lasts { out[c.ylID] = c.preset } }
         return out
     }
 
@@ -244,6 +260,7 @@ final class ChatStore {
     private func clearPage(_ node: YLNode, except id: String? = nil) {
         guard node.op == .clear, YuiLines.page(of: node.screen) != 1 else { return }
         for j in messages.indices where messages[j].id != id && messages[j].yl != nil { messages[j].yl?.empty(node.screen) }
+        for j in scoped.indices where scoped[j].id != id && scoped[j].yl != nil { scoped[j].yl?.empty(node.screen) }
     }
 
     /// Pages the agent keeps the composer on (`>2 talk`, YUI-62), from every reply
@@ -261,6 +278,44 @@ final class ChatStore {
     var error: String?
     private var client: ThreadClient?
     private weak var account: Account?
+    // MARK: Chats (YUI-169, spec yuigui/spec/CHATS.md)
+
+    /// The agent's chats as the drawer draws them.
+    let chats = ChatList()
+    /// The chat this thread is. Nil until the list is in, on a server with no chats, and on no agent.
+    private(set) var chatID: String?
+    private var chatClient: ChatsClient?
+    /// False when the server has no chats yet: the thread is the agent's, as before.
+    private var chatsOn = true
+    /// The chat a push named: opened when the agent's list is in.
+    var wantedChat: String?
+    /// The last chat open with each agent this session, so switching agents and back returns to it.
+    private var lastChat: [String: String] = [:]
+    /// Where each chat was scrolled to this session (points above the bottom); the view keeps it.
+    @ObservationIgnored var places: [String: CGFloat] = [:]
+    /// The demo account's chats, by id: what was said in each (kept for the session only).
+    private var demoThreads: [String: [ChatMessage]] = [:]
+    private var scopeCursor: String?
+    private var scopePass = 0
+    /// Chats saved from this phone that a list fetched before them may not hold yet.
+    private var justSaved: [String: ChatInfo] = [:]
+    /// When the newest agent row in this chat landed, and how far seen_at was reported.
+    private var newestAgentAt: String?
+    private var seenReported: String?
+    /// The app is on screen: an agent row that lands is being read.
+    var watching = true
+    /// Sends waiting for a chat made on this phone to reach the server.
+    private var unsaved: [Outbox.Item] = []
+    private var committing = false
+    /// A send Yui's server refused for a new chat: the words to put back and what to tell the person.
+    private(set) var refusal: (text: String, note: String)?
+    func clearRefusal() { refusal = nil }
+
+    /// The open chat's title, for the header: "New chat" until it has one.
+    var chatTitle: String {
+        guard let c = chats.open else { return "New chat" }
+        return Chats.title(c, agent: agent?.name ?? "Yui")
+    }
     private var poll: Task<Void, Never>?
     private var cursor: String?
     private var seen = Set<String>()
@@ -414,7 +469,7 @@ final class ChatStore {
             if let agentID = agent?.id { menu.store(agentID: agentID) }
             return
         }
-        guard let m = messages.last(where: { $0.yl?.components.contains { $0.ylID == id && $0.preset == preset } == true })
+        guard let m = pool.last(where: { $0.yl?.components.contains { $0.ylID == id && $0.preset == preset } == true })
         else { return }
         answers[m.id, default: [:]][id] = value
     }
@@ -490,9 +545,13 @@ final class ChatStore {
     /// `project open=name`: put the saved screen `name` back, the same as the
     /// agent sending `show name` in reply `id` (spec: project).
     func show(_ name: String, screen: String, in id: String) {
-        guard let i = messages.firstIndex(where: { $0.id == id }), var yl = messages[i].yl else { return }
-        apply(YLNode(op: .show, screen: screen, name: name, line: "show \(name)"), to: &yl)
-        withAnimation(spring) { messages[i].yl = yl }
+        if let i = messages.firstIndex(where: { $0.id == id }), var yl = messages[i].yl {
+            apply(YLNode(op: .show, screen: screen, name: name, line: "show \(name)"), to: &yl)
+            withAnimation(spring) { messages[i].yl = yl }
+        } else if let i = scoped.firstIndex(where: { $0.id == id }), var yl = scoped[i].yl {
+            apply(YLNode(op: .show, screen: screen, name: name, line: "show \(name)"), to: &yl)
+            withAnimation(spring) { scoped[i].yl = yl }
+        }
     }
 
     // MARK: Shelf (YUI-32, spec YL.md section 5, saved screens)
@@ -592,13 +651,26 @@ final class ChatStore {
     #endif
 
     /// The demo account: show `agent`'s face on the local demo chat, no thread.
+    /// It has one local chat; New chat starts a local empty one (YUI-169).
     func demo(_ agent: YuiAgent?) {
         poll?.cancel()
         client = nil
+        chatClient = nil
+        chatsOn = false
         self.agent = agent
         // Each agent opens on its own page, as a real thread does (attach).
         page = agent.flatMap { pages[$0.id] } ?? 1
         loaded = true
+        scoped = []
+        chats.reset()
+        chatID = nil
+        guard let agent else { return }
+        var items = [ChatInfo(id: "demo-\(agent.id)", isFirst: true, lastAt: ISO8601DateFormatter().string(from: .now))]
+        #if DEBUG
+        if let fixture = ChatList.debugChats() { items = fixture }
+        #endif
+        chats.seed(items, open: nil)
+        chatID = chats.openID
     }
 
     /// Switches to `agent`'s thread and keeps it fresh. nil detaches.
@@ -606,13 +678,26 @@ final class ChatStore {
         guard agent?.id != self.agent?.id || client == nil && agent != nil else { return }
         poll?.cancel()
         self.agent = agent
+        chatID = nil
+        chats.reset()
+        chatsOn = true
+        chatClient = agent.map { ChatsClient(account: account, agentID: $0.id) }
         client = agent.map { ThreadClient(account: account, agentID: $0.id) }
         self.account = account
-        messages = []
-        answers = [:]
-        timers.prune()
         shelf = agent.map { Shelf.load(agentID: $0.id) } ?? Shelf()
         menu = agent.map { AgentMenu.load(agentID: $0.id) } ?? AgentMenu()
+        resetThread()
+        guard client != nil else { return }
+        startPolling()
+    }
+
+    /// The parts of a thread that are one chat's: its rows, its answers, the working row.
+    /// The agent's shelf, drawer rows and the page it was on stay.
+    private func resetThread() {
+        messages = []
+        scoped = []
+        answers = [:]
+        timers.prune()
         reactions = [:]
         reacting = nil
         replying = nil
@@ -625,6 +710,8 @@ final class ChatStore {
         turnTimes = []
         timed = []
         cursor = nil
+        scopeCursor = nil
+        scopePass = 0
         waiting = false
         pickedUpAt = nil
         doing = nil
@@ -632,12 +719,22 @@ final class ChatStore {
         jobAt = nil
         stoppedRows = []
         stoppedJobs = []
+        newestAgentAt = nil
+        seenReported = nil
+        unsaved = []
         loaded = false
         error = nil
-        guard client != nil else { return }
+    }
+
+    private func startPolling() {
+        poll?.cancel()
         poll = Task { [weak self] in
+            var pass = 0
             while !Task.isCancelled {
                 await self?.refresh()
+                pass += 1
+                // The drawer's list stays honest on its own: a reply in another chat moves it up.
+                if pass % 4 == 0 { await self?.refreshChats() }
                 // A reply is owed: look often, so its first words show soon after they land (YUI-14).
                 try? await Task.sleep(for: self?.waiting == true ? Self.replyPoll : Self.idlePoll)
             }
@@ -761,8 +858,54 @@ final class ChatStore {
         guard client != nil, let agentID = agent?.id, let user = account?.session?.userID else { return }
         seen.insert(id.lowercased())
         if answers { owe() }
-        Outbox.shared.add(.init(id: id.lowercased(), userID: user, agentID: agentID, body: body, kind: kind,
-                                meta: meta, queuedAt: .now))
+        let item = Outbox.Item(id: id.lowercased(), userID: user, agentID: agentID, body: body, kind: kind,
+                               meta: meta, queuedAt: .now, chatID: chatID)
+        // A chat made on this phone is made on the server with its first words, not before.
+        if chats.openIsDraft { commit(item) } else {
+            if kind == "text", let chatID { chats.said(in: chatID, sender: "user", body: body, at: ISO8601DateFormatter().string(from: .now)) }
+            Outbox.shared.add(item)
+        }
+    }
+
+    /// The first words in a chat made here: the chat goes to the server, then the words.
+    /// A refusal ("update_needed", "limit_reached") takes the words back out and says why.
+    private func commit(_ item: Outbox.Item) {
+        unsaved.append(item)
+        guard !committing, let chatClient, let chat = item.chatID else { return }
+        committing = true
+        Task { [weak self] in
+            var refused: ChatError?
+            var reached = true
+            do { try await chatClient.insert(id: chat) }
+            catch let e as ChatError { refused = e }
+            catch { reached = false }  // offline: the outbox makes the chat, then sends
+            guard let self else { return }
+            committing = false
+            let sent = unsaved
+            unsaved = []
+            // Left for another chat meanwhile: the outbox still makes this one and sends.
+            guard chatID == chat || refused == nil else { return }
+            if chatID != chat {
+                for var it in sent { it.createChat = true; Outbox.shared.add(it) }
+                return
+            }
+            if let refused {
+                let ids = Set(sent.map(\.id))
+                let words = messages.first { ids.contains($0.id.lowercased()) && $0.fromUser }?.text ?? ""
+                withAnimation(spring) { messages.removeAll { ids.contains($0.id.lowercased()) } }
+                waiting = false
+                refusal = (words, refused.spoken)
+                chats.note = refused.spoken
+                return
+            }
+            let last = sent.last { $0.kind == "text" }?.body
+            chats.saveDraft(lastBody: last)
+            if let saved = chats.items.first(where: { $0.id == chat }) { justSaved[chat] = saved }
+            for var it in sent {
+                if !reached { it.createChat = true }
+                Outbox.shared.add(it)
+            }
+        }
     }
 
     /// A reply is owed: the working row shows and its seconds start.
@@ -824,7 +967,7 @@ final class ChatStore {
         seen.insert(id)
         halt(note: id)
         Outbox.shared.add(.init(id: id, userID: user, agentID: agentID, body: "stop", kind: "control",
-                                meta: .object(["op": .string("stop")]), queuedAt: .now))
+                                meta: .object(["op": .string("stop")]), queuedAt: .now, chatID: chatID))
     }
 
     /// A Stop, sent from here or read back from the thread (another phone, a reopen): what
@@ -849,7 +992,7 @@ final class ChatStore {
     private func restorePending() {
         guard let agentID = agent?.id else { return }
         var new: [ChatMessage] = []
-        for item in Outbox.shared.pending(agentID: agentID) where seen.insert(item.id).inserted {
+        for item in Outbox.shared.pending(agentID: agentID, chatID: chatID) where seen.insert(item.id).inserted {
             if item.kind == "control" { continue }  // a Stop on its way (YUI-190): its note is already here
             if item.kind == "event" {
                 record(meta: item.meta)
@@ -868,14 +1011,28 @@ final class ChatStore {
     }
 
     func refresh() async {
-        guard let client, let agentID = agent?.id else { return }
+        guard let agentID = agent?.id, client != nil else { return }
         let first = !loaded
         do {
+            // Which chat: the list comes first, and the thread is that chat's rows (YUI-169).
+            if chatsOn, chatID == nil { try await resolveChat() }
+            // A chat made here with nothing said in it is not on the server: nothing to read.
+            if chats.openIsDraft { loaded = true; return }
+            guard let client, agent?.id == agentID else { return }
+            let chat = chatID
             // Overlap the last poll by 10 s: a row can commit after a later one.
             let rows = try await client.fetch(since: cursor.map { YuiTime.before($0, seconds: 10) })
+            // The agent's screens said in its other chats: with the first load, then now and then.
+            var scopedRows: [ThreadRow] = []
+            scopePass += 1
+            if chat != nil, first || scopePass % 3 == 0 {
+                scopedRows = (try? await client.fetchScoped(since: scopeCursor.map { YuiTime.before($0, seconds: 10) })) ?? []
+            }
             // arrive_drawn (YUI-102) starts when the rows are here and ends on the frame that shows them.
             let arrived = CACurrentMediaTime()
-            guard agent?.id == agentID else { return }
+            guard agent?.id == agentID, chatID == chat else { return }
+            for row in scopedRows { addScoped(row) }
+            if let last = scopedRows.last?.createdAt, last > (scopeCursor ?? "") { scopeCursor = last }
             var landed = false
             for row in rows where add(row) && row.sender == "agent" { landed = true }
             if landed, !first { Perf.shared.span(.arriveDrawn, from: arrived) }
@@ -887,10 +1044,12 @@ final class ChatStore {
             // No time limit on a turn: the dots stay until the reply comes or the
             // host says the turn is over. Asleep or offline agents get their own note.
             // About once a second: the host writes the agent's `doing` onto this row (YUI-63).
-            if waiting, Date.now.timeIntervalSince(turnCheckedAt) > Self.turnCheck, Outbox.shared.pending(agentID: agentID).isEmpty {
+            if waiting, Date.now.timeIntervalSince(turnCheckedAt) > Self.turnCheck,
+               Outbox.shared.pending(agentID: agentID, chatID: chat).isEmpty {
                 turnCheckedAt = .now
-                if let row = try await client.newestFromUser(), agent?.id == agentID, waiting { track(row) }
+                if let row = try await client.newestFromUser(), agent?.id == agentID, chatID == chat, waiting { track(row) }
             }
+            noteRead()
         } catch {
             loaded = true
             if first { Perf.shared.cancel(.threadOpen); Perf.shared.cancel(.threadOpenCold) }
@@ -993,6 +1152,8 @@ final class ChatStore {
         }
         // Polls overlap: only a row not seen before can end the wait.
         guard seen.insert(id).inserted else { return false }
+        if row.sender == "agent", row.kind == "text", row.createdAt > (newestAgentAt ?? "") { newestAgentAt = row.createdAt }
+        if loaded, row.kind == "text", let chatID { chats.said(in: chatID, sender: row.sender, body: row.body, at: row.createdAt) }
         // An answer to what the person stopped (YUI-190): it never lands.
         if row.sender == "agent", Self.answers(row.meta, rows: stoppedRows, jobs: stoppedJobs) { return false }
         time(row)
@@ -1045,6 +1206,11 @@ final class ChatStore {
                         if node.op == .patch, let t = node.target, !screen.has(t),
                            let j = messages.lastIndex(where: { $0.yl?.has(t) == true }) {
                             messages[j].yl?.apply(node)
+                            if known[t] != nil { shelve(node, at: at) }
+                        } else if node.op == .patch, let t = node.target, !screen.has(t),
+                                  let j = scoped.lastIndex(where: { $0.yl?.has(t) == true }) {
+                            // A patch for a screen the agent drew in another chat (YUI-169).
+                            scoped[j].yl?.apply(node)
                             if known[t] != nil { shelve(node, at: at) }
                         } else {
                             apply(node, to: &screen)
@@ -1247,4 +1413,213 @@ enum YLSamples {
     ]
 
     static func text(_ name: String) -> String? { all.first { $0.name == name }?.text }
+}
+
+
+// MARK: Chats (YUI-169, spec yuigui/spec/CHATS.md)
+
+extension ChatStore {
+    /// The list first, then the chat the thread opens on: a push's, the last one open with this
+    /// agent, else the newest. An agent with none opens an empty one. A server with no chats
+    /// yet answers 404: the thread stays the agent's, as before.
+    fileprivate func resolveChat() async throws {
+        guard let chatClient, let agentID = agent?.id else { return }
+        let page: [ChatInfo]
+        do {
+            page = try await chatClient.list()
+        } catch AccountError.server(let code) where code == "http_404" {
+            chatsOn = false
+            return
+        }
+        guard agent?.id == agentID, chatID == nil else { return }
+        chats.apply(page: page, keep: Array(justSaved.values))
+        let known = Set(page.map(\.id))
+        let pick = wantedChat ?? lastChat[agentID].flatMap { known.contains($0) ? $0 : nil } ?? page.first?.id
+        wantedChat = nil
+        if let pick {
+            adopt(pick)
+        } else {
+            adopt(chats.startNew().id)
+        }
+    }
+
+    /// This chat is the thread now: its rows are what the client reads and posts.
+    private func adopt(_ id: String) {
+        guard let account, let agentID = agent?.id else { return }
+        chatID = id
+        chats.select(id)
+        lastChat[agentID] = id
+        client = ThreadClient(account: account, agentID: agentID, chatID: id)
+    }
+
+    /// The list from the server again: a reply in another chat moves it up, a delete or
+    /// rename on another phone shows, and an open chat gone elsewhere hands over to the next.
+    func refreshChats() async {
+        guard chatsOn, let chatClient, let agentID = agent?.id, chats.loaded, watching else { return }
+        guard let page = try? await chatClient.list(), agent?.id == agentID else { return }
+        for c in page { justSaved[c.id] = nil }
+        chats.apply(page: page, keep: Array(justSaved.values))
+        if let id = chatID, !chats.openIsDraft, !chats.more, !chats.items.contains(where: { $0.id == id }) {
+            leaveDeleted()
+        }
+    }
+
+    /// The open chat was deleted on another phone: the next newest opens, or a new one.
+    private func leaveDeleted() {
+        if let next = chats.items.first?.id { switchChat(to: next) } else { switchChat(to: chats.startNew().id) }
+    }
+
+    /// The next page of older chats, as the list scrolls.
+    func loadMoreChats() async {
+        guard chatsOn, chats.more, let chatClient, let agentID = agent?.id else { return }
+        guard let older = try? await chatClient.list(offset: chats.savedCount), agent?.id == agentID else { return }
+        chats.apply(older: older)
+    }
+
+    /// New chat: an empty one, saved when something is said in it. Already in an empty one, or
+    /// tapping twice: that same chat. Nothing on the server until then.
+    func newChat() {
+        guard agent != nil else { return }
+        if chats.openIsDraft || (chatID != nil && loaded && messages.isEmpty && !waiting) { return }
+        let d = chats.startNew()
+        switchChat(to: d.id)
+    }
+
+    /// The chat a push came from: opened even when the first page of the list lacks it.
+    func openPushed(_ id: String) {
+        let id = id.lowercased()
+        guard chatsOn || client == nil, id != chatID else { return }
+        switchChat(to: id)
+    }
+
+    /// A chat from the list.
+    func openChat(_ id: String) {
+        guard id != chatID, chats.items.contains(where: { $0.id == id }) else { return }
+        switchChat(to: id)
+    }
+
+    private func switchChat(to id: String) {
+        guard id != chatID else { return }
+        let demoing = client == nil
+        if demoing, let old = chatID { demoThreads[old] = messages }
+        poll?.cancel()
+        resetThread()
+        chatID = id
+        chats.select(id)
+        chats.note = nil
+        if let agentID = agent?.id { lastChat[agentID] = id }
+        if demoing {
+            messages = demoThreads[id] ?? []
+            loaded = true
+            return
+        }
+        guard let account, let agentID = agent?.id else { return }
+        client = ThreadClient(account: account, agentID: agentID, chatID: id)
+        if chats.openIsDraft { loaded = true }
+        startPolling()
+    }
+
+    /// Rename in place: shown at once, then saved. A renamed title never changes on its own again.
+    func renameChat(_ id: String, to raw: String) {
+        guard let title = Chats.validTitle(raw) else { return }
+        chats.rename(id, to: title)
+        guard client != nil, let chatClient else { return }
+        Task { [weak self] in
+            do { try await chatClient.rename(id, to: title) }
+            catch { self?.chats.note = "Couldn't rename that right now. Try again in a moment."; await self?.refreshChats() }
+        }
+    }
+
+    /// What Delete does for this chat: it goes, or (an agent's only chat) it is cleared.
+    var deletePlan: ChatDelete { Chats.deletePlan(saved: chats.savedCount) }
+
+    /// Delete or clear, after the person said yes. Deleting the open chat opens the next newest.
+    func deleteChat(_ id: String) async {
+        let plan = deletePlan
+        let next = Chats.openAfterDeleting(id, open: chatID, list: chats.items)
+        if client != nil, let chatClient {
+            do {
+                switch plan {
+                case .clear: try await chatClient.clear(id)
+                case .delete: try await chatClient.delete(id)
+                }
+            } catch ChatError.lastChat {
+                // The list said two, the server says one: clear it instead.
+                do { try await chatClient.clear(id) } catch { chats.note = ChatError.other("").spoken; return }
+                clearedLocally(id)
+                return
+            } catch {
+                chats.note = (error as? ChatError)?.spoken ?? ChatError.other("").spoken
+                return
+            }
+        }
+        switch plan {
+        case .clear: clearedLocally(id)
+        case .delete:
+            chats.remove(id)
+            justSaved[id] = nil
+            demoThreads[id] = nil
+            if chatID == id {
+                if let next { switchChat(to: next) } else { switchChat(to: chats.startNew().id) }
+            }
+        }
+    }
+
+    private func clearedLocally(_ id: String) {
+        chats.cleared(id)
+        demoThreads[id] = nil
+        guard chatID == id else { return }
+        withAnimation(spring) { messages = [] }
+        waiting = false
+        pickedUpAt = nil
+        doing = nil
+        job = nil
+        newestAgentAt = nil
+    }
+
+    /// The person is reading this chat and its newest agent row is in: seen_at moves there, so the
+    /// coral dot goes on every phone. The first look at a chat with no dot needs no call.
+    fileprivate func noteRead() {
+        guard watching, let chat = chatID, !chats.openIsDraft, let at = newestAgentAt, at != seenReported else { return }
+        let known = chats.items.first { $0.id == chat }
+        if seenReported == nil, known?.unread != true { seenReported = at; return }
+        seenReported = at
+        chats.markSeen(chat, at: at)
+        guard let chatClient else { return }
+        Task { try? await chatClient.seen(chat, at: at) }
+    }
+
+    /// An agent row from another chat: only what belongs to the agent (screens, patches, saves,
+    /// drawer lines) is kept, out of the thread.
+    func addScoped(_ row: ThreadRow) {
+        let id = row.id.lowercased()
+        guard row.kind != "control", row.sender == "agent", Mentions.from(meta: row.meta) == nil,
+              seen.insert(id).inserted else { return }
+        var new: [ChatMessage] = []
+        for (i, seg) in YuiFence.split(row.body).enumerated() {
+            guard case .yl(let y) = seg else { continue }
+            var screen = YLScreen()
+            let known = lastingIds
+            let at = YuiTime.date(row.createdAt) ?? .now
+            for node in YuiLines.parse(y, known: known) {
+                clearPage(node)
+                if node.op == .patch, let t = node.target, !screen.has(t),
+                   let j = scoped.lastIndex(where: { $0.yl?.has(t) == true }) {
+                    scoped[j].yl?.apply(node)
+                    if known[t] != nil { shelve(node, at: at) }
+                } else if node.op == .patch, let t = node.target, !screen.has(t),
+                          let j = messages.lastIndex(where: { $0.yl?.has(t) == true }) {
+                    messages[j].yl?.apply(node)
+                    if known[t] != nil { shelve(node, at: at) }
+                } else {
+                    apply(node, to: &screen)
+                }
+            }
+            file(screen.shelfOps, at: at)
+            fileMenu(screen.menuLines, at: at)
+            new.append(ChatMessage(id: "\(id)#\(i)", text: "", fromUser: false, yl: screen))
+        }
+        guard !new.isEmpty else { return }
+        scoped.append(contentsOf: new)
+    }
 }

@@ -75,6 +75,8 @@ struct ChatView: View {
     private static let cancelDistance: CGFloat = 110
     private var cancelArmed: Bool { talk.listening && micDragX <= -Self.cancelDistance }
     @State private var composerNote: String?
+    /// A word in plain language over the top of the screen (a chat Yui refused), for a few seconds.
+    @State private var chatNotice: String?
     /// Stage first (YUI-119): Yui lives on the full screen and the chat is the record.
     @State private var stageFirst = StageFirstModel()
     @AppStorage(StageFirstModel.key) private var stageFirstStored = true
@@ -239,8 +241,8 @@ struct ChatView: View {
                 ToolbarItem(placement: .topBarLeading) {
                     AgentPicker(agent: store.agent, agents: agents.agents, framed: false, unshared: agents.unshared,
                                 pick: { agents.selectedID = $0 }, add: agents.onlyShared ? nil : { addFirst = true },
-                                manage: { showAgents = true })
-                        .accessibilityIdentifier("record-agents")
+                                manage: { showAgents = true },
+                                title: store.chatTitle, openDrawer: { settleDrawer(open: true) }, menuID: "record-agents")
                 }
                 if stageFirstOn {
                     // The record's way back to the full screen (YUI-119).
@@ -249,6 +251,12 @@ struct ChatView: View {
                             .tint(c.inkSoft)
                             .accessibilityIdentifier("back-to-stage")
                     }
+                }
+                // The pen on a page: a new chat (YUI-169). The chat you are in is the record.
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("New chat", systemImage: "square.and.pencil") { startNewChat() }
+                        .tint(c.inkSoft)
+                        .accessibilityIdentifier("record-new-chat")
                 }
             }
             .toolbarBackground(c.background, for: .navigationBar)
@@ -498,6 +506,8 @@ struct ChatView: View {
             store.attach(agents.selected, account: account)
         }
         .onChange(of: agents.selected) { store.refreshAgent(agents.selected) }
+        .modifier(ChatsHooks(store: store, composer: composer, window: $window, pinned: $pinned, notice: $chatNotice,
+                             phase: scenePhase))
         .onChange(of: store.agent?.id, initial: true) {
             push.visibleAgentID = store.agent?.id
             window = Self.windowStep
@@ -516,7 +526,12 @@ struct ChatView: View {
         }
         .onChange(of: showSettings) { if !showSettings { settingsFocus = nil } }
         // A notification tap or yui://agent/<id>/thread: straight to that thread.
-        .onChange(of: push.pendingAgentID, initial: true) {
+        .onChange(of: push.pendingAgentID, initial: true) { openPushedThread() }
+        .tint(c.accent)
+    }
+
+    /// A notification tap or yui://agent/<id>/thread: straight to that thread (and chat).
+    private func openPushedThread() {
             guard let id = push.pendingAgentID else { return }
             push.pendingAgentID = nil
             showAgents = false
@@ -524,6 +539,12 @@ struct ChatView: View {
             settleDrawer(open: false)
             // A hand-off card names the agent by handle (yui://agent/basil, YUI-144).
             let target = agents.idFor(id)
+            // A push names the chat it came from (YUI-169): that one opens, not the newest.
+            if let chat = push.pendingChatID {
+                push.pendingChatID = nil
+                store.wantedChat = chat
+                if store.agent?.id == target { store.openPushed(chat) }
+            }
             agents.selectedID = target
             if !agents.agents.contains(where: { $0.id == target }) { Task { await agents.refresh() } }
             #if DEBUG
@@ -532,8 +553,6 @@ struct ChatView: View {
                 Task { try? await Task.sleep(for: .seconds(0.6)); store.demoAnswer(reply) }
             }
             #endif
-        }
-        .tint(c.accent)
     }
 
     // MARK: The agent's drawer (YUI-54)
@@ -583,7 +602,27 @@ struct ChatView: View {
                     manage: { settleDrawer(open: false); showAgents = true },
                     edit: { editingAgent = $0 },
                     settings: { settleDrawer(open: false); showSettings = true },
+                    newChat: startNewChat, openChat: pickChat,
                     reduceMotion: reduceMotion)
+    }
+
+    // MARK: Chats (YUI-169)
+
+    /// New chat: an empty one, nothing saved until something is said in it. With stage first it
+    /// opens on the full screen, where the mic is; tapping again gives the same empty chat.
+    private func startNewChat() {
+        store.newChat()
+        settleDrawer(open: false)
+        focused = false
+        store.goToPage(1)
+        if stageFirstOn, !stageFirst.open { openStageFirst() }
+    }
+
+    /// A chat from the drawer's list. The chat is the record: from the full screen it comes up there.
+    private func pickChat(_ id: String) {
+        store.openChat(id)
+        settleDrawer(open: false)
+        if stageFirstOn, stageFirst.open { closeStageFirst() }
     }
 
     /// Page 1: the thread itself, or the empty chat before the first message.
@@ -706,6 +745,20 @@ struct ChatView: View {
                 CGSize(width: geo.containerSize.height, height: geo.contentSize.height)
             } action: { _, _ in
                 if pinned, !dragging, !atBottom { position.scrollTo(edge: .bottom) }
+            }
+            // Each chat keeps where it was scrolled to for this session (YUI-169).
+            .onScrollGeometryChange(for: CGSize.self) { geo in
+                CGSize(width: geo.contentOffset.y,
+                       height: geo.contentSize.height - geo.contentInsets.top - geo.contentOffset.y - geo.containerSize.height)
+            } action: { _, now in
+                guard let id = store.chatID, store.loaded else { return }
+                if now.height < 24 { store.places[id] = nil } else { store.places[id] = now.width }
+            }
+            .task(id: "\(store.chatID ?? "")-\(store.loaded)") {
+                guard store.loaded, let id = store.chatID, let y = store.places[id], !store.messages.isEmpty else { return }
+                try? await Task.sleep(for: .milliseconds(80))
+                pinned = false
+                position.scrollTo(y: y)
             }
             // Within a screen of the top of what's drawn: draw the next older batch.
             .onScrollGeometryChange(for: Bool.self) { geo in
@@ -1395,6 +1448,8 @@ struct ChatView: View {
                 add: agents.onlyShared ? nil : { addFirst = true },
                 manage: { showAgents = true },
                 record: closeStageFirst,
+                newChat: startNewChat,
+                openDrawer: { settleDrawer(open: true) },
                 bar: barActions(tap: stageMicTap, type: {}) { withAnimation(theme.spring) { stageFirst.typing = true } },
                 send: send,
                 removePhoto: { p in photos.removeAll { $0.id == p.id } },
@@ -2872,6 +2927,60 @@ private struct DrawerLayer<Content: View>: View {
                 })
             }
             .transition(.identity)
+        }
+    }
+}
+
+
+/// What the chats (YUI-169) need from the screen, apart from the body so the body type-checks:
+/// a new chat starts at the newest message, the phone being on screen says what is being read,
+/// and a chat Yui's server refused (the app is too old, or the list is full) gives the words back
+/// to the composer and says why in plain words.
+private struct ChatsHooks: ViewModifier {
+    let store: ChatStore
+    let composer: ComposerModel
+    @Binding var window: Int
+    @Binding var pinned: Bool
+    @Binding var notice: String?
+    let phase: ScenePhase
+    @Environment(\.yuiTheme) private var theme
+    @Environment(\.colorScheme) private var scheme
+
+    func body(content: Content) -> some View {
+        let c = theme.swatch(scheme)
+        content
+            .onChange(of: store.chatID) {
+                window = ChatView.windowStep
+                if store.places[store.chatID ?? ""] == nil { pinned = true }
+            }
+            .onChange(of: phase, initial: true) { store.watching = phase == .active }
+            .onChange(of: store.refusal?.note) {
+                guard let r = store.refusal else { return }
+                composer.draft = r.text
+                store.clearRefusal()
+                say(r.note)
+            }
+            .overlay(alignment: .top) {
+                if let note = notice {
+                    Label(note, systemImage: "info.circle")
+                        .font(theme.font(theme.type.caption, .semibold))
+                        .foregroundStyle(c.ink)
+                        .padding(.horizontal, theme.spacing.l).padding(.vertical, theme.spacing.s)
+                        .background(c.surface, in: Capsule())
+                        .overlay(Capsule().stroke(c.outline, lineWidth: 1))
+                        .padding(.top, 70)
+                        .padding(.horizontal, theme.spacing.l)
+                        .transition(.opacity)
+                        .accessibilityIdentifier("chat-notice")
+                }
+            }
+    }
+
+    private func say(_ text: String) {
+        withAnimation { notice = text }
+        Task {
+            try? await Task.sleep(for: .seconds(5))
+            withAnimation { if notice == text { notice = nil } }
         }
     }
 }

@@ -91,6 +91,16 @@ final class Account {
         }
     }
 
+    #if DEBUG
+    /// Unit tests: signed in with a token that does not expire, so calls go straight to the relay under test.
+    static func signedIn(userID: String, token: String = "test-token") -> Account {
+        let a = Account()
+        a.session = YuiSession(userID: userID, appleUserID: "test", email: nil, accessToken: token,
+                               accessExpiry: .distantFuture, refreshToken: "")
+        return a
+    }
+    #endif
+
     // MARK: Sign in with Apple
 
     func prepare(_ request: ASAuthorizationAppleIDRequest) {

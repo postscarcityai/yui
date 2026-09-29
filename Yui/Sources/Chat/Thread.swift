@@ -121,14 +121,32 @@ extension YLValue {
 struct ThreadClient {
     let account: Account
     let agentID: String
+    /// The chat this thread is (YUI-169): its rows only. Nil reads and writes the agent's
+    /// whole thread, which is what Controls and a server with no chats use.
+    var chatID: String? = nil
 
     /// The newest `limit` rows, oldest first; or everything after `since`.
     /// Pass a `since` a little before the last row seen (`YuiTime.before`):
     /// a row can commit after a later one, and ids dedupe the overlap.
     func fetch(since: String?, limit: Int = 100) async throws -> [ThreadRow] {
+        let items = Self.fetchItems(agentID: agentID, chatID: chatID, since: since, limit: limit)
+        var c = URLComponents(url: YuiBackend.url.appending(path: "rest/v1/yui_messages"), resolvingAgainstBaseURL: false)!
+        c.queryItems = items
+        // Timestamps carry "+00:00"; a bare "+" in a query reads as a space.
+        c.percentEncodedQuery = c.percentEncodedQuery?.replacingOccurrences(of: "+", with: "%2B")
+        let data = try await request(URLRequest(url: c.url!))
+        let rows = try JSONDecoder().decode([ThreadRow].self, from: data)
+        return since == nil ? rows.reversed() : rows
+    }
+
+    /// The query of a thread read: the agent's rows, or one chat's when `chatID` is set.
+    static func fetchItems(agentID: String, chatID: String?, since: String?, limit: Int = 100) -> [URLQueryItem] {
         var items = [
-            URLQueryItem(name: "select", value: Self.columns),
+            URLQueryItem(name: "select", value: columns),
             URLQueryItem(name: "agent_id", value: "eq.\(agentID)"),
+        ]
+        if let chatID { items.append(URLQueryItem(name: "chat_id", value: "eq.\(chatID)")) }
+        items += [
             // Controls (YUI-70) ride the same table and never show in the thread,
             // except the person's Stop (YUI-190): the record says Stopped where it was.
             URLQueryItem(name: "or", value: "(kind.neq.control,and(sender.eq.user,body.eq.stop))"),
@@ -140,13 +158,7 @@ struct ThreadClient {
             items += [URLQueryItem(name: "order", value: "created_at.desc"),
                       URLQueryItem(name: "limit", value: String(limit))]
         }
-        var c = URLComponents(url: YuiBackend.url.appending(path: "rest/v1/yui_messages"), resolvingAgainstBaseURL: false)!
-        c.queryItems = items
-        // Timestamps carry "+00:00"; a bare "+" in a query reads as a space.
-        c.percentEncodedQuery = c.percentEncodedQuery?.replacingOccurrences(of: "+", with: "%2B")
-        let data = try await request(URLRequest(url: c.url!))
-        let rows = try JSONDecoder().decode([ThreadRow].self, from: data)
-        return since == nil ? rows.reversed() : rows
+        return items
     }
 
     static let columns = "id,sender,body,kind,meta,created_at,delivered_at,handled_at,reaction,doing"
@@ -160,6 +172,7 @@ struct ThreadClient {
                         URLQueryItem(name: "kind", value: "neq.control"),
                         URLQueryItem(name: "order", value: "created_at.desc"),
                         URLQueryItem(name: "limit", value: "1")]
+        if let chatID { c.queryItems?.append(URLQueryItem(name: "chat_id", value: "eq.\(chatID)")) }
         let data = try await request(URLRequest(url: c.url!))
         return try JSONDecoder().decode([ThreadRow].self, from: data).first
     }
@@ -183,6 +196,8 @@ struct ThreadClient {
         var row: [String: YLValue] = ["id": .string(id), "user_id": .string(user), "agent_id": .string(agentID),
                                       "sender": .string("user"), "body": .string(body), "kind": .string(kind)]
         if let meta { row["meta"] = meta }
+        // The chat it is said in. Settings traffic is the agent's, except the person's Stop, which is the chat's.
+        if let chatID, kind != "control" || body == "stop" { row["chat_id"] = .string(chatID) }
         var req = URLRequest(url: YuiBackend.url.appending(path: "rest/v1/yui_messages"))
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -191,7 +206,48 @@ struct ThreadClient {
         _ = try await request(req)
     }
 
+    /// What the agent's other chats hold that belongs to the agent, not to a chat: the
+    /// screens (`>2` and up), patches, saves and drawer lines. The open chat reads them
+    /// too, so screens stay the agent's whichever chat is open. Newest 100, or after `since`.
+    func fetchScoped(since: String?) async throws -> [ThreadRow] {
+        guard let chatID else { return [] }
+        var items = [
+            URLQueryItem(name: "select", value: Self.columns),
+            URLQueryItem(name: "agent_id", value: "eq.\(agentID)"),
+            URLQueryItem(name: "chat_id", value: "neq.\(chatID)"),
+            URLQueryItem(name: "sender", value: "eq.agent"),
+            URLQueryItem(name: "kind", value: "eq.text"),
+            URLQueryItem(name: "body", value: "match.\(Self.scopedPattern)"),
+        ]
+        if let since {
+            items += [URLQueryItem(name: "created_at", value: "gt.\(since)"),
+                      URLQueryItem(name: "order", value: "created_at.asc,id.asc")]
+        } else {
+            items += [URLQueryItem(name: "order", value: "created_at.desc"), URLQueryItem(name: "limit", value: "100")]
+        }
+        var c = URLComponents(url: YuiBackend.url.appending(path: "rest/v1/yui_messages"), resolvingAgainstBaseURL: false)!
+        c.queryItems = items
+        c.percentEncodedQuery = c.percentEncodedQuery?.replacingOccurrences(of: "+", with: "%2B")
+        let rows = try JSONDecoder().decode([ThreadRow].self, from: try await request(URLRequest(url: c.url!)))
+        return since == nil ? rows.reversed() : rows
+    }
+
+    /// A line that starts with a screen number (`>2`), a patch (`~`), a save or forget, or a drawer `menu`.
+    static let scopedPattern = #"(^|\n)[ \t]*(>[0-9]|~|save |forget |menu )"#
+
     private func request(_ r: URLRequest) async throws -> Data {
+        try await YuiRelay.data(account, r)
+    }
+}
+
+/// One request to Yui's relay with the session's token. `chats`: a refusal that is one of
+/// the chat errors (`update_needed`, `limit_reached`, `last_chat`) is thrown as that.
+@MainActor
+enum YuiRelay {
+    /// Tests swap in a session with a stand-in relay (a URLProtocol); the app uses the shared one.
+    static var session: URLSession = .shared
+
+    static func data(_ account: Account, _ r: URLRequest, chats: Bool = false) async throws -> Data {
         #if DEBUG
         // `-yuiOfflineFlag <path>`: while that file exists the network is "down" (YUI-28 tests).
         if let flag = UserDefaults.standard.string(forKey: "yuiOfflineFlag"), FileManager.default.fileExists(atPath: flag) {
@@ -201,11 +257,21 @@ struct ThreadClient {
         var req = r
         req.setValue(YuiBackend.publishableKey, forHTTPHeaderField: "apikey")
         req.setValue("Bearer \(try await account.validAccessToken())", forHTTPHeaderField: "Authorization")
-        let (data, response) = try await URLSession.shared.data(for: req)
+        let (data, response) = try await session.data(for: req)
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+            if chats, let e = refusal(data) { throw e }
             throw AccountError.server("http_\((response as? HTTPURLResponse)?.statusCode ?? 0)")
         }
         return data
+    }
+
+    /// PostgREST's `{"message": "limit_reached"}` as a chat error, when it is one we know.
+    static func refusal(_ body: Data) -> ChatError? {
+        struct Body: Decodable { let message: String? }
+        guard let m = (try? JSONDecoder().decode(Body.self, from: body))?.message else { return nil }
+        let e = ChatError(message: m)
+        if case .other = e { return nil }
+        return e
     }
 }
 

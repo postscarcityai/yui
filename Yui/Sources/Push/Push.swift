@@ -21,6 +21,8 @@ final class PushCenter: NSObject {
 
     /// A thread to open, from a notification tap or a link. ChatView consumes it.
     var pendingAgentID: String?
+    /// The chat a notification came from (YUI-169, the payload's `chat`): opened with the agent's thread.
+    var pendingChatID: String?
     /// Settings to open from a link (`yui://settings/search`, YUI-142): the section, "" for the top. ChatView consumes it.
     var pendingSettings: String?
     /// `yui://snap` (YUI-166): hold to snap and say, in the thread on screen. ChatView consumes it.
@@ -204,8 +206,11 @@ extension PushCenter: UNUserNotificationCenterDelegate {
         let info = response.notification.request.content.userInfo
         let link = (info["url"] as? String).flatMap(URL.init(string:))
         let agent = info["agent_id"] as? String
+        let chat = (info["chat"] as? String)?.lowercased()
         DispatchQueue.main.async {
             MainActor.assumeIsolated {
+                // Before the agent, so the thread that opens is that chat.
+                if chat != nil { PushCenter.shared.pendingChatID = chat }
                 if let link, PushCenter.shared.open(link) {
                 } else if let agent {
                     PushCenter.shared.pendingAgentID = agent

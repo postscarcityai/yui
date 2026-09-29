@@ -78,7 +78,7 @@ extension ChatStore {
     /// hello is its answer to start from, not an ask: it stays on the stage (YUI-165).
     var awaitingYou: [ReviewItem] {
         // Reading both keeps the views that ask observing them.
-        let messages = messages, answers = answers
+        let messages = pool, answers = answers, other = scoped.count
         if let waitingCache { return waitingCache }
         let lastSaid = messages.lastIndex(where: \.fromUser) ?? -1
         var seen = Set<String>()
@@ -89,8 +89,9 @@ extension ChatStore {
             let top = yl.top
             for (j, c) in top.enumerated().reversed() {
                 let fresh = seen.insert(c.ylID).inserted
+                // What the agent asked in another chat is that chat's; its screens are the agent's (YUI-169).
                 guard fresh, Self.asks.contains(c.preset), !c.locked, answers[m.id]?[c.ylID] == nil,
-                      c.page != 1 || i > lastSaid else { continue }
+                      c.page != 1 || (i >= other && i > lastSaid) else { continue }
                 // A page redrawn and named (Basil's This week, YUI-183) is a standing page: its pickers are tools too.
                 if c.page != 1, yl.namedScreens.contains(c.screen) { continue }
                 // What leads up to it: back to the previous ask, at most two parts, same screen.
@@ -124,6 +125,10 @@ struct AgentDrawer: View {
     let edit: (YuiAgent) -> Void
     /// The app's Settings: the drawer is the hamburger's, and Settings lives here (YUI-122).
     var settings: () -> Void = {}
+    /// New chat (YUI-169): starts an empty one and shuts the drawer.
+    var newChat: () -> Void = {}
+    /// A chat from the list: the drawer shuts and it is up.
+    var openChat: (String) -> Void = { _ in }
     var reduceMotion = false
     @Environment(\.yuiTheme) private var theme
     @Environment(\.colorScheme) private var scheme
@@ -141,7 +146,8 @@ struct AgentDrawer: View {
             ScrollView {
                 Group {
                     switch tab {
-                    case .home: DrawerHome(store: store, waiting: waiting, close: close, compose: compose) { tab = .review }
+                    case .home: DrawerHome(store: store, waiting: waiting, close: close, compose: compose,
+                                           newChat: newChat, openChat: openChat) { tab = .review }
                     case .review: DrawerReview(store: store, items: waiting, close: close, compose: compose)
                     case .controls: DrawerControls(store: store, close: close, edit: edit)
                     case .about: DrawerAbout(agent: store.agent) { words in
@@ -257,7 +263,7 @@ private struct TabStrip: View {
 }
 
 /// A section's small heading.
-private struct DrawerHeading: View {
+struct DrawerHeading: View {
     let text: String
     @Environment(\.yuiTheme) private var theme
     @Environment(\.colorScheme) private var scheme
@@ -321,6 +327,8 @@ private struct DrawerHome: View {
     let waiting: [ReviewItem]
     let close: () -> Void
     let compose: (String) -> Void
+    let newChat: () -> Void
+    let openChat: (String) -> Void
     let review: () -> Void
     @Environment(\.openURL) private var openURL
     @Environment(\.yuiTheme) private var theme
@@ -330,28 +338,7 @@ private struct DrawerHome: View {
         let c = theme.swatch(scheme)
         let name = store.agent?.name ?? "Yui"
         VStack(alignment: .leading, spacing: theme.spacing.s) {
-            DrawerHeading(text: "Pinned screens")
-            let pinned = store.shelf.screens
-            if pinned.isEmpty {
-                Text("Nothing pinned yet. Ask \(name) to save a screen you'll want again, like a workout.")
-                    .font(theme.font(theme.type.caption)).foregroundStyle(c.inkSoft)
-                    .padding(theme.spacing.l)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .overlay(RoundedRectangle(cornerRadius: 20).stroke(c.outline, style: StrokeStyle(lineWidth: 1.5, dash: [5, 4])))
-            } else {
-                ScrollView(.horizontal) {
-                    HStack(spacing: theme.spacing.m) {
-                        ForEach(Array(pinned.enumerated()), id: \.element.name) { i, s in
-                            PinnedTile(screen: s, tint: [c.lavender, c.mint, c.butter][i % 3]) {
-                                close()
-                                store.reopen(s.name)
-                            } remove: { store.unshelve(s.name) }
-                        }
-                    }
-                }
-                .scrollIndicators(.hidden)
-                .scrollClipDisabled()
-            }
+            DrawerChats(store: store, newChat: newChat, openChat: openChat)
 
             let count = waiting.count + store.menu.review.count
             if let next = waiting.first.map({ ($0.title, $0.kicker) })
@@ -379,6 +366,29 @@ private struct DrawerHome: View {
                 .buttonStyle(BounceButtonStyle())
                 .accessibilityLabel("Next up: \(next.0). \(count) waiting on you")
                 .accessibilityIdentifier("drawer-next-up")
+            }
+
+            DrawerHeading(text: "Pinned screens")
+            let pinned = store.shelf.screens
+            if pinned.isEmpty {
+                Text("Nothing pinned yet. Ask \(name) to save a screen you'll want again, like a workout.")
+                    .font(theme.font(theme.type.caption)).foregroundStyle(c.inkSoft)
+                    .padding(theme.spacing.l)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .overlay(RoundedRectangle(cornerRadius: 20).stroke(c.outline, style: StrokeStyle(lineWidth: 1.5, dash: [5, 4])))
+            } else {
+                ScrollView(.horizontal) {
+                    HStack(spacing: theme.spacing.m) {
+                        ForEach(Array(pinned.enumerated()), id: \.element.name) { i, s in
+                            PinnedTile(screen: s, tint: [c.lavender, c.mint, c.butter][i % 3]) {
+                                close()
+                                store.reopen(s.name)
+                            } remove: { store.unshelve(s.name) }
+                        }
+                    }
+                }
+                .scrollIndicators(.hidden)
+                .scrollClipDisabled()
             }
 
             // What the agent is working on for you (`menu backlog`).
@@ -452,19 +462,22 @@ private struct PinnedTile: View {
     var body: some View {
         let c = theme.swatch(scheme)
         Button(action: open) {
-            VStack(alignment: .leading, spacing: 4) {
-                Image(systemName: screen.stage || screen.parts.contains(where: \.isWorkout) ? "figure.run" : "star.fill")
-                    .font(theme.font(24, .bold)).foregroundStyle(c.ink.opacity(0.8))
-                Spacer(minLength: 0)
+            // A small tile (YUI-169): pinned screens are one row you swipe sideways, not the top of the drawer.
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 6) {
+                    Image(systemName: screen.stage || screen.parts.contains(where: \.isWorkout) ? "figure.run" : "star.fill")
+                        .font(theme.font(13, .bold)).foregroundStyle(c.ink.opacity(0.8))
+                    Spacer(minLength: 0)
+                }
                 Text(screen.name)
-                    .font(theme.font(theme.type.title, theme.strong)).foregroundStyle(c.ink)
-                    .lineLimit(2).minimumScaleFactor(0.7).multilineTextAlignment(.leading)
+                    .font(theme.font(theme.type.body, .heavy)).foregroundStyle(c.ink)
+                    .lineLimit(1).minimumScaleFactor(0.7)
                 Text(screen.parts.count == 1 ? "1 part" : "\(screen.parts.count) parts")
                     .font(theme.font(theme.type.caption, .semibold)).foregroundStyle(c.ink.opacity(0.65))
             }
-            .padding(theme.spacing.l)
-            .frame(width: 138, height: 164, alignment: .leading)
-            .background(tint.opacity(scheme == .dark ? 0.55 : 1), in: .rect(cornerRadius: 24))
+            .padding(.horizontal, theme.spacing.m).padding(.vertical, 10)
+            .frame(width: 132, alignment: .leading)
+            .background(tint.opacity(scheme == .dark ? 0.55 : 1), in: .rect(cornerRadius: 16))
         }
         .buttonStyle(BounceButtonStyle())
         .contextMenu {
@@ -479,7 +492,7 @@ private struct PinnedTile: View {
 extension ChatStore {
     /// What a screen beside the chat is called: its first title, else "Screen n".
     func pageTitle(_ n: Int) -> String {
-        for m in messages.reversed() {
+        for m in pool.reversed() {
             guard let yl = m.yl else { continue }
             if let t = yl.top.first(where: { $0.page == n })?.string("title") ?? yl.top.first(where: { $0.page == n })?.string("q") {
                 return t

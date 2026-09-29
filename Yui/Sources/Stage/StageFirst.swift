@@ -148,6 +148,10 @@ struct StageActions {
     var add: (() -> Void)? = nil
     var manage: () -> Void
     var record: () -> Void
+    /// New chat (YUI-169): the round button top right.
+    var newChat: () -> Void = {}
+    /// The name and the chat's title: the drawer with the chats.
+    var openDrawer: () -> Void = {}
     /// + T and the mic (YUI-121). Its `type` is the stage's own; the view opens the field.
     var bar: BarActions
     var send: () -> Void
@@ -531,9 +535,10 @@ struct StageFirstView: View {
             circle("line.3.horizontal", c, label: "Menu", id: "stage-menu", action: actions.menu)
                 .modifier(WaitingDot(waiting: waiting > 0, reduceMotion: reduceMotion, x: 1, y: 1))
                 .accessibilityValue(waiting > 0 ? "\(waiting) waiting on you" : "")
-            AgentPicker(agent: agent, agents: agents, unshared: unshared, pick: actions.pick, add: actions.add, manage: actions.manage)
-                .accessibilityIdentifier("stage-agents")
+            AgentPicker(agent: agent, agents: agents, unshared: unshared, pick: actions.pick, add: actions.add, manage: actions.manage,
+                        title: store.chatTitle, openDrawer: actions.openDrawer, menuID: "stage-agents")
             Spacer(minLength: 0)
+            // The pen on a page starts a new chat (YUI-169); the chat itself, the record, is the bubble beside it.
             circle("bubble.left", c, label: "Chat", id: "stage-record", action: actions.record)
                 .overlay(alignment: .topTrailing) {
                     if unread > 0 {
@@ -549,6 +554,7 @@ struct StageFirstView: View {
                     }
                 }
                 .accessibilityValue(unread > 0 ? "\(unread) new" : "")
+            circle("square.and.pencil", c, label: "New chat", id: "stage-new-chat", action: actions.newChat)
         }
         .padding(.horizontal, theme.spacing.l)
         .padding(.top, theme.spacing.xs)
