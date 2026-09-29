@@ -33,4 +33,18 @@ final class PushTapTests: XCTestCase {
         XCTAssertEqual(PushCenter.shared.pendingSettings, "search")
         PushCenter.shared.pendingSettings = nil
     }
+
+    /// Three things came in a row and the tap names none of them: it lands on the first, not the last.
+    func testAnUnnamedMessageLandsOnTheFirstOfTheNewestTurn() {
+        let ask = ChatMessage(id: "u", text: "hi", fromUser: true)
+        let a = ChatMessage(id: "a", text: "One", fromUser: false)
+        let b = ChatMessage(id: "b", text: "Two", fromUser: false)
+        let c = ChatMessage(id: "c", text: "Three", fromUser: false)
+        let old = ChatMessage(id: "old", text: "Earlier", fromUser: false)
+        XCTAssertEqual(PushLanding.message([old, ask, a, b, c], want: nil), "a")
+        XCTAssertEqual(PushLanding.message([old, ask, a, b, c], want: "gone"), "a")
+        XCTAssertEqual(PushLanding.message([old, ask, a, b, c], want: "b"), "b")
+        XCTAssertEqual(PushLanding.message([a, b], want: nil), "a")
+        XCTAssertNil(PushLanding.message([ask], want: nil))
+    }
 }

@@ -1323,8 +1323,11 @@ final class ChatStore {
             doing = nil
             let text = reply.replacingOccurrences(of: "\\n", with: "\n")
             if text.contains("```yui") {
-                add(ThreadRow(id: UUID().uuidString.lowercased(), sender: "agent", body: text, kind: "text", meta: meta,
-                              createdAt: ISO8601DateFormatter().string(from: .now)))
+                // A line of `@@` between two replies sends them as separate messages (YUI-199b: a turn of several).
+                for part in text.components(separatedBy: "\n@@\n") {
+                    add(ThreadRow(id: UUID().uuidString.lowercased(), sender: "agent", body: part, kind: "text", meta: meta,
+                                  createdAt: ISO8601DateFormatter().string(from: .now)))
+                }
             } else {
                 stream(text)
             }

@@ -14,6 +14,11 @@ final class PushTapTests: XCTestCase {
         app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", s)).firstMatch
     }
 
+    /// A line the stage is showing (the record under it holds them all).
+    private func line(_ s: String) -> XCUIElement {
+        app.staticTexts.matching(NSPredicate(format: "identifier == 'stage-line' AND label BEGINSWITH %@", s)).firstMatch
+    }
+
     private func shot(_ name: String) {
         let s = XCUIScreen.main.screenshot()
         let a = XCTAttachment(screenshot: s)
@@ -58,5 +63,35 @@ final class PushTapTests: XCTestCase {
         XCTAssertTrue(app.descendants(matching: .any)["stage-first"].waitForExistence(timeout: 25), "the tap did not bring Arnold's message up")
         XCTAssertTrue(text("Arnold here.").exists, "Arnold's message is not on the stage")
         XCTAssertFalse(app.descendants(matching: .any)["stage-greeting"].exists, "the tap landed on the home greeting")
+    }
+
+    /// The stage sits on the last page of a 3-message answer; a tap for that agent brings its answer up on
+    /// page one (YUI-199b, Chris on build 332: "it takes me to the last screen instead of the first").
+    func testTapLandsOnPageOneOfADeckNotTheLast() {
+        app.terminate()
+        let deck = "```yui\\nsay First page.\\n```\\n@@\\n```yui\\nsay Second page.\\n```\\n@@\\n```yui\\nsay Finish here.\\n```"
+        app.launchArguments = ["-yuiDemoAccount", "-yuiDemoAgents", "-yuiStageFirst", "YES", "-appearance", appearance, "-yuiAgent", "yui",
+                               "-yuiDemoReply", deck, "-yuiDemoPickupAfter", "0.5", "-yuiDemoReplyAfter", "2",
+                               "-yuiDemoPushTap", "yui", "-yuiDemoPushTapAfter", "30"]
+        app.launch()
+        XCTAssertTrue(app.buttons["stage-type"].waitForExistence(timeout: 15), "no stage")
+        app.buttons["stage-type"].tap()
+        let field = app.textFields["stage-field"]
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        field.typeText("Plan it")
+        app.buttons["stage-send-text"].tap()
+        XCTAssertTrue(line("First page.").waitForExistence(timeout: 20), "the answer did not come")
+        // To the last page: the right of the screen turns it.
+        for want in ["First page.", "Second page.", "Finish here."] {
+            XCTAssertTrue(line(want).waitForExistence(timeout: 8), "\(want) did not show")
+            app.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5)).tap()
+        }
+        XCTAssertTrue(line("Finish here.").waitForExistence(timeout: 5), "not on the last page")
+        shot("3-before-on-last-page")
+        // The tap fires at 30 seconds: page one.
+        sleep(32)
+        shot("4-after-the-tap")
+        XCTAssertTrue(line("First page.").exists, "the tap did not land on page one")
+        XCTAssertFalse(line("Finish here.").exists, "the tap landed on the last page")
     }
 }

@@ -571,8 +571,7 @@ struct ChatView: View {
     /// newest thing the agent said when it is not in the thread. Waits for the thread to load.
     private func landPushed() {
         guard let want = pushLanding, store.loaded, store.agent?.id == want.agent else { return }
-        let said = store.messages.filter { !$0.fromUser && !$0.home }
-        guard let id = said.first(where: { $0.id == want.message })?.id ?? said.last?.id else { return }
+        guard let id = PushLanding.message(store.messages, want: want.message) else { return }
         pushLanding = nil
         openStage(id)
     }

@@ -217,6 +217,18 @@ extension PushCenter: UNUserNotificationCenterDelegate {
     }
 }
 
+/// Where a tap lands in the thread (YUI-199b, Chris: "I should see the beginning page of the chat").
+enum PushLanding {
+    /// The message the tap names, else the first thing the agent said in its newest turn (what
+    /// came after the person's last word), so the stage opens on page one, never on the last.
+    static func message(_ messages: [ChatMessage], want: String?) -> String? {
+        let said = { (m: ChatMessage) in !m.fromUser && !m.home && !m.stopped }
+        if let want, let m = messages.first(where: { $0.id == want }), said(m) { return m.id }
+        let turn = messages.lastIndex(where: \.fromUser).map { messages[($0 + 1)...] } ?? messages[...]
+        return turn.first(where: said)?.id
+    }
+}
+
 extension PushCenter {
     /// A tap on a notification (YUI-199): its agent's thread opens on the message that came,
     /// from a cold start and from the background alike. The payload names the agent
