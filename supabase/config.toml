@@ -32,3 +32,8 @@ verify_jwt = false
 # NATIVE-1: called by the database (pg_net) with its own secret header.
 [functions.yui-native]
 verify_jwt = false
+
+# Yui's mailbox: SendGrid posts inbound mail and delivery events with its own
+# secrets; the site, the app and Yui's tools send with their own keys.
+[functions.yui-mail]
+verify_jwt = false
