@@ -90,6 +90,13 @@ Transport: the gateway dials OUT to Supabase (the yuigui project). No inbound po
      count, never its text, in <profile home>/yui/textbombs.jsonl, with a
      warning in the gateway log. The app folds it into "Read as pages".
 
+ 13. One line and a picture (VIS-1, oneline.py): a reply to the person whose
+     chat text runs over 30 words, or draws more than one text bubble, or follows
+     another prose bubble in the same turn, is rewritten to one line plus its
+     picture before it sends. `yui.one_line: shadow` (default) only logs counts
+     in <profile home>/yui/oneline.jsonl; `on` sends the rewrite; `off` skips it.
+     Score a profile's replies with hermes-plugin/vis_score.py.
+
  14. Shared agents (YUI-95, sandbox.py): an agent its owner shared with
      other people (a grant) has one thread per person. Each person's thread
      is its own Hermes session (chat_id `<agent id>~<user id>`; the owner's
@@ -195,7 +202,7 @@ from gateway.config import Platform, PlatformConfig
 from gateway.platforms.base import (BasePlatformAdapter, MessageEvent, MessageType, ProcessingOutcome,
                                     SendResult)
 
-from . import board, compat, connector, controls, doing, flywheel, groups, jev, media, mentions, needs, outbox, restyle, sandbox, shown, tables, talk, textbomb, vault
+from . import board, compat, connector, controls, doing, flywheel, groups, jev, media, mentions, needs, outbox, restyle, sandbox, shown, tables, oneline, talk, textbomb, vault
 from . import commands as slash
 
 logger = logging.getLogger(__name__)
@@ -1329,6 +1336,16 @@ class YuiAdapter(BasePlatformAdapter):
                 if n not in self._notes.get(agent_id, []):
                     self._notes.setdefault(agent_id, []).append(n)
             if not body:
+                return SendResult(success=True, message_id=None)
+        if not sender:  # one line and a picture (VIS-1): shadow logs, `on` rewrites a wall or a second prose bubble
+            turn_ids = (self._busy.get(key) or (None,))[0]
+            turn_id = ",".join(turn_ids) if turn_ids else None
+            seen = self.__dict__.setdefault("_prose_bubbles", {})
+            prior = seen[key][1] if turn_id and seen.get(key, (None, 0))[0] == turn_id else 0
+            body, drawn = oneline.gate(body, prior, oneline.mode(getattr(getattr(self, "config", None), "extra", None)), connector.current_profile(), "reply", logger)
+            if turn_id:
+                seen[key] = (turn_id, prior + drawn)
+            if not body.strip():
                 return SendResult(success=True, message_id=None)
         flywheel.record(body, connector.current_profile())  # custom shapes only, off unless yui.flywheel
         textbomb.record(body, connector.current_profile(), "handoff" if sender else "reply", logger)
