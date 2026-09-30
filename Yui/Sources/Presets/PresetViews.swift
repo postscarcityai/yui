@@ -356,25 +356,31 @@ struct ChoosePreset: View {
         return c.answer(v, echo: picked.isEmpty ? "None of these" : picked.joined(separator: ", "), changed: changed)
     }
 
+    /// Type your own (Chris, TestFlight AC1AzxH4): a roomy field that grows with the words, not a pill.
     private func otherField(_ s: Swatch) -> some View {
-        HStack(spacing: theme.spacing.s) {
-            TextField("Your answer", text: $other)
+        VStack(alignment: .trailing, spacing: theme.spacing.s) {
+            TextField("Your answer", text: $other, axis: .vertical)
+                .lineLimit(3...8)
                 .font(theme.font(theme.type.body))
                 .foregroundStyle(s.ink)
                 .focused($otherFocused)
                 .submitLabel(.done)
                 .onSubmit(addOther)
-                .padding(.horizontal, theme.spacing.l)
-                .padding(.vertical, theme.spacing.m)
-                .background(s.background, in: Capsule())
-                .overlay(Capsule().stroke(s.outline, lineWidth: 1.5))
-            Button("Add", systemImage: "arrow.up", action: addOther)
-                .labelStyle(.iconOnly)
-                .font(theme.font(theme.type.body, .black))
-                .foregroundStyle(s.userInk)
-                .frame(width: 40, height: 40)
-                .background(s.accent, in: Circle())
-                .buttonStyle(BounceButtonStyle())
+                .padding(theme.spacing.m)
+                .frame(maxWidth: .infinity, minHeight: 96, alignment: .topLeading)
+                .background(s.background, in: RoundedRectangle(cornerRadius: theme.radius.card))
+                .overlay(RoundedRectangle(cornerRadius: theme.radius.card).stroke(s.outline, lineWidth: 1.5))
+                .accessibilityIdentifier("other-field")
+            Button(action: addOther) {
+                Label("Add", systemImage: "arrow.up")
+                    .font(theme.font(theme.type.body, .bold))
+                    .foregroundStyle(s.userInk)
+                    .padding(.horizontal, theme.spacing.l)
+                    .frame(height: 44)
+                    .background(s.accent, in: Capsule())
+            }
+            .buttonStyle(BounceButtonStyle())
+            .accessibilityIdentifier("other-add")
         }
         .transition(.opacity)
     }

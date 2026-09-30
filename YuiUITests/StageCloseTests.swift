@@ -36,8 +36,9 @@ final class StageCloseTests: XCTestCase {
         XCTAssertTrue(app.descendants(matching: .any)["stage-questions"].waitForExistence(timeout: 3), "no questions screen")
         let home = app.buttons["stage-home"]
         XCTAssertTrue(home.waitForExistence(timeout: 3), "no Back home on the last page")
-        XCTAssertFalse(app.buttons["stage-mic"].exists, "Back home takes the mic's place")
-        XCTAssertTrue(home.frame.minX > app.windows.firstMatch.frame.midX / 2, "Back home is not bottom right")
+        let mic = app.buttons["stage-mic"]
+        XCTAssertTrue(mic.exists, "the mic must stay on the last page")
+        XCTAssertLessThanOrEqual(home.frame.maxY, mic.frame.minY, "Back home sits under the content, above the bar")
         XCTAssertFalse(app.buttons["stage-close"].exists, "one way out at the end, not two")
         shot("1-end", appearance)
         home.tap()

@@ -678,7 +678,9 @@ struct StageFirstView: View {
                 Text("\(Text("You: ").bold())\(ask.text)")
                     .font(theme.font(theme.type.caption))
                     .foregroundStyle(c.inkSoft)
-                    .lineLimit(1)
+                    // Chris, TestFlight AKh8806F: one line cut his question too soon. Six, then the ellipsis.
+                    .lineLimit(6)
+                    .multilineTextAlignment(pages > 1 ? .leading : .trailing)
                     .frame(maxWidth: .infinity, alignment: pages > 1 ? .leading : .trailing)
                     .accessibilityIdentifier("stage-you")
             }
@@ -704,11 +706,27 @@ struct StageFirstView: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            // The end (YUI-195): the mic stays in the bar; the way out is a quiet line under the content.
+            if atEnd(t) { backHome(c) }
             // More is coming: the working line stays under what already landed.
             if pages > 0, store.waiting { workingLine(c).frame(maxWidth: .infinity) }
         }
         .padding(.horizontal, theme.spacing.l)
         .padding(.top, theme.spacing.s)
+    }
+
+    /// Back home, quiet: text and a house under the last page. Sends nothing: the agent never hears of it.
+    private func backHome(_ c: Swatch) -> some View {
+        Button { goHome() } label: {
+            Label("Back home", systemImage: "house")
+                .font(theme.font(theme.type.caption, .semibold))
+                .foregroundStyle(c.inkSoft)
+                .frame(maxWidth: .infinity, minHeight: 44)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityHint("Closes this and goes to the agent's home. Sends nothing.")
+        .accessibilityIdentifier("stage-home")
     }
 
     /// One bar per chunk, the questions last; the ones read are filled.
@@ -1011,7 +1029,6 @@ struct StageFirstView: View {
             withAnimation(reduceMotion ? .easeInOut(duration: 0.2) : theme.spring) { model.typing = true }
             focus.wrappedValue = true
         }
-        if atEnd(model.turn(store.messages)) { a.home = { goHome() } }
         return a
     }
 
