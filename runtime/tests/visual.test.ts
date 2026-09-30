@@ -11,8 +11,8 @@ const fence = (...lines: string[]) => "Here you go.\n```yui\n" + lines.join("\n"
 test("every starter ships a quiet default: never full, never quick", () => {
   const picks = Object.fromEntries(starters().map((p) => [p.base, p.visual && [p.visual.look, p.visual.hears]]));
   assert.deepEqual(picks, {
-    yui: ["orb", "voice"], arnold: ["waves", "music"], basil: ["bloom", "voice"],
-    gouda: ["grain", "music"], penny: ["aurora", "off"], quill: ["orb", "voice"],
+    yui: ["orb", "voice"], arnold: ["orb", "music"], basil: ["orb", "voice"],
+    gouda: ["orb", "music"], penny: ["orb", "off"], quill: ["orb", "voice"],
   });
   for (const p of starters()) {
     assert.ok(VISUAL_STRENGTH[p.visual!.strength] <= 0.7, `${p.base} draws at dim or lower`);
@@ -28,7 +28,7 @@ test("defaults resolve: own profile, else its starter's, else the soft orb", () 
   assert.deepEqual(visualDefault(null), FALLBACK_VISUAL);
   assert.deepEqual(FALLBACK_VISUAL, { look: "orb", hears: "voice", strength: "faint", pace: "slow" });
   const s = stageVisual(visualDefault(crew().arnold), null);
-  assert.deepEqual(s, { from: "default", look: "waves", tone: "accent", react: "music", strength: 0.7, pace: "even" });
+  assert.deepEqual(s, { from: "default", look: "orb", tone: "accent", react: "music", strength: 0.7, pace: "even" });
 });
 
 test("the agent's own visual line wins over its default, at the strength it asked for", () => {
@@ -76,7 +76,7 @@ test("the list tells the app each native agent's visual, with the line it would 
     { agent_id: "a3", base: "custom" }, // made by Yui, no pick
     { agent_id: "a4", base: "custom", visual: { look: "aurora", hears: "mic", strength: "faint", pace: "slow", tone: "sky" } },
   ]);
-  assert.deepEqual(out.a1.visual, { look: "grain", hears: "music", strength: "dim", pace: "even", tone: "accent", line: "visual grain react=music" });
+  assert.deepEqual(out.a1.visual, { look: "orb", hears: "music", strength: "dim", pace: "even", tone: "accent", line: "visual orb react=music" });
   assert.equal(out.a2.visual.line, "visual orb");
   assert.equal(out.a2.visual.strength, "faint");
   assert.deepEqual(out.a3.visual, { look: "orb", hears: "voice", strength: "faint", pace: "slow", tone: "accent", line: "visual orb" });

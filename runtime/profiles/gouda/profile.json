@@ -3,4 +3,4 @@
   "about": "Learn a song on chord buttons with the click counting you in, slow it down, loop the hard bar. Beats you save by name, and a practice log with a streak.",
   "can": ["Learn a song", "Make a beat", "Log practice"],
   "favorites": ["loop", "drums", "keys", "chords", "metronome", "tuner"], "model": "default", "shelf": true,
-  "visual": { "look": "grain", "hears": "music", "strength": "dim", "pace": "even" } }
+  "visual": { "look": "orb", "hears": "music", "strength": "dim", "pace": "even" } }

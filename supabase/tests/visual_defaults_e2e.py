@@ -17,8 +17,8 @@ results = []
 def check(name, ok, detail=""):
     results.append(ok); print(f"{'PASS' if ok else 'FAIL'}  {name}" + (f"  [{detail}]" if detail else ""), flush=True)
 
-PICKS = {"Yui": ("orb", "voice", "dim"), "Arnold": ("waves", "music", "dim"), "Basil": ("bloom", "voice", "dim"),
-         "Gouda": ("grain", "music", "dim"), "Penny": ("aurora", "off", "faint"), "Quill": ("orb", "voice", "faint")}
+PICKS = {"Yui": ("orb", "voice", "dim"), "Arnold": ("orb", "music", "dim"), "Basil": ("orb", "voice", "dim"),
+         "Gouda": ("orb", "music", "dim"), "Penny": ("orb", "off", "faint"), "Quill": ("orb", "voice", "faint")}
 T = str(uuid.uuid4())
 sql(f"insert into yui_users(id, apple_sub) values ('{T}','test.{T}')")
 tok = lambda: mint(T)
@@ -32,8 +32,8 @@ try:
     check("every crew agent in the list carries its pick",
           {n: (v.get("look"), v.get("hears"), v.get("strength")) for n, v in got.items()} == PICKS, f"{s} {got if s == 200 else r}")
     check("none is full or quick", all(v.get("strength") in ("dim", "faint") and v.get("pace") in ("slow", "even") for v in got.values()))
-    check("each says the line it would be", got.get("Gouda", {}).get("line") == "visual grain react=music"
-          and got.get("Penny", {}).get("line") == "visual aurora react=off", f"{got.get('Gouda', {}).get('line')!r}")
+    check("each says the line it would be", got.get("Gouda", {}).get("line") == "visual orb react=music"
+          and got.get("Penny", {}).get("line") == "visual orb react=off", f"{got.get('Gouda', {}).get('line')!r}")
     ids = {n: a["id"] for n, a in by_name(r).items()}
 
     # A crew agent made before defaults: its saved profile has no visual.

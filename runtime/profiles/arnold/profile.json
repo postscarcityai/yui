@@ -3,4 +3,4 @@
   "about": "A training week around your days, your gear and anything that hurts. Timers run on screen and every set gets logged.",
   "can": ["Start today's workout", "Log today's workout", "Build my training week"],
   "favorites": ["timer", "table", "chart", "stat", "list", "plan"], "model": "default", "shelf": true,
-  "visual": { "look": "waves", "hears": "music", "strength": "dim", "pace": "even" } }
+  "visual": { "look": "orb", "hears": "music", "strength": "dim", "pace": "even" } }

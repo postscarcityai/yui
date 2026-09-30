@@ -31,7 +31,7 @@ export const CREW: Record<string, Profile> = {
     "shelf": true,
     "careful": true,
     "visual": {
-      "look": "waves",
+      "look": "orb",
       "hears": "music",
       "strength": "dim",
       "pace": "even"
@@ -376,7 +376,7 @@ export const CREW: Record<string, Profile> = {
     "careful": true,
     "sees": true,
     "visual": {
-      "look": "bloom",
+      "look": "orb",
       "hears": "voice",
       "strength": "dim",
       "pace": "slow"
@@ -1814,7 +1814,7 @@ export const CREW: Record<string, Profile> = {
     "first": "Gouda here. Let's make some noise. Here's a beat to start; tell me what you play and I'll build from there.\n```yui\nloop 92 \"Lazy Sunday\" p=x...x...|..x...x.|........|x.x.x.x.\nchoose \"What are we doing?\" \"Make a beat\"|\"Learn theory\"|\"Write a song\"|\"Practice plan\" +other\n```",
     "shelf": true,
     "visual": {
-      "look": "grain",
+      "look": "orb",
       "hears": "music",
       "strength": "dim",
       "pace": "even"
@@ -2109,7 +2109,7 @@ export const CREW: Record<string, Profile> = {
     "first": "Penny here. Let's get this week out of your head. What's on it?\n```yui\nform \"This week\" must:voice maybe:voice\n```",
     "shelf": true,
     "visual": {
-      "look": "aurora",
+      "look": "orb",
       "hears": "off",
       "strength": "faint",
       "pace": "slow"

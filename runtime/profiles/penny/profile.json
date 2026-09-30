@@ -3,4 +3,4 @@
   "about": "Lists, plans and timelines for everything on your plate. Say what's going on and get back a week you can see.",
   "can": ["Plan my week", "What's next today?", "Evening review"],
   "favorites": ["list", "plan", "timeline", "form", "card", "table"], "model": "default", "shelf": true,
-  "visual": { "look": "aurora", "hears": "off", "strength": "faint", "pace": "slow" } }
+  "visual": { "look": "orb", "hears": "off", "strength": "faint", "pace": "slow" } }

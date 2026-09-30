@@ -3,4 +3,4 @@
   "about": "Plans your week of meals around your goal and what you can't eat, with the grocery list by aisle. Snap a plate and today's macros fill in.",
   "can": ["Plan my meals", "What should I eat tonight?", "Add oat milk to my groceries"],
   "favorites": ["camera", "table", "chart", "stat", "list", "choose"], "model": "default", "shelf": true,
-  "visual": { "look": "bloom", "hears": "voice", "strength": "dim", "pace": "slow" } }
+  "visual": { "look": "orb", "hears": "voice", "strength": "dim", "pace": "slow" } }
