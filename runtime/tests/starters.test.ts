@@ -64,3 +64,15 @@ test("a listed agent says what it does: its own words, else its starter's, never
   assert.deepEqual(said["a-custom"], { tagline: null, about: null, can: [] });
   assert.deepEqual(said["a-none"], { tagline: null, about: null, can: [] });
 });
+
+test("crewHello names only the crew that joined, and matches the full hello when everyone did", async () => {
+  const { crewHello } = await import("../src/starters.ts");
+  const all = crewHello(["arnold", "basil", "gouda", "penny", "quill"]);
+  const full = (await import("node:fs")).readFileSync(new URL("../profiles/yui/first.yui", import.meta.url), "utf8").trim();
+  assert.equal(all, full);
+  const two = crewHello(["basil", "penny", "yui"]);
+  assert.match(two, /Your crew is here: Basil feeds you and Penny keeps your lists\. Or ask me anything\./);
+  assert.match(two, /"Eat better"\|"Plan my week" \+other/);
+  assert.doesNotMatch(two, /Arnold|Gouda|Quill/);
+  assert.match(crewHello(["yui"]), /just us for now/);
+});

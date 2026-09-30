@@ -109,3 +109,28 @@ export function crewRefusal(offer: CrewOffer[] | null, base: string, hostedCount
   if (hostedCount >= MAX_NATIVE_AGENTS) return "too_many_agents";
   return null;
 }
+
+const DOES: Record<string, string> = {
+  arnold: "Arnold trains", basil: "Basil feeds you", gouda: "Gouda makes music",
+  penny: "Penny keeps your lists", quill: "Quill helps you study",
+};
+const START: Record<string, string> = {
+  arnold: "Get fit", basil: "Eat better", gouda: "Make music", penny: "Plan my week", quill: "Learn something",
+};
+
+/**
+ * Yui's first words to someone who picked their crew (YUI-216): names only who joined.
+ * `bases` is the person's pick (Yui is always there). With no one else, it says so
+ * and offers the two things Yui does alone.
+ */
+export function crewHello(bases: string[]): string {
+  const who = Object.keys(DOES).filter((b) => bases.includes(b));
+  if (!who.length) {
+    return "Hi, I'm Yui. It's just us for now. Ask me anything, or I'll make you a helper.\n```yui\n" +
+      'choose "What should we do first?" "Make me a helper"|"What can you do?" +other\n```';
+  }
+  const names = who.map((b) => DOES[b]);
+  const list = names.length === 1 ? names[0] : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
+  const opts = who.map((b) => `"${START[b]}"`).join("|");
+  return `Hi, I'm Yui. Your crew is here: ${list}. Or ask me anything.\n\`\`\`yui\nchoose "Where do you want to start?" ${opts} +other\n\`\`\``;
+}

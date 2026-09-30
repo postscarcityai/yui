@@ -7,7 +7,7 @@
 //     codes. It is not a PostgREST JWT, so it can never read messages, and it
 //     cannot manage tokens, revoke hosts or delete the account.
 //
-// Actions: list, create, update, delete, reorder, pair_code, crew_add, crew_add_all,
+// Actions: list, create, update, delete, reorder, pair_code, crew_add, crew_add_all, crew_choose,
 //          token_create, token_list, token_revoke, connector_revoke (app only).
 import {
   admin,
@@ -32,7 +32,7 @@ import {
 } from "../_shared/yui.ts";
 import { starters } from "../_native/profiles.ts";
 import { HOME_META, type HomeRow, homesToWrite } from "../_native/home.ts";
-import { type CrewOffer, crewOffer, crewRefusal, type DescribedRow, describeAgents, readdSort, starter, visualAgents, type VisualRow } from "../_native/starters.ts";
+import { type CrewOffer, crewHello, crewOffer, crewRefusal, type DescribedRow, describeAgents, readdSort, starter, visualAgents, type VisualRow } from "../_native/starters.ts";
 
 const PAIR_TTL_MINUTES = 10;
 
@@ -169,17 +169,33 @@ async function updateGrant(db: any, userId: string, b: Body) {
 // NATIVE-1: every person gets Yui and the starter crew, once, the first time
 // the app lists agents after native_enabled is switched on. The database does
 // the work (yui_native_provision) so two phones opening at once make one crew.
+// YUI-216: an app that asks with crew_pick gets only Yui and a pending choice
+// (yui_crew_choice), and the person picks the rest; older apps still get everyone.
 // A failure here never breaks the list.
 // deno-lint-ignore no-explicit-any
-async function provisionNative(db: any, userId: string) {
+async function provisionNative(db: any, userId: string, pick = false) {
   try {
     const { data: hosted } = await db.from("yui_connectors").select("id").eq("user_id", userId).eq("kind", "hosted").limit(1);
     if (hosted?.length) return;
-    const { error } = await db.rpc("yui_native_provision", { uid: userId, profs: starters() });
+    let profs = starters();
+    if (pick) {
+      const { error: e0 } = await db.from("yui_crew_choice").upsert({ user_id: userId }, { onConflict: "user_id", ignoreDuplicates: true });
+      if (e0) throw e0;
+      // Yui says hello once the crew is picked (crew_choose), naming only who joined.
+      profs = profs.filter((p) => p.base === "yui").map((p) => ({ ...p, first: "" }));
+    }
+    const { error } = await db.rpc("yui_native_provision", { uid: userId, profs });
     if (error) console.error("yui_native_provision", error);
   } catch (e) {
     console.error("yui_native_provision", e);
   }
+}
+
+// YUI-216: the picker is waiting for this person (a choice row with no picked_at).
+// deno-lint-ignore no-explicit-any
+async function crewPending(db: any, userId: string): Promise<boolean> {
+  const { data } = await db.from("yui_crew_choice").select("picked_at").eq("user_id", userId).maybeSingle();
+  return !!data && !data.picked_at;
 }
 
 // The person's native profiles: base and what each says it does (YUI-165).
@@ -238,9 +254,9 @@ type Action = { appOnly?: boolean; run: (userId: string, b: Body) => Promise<unk
 
 const ACTIONS: Record<string, Action> = {
   list: {
-    async run(userId) {
+    async run(userId, b) {
       const db = admin();
-      await provisionNative(db, userId);
+      await provisionNative(db, userId, b.crew_pick === true);
       const { data: agents, error } = await db.from("yui_agent_list").select(AGENT_COLUMNS)
         .eq("user_id", userId).order("sort").order("created_at");
       if (error) throw error;
@@ -259,7 +275,8 @@ const ACTIONS: Record<string, Action> = {
       // YUI-180: and its own quiet visual, drawn until it sends a `visual` line of its own.
       const seen = rows ? visualAgents(rows) : {};
       const listed = (agents ?? []).map((a: { id: string }) => said[a.id] ? { ...a, ...said[a.id], ...seen[a.id] } : a);
-      return { agents: listed, connectors, first_name: invite?.first_name ?? null, crew: rows ? crewOffer(rows).map(crewView) : null };
+      return { agents: listed, connectors, first_name: invite?.first_name ?? null, crew: rows ? crewOffer(rows).map(crewView) : null,
+               crew_pending: rows ? await crewPending(db, userId).catch(() => false) : false };
     },
   },
 
@@ -308,6 +325,47 @@ const ACTIONS: Record<string, Action> = {
         added.push(o.base);
       }
       return { added };
+    },
+  },
+
+  // {bases: ["arnold", ...], own?: bool}. The first-run picker's answer (YUI-216):
+  // adds each picked starter after Yui, in the crew's order, and saves the choice
+  // on the account so the picker never comes back. Yui is always there. Repeat
+  // calls only add what is missing. `own` records that they chose to bring their own.
+  crew_choose: {
+    async run(userId, b) {
+      const db = admin();
+      const offer = await crewFor(db, userId);
+      if (!offer) throw new HttpError(409, "native_off");
+      const asked: string[] = Array.isArray(b.bases) ? b.bases.map((x: unknown) => String(x)) : [];
+      if (asked.some((x) => !offer.some((o) => o.base === x))) throw new HttpError(400, "invalid_base");
+      const want = new Set(["yui", ...asked]);
+      const firstPick = await crewPending(db, userId);
+      const added: string[] = [];
+      for (const o of offer) {
+        if (o.agentId || !want.has(o.base)) continue;
+        const prof = starter(o.base);
+        if (!prof) continue;
+        const { data: listed, error } = await db.from("yui_agents").select("kind, sort").eq("user_id", userId);
+        if (error) throw error;
+        const why = crewRefusal(offer, prof.base, (listed ?? []).filter((a: { kind: string }) => a.kind === "hosted").length);
+        if (why) throw new HttpError(why === "invalid_base" ? 400 : 409, why);
+        const { error: e2 } = await db.rpc("yui_native_add_agent", { uid: userId, prof, at_sort: readdSort(listed ?? []) });
+        if (e2) throw e2;
+        added.push(o.base);
+      }
+      const bases = offer.filter((o) => want.has(o.base)).map((o) => o.base);
+      // Yui's hello, once, naming only who joined. Her thread is empty until now.
+      const yui = offer.find((o) => o.base === "yui")?.agentId;
+      if (firstPick && yui) {
+        const { error: eh } = await db.from("yui_messages")
+          .insert({ user_id: userId, agent_id: yui, sender: "agent", kind: "text", body: crewHello(bases), meta: { native: "first" } });
+        if (eh) throw eh;
+      }
+      const { error: e3 } = await db.from("yui_crew_choice")
+        .upsert({ user_id: userId, picked_at: new Date().toISOString(), bases, own: b.own === true }, { onConflict: "user_id" });
+      if (e3) throw e3;
+      return { added, bases, own: b.own === true };
     },
   },
 

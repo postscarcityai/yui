@@ -152,14 +152,18 @@ struct PairingCode: Codable, Equatable, Sendable {
 
 /// One of the crew every person starts with (Yui, Arnold, Basil...), as Add agent
 /// offers it (YUI-145). `agentID` is set while it is in the list.
-struct CrewStarter: Codable, Identifiable, Equatable, Sendable {
+struct CrewStarter: Codable, Identifiable, Hashable, Sendable {
     let base: String
     let name: String
     let role: String
     let color: String
     var agentID: String?
+    /// What it says it does (YUI-165), for its page in the first-run picker (YUI-216).
+    var tagline: String? = nil
+    var about: String? = nil
+    var can: [String]? = nil
     var id: String { base }
-    enum CodingKeys: String, CodingKey { case base, name, role, color, agentID = "agent_id" }
+    enum CodingKeys: String, CodingKey { case base, name, role, color, agentID = "agent_id", tagline, about, can }
 }
 
 /// A management token for Settings > Agent access. The secret is only ever
@@ -185,6 +189,8 @@ final class AgentStore {
     private(set) var firstName: String?
     /// The crew Add agent offers, one tap each (YUI-145). Nil: this person has no native Yui.
     private(set) var crew: [CrewStarter]?
+    /// A new account whose crew is still to pick (YUI-216): the first-run picker is up until it is chosen.
+    private(set) var crewPending = false
     /// "Basil is no longer shared with you.": shared agents gone since the app opened.
     /// Kept until the app is next launched, never stored.
     private(set) var unshared: [String] = []
@@ -239,6 +245,12 @@ final class AgentStore {
                 crew = Self.crewOffer(agents)
                 // A first launch remembers no agent: it opens on the default, Yui.
                 selectedID = nil
+                // -yuiDemoPickCrew: a new account before its pick (YUI-216): Yui alone and the picker up.
+                if args.contains("-yuiDemoPickCrew") {
+                    agents = Self.demoStarters.filter { $0.handle == "yui" }
+                    crew = Self.crewOffer(agents)
+                    crewPending = true
+                }
             }
             // -yuiDemoNative: Yui is a native (hosted) agent, with this month's free web searches used up (YUI-142).
             if args.contains("-yuiDemoNative") {
@@ -287,6 +299,7 @@ final class AgentStore {
         error = nil
         firstName = nil
         crew = nil
+        crewPending = false
         unshared = []
         notice = nil
     }
@@ -294,10 +307,11 @@ final class AgentStore {
     func refresh() async {
         if isDemo { return }
         do {
-            let r: ListReply = try await call(["action": "list"])
+            let r: ListReply = try await call(["action": "list", "crew_pick": true])
             apply(r.agents)
             firstName = r.firstName
             crew = r.crew
+            crewPending = r.crewPending
             loaded = true
             error = nil
             if agents.contains(where: { $0.kind == "hosted" }) { await sendTimeZoneIfNeeded() }
@@ -367,6 +381,21 @@ final class AgentStore {
         let r: AgentReply = try await call(["action": "crew_add", "base": starter.base])
         await refresh()
         return r.agent.id
+    }
+
+    /// The first-run picker's answer (YUI-216): who joins after Yui, saved on the account so the
+    /// picker never returns. `own`: they chose to bring their own agent too.
+    func chooseCrew(_ bases: [String], own: Bool = false) async throws {
+        #if DEBUG
+        if isDemo {
+            for s in crew ?? [] where bases.contains(s.base) && s.agentID == nil { _ = try await addCrew(s) }
+            crewPending = false
+            return
+        }
+        #endif
+        let _: ChooseReply = try await call(["action": "crew_choose", "bases": bases, "own": own])
+        crewPending = false
+        await refresh()
     }
 
     /// Everyone in the crew who isn't in the list, in one tap (Chris, 2026-09-27: "either have
@@ -538,11 +567,13 @@ final class AgentStore {
         let agents: [YuiAgent]
         var firstName: String? = nil
         var crew: [CrewStarter]? = nil
-        enum CodingKeys: String, CodingKey { case agents, firstName = "first_name", crew }
+        var crewPending = false
+        enum CodingKeys: String, CodingKey { case agents, firstName = "first_name", crew, crewPending = "crew_pending" }
     }
     private struct CreateReply: Decodable { let agent: YuiAgent; let pairing: PairingCode? }
     private struct AgentReply: Decodable { let agent: YuiAgent }
     private struct AddAllReply: Decodable { let added: [String] }
+    private struct ChooseReply: Decodable { let added: [String] }
     private struct DeleteReply: Decodable { let deleted: Bool }
     private struct OKReply: Decodable { let ok: Bool }
     private struct OKRevoked: Decodable { let revoked: Bool }
@@ -658,7 +689,8 @@ final class AgentStore {
     static func crewOffer(_ agents: [YuiAgent]) -> [CrewStarter] {
         demoStarters.map { s in
             CrewStarter(base: s.handle, name: s.name, role: demoRoles[s.handle] ?? "", color: s.color,
-                        agentID: agents.first { $0.kind == "hosted" && $0.handle == s.handle }?.id)
+                        agentID: agents.first { $0.kind == "hosted" && $0.handle == s.handle }?.id,
+                        tagline: demoSaid[s.handle]?.tagline, about: demoSaid[s.handle]?.about, can: demoSaid[s.handle]?.can)
         }
     }
     /// Each starter's first message, verbatim from runtime/profiles/<name>/first.yui
@@ -671,6 +703,19 @@ final class AgentStore {
         "penny": "Penny here. Let's get this week out of your head. What's on it?\n```yui\nform \"This week\" must:voice maybe:voice\n```",
         "quill": "Quill here. Pick a topic and I'll teach it in five minutes, then quiz you.\n```yui\nchoose@learn-subject \"What are we learning?\" Math|Science|History|Languages|\"Something else\" +other\n```",
     ]
+    /// Yui's hello after the pick, as crewHello (runtime/src/starters.ts) writes it: only who joined.
+    static func demoHello(_ bases: [String]) -> String {
+        let does = [("arnold", "Arnold trains", "Get fit"), ("basil", "Basil feeds you", "Eat better"),
+                    ("gouda", "Gouda makes music", "Make music"), ("penny", "Penny keeps your lists", "Plan my week"),
+                    ("quill", "Quill helps you study", "Learn something")].filter { bases.contains($0.0) }
+        if does.isEmpty {
+            return "Hi, I'm Yui. It's just us for now. Ask me anything, or I'll make you a helper.\n```yui\nchoose \"What should we do first?\" \"Make me a helper\"|\"What can you do?\" +other\n```"
+        }
+        let names = does.map(\.1)
+        let list = names.count == 1 ? names[0] : names.dropLast().joined(separator: ", ") + " and " + names[names.count - 1]
+        let opts = does.map { "\"\($0.2)\"" }.joined(separator: "|")
+        return "Hi, I'm Yui. Your crew is here: \(list). Or ask me anything.\n```yui\nchoose \"Where do you want to start?\" \(opts) +other\n```"
+    }
     /// Each starter's home (YUI-168) as yui-agents writes it into the thread: runtime/profiles/<name>/home.yui
     /// less its comments, with the demo crew's ids filled in (FirstLaunchDemoTests checks they still match).
     static let demoHome: [String: String] = [

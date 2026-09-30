@@ -40,6 +40,8 @@ struct ChatView: View {
     @State private var aboutOpen: TalkItem?
     /// The first-run button opens Add agent straight from the chat.
     @State private var addFirst = false
+    /// A new account picks its crew before anything else (YUI-216).
+    @State private var pickCrew = false
     /// The message open in Select text.
     @State private var selecting: ChatMessage?
     /// A reply's chip was tapped: the thread scrolls to this bubble (YUI-68).
@@ -299,6 +301,19 @@ struct ChatView: View {
                     .presentationCornerRadius(appTheme.radius.card)
                     .environment(\.yuiTheme, appTheme)
             }
+            .onChange(of: agents.crewPending, initial: true) { _, pending in
+                if pending { pickCrew = true }
+            }
+            .fullScreenCover(isPresented: $pickCrew) {
+                CrewPickView { id in
+                    if let id { agents.selectedID = id }
+                    pickCrew = false
+                    #if DEBUG
+                    demoCrewHello()
+                    #endif
+                }
+                .environment(\.yuiTheme, appTheme)
+            }
             .sheet(isPresented: $addFirst) {
                 // Paired and "Say hi": the new agent's thread is the chat.
                 AddAgentSheet { id in
@@ -523,7 +538,8 @@ struct ChatView: View {
                             ```
                             """, kind: "text", meta: .object(["native": .string("home")]), createdAt: at))
                     }
-                    if firstLaunch, let first = AgentStore.demoFirst[a.handle] {
+                    // Pick your crew (YUI-216): Yui's hello waits for the pick and names who joined.
+                    if firstLaunch, !agents.crewPending, let first = AgentStore.demoFirst[a.handle] {
                         rows.append(ThreadRow(id: "first-\(a.handle)", sender: "agent", body: first, kind: "text",
                                               meta: .object(["native": .string("first")]), createdAt: at))
                     }
@@ -874,6 +890,23 @@ struct ChatView: View {
             }
         }
     }
+
+    #if DEBUG
+    /// -yuiDemoPickCrew: the pick is saved, so Yui says hello naming who joined (crew_choose writes it on the account).
+    private func demoCrewHello() {
+        guard account.session?.userID == "demo", ProcessInfo.processInfo.arguments.contains("-yuiDemoPickCrew"),
+              agents.selected?.handle == "yui" else { return }
+        let at = ISO8601DateFormatter().string(from: .now)
+        var rows: [ThreadRow] = []
+        if let home = AgentStore.demoHome["yui"] {
+            rows.append(ThreadRow(id: "home-yui", sender: "agent", body: home, kind: "text",
+                                  meta: .object(["native": .string("home")]), createdAt: at))
+        }
+        rows.append(ThreadRow(id: "first-yui", sender: "agent", body: AgentStore.demoHello(agents.agents.map(\.handle)),
+                              kind: "text", meta: .object(["native": .string("first")]), createdAt: at))
+        store.reopen(rows)
+    }
+    #endif
 
     /// Signed in with no agents yet (every new account): nothing here can answer,
     /// so the chat says how to connect one instead of pretending.
