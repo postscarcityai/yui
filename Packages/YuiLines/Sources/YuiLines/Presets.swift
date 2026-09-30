@@ -5,6 +5,39 @@ import Foundation
 
 typealias Props = [String: YLValue]
 
+// MARK: - Reading the draws (diagram, mock, part)
+//
+// diagram: `diagram [title] caption=` is an add (preset "diagram", props title?,
+// caption?). Its Mermaid lines are not YL nodes; at the closing `end` the parser
+// emits ONE patch {op: .patch, target: <the add's id>}. A view that applies
+// patches (YLScreen does, via `YLComponent.patch`) reads the drawing from the
+// add's `props` after that:
+//   props["type"]    "flow" | "sequence" | "state" | "other"  (other = source only)
+//   props["source"]  the Mermaid text, always there (draw it as text for "other")
+//   flow and state:  props["dir"] "TD"|"LR"|..., props["nodes"] [{id, label?, shape?}],
+//     props["edges"] [{from, to, label?, line? "thick"|"dash", plain? true, both? true}],
+//     props["groups"] [{id, label?, nodes:[ids], in?: parent group id}] (subgraph / composite state)
+//     shape: round stadium subroutine cylinder circle hexagon slant diamond flag double
+//     (absent = plain box); state adds start end choice fork join. State start/end
+//     nodes have ids like _start, _end (_start_<group> inside a composite).
+//   sequence:        props["actors"] [{id, label?, actor? true}],
+//     props["steps"] [{type:"msg", from, to, text, line? "dash", head? "none"|"async"|"cross", both? true}
+//       | {type:"note", side:"right"|"left"|"over", on:[ids], text}
+//       | {type:"open", block:"loop"|"alt"|"opt"|"par"|"critical"|"break"|"rect", text?}
+//       | {type:"else", text?} | {type:"close"}], props["numbered"] true when autonumber.
+//   Empty lists are left out. Until the patch lands (a diagram still streaming)
+//   the props are only title/caption: draw nothing yet. A diagram left open at the
+//   end of input is closed by `YuiLines.parse` / `YLStreamParser.flush()`.
+//
+// mock: `mock [title] frame=phone|browser|... url= dark` is a group head (like
+// shapes) whose member lines are `part`s, in order. Each part add has
+// `inGroup == <the mock's id>` and props kind (first bare word, e.g. nav, row,
+// button, field), text? (the rest of the line), items? ([String],
+// from items=a|b|c) and any other key= the line gave. A view collects a mock's
+// parts with `components.filter { $0.inGroup == mock.ylID && $0.preset == "part" }`.
+// Defaults (frame "phone", kind "text") are the view's job; `resolved` is not
+// computed in Swift.
+
 let presets: Set<String> = [
     "timer", "ask", "choose", "pick", "slide", "form",
     "list", "table", "card", "image", "camera", "mic",
@@ -14,6 +47,7 @@ let presets: Set<String> = [
     "timeline", "done", "now", "next",
     "sketch", "row", "after",
     "shapes", "shape",
+    "diagram", "mock", "part",
     "map", "area", "pin", "route",
     "game",
     "loop", "drums", "keys", "chords", "tuner", "metronome",
@@ -23,12 +57,13 @@ let presets: Set<String> = [
 /// the same screen. A narrate can hold another group (a deck), a deck or plan
 /// a sketch (the picture of the page before it).
 let groups: [String: Set<String>] = [
-    "deck": ["page", "ask", "choose", "pick", "sketch", "shapes", "map", "math", "chart", "stat", "calc"],
-    "plan": ["page", "ask", "choose", "pick", "slide", "form", "mic", "camera", "sketch", "map"],
+    "deck": ["page", "ask", "choose", "pick", "sketch", "shapes", "diagram", "mock", "map", "math", "chart", "stat", "calc"],
+    "plan": ["page", "ask", "choose", "pick", "slide", "form", "mic", "camera", "sketch", "diagram", "mock", "map"],
     "narrate": ["page", "compare", "image", "video", "card", "stat", "chart", "math", "storyboard", "gallery", "deck"],
     "timeline": ["done", "now", "next"],
     "sketch": ["row", "after"],
     "shapes": ["shape"],
+    "mock": ["part"],
     "map": ["area", "pin", "route"],
 ]
 
@@ -99,6 +134,7 @@ private let listProps: [String: [String]] = [
     "pick": ["answer"],
     "game": ["items"],
     "shape": ["pts"],
+    "part": ["items"],
     "area": ["codes", "pts"],
     "route": ["pts"],
     "loop": ["rows", "p"],
@@ -425,7 +461,7 @@ private func positional(_ preset: String, _ pos: [Token]) -> Props {
             if text.count > 1 { o["body"] = .string(joinText(Array(text.dropFirst()))) }
         }
 
-    case "calc", "deck", "plan", "narrate", "timeline", "sketch", "shapes", "map":
+    case "calc", "deck", "plan", "narrate", "timeline", "sketch", "shapes", "diagram", "mock", "map":
         if !pos.isEmpty { o["title"] = .string(joinText(pos)) }
 
     case "row":
@@ -440,6 +476,14 @@ private func positional(_ preset: String, _ pos: [Token]) -> Props {
         var text: [Token] = []
         for t in pos {
             if o["url"] == nil, t.parts == nil, !t.quoted, t.text.hasPrefix("https://") { o["url"] = .string(t.text) } else { text.append(t) }
+        }
+        if !text.isEmpty { o["text"] = .string(joinText(text)) }
+
+    case "part":
+        // part KIND [text...]: the first bare word is the kind, the rest is text.
+        var text: [Token] = []
+        for t in pos {
+            if o["kind"] == nil, t.parts == nil, !t.quoted, gameWordRE.match(t.text) != nil { o["kind"] = .string(t.text) } else { text.append(t) }
         }
         if !text.isEmpty { o["text"] = .string(joinText(text)) }
 

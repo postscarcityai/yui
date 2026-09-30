@@ -69,6 +69,41 @@
       "title": "A topic to a quiz",
       "submit": "Save my cards",
       "source": "flowchart TD\n  %% hi: page \"Five minutes, then a quiz\" body=\"Pick a topic. I teach it one idea a page, with a picture each, then ask you one question. What you learn becomes cards you review later.\" points=\"Pick a topic|A short lesson|One question|A calculator to play with\"\n  hi([Start]) --> topic\n  %% topic: choose \"What do you want to learn?\" \"How vaccines work\"|\"How a ball flies\"|\"How money grows\"\n  topic[Topic] --> know\n  %% know: choose \"How much do you know already?\" \"Brand new\"|\"A little\"|\"I know the basics\" body=\"Know the basics? I skip the first page.\"\n  know[What you know] --> lesson{Which lesson?}\n  lesson -->|topic=How vaccines work and know=I know the basics| v2\n  lesson -->|topic=How vaccines work| v1\n  lesson -->|topic=How a ball flies and know=I know the basics| b2\n  lesson -->|topic=How a ball flies| b1\n  lesson -->|know=I know the basics| m2\n  lesson --> m1\n  %% v1: page \"Instructions in a bubble\" /demo/mrna1.jpg body=\"An mRNA vaccine is a recipe for one protein, wrapped in a tiny bubble of fat. The shot goes into your arm and the bubble slips into nearby cells.\"\n  v1[Vaccines 1] --> v2\n  %% v2: page \"Your cells read the recipe\" /demo/mrna3.jpg body=\"Ribosomes out in the cytoplasm read the mRNA and build the spike protein, the same shape that sits on the virus. It never goes near your DNA.\"\n  v2[Vaccines 2] --> v3\n  %% v3: page \"Your body learns, the recipe fades\" /demo/mrna4.jpg body=\"Your immune system sees the spike and makes antibodies that fit it. The mRNA breaks down in days. The memory cells stay.\" points=\"Antibodies fit the spike|mRNA gone in days|Memory cells stay\"\n  v3[Vaccines 3] --> vq\n  %% vq: choose \"Where is the mRNA read?\" Nucleus|Cytoplasm|\"The blood\"\n  vq{Quiz}\n  vq -->|vq!=Cytoplasm| vwhy\n  vq --> again\n  %% vwhy: page \"In the cytoplasm\" /demo/mrna3.jpg body=\"Ribosomes in the cytoplasm, the jelly around the nucleus, read it like a recipe. It never reaches the nucleus, where your DNA is kept.\"\n  vwhy[Why] --> again\n  %% b1: page \"A throw is two motions\" /demo/study-ball1.jpg body=\"Forward at a steady speed, and up then down. Put the two together and you get the arc.\" points=\"Forward: steady|Up and down: gravity|Together: an arc\"\n  b1[Ball 1] --> b2\n  %% b2: page \"Gravity only pulls down\" /demo/study-ball2.jpg body=\"Leave the air out and nothing slows the forward part. Gravity takes 9.8 m/s off the climb every second, then pulls it back down.\"\n  b2[Ball 2] --> b3\n  %% b3: page \"Speed and angle set the distance\" /demo/study-ball3.jpg body=\"Throw twice as fast and it goes four times as far. Too steep and it spends its speed climbing; too flat and it lands early.\"\n  b3[Ball 3] --> bq\n  %% bq: choose \"Which angle throws farthest?\" \"30 degrees\"|\"45 degrees\"|\"60 degrees\"\n  bq{Quiz}\n  bq -->|bq!=45 degrees| bwhy\n  bq --> again\n  %% bwhy: page \"45 degrees goes farthest\" /demo/study-ball3.jpg body=\"Halfway between flat and straight up splits the speed evenly between climbing and going forward. 30 and 60 land on the same spot, short of it.\"\n  bwhy[Why] --> again\n  %% m1: page \"Interest is rent on money\" /demo/study-money1.jpg body=\"Put $100 in at 5% a year and the bank pays you $5 for using it. That $5 is the interest.\"\n  m1[Money 1] --> m2\n  %% m2: page \"Interest earns interest\" /demo/study-money2.jpg body=\"Leave the $5 in. Next year you earn 5% of $105, not $100. Each year the new coins are a little bigger. That is compounding.\"\n  m2[Money 2] --> m3\n  %% m3: page \"Time does the heavy lifting\" /demo/study-money3.jpg body=\"At 7% a year money doubles about every 10 years. The rule of 72: divide 72 by the rate to get the years to double.\" points=\"7%: double in 10 years|Twice more: x4 in 20|40 years: x16\"\n  m3[Money 3] --> mq\n  %% mq: choose \"$100 at 10% a year, compounded. After 2 years?\" \"$110\"|\"$120\"|\"$121\"\n  mq{Quiz}\n  mq -->|mq!=$121| mwhy\n  mq --> again\n  %% mwhy: page \"$121\" /demo/study-money2.jpg body=\"Year one pays 10% of $100, $10. Year two pays 10% of $110, $11. The extra dollar is interest on interest.\"\n  mwhy[Why] --> again\n  %% again: choose \"When should I quiz you again?\" Tomorrow|\"In 3 days\"|\"Next week\" body=\"Three cards from this lesson go in your review for then.\"\n  again[Again] --> saved((Cards))"
+    },
+    {
+      "name": "first-plan",
+      "id": "firstplan",
+      "title": "Your first plan",
+      "submit": "Build my week",
+      "source": "flowchart TD\n  %% goal: choose \"What's the goal?\" \"Get stronger\"|\"Lose weight\"|\"Build a habit\"|\"Feel better\"|\"Not sure\"|Skip\n  goal[Goal] --> days\n  %% days: pick \"Which days can you train?\" Mon|Tue|Wed|Thu|Fri|Sat|Sun|\"Not sure\"|Skip\n  days[Days] --> time\n  %% time: choose \"How long is a session?\" \"15 minutes\"|\"30 minutes\"|\"45 minutes\"|\"An hour\"|\"Not sure\"|Skip\n  time[Time] --> gear\n  %% gear: pick \"What do you have?\" Dumbbells|Kettlebell|Bands|\"A gym\"|\"Nothing\"|\"Not sure\"|Skip\n  gear[Gear] --> experience\n  %% experience: choose \"How much have you trained?\" \"Brand new\"|\"On and off\"|\"Regularly\"|\"Not sure\"|Skip\n  experience[Experience] --> done((Plan))"
+    },
+    {
+      "name": "first-meals",
+      "id": "firstmeals",
+      "title": "Your first meal plan",
+      "submit": "Plan my meals",
+      "source": "flowchart TD\n  %% goal: choose \"What's the goal?\" \"Eat better\"|\"Lose weight\"|\"Build muscle\"|\"Save time\"|\"Not sure\"|Skip\n  goal[Goal] --> days\n  %% days: pick \"Which days should I plan?\" Mon|Tue|Wed|Thu|Fri|Sat|Sun|\"Not sure\"|Skip\n  days[Days] --> meals\n  %% meals: choose \"How many meals a day?\" \"2\"|\"3\"|\"3 and a snack\"|\"4 or more\"|\"Not sure\"|Skip\n  meals[Meals] --> avoid\n  %% avoid: pick \"What should I leave out?\" Meat|Fish|Dairy|Gluten|Nuts|Eggs|\"Nothing\"|\"Not sure\"|Skip\n  avoid[Avoid] --> cook\n  %% cook: choose \"How long can you cook?\" \"15 minutes\"|\"30 minutes\"|\"An hour\"|\"I like a project\"|\"Not sure\"|Skip\n  cook[Cook] --> done((Plan))"
+    },
+    {
+      "name": "first-practice",
+      "id": "firstpractice",
+      "title": "Your first practice plan",
+      "submit": "Build my practice",
+      "source": "flowchart TD\n  %% instrument: choose \"What do you play?\" Guitar|Piano|Drums|Bass|Voice|\"Not yet\"|\"Not sure\"|Skip\n  instrument[Instrument] --> level\n  %% level: choose \"How would you rate yourself?\" \"Brand new\"|\"Know a few things\"|\"Getting there\"|\"Pretty good\"|\"Not sure\"|Skip\n  level[Level] --> minutes\n  %% minutes: choose \"Minutes a day?\" \"10\"|\"20\"|\"30\"|\"An hour\"|\"Not sure\"|Skip\n  minutes[Minutes] --> want\n  %% want: pick \"What do you want to play?\" Songs|Scales|Chords|\"Make my own\"|\"Play by ear\"|\"Not sure\"|Skip\n  want[Want] --> done((Plan))"
+    },
+    {
+      "name": "first-week",
+      "id": "firstweek",
+      "title": "Your first routine",
+      "submit": "Set my routine",
+      "source": "flowchart TD\n  %% busy: pick \"Which days are packed?\" Mon|Tue|Wed|Thu|Fri|Sat|Sun|\"None\"|\"Not sure\"|Skip\n  busy[Busy] --> plan\n  %% plan: choose \"When do you plan?\" \"Sunday night\"|\"Monday morning\"|\"Each morning\"|\"Each night\"|\"Not sure\"|Skip\n  plan[Plan] --> remind\n  %% remind: choose \"How do you want reminders?\" \"At the time\"|\"10 minutes before\"|\"The night before\"|\"None\"|\"Not sure\"|Skip\n  remind[Remind] --> done((Plan))"
+    },
+    {
+      "name": "first-study",
+      "id": "firststudy",
+      "title": "Your first study plan",
+      "submit": "Build my study plan",
+      "source": "flowchart TD\n  %% topic: choose \"What are you learning?\" \"A language\"|\"A school subject\"|\"A skill for work\"|\"Something for fun\"|\"Not sure\"|Skip\n  topic[Topic] --> time\n  %% time: choose \"How long do you have?\" \"A week\"|\"A month\"|\"3 months\"|\"No deadline\"|\"Not sure\"|Skip\n  time[Time] --> quiz\n  %% quiz: choose \"How do you like to be quizzed?\" \"Flash cards\"|\"Multiple choice\"|\"Write it out\"|\"Out loud\"|\"Not sure\"|Skip\n  quiz[Quiz] --> done((Plan))"
     }
   ],
   "variants": [

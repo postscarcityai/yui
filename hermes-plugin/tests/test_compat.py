@@ -118,11 +118,11 @@ class Downgrade(unittest.TestCase):
         self.assertDrawable(out, 96)
 
     def test_note_names_what_to_skip(self):
-        self.assertIn("cannot draw chords, drums, keys, loop, map, metronome, shapes, sketch, tuner yet", compat.note(96))
+        self.assertIn("cannot draw chords, diagram, drums, keys, loop, map, metronome, mock, shapes, sketch, tuner yet", compat.note(96))
         self.assertNotIn("timeline", compat.note(96))
-        self.assertEqual(compat.note(compat.SHAPES_BUILD), f"[yui] This person's Yui app (build {compat.SHAPES_BUILD}) cannot draw chords, drums, keys, loop, map, metronome, tuner yet: don't send those. Say it in words or use another preset.")
-        self.assertEqual(compat.note(compat.MAP_BUILD), "")
-        self.assertIn("cannot draw chords, drums, keys, loop, map, metronome, shapes", compat.note(122))
+        self.assertEqual(compat.note(compat.SHAPES_BUILD), f"[yui] This person's Yui app (build {compat.SHAPES_BUILD}) cannot draw chords, diagram, drums, keys, loop, map, metronome, mock, tuner yet: don't send those. Say it in words or use another preset.")
+        self.assertEqual(compat.note(compat.DRAW_BUILD), "")
+        self.assertIn("cannot draw chords, diagram, drums, keys, loop, map, metronome, mock, shapes", compat.note(122))
         self.assertIn("an older build", compat.note(None))
 
     def test_menu_lines_go_quietly_before_the_drawer(self):
@@ -163,8 +163,8 @@ class Downgrade(unittest.TestCase):
         self.assertIn("There are chord buttons here: G I-V-vi-IV. Update Yui to play them.", out)
         self.assertIn("There are chord buttons here: C G Am F. Update Yui to play them.", out)
         self.assertDrawable(out, 176)
-        self.assertIn("cannot draw chords, keys, map, metronome, tuner yet", compat.note(176))
-        self.assertIn("cannot draw map, metronome, tuner yet", compat.note(compat.KEYS_BUILD))
+        self.assertIn("cannot draw chords, diagram, keys, map, metronome, mock, tuner yet", compat.note(176))
+        self.assertIn("cannot draw diagram, map, metronome, mock, tuner yet", compat.note(compat.KEYS_BUILD))
         self.assertEqual(compat.downgrade(body, compat.KEYS_BUILD), body)
 
     def test_tuner_and_metronome_before_build_205(self):
@@ -176,8 +176,8 @@ class Downgrade(unittest.TestCase):
         self.assertIn("There's a tuner here. Update Yui to use it.", out)
         self.assertIn("There's a metronome here at 72 bpm. Update Yui to use it.", out)
         self.assertDrawable(out, 204)
-        self.assertIn("cannot draw map, metronome, tuner yet", compat.note(204))
-        self.assertEqual(compat.note(compat.MAP_BUILD), "")
+        self.assertIn("cannot draw diagram, map, metronome, mock, tuner yet", compat.note(204))
+        self.assertEqual(compat.note(compat.DRAW_BUILD), "")
         self.assertEqual(compat.downgrade(body, compat.TUNER_BUILD), body)
 
     def test_placed_shapes_and_a_lone_shape(self):
@@ -323,8 +323,63 @@ class Flows(unittest.TestCase):
             'page "Big" body="24M."', 'end'))
         self.assertEqual(compat.downgrade(body, compat.MAP_BUILD), body)
 
+    def test_a_diagram_before_its_build_is_its_steps_in_words(self):
+        # DRAW-2: title, edges (and lone nodes) in reading order, the caption.
+        body = "Here.\n\n" + fence(
+            'say "How it ships."',
+            'diagram "How an ask ships" caption="You ask. A lane builds it."',
+            'flowchart LR',
+            '  you([You]) --> board[Board]',
+            '  subgraph fleet [The fleet]',
+            '    board --> lane[Lane]',
+            '  end',
+            '  lane -->|yes| ship((TestFlight))',
+            '  solo[Alone]',
+            'end')
+        want = ("Here.\n\n" + fence('say "How it ships."') + "\n\n**How an ask ships**\n"
+                "- Alone\n- You -> Board\n- Board -> Lane\n- Lane -> TestFlight: yes\nYou ask. A lane builds it.")
+        self.assertEqual(compat.downgrade(body, compat.MAP_BUILD), want)
+        self.assertEqual(compat.downgrade(body, compat.DRAW_BUILD), body)
+        self.assertIn("diagram", compat.note(compat.MAP_BUILD))
+
+    def test_sequence_and_state_diagrams_in_words(self):
+        seq = fence('diagram "Send"', 'sequenceDiagram', '  actor U as You', '  participant A as Yui app',
+                    '  U->>A: type and send', '  loop while it thinks', '    A-->>U: working row', '  end',
+                    '  Note over U,A: done', 'end')
+        self.assertEqual(compat.downgrade(seq, 219),
+                         "**Send**\n- You -> Yui app: type and send\n- Loop: while it thinks\n"
+                         "- Yui app -> You: working row\n- Note (You, Yui app): done")
+        state = fence('diagram', 'stateDiagram-v2', '  [*] --> Idle', '  Idle --> Busy: go', '  Busy --> [*]', 'end')
+        self.assertEqual(compat.downgrade(state, 219), "- Start -> Idle\n- Idle -> Busy: go\n- Busy -> End")
+        pie = fence('diagram "Split"', 'pie', '  "a" : 1', 'end')
+        self.assertEqual(compat.downgrade(pie, 219), '**Split**\n```mermaid\npie\n  "a" : 1\n```')
+
+    def test_a_mock_before_its_build_is_its_parts_in_screen_order(self):
+        body = fence('mock "Agents" frame=phone', 'part tabs items=Home|Agents|Me tab=Agents',
+                     'part row Basil sub="Groceries and meals" +chev +hi note="new badge"',
+                     'part button "New agent"', 'part nav Agents action=Edit', 'part row Penny sub=Budget +x',
+                     'part divider', 'part sheet Share items=Copy|Save')
+        self.assertEqual(compat.downgrade(body, 219),
+                         "**Agents**\n- Nav: Agents, Edit\n- Row: Basil, Groceries and meals (new) (note: new badge)\n"
+                         "- Button: New agent\n- Row: Penny, Budget (out)\n- Tabs: Home, Agents, Me (Agents selected)\n"
+                         "- Sheet: Share, Copy, Save")
+        self.assertEqual(compat.downgrade(body, compat.DRAW_BUILD), body)
+        self.assertEqual(compat.downgrade(fence("part button Go"), 219), "- Button: Go")
+
+    def test_a_diagram_and_a_mock_in_a_deck_are_pages_of_words(self):
+        body = fence('>full', 'deck "How"', 'page "Flow" body="Look."', 'diagram caption="Two steps."', 'flowchart TD',
+                     '  a[Ask] --> b[Ship]', 'end', 'page "Screen" body="Here."', 'mock "Agents"', 'part nav Agents',
+                     'part button "New agent" +hi', 'page "Last" body="Done."', 'end')
+        self.assertEqual(compat.downgrade(body, 219), fence(
+            '>full', 'deck "How"', 'page "Flow" body="Look."',
+            'page "The diagram" body="Two steps." points="Ask -> Ship"',
+            'page "Screen" body="Here."', 'page "Agents" points="Nav: Agents"|"Button: New agent (new)"',
+            'page "Last" body="Done."', 'end'))
+        self.assertFalse([o for o in ops(compat.downgrade(body, 219)) if o["op"] == "error" or o.get("preset") in compat.too_new(219)])
+        self.assertEqual(compat.downgrade(body, compat.DRAW_BUILD), body)
+
     def test_the_turn_note_never_tells_agents_to_skip_flows(self):
-        self.assertEqual(compat.note(compat.MAP_BUILD), "")
+        self.assertEqual(compat.note(compat.DRAW_BUILD), "")
         self.assertNotIn("flow", compat.note(100))
 
     def test_the_saved_flows_match_yuigui(self):

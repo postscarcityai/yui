@@ -4,7 +4,7 @@ public enum YuiLines {
     /// the ids that last from earlier replies (spec section 5), id -> preset.
     public static func parse(_ text: String, known: [String: String] = [:]) -> [YLNode] {
         var p = YLParser(known: known)
-        return splitLines(Array(text.utf8)).compactMap { p.line($0) }
+        return splitLines(Array(text.utf8)).compactMap { p.line($0) } + (p.finish().map { [$0] } ?? [])
     }
 
     /// Nodes from a stream of text chunks (model tokens, socket frames), each
@@ -115,11 +115,22 @@ public struct YLParser: Sendable {
     private var auto = 0
     /// Open groups, innermost last.
     private var open: [(id: String, preset: String, screen: String)] = []
+    /// An open `diagram`'s Mermaid, being read (Diagram.swift).
+    var dgm: YLDiagramReader?
 
     public init(known: [String: String] = [:]) { ids = known }
 
     /// Parses one line (no `\n`). Returns nil for blank and comment lines.
-    public mutating func line(_ src: String) -> YLNode? { group(parseLine(src)) }
+    public mutating func line(_ src: String) -> YLNode? {
+        // An open diagram reads Mermaid, not YL, until its `end`.
+        if let handled = diagramLine(src) { return handled }
+        let node = group(parseLine(src))
+        if let n = node, n.op == .add, n.preset == "diagram", let id = n.id { dgm = YLDiagramReader(id: id, screen: n.screen) }
+        return node
+    }
+
+    /// Ends the input: a diagram still open gives its patch now.
+    public mutating func finish() -> YLNode? { diagramDone(line: "") }
 
     /// Group bookkeeping for one parsed node. Errors (and nil) leave groups open.
     private mutating func group(_ node: YLNode?) -> YLNode? {
@@ -334,7 +345,9 @@ public struct YLStreamParser: Sendable {
     public mutating func flush() -> [YLNode] {
         let rest = String(decoding: buf, as: UTF8.self)
         buf = []
-        guard !trimJS(Scalars(rest.unicodeScalars)).isEmpty, let node = parser.line(rest) else { return [] }
-        return [node]
+        var out: [YLNode] = []
+        if !trimJS(Scalars(rest.unicodeScalars)).isEmpty, let node = parser.line(rest) { out.append(node) }
+        if let node = parser.finish() { out.append(node) }
+        return out
     }
 }

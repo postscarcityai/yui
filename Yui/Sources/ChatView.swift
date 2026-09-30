@@ -2097,6 +2097,81 @@ struct ChatView: View {
         """,
     ]
 
+    /// Drawings (DRAW-2): a flowchart with a group and a way back, a sequence with a loop
+    /// and a note, a state diagram, and three mock-ups (a phone with marks and notes, a
+    /// sign-in with a keyboard, a browser page).
+    static let drawDemo = [
+        """
+        say "Here is how an ask ships."
+        diagram "How an ask ships" caption="You ask. A lane builds it. It rides the next build."
+        flowchart LR
+          you([You]) --> board[Board]
+          subgraph fleet [The fleet]
+            board --> lane[Lane]
+            lane --> check{Checks green?}
+          end
+          check -->|yes| ship((TestFlight))
+          check -.->|no| lane
+        end
+        """,
+        """
+        diagram "What happens when you send a message"
+        sequenceDiagram
+          autonumber
+          actor U as You
+          participant A as Yui app
+          participant G as Agent
+          U->>A: type and send
+          A->>G: your words
+          loop while it thinks
+            A-->>U: working row
+          end
+          Note over A,G: one round trip
+          G-->>A: yl lines
+          A-->>U: the screen
+        end
+        """,
+        """
+        diagram "A TestFlight build"
+        stateDiagram-v2
+          [*] --> Uploaded
+          Uploaded --> Processing: Apple receives it
+          Processing --> Valid: passes
+          Processing --> Invalid: fails
+          Valid --> [*]
+        end
+        """,
+        """
+        say "The Agents screen, with what to change."
+        mock "Agents" frame=phone
+        part nav Agents action=Edit
+        part text "Who do you want to talk to?" size=h2
+        part row Basil sub="Groceries and meals" icon=B +chev +hi note="new badge goes here"
+        part row Penny sub="Budget" icon=P +chev
+        part row Old value=Soon +x +dim
+        part button "New agent" +hi note="the one thing to tap"
+        part tabs items=Home|Agents|Me tab=Agents
+        """,
+        """
+        mock "Sign in" frame=phone
+        part nav "Sign in" back=Back
+        part field Email value="chris@example.com"
+        part field Password ph="at least 8 characters" +hi note="show a meter here"
+        part toggle "Keep me signed in" +on
+        part slider Volume value=0.7
+        part button Continue
+        part keyboard
+        """,
+        """
+        mock frame=browser url=yuigui.com/pricing
+        part text "Pricing" size=h1
+        part segmented items=Monthly|Yearly tab=Yearly
+        part card Crew sub="$12 a month" body="Every agent, every device" +hi note="the one we sell"
+        part grid items=Voice|Drawings|Timers|Games cols=2
+        part button "Start free"
+        """,
+    ]
+
     /// Places on a map (YUI-158; Chris on the Mongol Empire answer: "this should be a Map"):
     /// a drawn empire with a pin and four ways out, a trip with a route through pins,
     /// and countries by code across the date line.
@@ -2229,6 +2304,14 @@ struct ChatView: View {
             let asks = ["Give me a brief geographic explanation of the Mongol Empire", "Plan me a train trip, Lisbon to Rome",
                         "How close are Russia and Alaska?"]
             return zip(asks, mapDemo).flatMap { ask, yl in
+                [ChatMessage(text: ask, fromUser: true), ChatMessage(text: "", fromUser: false, yl: YLScreen(yl))]
+            }
+        }
+        // -yuiDemoDraw: a flowchart, a sequence, a state diagram and three mock-ups (DRAW-2).
+        if ProcessInfo.processInfo.arguments.contains("-yuiDemoDraw") {
+            let asks = ["How does an ask ship?", "What happens when I send a message?", "Show me the TestFlight build states",
+                        "Redraw the Agents screen with the changes", "Mock up the sign-in", "Sketch the pricing page"]
+            return zip(asks, drawDemo).flatMap { ask, yl in
                 [ChatMessage(text: ask, fromUser: true), ChatMessage(text: "", fromUser: false, yl: YLScreen(yl))]
             }
         }

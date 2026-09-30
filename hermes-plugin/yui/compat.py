@@ -38,6 +38,10 @@ MUSIC_BUILD = 175  # YUI-116 step 2: loop and drums drawn and played (56b38a3)
 KEYS_BUILD = 177  # YUI-116 step 3: keys and chords drawn and played (2b26871)
 TUNER_BUILD = 205  # YUI-116 step 4: tuner and metronome drawn and played (7b18b14)
 MAP_BUILD = 219  # YUI-158 step 2: maps drawn and pinched (the app commit's count)
+# DRAW-2: no build draws `diagram` (Mermaid) or `mock` (a UI from parts) yet. Set this to
+# the DRAW-2 app commit's count (git rev-list --count) when it lands. Until then it is a
+# sentinel like FLOW_BUILD, so every phone gets the words and agents are told to skip them.
+DRAW_BUILD = 1_000_000
 # YUI-115: no build runs flows yet. Set this to that app commit's count when it lands.
 FLOW_BUILD = 1_000_000
 
@@ -53,10 +57,11 @@ MIN_BUILD: Dict[str, int] = {
     "keys": KEYS_BUILD, "chords": KEYS_BUILD,            # YUI-116 step 3: a keyboard and chord buttons
     "tuner": TUNER_BUILD, "metronome": TUNER_BUILD,      # YUI-116 step 4: a tuner and a click
     "map": MAP_BUILD, "area": MAP_BUILD, "pin": MAP_BUILD, "route": MAP_BUILD,  # YUI-158: places on a map
+    "diagram": DRAW_BUILD, "mock": DRAW_BUILD, "part": DRAW_BUILD,  # DRAW-2: a Mermaid diagram, a UI mock
     "flow": FLOW_BUILD,                                  # YUI-115: runs as a plan until then
 }
 GROUPS = {"sketch": {"row", "after"}, "timeline": {"done", "now", "next"}, "shapes": {"shape"},
-          "map": {"area", "pin", "route"}}
+          "map": {"area", "pin", "route"}, "mock": {"part"}}
 MEMBER_OF = {m: head for head, ms in GROUPS.items() for m in ms}
 STORY = {"deck", "plan"}  # a sketch in these is the picture of a page
 QUIET = {"menu"}  # draws nothing in the chat: dropped on old builds, never named in the note
@@ -209,6 +214,21 @@ def _group_text(lines: List[str]) -> str:
             cap = _unquote(props.get("caption", ""))
             if cap:
                 out.append(cap)
+        elif preset == "diagram":
+            title_, points, cap, source = _diagram_words(lines[i:])[1:]
+            if title_:
+                out.append(f"**{title_}**")
+            out.extend(f"- {p}" for p in points)
+            if source:
+                out.append("```mermaid\n" + source + "\n```")
+            if cap:
+                out.append(cap)
+        elif preset == "mock":
+            if title:
+                out.append(f"**{title}**")
+            out.extend(f"- {p}" for p in _mock_parts(lines[i + 1:]))
+        elif preset == "part" and i == 0:
+            out.extend(f"- {p}" for p in _mock_parts(lines))
         elif preset in ("area", "pin", "route") and i == 0:
             places = _map_places(lines)
             if places:
@@ -296,6 +316,115 @@ def _map_page(lines: List[str]) -> str:
     if points:
         page += " points=" + "|".join('"' + p.replace('"', "'") + '"' for p in points)
     return page
+
+
+def _words_page(title: str, cap: str, points: List[str], default: str) -> str:
+    """A picture's words as a page of a deck or plan: its title, the caption as the
+    body, the lines as points."""
+    if not points and not cap:
+        return ""
+    page = f'page "{(title or default).replace(chr(34), chr(39))}"'
+    if cap:
+        page += ' body="' + cap.replace('"', "'") + '"'
+    if points:
+        page += " points=" + "|".join('"' + p.replace('"', "'") + '"' for p in points)
+    return page
+
+
+def _diagram_words(lines: List[str]) -> tuple:
+    """(lines it takes, title, points, caption, source) for the diagram whose head is
+    lines[0]. The Mermaid after it is read by the hub parser, which also knows where
+    the diagram's own `end` is. Flowchart and state: one `A -> B: label` per edge
+    (a node with no edge on its own); sequence: `Alice -> Bob: text`, notes and
+    blocks as lines. Anything else (pie, gantt...) comes back as its `source`."""
+    p = yuilines.Parser()
+    head = p.line(lines[0])
+    if not head or head.get("op") != "add":
+        return 1, "", [], "", ""
+    title, cap = head["props"].get("title", ""), head["props"].get("caption", "")
+    used, graph = len(lines), None
+    for k in range(1, len(lines)):
+        op = p.line(lines[k])
+        if op and op.get("op") == "patch" and op.get("target") == head["id"]:
+            used, graph = k + 1, op["props"]
+            break
+        if op:  # not Mermaid: the diagram stayed empty, this line is YL
+            used = k
+            break
+    else:
+        op = p.finish()
+        graph = op["props"] if op and op.get("op") == "patch" else None
+    if not graph:
+        return used, title, [], cap, ""
+    if graph.get("type") == "other":
+        return used, title, [], cap, graph.get("source", "")
+    return used, title, _graph_lines(graph), cap, ""
+
+
+def _graph_lines(g: dict) -> List[str]:
+    if g.get("type") == "sequence":
+        names = {a["id"]: a.get("label") or a["id"] for a in g.get("actors", [])}
+        out = []
+        for s in g.get("steps", []):
+            t = s.get("type")
+            if t == "msg":
+                arrow = "<->" if s.get("both") else "->"
+                out.append(f"{names.get(s['from'], s['from'])} {arrow} {names.get(s['to'], s['to'])}: {s.get('text', '')}".rstrip(": "))
+            elif t == "note":
+                out.append(f"Note ({', '.join(names.get(x, x) for x in s.get('on', []))}): {s.get('text', '')}")
+            elif t == "open":
+                out.append(f"{s.get('block', '').capitalize()}: {s.get('text', '')}".rstrip(": "))
+        return out
+    names = {}
+    for n in g.get("nodes", []):
+        names[n["id"]] = n.get("label") or {"start": "Start", "end": "End"}.get(n.get("shape"), n["id"])
+    out, seen = [], set()
+    for e in g.get("edges", []):
+        seen.update((e["from"], e["to"]))
+        arrow = "<->" if e.get("both") else "--" if e.get("plain") else "->"
+        out.append(f"{names.get(e['from'], e['from'])} {arrow} {names.get(e['to'], e['to'])}"
+                   + (f": {e['label']}" if e.get("label") else ""))
+    return [names[i] for i in names if i not in seen] + out
+
+
+def _mock_parts(lines: List[str]) -> List[str]:
+    """A mock's parts in screen order (nav first, tabs last, then sheet, alert and
+    keyboard), one line each: `Nav: Agents`, `Row: Basil, Groceries and meals`,
+    `Button: New agent`. A highlighted part ends `(new)`, a struck one `(out)`,
+    a note `(note: ...)`; a dimmed one is plain."""
+    parts = [op["props"] for op in yuilines.parse("\n".join(lines))
+             if op.get("op") == "add" and op.get("preset") == "part"]
+    rank = lambda k: 0 if k == "nav" else 2 if k == "tabs" else 3 if k in ("sheet", "alert", "keyboard") else 1
+    first = {}
+    for k in ("nav", "tabs"):
+        first[k] = next((p for p in parts if p.get("kind") == k), None)
+    parts = [p for p in parts if p.get("kind") not in first or p is first[p.get("kind")]]
+    out = []
+    for p in sorted(parts, key=lambda p: rank(p.get("kind", "text"))):  # stable: line order within a rank
+        kind = p.get("kind", "text")
+        if kind in ("divider", "space"):
+            continue
+        items = p.get("items") or []
+        bits = [p.get("text", ""), p.get("sub", ""), p.get("value", "") or p.get("ph", ""), p.get("body", ""),
+                p.get("action", ""), ", ".join(items) if kind in ("tabs", "segmented", "grid", "sheet", "alert") else ""]
+        line = ", ".join(str(b) for b in bits if b)
+        if kind in ("tabs", "segmented") and p.get("tab") not in (None, ""):
+            tab = str(p["tab"])
+            tab = items[int(tab) - 1] if tab.isdigit() and 0 < int(tab) <= len(items) else tab
+            line += f" ({tab} selected)"
+        if kind == "toggle" and p.get("on"):
+            line += " (on)"
+        mark = " (new)" if p.get("hi") else " (out)" if p.get("x") else ""
+        note = f" (note: {p['note']})" if p.get("note") else ""
+        out.append(f"{kind.capitalize()}{': ' + line if line else ''}{mark}{note}")
+    return out
+
+
+def _mock_page(lines: List[str]) -> str:
+    """A mock inside a deck or plan, as a page with its parts as points."""
+    _, _, preset, words, _, _ = _split(lines[0])
+    title = " ".join(words).strip() if preset == "mock" else ""
+    return _words_page(title, "", _mock_parts(lines[1:] if preset == "mock" else lines), "The screen")
 
 
 def _group_page(lines: List[str]) -> str:
@@ -505,12 +634,29 @@ def _fence(block: str, gated: set) -> List[tuple]:
             continue
         group = [line]
         members = GROUPS.get(preset, set())
+        if preset == "diagram":
+            used, title_, points, cap, source = _diagram_words(lines[i:])
+            i += used
+            if story:
+                page = _words_page(title_, cap, points, "The diagram")
+                if page:
+                    cur.append(SCREEN.match(line).group(1) + page if SCREEN.match(line) else page)
+                continue
+            text = "\n".join(([f"**{title_}**"] if title_ else []) + [f"- {x}" for x in points]
+                             + (["```mermaid\n" + source + "\n```"] if source else []) + ([cap] if cap else []))
+            if cur and any(l.strip() for l in cur):
+                parts.append(("yui", cur))
+            cur = []
+            if text:
+                parts.append(("text", text))
+            continue
         i += 1
         while members and i < len(lines) and _split(lines[i])[2] in members:
             group.append(lines[i])
             i += 1
-        if story and preset in ("sketch", "row", "after", "map", "area", "pin", "route"):
-            page = _map_page(group) if preset in GROUPS["map"] | {"map"} else _group_page(group)
+        if story and preset in ("sketch", "row", "after", "map", "area", "pin", "route", "mock", "part"):
+            page = (_map_page(group) if preset in GROUPS["map"] | {"map"}
+                    else _mock_page(group) if preset in ("mock", "part") else _group_page(group))
             if page:
                 cur.append(SCREEN.match(line).group(1) + page if SCREEN.match(line) else page)
             continue

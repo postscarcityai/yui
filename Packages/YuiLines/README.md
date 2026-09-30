@@ -17,7 +17,7 @@ render(stream.flush())
 for try await node in YuiLines.nodes(from: chunks) { render(node) }
 ```
 
-`YLNode` is `Codable`: `op` (add, patch, save, show, clear, focus, error), `screen`, `preset`, `id`, `target`, `name`, `props`, `message`, `line`. `props` holds only what the line said; defaults are the renderer's job (spec section 4).
+`YLNode` is `Codable`: `op` (add, patch, save, show, clear, focus, error), `screen`, `preset`, `id`, `target`, `name`, `props`, `message`, `line`. `diagram` patches its drawing onto the add at `end`, `mock` groups `part` lines (see "Reading the draws" in `Presets.swift`). `props` holds only what the line said; defaults are the renderer's job (spec section 4).
 
 ## Tests
 

@@ -1,0 +1,2513 @@
+{
+ "about": "Generated from yuigui site/lib/yl/yl.mjs + diagram.mjs (node /tmp/yui-draw2-notes/gen.mjs equivalent): the parser's diagram patch and the layout it gives.",
+ "scenes": [
+  {
+   "name": "chain",
+   "input": "diagram\nflowchart TD\n  a --> b --> c\nend",
+   "props": {
+    "type": "flow",
+    "dir": "TD",
+    "nodes": [
+     {
+      "id": "a"
+     },
+     {
+      "id": "b"
+     },
+     {
+      "id": "c"
+     }
+    ],
+    "edges": [
+     {
+      "from": "a",
+      "to": "b"
+     },
+     {
+      "from": "b",
+      "to": "c"
+     }
+    ],
+    "source": "flowchart TD\n  a --> b --> c"
+   },
+   "layout": {
+    "w": 72,
+    "h": 216,
+    "turned": false,
+    "dir": "TD",
+    "nodes": [
+     {
+      "id": "a",
+      "cx": 36,
+      "cy": 26,
+      "w": 56,
+      "h": 36,
+      "order": 0,
+      "lines": [
+       "a"
+      ]
+     },
+     {
+      "id": "b",
+      "cx": 36,
+      "cy": 108,
+      "w": 56,
+      "h": 36,
+      "order": 1,
+      "lines": [
+       "b"
+      ]
+     },
+     {
+      "id": "c",
+      "cx": 36,
+      "cy": 190,
+      "w": 56,
+      "h": 36,
+      "order": 2,
+      "lines": [
+       "c"
+      ]
+     }
+    ],
+    "edges": [
+     {
+      "from": "a",
+      "to": "b",
+      "pts": [
+       [
+        36,
+        44
+       ],
+       [
+        36,
+        67
+       ],
+       [
+        36,
+        67
+       ],
+       [
+        36,
+        90
+       ]
+      ],
+      "mid": [
+       36,
+       67
+      ],
+      "back": false,
+      "order": 1
+     },
+     {
+      "from": "b",
+      "to": "c",
+      "pts": [
+       [
+        36,
+        126
+       ],
+       [
+        36,
+        149
+       ],
+       [
+        36,
+        149
+       ],
+       [
+        36,
+        172
+       ]
+      ],
+      "mid": [
+       36,
+       149
+      ],
+      "back": false,
+      "order": 2
+     }
+    ],
+    "groups": []
+   }
+  },
+  {
+   "name": "lr narrow",
+   "input": "diagram\nflowchart LR\n  a --> b\nend",
+   "props": {
+    "type": "flow",
+    "dir": "LR",
+    "nodes": [
+     {
+      "id": "a"
+     },
+     {
+      "id": "b"
+     }
+    ],
+    "edges": [
+     {
+      "from": "a",
+      "to": "b"
+     }
+    ],
+    "source": "flowchart LR\n  a --> b"
+   },
+   "layout": {
+    "w": 192,
+    "h": 52,
+    "turned": false,
+    "dir": "LR",
+    "nodes": [
+     {
+      "id": "a",
+      "cx": 36,
+      "cy": 26,
+      "w": 56,
+      "h": 36,
+      "order": 0,
+      "lines": [
+       "a"
+      ]
+     },
+     {
+      "id": "b",
+      "cx": 156,
+      "cy": 26,
+      "w": 56,
+      "h": 36,
+      "order": 1,
+      "lines": [
+       "b"
+      ]
+     }
+    ],
+    "edges": [
+     {
+      "from": "a",
+      "to": "b",
+      "pts": [
+       [
+        64,
+        26
+       ],
+       [
+        96,
+        26
+       ],
+       [
+        96,
+        26
+       ],
+       [
+        128,
+        26
+       ]
+      ],
+      "mid": [
+       96,
+       26
+      ],
+      "back": false,
+      "order": 1
+     }
+    ],
+    "groups": []
+   }
+  },
+  {
+   "name": "lr wide turns",
+   "input": "diagram\nflowchart LR\n  a[First step] --> b[Second step] --> c[Third step] --> d[Fourth step]\nend",
+   "props": {
+    "type": "flow",
+    "dir": "LR",
+    "nodes": [
+     {
+      "id": "a",
+      "label": "First step"
+     },
+     {
+      "id": "b",
+      "label": "Second step"
+     },
+     {
+      "id": "c",
+      "label": "Third step"
+     },
+     {
+      "id": "d",
+      "label": "Fourth step"
+     }
+    ],
+    "edges": [
+     {
+      "from": "a",
+      "to": "b"
+     },
+     {
+      "from": "b",
+      "to": "c"
+     },
+     {
+      "from": "c",
+      "to": "d"
+     }
+    ],
+    "source": "flowchart LR\n  a[First step] --> b[Second step] --> c[Third step] --> d[Fourth step]"
+   },
+   "layout": {
+    "w": 125,
+    "h": 298,
+    "turned": true,
+    "dir": "TD",
+    "nodes": [
+     {
+      "id": "a",
+      "cx": 62.5,
+      "cy": 26,
+      "w": 102,
+      "h": 36,
+      "order": 0,
+      "lines": [
+       "First step"
+      ]
+     },
+     {
+      "id": "b",
+      "cx": 62.5,
+      "cy": 108,
+      "w": 109,
+      "h": 36,
+      "order": 1,
+      "lines": [
+       "Second step"
+      ]
+     },
+     {
+      "id": "c",
+      "cx": 62.5,
+      "cy": 190,
+      "w": 102,
+      "h": 36,
+      "order": 2,
+      "lines": [
+       "Third step"
+      ]
+     },
+     {
+      "id": "d",
+      "cx": 62.5,
+      "cy": 272,
+      "w": 109,
+      "h": 36,
+      "order": 3,
+      "lines": [
+       "Fourth step"
+      ]
+     }
+    ],
+    "edges": [
+     {
+      "from": "a",
+      "to": "b",
+      "pts": [
+       [
+        62.5,
+        44
+       ],
+       [
+        62.5,
+        67
+       ],
+       [
+        62.5,
+        67
+       ],
+       [
+        62.5,
+        90
+       ]
+      ],
+      "mid": [
+       62.5,
+       67
+      ],
+      "back": false,
+      "order": 1
+     },
+     {
+      "from": "b",
+      "to": "c",
+      "pts": [
+       [
+        62.5,
+        126
+       ],
+       [
+        62.5,
+        149
+       ],
+       [
+        62.5,
+        149
+       ],
+       [
+        62.5,
+        172
+       ]
+      ],
+      "mid": [
+       62.5,
+       149
+      ],
+      "back": false,
+      "order": 2
+     },
+     {
+      "from": "c",
+      "to": "d",
+      "pts": [
+       [
+        62.5,
+        208
+       ],
+       [
+        62.5,
+        231
+       ],
+       [
+        62.5,
+        231
+       ],
+       [
+        62.5,
+        254
+       ]
+      ],
+      "mid": [
+       62.5,
+       231
+      ],
+      "back": false,
+      "order": 3
+     }
+    ],
+    "groups": []
+   }
+  },
+  {
+   "name": "rl and bt",
+   "input": "diagram\nflowchart BT\n  a{Choice?} -->|yes| b((Go))\n  a -->|no| c[(Store)]\n  c --> d{{Hex}}\n  d --> e[/Slant/]\n  e --> f>Flag]\n  f --> g[[Sub]]\nend",
+   "props": {
+    "type": "flow",
+    "dir": "BT",
+    "nodes": [
+     {
+      "id": "a",
+      "label": "Choice?",
+      "shape": "diamond"
+     },
+     {
+      "id": "b",
+      "label": "Go",
+      "shape": "circle"
+     },
+     {
+      "id": "c",
+      "label": "Store",
+      "shape": "cylinder"
+     },
+     {
+      "id": "d",
+      "label": "Hex",
+      "shape": "hexagon"
+     },
+     {
+      "id": "e",
+      "label": "Slant",
+      "shape": "slant"
+     },
+     {
+      "id": "f",
+      "label": "Flag",
+      "shape": "flag"
+     },
+     {
+      "id": "g",
+      "label": "Sub",
+      "shape": "subroutine"
+     }
+    ],
+    "edges": [
+     {
+      "from": "a",
+      "to": "b",
+      "label": "yes"
+     },
+     {
+      "from": "a",
+      "to": "c",
+      "label": "no"
+     },
+     {
+      "from": "c",
+      "to": "d"
+     },
+     {
+      "from": "d",
+      "to": "e"
+     },
+     {
+      "from": "e",
+      "to": "f"
+     },
+     {
+      "from": "f",
+      "to": "g"
+     }
+    ],
+    "source": "flowchart BT\n  a{Choice?} -->|yes| b((Go))\n  a -->|no| c[(Store)]\n  c --> d{{Hex}}\n  d --> e[/Slant/]\n  e --> f>Flag]\n  f --> g[[Sub]]"
+   },
+   "layout": {
+    "w": 146,
+    "h": 494,
+    "turned": false,
+    "dir": "BT",
+    "nodes": [
+     {
+      "id": "a",
+      "cx": 73,
+      "cy": 458,
+      "w": 112,
+      "h": 56,
+      "order": 0,
+      "lines": [
+       "Choice?"
+      ]
+     },
+     {
+      "id": "b",
+      "cx": 27.5,
+      "cy": 360,
+      "w": 39,
+      "h": 39,
+      "order": 1,
+      "lines": [
+       "Go"
+      ]
+     },
+     {
+      "id": "c",
+      "cx": 105.5,
+      "cy": 360,
+      "w": 65,
+      "h": 48,
+      "order": 2,
+      "lines": [
+       "Store"
+      ]
+     },
+     {
+      "id": "d",
+      "cx": 73,
+      "cy": 272,
+      "w": 80,
+      "h": 36,
+      "order": 3,
+      "lines": [
+       "Hex"
+      ]
+     },
+     {
+      "id": "e",
+      "cx": 73,
+      "cy": 190,
+      "w": 87,
+      "h": 36,
+      "order": 4,
+      "lines": [
+       "Slant"
+      ]
+     },
+     {
+      "id": "f",
+      "cx": 73,
+      "cy": 108,
+      "w": 80,
+      "h": 36,
+      "order": 5,
+      "lines": [
+       "Flag"
+      ]
+     },
+     {
+      "id": "g",
+      "cx": 73,
+      "cy": 26,
+      "w": 68,
+      "h": 36,
+      "order": 6,
+      "lines": [
+       "Sub"
+      ]
+     }
+    ],
+    "edges": [
+     {
+      "from": "a",
+      "to": "b",
+      "pts": [
+       [
+        73,
+        430
+       ],
+       [
+        73,
+        404.75
+       ],
+       [
+        27.5,
+        404.75
+       ],
+       [
+        27.5,
+        379.5
+       ]
+      ],
+      "mid": [
+       50.25,
+       404.75
+      ],
+      "back": false,
+      "order": 1
+     },
+     {
+      "from": "a",
+      "to": "c",
+      "pts": [
+       [
+        73,
+        430
+       ],
+       [
+        73,
+        407
+       ],
+       [
+        105.5,
+        407
+       ],
+       [
+        105.5,
+        384
+       ]
+      ],
+      "mid": [
+       89.25,
+       407
+      ],
+      "back": false,
+      "order": 2
+     },
+     {
+      "from": "c",
+      "to": "d",
+      "pts": [
+       [
+        105.5,
+        336
+       ],
+       [
+        105.5,
+        313
+       ],
+       [
+        73,
+        313
+       ],
+       [
+        73,
+        290
+       ]
+      ],
+      "mid": [
+       89.25,
+       313
+      ],
+      "back": false,
+      "order": 3
+     },
+     {
+      "from": "d",
+      "to": "e",
+      "pts": [
+       [
+        73,
+        254
+       ],
+       [
+        73,
+        231
+       ],
+       [
+        73,
+        231
+       ],
+       [
+        73,
+        208
+       ]
+      ],
+      "mid": [
+       73,
+       231
+      ],
+      "back": false,
+      "order": 4
+     },
+     {
+      "from": "e",
+      "to": "f",
+      "pts": [
+       [
+        73,
+        172
+       ],
+       [
+        73,
+        149
+       ],
+       [
+        73,
+        149
+       ],
+       [
+        73,
+        126
+       ]
+      ],
+      "mid": [
+       73,
+       149
+      ],
+      "back": false,
+      "order": 5
+     },
+     {
+      "from": "f",
+      "to": "g",
+      "pts": [
+       [
+        73,
+        90
+       ],
+       [
+        73,
+        67
+       ],
+       [
+        73,
+        67
+       ],
+       [
+        73,
+        44
+       ]
+      ],
+      "mid": [
+       73,
+       67
+      ],
+      "back": false,
+      "order": 6
+     }
+    ],
+    "groups": []
+   }
+  },
+  {
+   "name": "fork and cycle",
+   "input": "diagram\nflowchart TD\n  a --> b\n  a --> c\n  b --> d\n  c --> d\n  d --> a\n  d --> d\nend",
+   "props": {
+    "type": "flow",
+    "dir": "TD",
+    "nodes": [
+     {
+      "id": "a"
+     },
+     {
+      "id": "b"
+     },
+     {
+      "id": "c"
+     },
+     {
+      "id": "d"
+     }
+    ],
+    "edges": [
+     {
+      "from": "a",
+      "to": "b"
+     },
+     {
+      "from": "a",
+      "to": "c"
+     },
+     {
+      "from": "b",
+      "to": "d"
+     },
+     {
+      "from": "c",
+      "to": "d"
+     },
+     {
+      "from": "d",
+      "to": "a"
+     },
+     {
+      "from": "d",
+      "to": "d"
+     }
+    ],
+    "source": "flowchart TD\n  a --> b\n  a --> c\n  b --> d\n  c --> d\n  d --> a\n  d --> d"
+   },
+   "layout": {
+    "w": 154,
+    "h": 224,
+    "turned": false,
+    "dir": "TD",
+    "nodes": [
+     {
+      "id": "a",
+      "cx": 77,
+      "cy": 26,
+      "w": 56,
+      "h": 36,
+      "order": 0,
+      "lines": [
+       "a"
+      ]
+     },
+     {
+      "id": "b",
+      "cx": 36,
+      "cy": 108,
+      "w": 56,
+      "h": 36,
+      "order": 1,
+      "lines": [
+       "b"
+      ]
+     },
+     {
+      "id": "c",
+      "cx": 118,
+      "cy": 108,
+      "w": 56,
+      "h": 36,
+      "order": 2,
+      "lines": [
+       "c"
+      ]
+     },
+     {
+      "id": "d",
+      "cx": 77,
+      "cy": 190,
+      "w": 56,
+      "h": 36,
+      "order": 3,
+      "lines": [
+       "d"
+      ]
+     }
+    ],
+    "edges": [
+     {
+      "from": "a",
+      "to": "b",
+      "pts": [
+       [
+        77,
+        44
+       ],
+       [
+        77,
+        67
+       ],
+       [
+        36,
+        67
+       ],
+       [
+        36,
+        90
+       ]
+      ],
+      "mid": [
+       56.5,
+       67
+      ],
+      "back": false,
+      "order": 1
+     },
+     {
+      "from": "a",
+      "to": "c",
+      "pts": [
+       [
+        77,
+        44
+       ],
+       [
+        77,
+        67
+       ],
+       [
+        118,
+        67
+       ],
+       [
+        118,
+        90
+       ]
+      ],
+      "mid": [
+       97.5,
+       67
+      ],
+      "back": false,
+      "order": 2
+     },
+     {
+      "from": "b",
+      "to": "d",
+      "pts": [
+       [
+        36,
+        126
+       ],
+       [
+        36,
+        149
+       ],
+       [
+        77,
+        149
+       ],
+       [
+        77,
+        172
+       ]
+      ],
+      "mid": [
+       56.5,
+       149
+      ],
+      "back": false,
+      "order": 3
+     },
+     {
+      "from": "c",
+      "to": "d",
+      "pts": [
+       [
+        118,
+        126
+       ],
+       [
+        118,
+        149
+       ],
+       [
+        77,
+        149
+       ],
+       [
+        77,
+        172
+       ]
+      ],
+      "mid": [
+       97.5,
+       149
+      ],
+      "back": false,
+      "order": 3
+     },
+     {
+      "from": "d",
+      "to": "a",
+      "pts": [
+       [
+        105,
+        190
+       ],
+       [
+        143,
+        190
+       ],
+       [
+        143,
+        26
+       ],
+       [
+        105,
+        26
+       ]
+      ],
+      "mid": [
+       133.5,
+       108
+      ],
+      "back": true,
+      "order": 3
+     },
+     {
+      "from": "d",
+      "to": "d",
+      "pts": [
+       [
+        105,
+        184
+       ],
+       [
+        139,
+        164
+       ],
+       [
+        139,
+        216
+       ],
+       [
+        105,
+        196
+       ]
+      ],
+      "mid": [
+       130.5,
+       190
+      ],
+      "back": true,
+      "order": 3
+     }
+    ],
+    "groups": []
+   }
+  },
+  {
+   "name": "subgraphs",
+   "input": "diagram\nflowchart TD\n  subgraph o [Outer]\n    a --> b\n    subgraph i [Inner]\n      c\n    end\n  end\n  b --> d\n  d <-->|both| c\n  a ==> d\n  a -.-> c\n  a --- b\nend",
+   "props": {
+    "type": "flow",
+    "dir": "TD",
+    "nodes": [
+     {
+      "id": "a"
+     },
+     {
+      "id": "b"
+     },
+     {
+      "id": "c"
+     },
+     {
+      "id": "d"
+     }
+    ],
+    "edges": [
+     {
+      "from": "a",
+      "to": "b"
+     },
+     {
+      "from": "b",
+      "to": "d"
+     },
+     {
+      "from": "d",
+      "to": "c",
+      "label": "both",
+      "both": true
+     },
+     {
+      "from": "a",
+      "to": "d",
+      "line": "thick"
+     },
+     {
+      "from": "a",
+      "to": "c",
+      "line": "dash"
+     },
+     {
+      "from": "a",
+      "to": "b",
+      "plain": true
+     }
+    ],
+    "groups": [
+     {
+      "id": "o",
+      "label": "Outer",
+      "nodes": [
+       "a",
+       "b"
+      ]
+     },
+     {
+      "id": "i",
+      "label": "Inner",
+      "nodes": [
+       "c"
+      ],
+      "in": "o"
+     }
+    ],
+    "source": "flowchart TD\n  subgraph o [Outer]\n    a --> b\n    subgraph i [Inner]\n      c\n    end\n  end\n  b --> d\n  d <-->|both| c\n  a ==> d\n  a -.-> c\n  a --- b"
+   },
+   "layout": {
+    "w": 128,
+    "h": 356,
+    "turned": false,
+    "dir": "TD",
+    "nodes": [
+     {
+      "id": "a",
+      "cx": 64,
+      "cy": 56,
+      "w": 56,
+      "h": 36,
+      "order": 0,
+      "lines": [
+       "a"
+      ]
+     },
+     {
+      "id": "b",
+      "cx": 64,
+      "cy": 138,
+      "w": 56,
+      "h": 36,
+      "order": 1,
+      "lines": [
+       "b"
+      ]
+     },
+     {
+      "id": "c",
+      "cx": 64,
+      "cy": 302,
+      "w": 56,
+      "h": 36,
+      "order": 2,
+      "lines": [
+       "c"
+      ]
+     },
+     {
+      "id": "d",
+      "cx": 64,
+      "cy": 220,
+      "w": 56,
+      "h": 36,
+      "order": 3,
+      "lines": [
+       "d"
+      ]
+     }
+    ],
+    "edges": [
+     {
+      "from": "a",
+      "to": "b",
+      "pts": [
+       [
+        64,
+        74
+       ],
+       [
+        64,
+        97
+       ],
+       [
+        64,
+        97
+       ],
+       [
+        64,
+        120
+       ]
+      ],
+      "mid": [
+       64,
+       97
+      ],
+      "back": false,
+      "order": 1
+     },
+     {
+      "from": "b",
+      "to": "d",
+      "pts": [
+       [
+        64,
+        156
+       ],
+       [
+        64,
+        179
+       ],
+       [
+        64,
+        179
+       ],
+       [
+        64,
+        202
+       ]
+      ],
+      "mid": [
+       64,
+       179
+      ],
+      "back": false,
+      "order": 3
+     },
+     {
+      "from": "d",
+      "to": "c",
+      "pts": [
+       [
+        64,
+        238
+       ],
+       [
+        64,
+        261
+       ],
+       [
+        64,
+        261
+       ],
+       [
+        64,
+        284
+       ]
+      ],
+      "mid": [
+       64,
+       261
+      ],
+      "back": false,
+      "order": 3
+     },
+     {
+      "from": "a",
+      "to": "d",
+      "pts": [
+       [
+        64,
+        74
+       ],
+       [
+        64,
+        138
+       ],
+       [
+        64,
+        138
+       ],
+       [
+        64,
+        202
+       ]
+      ],
+      "mid": [
+       64,
+       138
+      ],
+      "back": false,
+      "order": 3
+     },
+     {
+      "from": "a",
+      "to": "c",
+      "pts": [
+       [
+        64,
+        74
+       ],
+       [
+        64,
+        179
+       ],
+       [
+        64,
+        179
+       ],
+       [
+        64,
+        284
+       ]
+      ],
+      "mid": [
+       64,
+       179
+      ],
+      "back": false,
+      "order": 2
+     },
+     {
+      "from": "a",
+      "to": "b",
+      "pts": [
+       [
+        64,
+        74
+       ],
+       [
+        64,
+        97
+       ],
+       [
+        64,
+        97
+       ],
+       [
+        64,
+        120
+       ]
+      ],
+      "mid": [
+       64,
+       97
+      ],
+      "back": false,
+      "order": 1
+     }
+    ],
+    "groups": [
+     {
+      "id": "o",
+      "x": 8,
+      "y": 8,
+      "w": 112,
+      "h": 340,
+      "label": "Outer"
+     },
+     {
+      "id": "i",
+      "x": 22,
+      "y": 254,
+      "w": 84,
+      "h": 80,
+      "label": "Inner"
+     }
+    ]
+   }
+  },
+  {
+   "name": "ask ships",
+   "input": "diagram \"How an ask ships\" caption=\"x\"\nflowchart LR\n  you([You]) --> board[Board]\n  subgraph fleet [The fleet]\n    board --> lane[Lane]\n    lane --> check{Checks green?}\n  end\n  check -->|yes| ship((TestFlight))\n  check -.->|no| lane\nend",
+   "props": {
+    "title": "How an ask ships",
+    "caption": "x",
+    "type": "flow",
+    "dir": "LR",
+    "nodes": [
+     {
+      "id": "you",
+      "label": "You",
+      "shape": "stadium"
+     },
+     {
+      "id": "board",
+      "label": "Board"
+     },
+     {
+      "id": "lane",
+      "label": "Lane"
+     },
+     {
+      "id": "check",
+      "label": "Checks green?",
+      "shape": "diamond"
+     },
+     {
+      "id": "ship",
+      "label": "TestFlight",
+      "shape": "circle"
+     }
+    ],
+    "edges": [
+     {
+      "from": "you",
+      "to": "board"
+     },
+     {
+      "from": "board",
+      "to": "lane"
+     },
+     {
+      "from": "lane",
+      "to": "check"
+     },
+     {
+      "from": "check",
+      "to": "ship",
+      "label": "yes"
+     },
+     {
+      "from": "check",
+      "to": "lane",
+      "label": "no",
+      "line": "dash"
+     }
+    ],
+    "groups": [
+     {
+      "id": "fleet",
+      "label": "The fleet",
+      "nodes": [
+       "board",
+       "lane",
+       "check"
+      ]
+     }
+    ],
+    "source": "flowchart LR\n  you([You]) --> board[Board]\n  subgraph fleet [The fleet]\n    board --> lane[Lane]\n    lane --> check{Checks green?}\n  end\n  check -->|yes| ship((TestFlight))\n  check -.->|no| lane"
+   },
+   "layout": {
+    "w": 246,
+    "h": 454,
+    "turned": true,
+    "dir": "TD",
+    "nodes": [
+     {
+      "id": "you",
+      "cx": 111,
+      "cy": 26,
+      "w": 56,
+      "h": 36,
+      "order": 0,
+      "lines": [
+       "You"
+      ]
+     },
+     {
+      "id": "board",
+      "cx": 111,
+      "cy": 108,
+      "w": 65,
+      "h": 36,
+      "order": 1,
+      "lines": [
+       "Board"
+      ]
+     },
+     {
+      "id": "lane",
+      "cx": 111,
+      "cy": 190,
+      "w": 58,
+      "h": 36,
+      "order": 2,
+      "lines": [
+       "Lane"
+      ]
+     },
+     {
+      "id": "check",
+      "cx": 111,
+      "cy": 282,
+      "w": 178,
+      "h": 56,
+      "order": 3,
+      "lines": [
+       "Checks green?"
+      ]
+     },
+     {
+      "id": "ship",
+      "cx": 111,
+      "cy": 401,
+      "w": 90,
+      "h": 90,
+      "order": 4,
+      "lines": [
+       "TestFlight"
+      ]
+     }
+    ],
+    "edges": [
+     {
+      "from": "you",
+      "to": "board",
+      "pts": [
+       [
+        111,
+        44
+       ],
+       [
+        111,
+        67
+       ],
+       [
+        111,
+        67
+       ],
+       [
+        111,
+        90
+       ]
+      ],
+      "mid": [
+       111,
+       67
+      ],
+      "back": false,
+      "order": 1
+     },
+     {
+      "from": "board",
+      "to": "lane",
+      "pts": [
+       [
+        111,
+        126
+       ],
+       [
+        111,
+        149
+       ],
+       [
+        111,
+        149
+       ],
+       [
+        111,
+        172
+       ]
+      ],
+      "mid": [
+       111,
+       149
+      ],
+      "back": false,
+      "order": 2
+     },
+     {
+      "from": "lane",
+      "to": "check",
+      "pts": [
+       [
+        111,
+        208
+       ],
+       [
+        111,
+        231
+       ],
+       [
+        111,
+        231
+       ],
+       [
+        111,
+        254
+       ]
+      ],
+      "mid": [
+       111,
+       231
+      ],
+      "back": false,
+      "order": 3
+     },
+     {
+      "from": "check",
+      "to": "ship",
+      "pts": [
+       [
+        111,
+        310
+       ],
+       [
+        111,
+        333
+       ],
+       [
+        111,
+        333
+       ],
+       [
+        111,
+        356
+       ]
+      ],
+      "mid": [
+       111,
+       333
+      ],
+      "back": false,
+      "order": 4
+     },
+     {
+      "from": "check",
+      "to": "lane",
+      "pts": [
+       [
+        200,
+        282
+       ],
+       [
+        238,
+        282
+       ],
+       [
+        238,
+        190
+       ],
+       [
+        140,
+        190
+       ]
+      ],
+      "mid": [
+       221,
+       236
+      ],
+      "back": true,
+      "order": 3
+     }
+    ],
+    "groups": [
+     {
+      "id": "fleet",
+      "x": 8,
+      "y": 60,
+      "w": 206,
+      "h": 264,
+      "label": "The fleet"
+     }
+    ]
+   }
+  },
+  {
+   "name": "state",
+   "input": "diagram\nstateDiagram-v2\n  [*] --> Uploaded\n  Uploaded --> Processing: Apple receives it\n  Processing --> Valid: passes\n  Processing --> Invalid: fails\n  Valid --> [*]\nend",
+   "props": {
+    "type": "state",
+    "dir": "TD",
+    "nodes": [
+     {
+      "id": "_start",
+      "shape": "start"
+     },
+     {
+      "id": "Uploaded"
+     },
+     {
+      "id": "Processing"
+     },
+     {
+      "id": "Valid"
+     },
+     {
+      "id": "Invalid"
+     },
+     {
+      "id": "_end",
+      "shape": "end"
+     }
+    ],
+    "edges": [
+     {
+      "from": "_start",
+      "to": "Uploaded"
+     },
+     {
+      "from": "Uploaded",
+      "to": "Processing",
+      "label": "Apple receives it"
+     },
+     {
+      "from": "Processing",
+      "to": "Valid",
+      "label": "passes"
+     },
+     {
+      "from": "Processing",
+      "to": "Invalid",
+      "label": "fails"
+     },
+     {
+      "from": "Valid",
+      "to": "_end"
+     }
+    ],
+    "source": "stateDiagram-v2\n  [*] --> Uploaded\n  Uploaded --> Processing: Apple receives it\n  Processing --> Valid: passes\n  Processing --> Invalid: fails\n  Valid --> [*]"
+   },
+   "layout": {
+    "w": 187,
+    "h": 346,
+    "turned": false,
+    "dir": "TD",
+    "nodes": [
+     {
+      "id": "_start",
+      "cx": 93.5,
+      "cy": 16,
+      "w": 16,
+      "h": 16,
+      "order": 0,
+      "lines": []
+     },
+     {
+      "id": "Uploaded",
+      "cx": 93.5,
+      "cy": 88,
+      "w": 87,
+      "h": 36,
+      "order": 1,
+      "lines": [
+       "Uploaded"
+      ]
+     },
+     {
+      "id": "Processing",
+      "cx": 93.5,
+      "cy": 170,
+      "w": 102,
+      "h": 36,
+      "order": 2,
+      "lines": [
+       "Processing"
+      ]
+     },
+     {
+      "id": "Valid",
+      "cx": 40.5,
+      "cy": 252,
+      "w": 65,
+      "h": 36,
+      "order": 3,
+      "lines": [
+       "Valid"
+      ]
+     },
+     {
+      "id": "Invalid",
+      "cx": 139,
+      "cy": 252,
+      "w": 80,
+      "h": 36,
+      "order": 4,
+      "lines": [
+       "Invalid"
+      ]
+     },
+     {
+      "id": "_end",
+      "cx": 93.5,
+      "cy": 327,
+      "w": 22,
+      "h": 22,
+      "order": 5,
+      "lines": []
+     }
+    ],
+    "edges": [
+     {
+      "from": "_start",
+      "to": "Uploaded",
+      "pts": [
+       [
+        93.5,
+        24
+       ],
+       [
+        93.5,
+        47
+       ],
+       [
+        93.5,
+        47
+       ],
+       [
+        93.5,
+        70
+       ]
+      ],
+      "mid": [
+       93.5,
+       47
+      ],
+      "back": false,
+      "order": 1
+     },
+     {
+      "from": "Uploaded",
+      "to": "Processing",
+      "pts": [
+       [
+        93.5,
+        106
+       ],
+       [
+        93.5,
+        129
+       ],
+       [
+        93.5,
+        129
+       ],
+       [
+        93.5,
+        152
+       ]
+      ],
+      "mid": [
+       93.5,
+       129
+      ],
+      "back": false,
+      "order": 2
+     },
+     {
+      "from": "Processing",
+      "to": "Valid",
+      "pts": [
+       [
+        93.5,
+        188
+       ],
+       [
+        93.5,
+        211
+       ],
+       [
+        40.5,
+        211
+       ],
+       [
+        40.5,
+        234
+       ]
+      ],
+      "mid": [
+       67,
+       211
+      ],
+      "back": false,
+      "order": 3
+     },
+     {
+      "from": "Processing",
+      "to": "Invalid",
+      "pts": [
+       [
+        93.5,
+        188
+       ],
+       [
+        93.5,
+        211
+       ],
+       [
+        139,
+        211
+       ],
+       [
+        139,
+        234
+       ]
+      ],
+      "mid": [
+       116.25,
+       211
+      ],
+      "back": false,
+      "order": 4
+     },
+     {
+      "from": "Valid",
+      "to": "_end",
+      "pts": [
+       [
+        40.5,
+        270
+       ],
+       [
+        40.5,
+        293
+       ],
+       [
+        93.5,
+        293
+       ],
+       [
+        93.5,
+        316
+       ]
+      ],
+      "mid": [
+       67,
+       293
+      ],
+      "back": false,
+      "order": 5
+     }
+    ],
+    "groups": []
+   }
+  },
+  {
+   "name": "state composite",
+   "input": "diagram\nstateDiagram-v2\n  state c <<choice>>\n  state f <<fork>>\n  [*] --> c\n  c --> f: go\n  f --> A\n  f --> B\n  state Big {\n    A --> B\n  }\nend",
+   "props": {
+    "type": "state",
+    "dir": "TD",
+    "nodes": [
+     {
+      "id": "c",
+      "shape": "choice"
+     },
+     {
+      "id": "f",
+      "shape": "fork"
+     },
+     {
+      "id": "_start",
+      "shape": "start"
+     },
+     {
+      "id": "A"
+     },
+     {
+      "id": "B"
+     },
+     {
+      "id": "Big"
+     }
+    ],
+    "edges": [
+     {
+      "from": "_start",
+      "to": "c"
+     },
+     {
+      "from": "c",
+      "to": "f",
+      "label": "go"
+     },
+     {
+      "from": "f",
+      "to": "A"
+     },
+     {
+      "from": "f",
+      "to": "B"
+     },
+     {
+      "from": "A",
+      "to": "B"
+     }
+    ],
+    "groups": [
+     {
+      "id": "Big",
+      "nodes": [
+       "A",
+       "B"
+      ]
+     }
+    ],
+    "source": "stateDiagram-v2\n  state c <<choice>>\n  state f <<fork>>\n  [*] --> c\n  c --> f: go\n  f --> A\n  f --> B\n  state Big {\n    A --> B\n  }"
+   },
+   "layout": {
+    "w": 114,
+    "h": 360,
+    "turned": false,
+    "dir": "TD",
+    "nodes": [
+     {
+      "id": "c",
+      "cx": 57,
+      "cy": 105,
+      "w": 30,
+      "h": 30,
+      "order": 0,
+      "lines": []
+     },
+     {
+      "id": "f",
+      "cx": 57,
+      "cy": 170,
+      "w": 70,
+      "h": 8,
+      "order": 1,
+      "lines": []
+     },
+     {
+      "id": "_start",
+      "cx": 16,
+      "cy": 26,
+      "w": 16,
+      "h": 16,
+      "order": 2,
+      "lines": []
+     },
+     {
+      "id": "A",
+      "cx": 57,
+      "cy": 238,
+      "w": 56,
+      "h": 36,
+      "order": 3,
+      "lines": [
+       "A"
+      ]
+     },
+     {
+      "id": "B",
+      "cx": 57,
+      "cy": 320,
+      "w": 56,
+      "h": 36,
+      "order": 4,
+      "lines": [
+       "B"
+      ]
+     },
+     {
+      "id": "Big",
+      "cx": 78,
+      "cy": 26,
+      "w": 56,
+      "h": 36,
+      "order": 5,
+      "lines": [
+       "Big"
+      ]
+     }
+    ],
+    "edges": [
+     {
+      "from": "_start",
+      "to": "c",
+      "pts": [
+       [
+        16,
+        34
+       ],
+       [
+        16,
+        62
+       ],
+       [
+        57,
+        62
+       ],
+       [
+        57,
+        90
+       ]
+      ],
+      "mid": [
+       36.5,
+       62
+      ],
+      "back": false,
+      "order": 2
+     },
+     {
+      "from": "c",
+      "to": "f",
+      "pts": [
+       [
+        57,
+        120
+       ],
+       [
+        57,
+        143
+       ],
+       [
+        57,
+        143
+       ],
+       [
+        57,
+        166
+       ]
+      ],
+      "mid": [
+       57,
+       143
+      ],
+      "back": false,
+      "order": 1
+     },
+     {
+      "from": "f",
+      "to": "A",
+      "pts": [
+       [
+        57,
+        174
+       ],
+       [
+        57,
+        197
+       ],
+       [
+        57,
+        197
+       ],
+       [
+        57,
+        220
+       ]
+      ],
+      "mid": [
+       57,
+       197
+      ],
+      "back": false,
+      "order": 3
+     },
+     {
+      "from": "f",
+      "to": "B",
+      "pts": [
+       [
+        57,
+        174
+       ],
+       [
+        57,
+        238
+       ],
+       [
+        57,
+        238
+       ],
+       [
+        57,
+        302
+       ]
+      ],
+      "mid": [
+       57,
+       238
+      ],
+      "back": false,
+      "order": 4
+     },
+     {
+      "from": "A",
+      "to": "B",
+      "pts": [
+       [
+        57,
+        256
+       ],
+       [
+        57,
+        279
+       ],
+       [
+        57,
+        279
+       ],
+       [
+        57,
+        302
+       ]
+      ],
+      "mid": [
+       57,
+       279
+      ],
+      "back": false,
+      "order": 4
+     }
+    ],
+    "groups": [
+     {
+      "id": "Big",
+      "x": 15,
+      "y": 190,
+      "w": 84,
+      "h": 162
+     }
+    ]
+   }
+  },
+  {
+   "name": "sequence",
+   "input": "diagram\nsequenceDiagram\n  autonumber\n  actor U as You\n  participant A as Yui app\n  participant G as Agent\n  U->>A: type and send\n  A->>G: your words\n  loop while it thinks\n    A-->>U: working row\n  end\n  Note over A,G: one round trip\n  Note right of G: thinks\n  Note left of U: hi\n  G-->>A: yl lines\n  A-)U: async\n  A-xG: lost a long sentence of words that wraps onto several lines\n  A->>A: self\n  alt ok\n    U->G: plain\n  else no\n    U->G: nope\n  end\nend",
+   "props": {
+    "type": "sequence",
+    "actors": [
+     {
+      "id": "U",
+      "label": "You",
+      "actor": true
+     },
+     {
+      "id": "A",
+      "label": "Yui app"
+     },
+     {
+      "id": "G",
+      "label": "Agent"
+     }
+    ],
+    "steps": [
+     {
+      "type": "msg",
+      "from": "U",
+      "to": "A",
+      "text": "type and send"
+     },
+     {
+      "type": "msg",
+      "from": "A",
+      "to": "G",
+      "text": "your words"
+     },
+     {
+      "type": "open",
+      "block": "loop",
+      "text": "while it thinks"
+     },
+     {
+      "type": "msg",
+      "from": "A",
+      "to": "U",
+      "text": "working row",
+      "line": "dash"
+     },
+     {
+      "type": "close"
+     },
+     {
+      "type": "note",
+      "side": "over",
+      "on": [
+       "A",
+       "G"
+      ],
+      "text": "one round trip"
+     },
+     {
+      "type": "note",
+      "side": "right",
+      "on": [
+       "G"
+      ],
+      "text": "thinks"
+     },
+     {
+      "type": "note",
+      "side": "left",
+      "on": [
+       "U"
+      ],
+      "text": "hi"
+     },
+     {
+      "type": "msg",
+      "from": "G",
+      "to": "A",
+      "text": "yl lines",
+      "line": "dash"
+     },
+     {
+      "type": "msg",
+      "from": "A",
+      "to": "U",
+      "text": "async",
+      "head": "async"
+     },
+     {
+      "type": "msg",
+      "from": "A",
+      "to": "G",
+      "text": "lost a long sentence of words that wraps onto several lines",
+      "head": "cross"
+     },
+     {
+      "type": "msg",
+      "from": "A",
+      "to": "A",
+      "text": "self"
+     },
+     {
+      "type": "open",
+      "block": "alt",
+      "text": "ok"
+     },
+     {
+      "type": "msg",
+      "from": "U",
+      "to": "G",
+      "text": "plain",
+      "head": "none"
+     },
+     {
+      "type": "else",
+      "text": "no"
+     },
+     {
+      "type": "msg",
+      "from": "U",
+      "to": "G",
+      "text": "nope",
+      "head": "none"
+     },
+     {
+      "type": "close"
+     }
+    ],
+    "numbered": true,
+    "source": "sequenceDiagram\n  autonumber\n  actor U as You\n  participant A as Yui app\n  participant G as Agent\n  U->>A: type and send\n  A->>G: your words\n  loop while it thinks\n    A-->>U: working row\n  end\n  Note over A,G: one round trip\n  Note right of G: thinks\n  Note left of U: hi\n  G-->>A: yl lines\n  A-)U: async\n  A-xG: lost a long sentence of words that wraps onto several lines\n  A->>A: self\n  alt ok\n    U->G: plain\n  else no\n    U->G: nope\n  end"
+   },
+   "layout": {
+    "w": 640,
+    "h": 677,
+    "dx": 76,
+    "life": [
+     35,
+     669
+    ],
+    "span": [
+     -14,
+     501.8
+    ],
+    "actors": [
+     {
+      "id": "U",
+      "x": 42,
+      "w": 84,
+      "h": 35,
+      "lines": [
+       "You"
+      ]
+     },
+     {
+      "id": "A",
+      "x": 166.2,
+      "w": 84,
+      "h": 35,
+      "lines": [
+       "Yui app"
+      ]
+     },
+     {
+      "id": "G",
+      "x": 445.8,
+      "w": 84,
+      "h": 35,
+      "lines": [
+       "Agent"
+      ]
+     }
+    ],
+    "items": [
+     {
+      "kind": "msg",
+      "order": 0,
+      "y": 85,
+      "x1": 42,
+      "x2": 166.2,
+      "n": 1,
+      "depth": 0,
+      "self": false,
+      "lines": [
+       "type and send"
+      ],
+      "tw": 96.2
+     },
+     {
+      "kind": "msg",
+      "order": 1,
+      "y": 123,
+      "x1": 166.2,
+      "x2": 445.8,
+      "n": 2,
+      "depth": 0,
+      "self": false,
+      "lines": [
+       "your words"
+      ],
+      "tw": 74
+     },
+     {
+      "kind": "msg",
+      "order": 3,
+      "y": 187,
+      "x1": 166.2,
+      "x2": 42,
+      "n": 3,
+      "depth": 1,
+      "self": false,
+      "lines": [
+       "working row"
+      ],
+      "tw": 81.4
+     },
+     {
+      "kind": "block",
+      "order": 2,
+      "y": 135,
+      "h": 68,
+      "depth": 0,
+      "self": false,
+      "divs": []
+     },
+     {
+      "kind": "note",
+      "order": 5,
+      "y": 211,
+      "h": 30,
+      "x": 146.2,
+      "w": 319.6,
+      "self": false,
+      "lines": [
+       "one round trip"
+      ]
+     },
+     {
+      "kind": "note",
+      "order": 6,
+      "y": 253,
+      "h": 30,
+      "x": 457.8,
+      "w": 90,
+      "self": false,
+      "lines": [
+       "thinks"
+      ]
+     },
+     {
+      "kind": "note",
+      "order": 7,
+      "y": 295,
+      "h": 30,
+      "x": -60,
+      "w": 90,
+      "self": false,
+      "lines": [
+       "hi"
+      ]
+     },
+     {
+      "kind": "msg",
+      "order": 8,
+      "y": 363,
+      "x1": 445.8,
+      "x2": 166.2,
+      "n": 4,
+      "depth": 0,
+      "self": false,
+      "lines": [
+       "yl lines"
+      ],
+      "tw": 59.2
+     },
+     {
+      "kind": "msg",
+      "order": 9,
+      "y": 401,
+      "x1": 166.2,
+      "x2": 42,
+      "n": 5,
+      "depth": 0,
+      "self": false,
+      "lines": [
+       "async"
+      ],
+      "tw": 37
+     },
+     {
+      "kind": "msg",
+      "order": 10,
+      "y": 455,
+      "x1": 166.2,
+      "x2": 445.8,
+      "n": 6,
+      "depth": 0,
+      "self": false,
+      "lines": [
+       "lost a long sentence of words that",
+       "wraps onto several lines"
+      ],
+      "tw": 251.60000000000002
+     },
+     {
+      "kind": "msg",
+      "order": 11,
+      "y": 493,
+      "x1": 166.2,
+      "x2": 166.2,
+      "n": 7,
+      "depth": 0,
+      "self": true,
+      "lines": [
+       "self"
+      ],
+      "tw": 29.6
+     },
+     {
+      "kind": "msg",
+      "order": 13,
+      "y": 571,
+      "x1": 42,
+      "x2": 445.8,
+      "n": 8,
+      "depth": 1,
+      "self": false,
+      "lines": [
+       "plain"
+      ],
+      "tw": 37
+     },
+     {
+      "kind": "msg",
+      "order": 15,
+      "y": 635,
+      "x1": 42,
+      "x2": 445.8,
+      "n": 9,
+      "depth": 1,
+      "self": false,
+      "lines": [
+       "nope"
+      ],
+      "tw": 29.6
+     },
+     {
+      "kind": "block",
+      "order": 12,
+      "y": 519,
+      "h": 132,
+      "depth": 0,
+      "self": false,
+      "divs": [
+       {
+        "y": 583,
+        "text": "no"
+       }
+      ]
+     }
+    ]
+   }
+  }
+ ]
+}
