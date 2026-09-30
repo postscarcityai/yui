@@ -216,7 +216,7 @@ export function buildTurn(input: PromptInput): { messages: ChatMessage[]; droppe
   if (input.images?.length) {
     const last = messages[messages.length - 1];
     if (last?.role === "user") {
-      const more = input.photosLeftOut ? `\n[yui] ${input.photosLeftOut} more photo${input.photosLeftOut > 1 ? "s" : ""} came with this turn; you see only the newest. Say so, and ask for the others one at a time.` : "";
+      const more = input.photosLeftOut ? `\n[yui] ${input.photosLeftOut} more photo${input.photosLeftOut > 1 ? "s" : ""} came with this turn; you see only the newest ${input.images?.length ?? 0}. Say so, and ask for the others in a later message.` : "";
       last.content = [{ type: "text", text: String(last.content) + more }, ...input.images.map((url) => ({ type: "image_url" as const, image_url: { url } }))];
     }
   }

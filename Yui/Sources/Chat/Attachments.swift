@@ -31,8 +31,8 @@ struct ComposerPhoto: Identifiable, Equatable {
 }
 
 enum Attachments {
-    /// Most photos one message carries. Keeps a send quick on a phone connection.
-    static let maxPhotos = 4
+    /// Most photos one message carries. Each is shrunk to 2048 px before it goes; the runtime shows the model all 12.
+    static let maxPhotos = 12
 
     /// The row's body: the words, or a stand-in when there are only photos (body is never empty).
     static func body(text: String, photos: Int) -> String {

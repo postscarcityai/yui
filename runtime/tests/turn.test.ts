@@ -143,18 +143,18 @@ test("a photo goes to the model that sees, as an image part", async () => {
   assert.deepEqual(last.content[1], { type: "image_url", image_url: { url: "https://img.test/plate.jpg" } });
 });
 
-test("one photo per turn: the newest goes, and the model hears it missed the rest", async () => {
+test("twelve photos in one turn all reach the model; a 13th is left out and the model hears it", async () => {
   const { store, byHandle } = await freshYui();
   const basil = await byHandle("arnold"); // Basil logs a meal photo behind the scenes (meals.test.ts)
-  const m = fakeModel(() => "The second plate, about 500 kcal.");
-  store.say(basil.id, "[yui] c1 camera photo=https://img.test/one.jpg", "event");
-  store.say(basil.id, "and these", "text");
-  store.data.rows.at(-1)!.meta = { media: ["https://img.test/two.jpg", "https://img.test/three.jpg"] };
+  const m = fakeModel(() => "Twelve plates.");
+  store.say(basil.id, "these", "text");
+  const urls = Array.from({ length: 13 }, (_, i) => `https://img.test/p${i + 1}.jpg`);
+  store.data.rows.at(-1)!.meta = { photos: urls };
   await runAgent(store, basil.id, { provider, fetch: m.fetch });
   const parts = lastUser(m.calls[0]).content;
-  assert.equal(parts.filter((p: any) => p.type === "image_url").length, 1);
-  assert.deepEqual(parts[1], { type: "image_url", image_url: { url: "https://img.test/three.jpg" } });
-  assert.match(parts[0].text, /2 more photos came with this turn/);
+  const got = parts.filter((p: any) => p.type === "image_url").map((p: any) => p.image_url.url);
+  assert.deepEqual(got, urls.slice(1), "the newest 12");
+  assert.match(parts[0].text, /1 more photo came with this turn; you see only the newest 12/);
 });
 
 test("a composer photo (meta.photos, as the app sends it) reaches the model that sees", async () => {

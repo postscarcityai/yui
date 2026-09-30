@@ -18,6 +18,16 @@ final class AttachmentsTests: XCTestCase {
         XCTAssertEqual(Attachments.body(text: "hi", photos: 0), "hi")
     }
 
+    /// Twelve photos in one message (beta feedback AJKItOrwJW9B_3GUe2i2CkY): all twelve ride the row's meta, the 13th has no room.
+    func testTwelvePhotosRideOneRowAndThe13thHasNoRoom() throws {
+        XCTAssertEqual(Attachments.maxPhotos, 12)
+        let paths = (0..<Attachments.maxPhotos).map { "\(Self.user)/\(Self.agent)/user/p\($0).jpg" }
+        let meta = try XCTUnwrap(Attachments.meta(paths: paths))
+        XCTAssertEqual(Attachments.paths(meta).count, 12)
+        XCTAssertEqual(Attachments.body(text: "", photos: 12), "12 photos")
+        XCTAssertEqual(max(Attachments.maxPhotos - paths.count, 0), 0, "no room for a 13th")
+    }
+
     func testMetaCarriesThePaths() throws {
         XCTAssertNil(Attachments.meta(paths: []), "a plain text row gets no meta")
         let meta = try XCTUnwrap(Attachments.meta(paths: [Self.path]))
