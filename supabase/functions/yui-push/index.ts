@@ -39,6 +39,13 @@
 //       once and closes the thread if it is open. Only for a grant that is
 //       revoked now: a live one pushes nothing.
 //
+// Widget side, header x-yui-widgets (the database trigger, YUI-40 step 4):
+//   {action: "widgets", ids: [yui_widgets row ids]}
+//       An agent patched a lasting id on a screen a phone has pinned: send that phone's
+//       widget a WidgetKit push (apns-push-type: widgets). The database already decided
+//       which rows are due (one per pinned screen per 15 minutes, a timer at once).
+//       Rows of one phone share a push token: it gets one push.
+//
 // APNs: token auth (ES256, the APNs key), HTTP/2 straight to Apple. Secrets:
 // YUI_APNS_P8, YUI_APNS_KEY_ID, YUI_APPLE_TEAM_ID, YUI_APNS_TOPIC. Yui Dev
 // phones push to YUI_APNS_TOPIC + ".dev" with the same key (yui_devices.topic).
@@ -54,7 +61,7 @@ import {
   take,
   verifyAccessToken,
 } from "../_shared/yui.ts";
-import { apnsPayload } from "./payload.ts";
+import { apnsPayload, widgetPush } from "./payload.ts";
 
 const NOTIFY_WINDOW_MS = 10 * 60_000;
 const PRESENCE_MS = 90_000;
@@ -102,6 +109,8 @@ Deno.serve(async (req) => {
         return await notify(req, body);
       case "revoked":
         return await revoked(req, body);
+      case "widgets":
+        return await widgets(req, body);
       default:
         return json({ error: "unknown_action" }, 400);
     }
@@ -279,6 +288,39 @@ async function revoked(req: Request, b: Body): Promise<Response> {
   return json({ ok: true, devices: results.length, delivered: results.filter((r) => r.ok).length, results });
 }
 
+async function widgets(req: Request, b: Body): Promise<Response> {
+  const secret = Deno.env.get("YUI_WIDGETS_SECRET");
+  const given = req.headers.get("x-yui-widgets") ?? "";
+  if (!secret || given.length !== secret.length || given !== secret) return json({ error: "unauthorized" }, 401);
+  if (!Array.isArray(b.ids) || b.ids.length > 500 || !b.ids.every((i: unknown) => typeof i === "string" && UUID.test(i))) {
+    return json({ error: "invalid_ids" }, 400);
+  }
+  const db = admin();
+  const { data: rows } = await db.from("yui_widgets").select("id, push_token, environment, topic")
+    .in("id", b.ids).not("push_token", "is", null);
+  // One push per phone: rows of one token ride together.
+  const byToken = new Map<string, DB>();
+  for (const r of rows ?? []) if (!byToken.has(r.push_token)) byToken.set(r.push_token, r);
+  const results = await Promise.all([...byToken.values()].map(async (r: DB) => {
+    const main = env("YUI_APNS_TOPIC");
+    const w = widgetPush(r.topic ?? main);
+    const { r: res, reason } = await send({ apns_token: r.push_token, environment: r.environment }, w.topic, w.payload, w.type);
+    const same = (rows ?? []).filter((x: DB) => x.push_token === r.push_token).map((x: DB) => x.id);
+    if (res.status === 410 || reason === "Unregistered" || reason === "BadDeviceToken") {
+      // The widgets are gone (or the token is stale): forget it until the app registers again.
+      await db.from("yui_widgets").update({ push_token: null, last_error: reason }).in("id", same);
+    } else if (reason) {
+      await db.from("yui_widgets").update({ last_error: reason }).in("id", same);
+    } else {
+      for (const id of same) await db.rpc("yui_widgets_pushed", { p_id: id });
+    }
+    // The log line the reload budget is checked against (spec section 3).
+    console.log(`widget push ${res.status} ${reason ?? "ok"} rows=${same.length} env=${r.environment}`);
+    return { rows: same.length, ok: res.status === 200, status: res.status, reason, apns_id: res.headers.get("apns-id") };
+  }));
+  return json({ ok: true, phones: results.length, delivered: results.filter((r) => r.ok).length, results });
+}
+
 let jwtCache: { jwt: string; at: number } | null = null;
 
 // Apple wants a fresh provider token at most every 20 min and at least hourly.
@@ -302,8 +344,8 @@ async function send(d: DB, topic: string, payload: unknown, type = "alert") {
       authorization: `bearer ${await providerToken()}`,
       "apns-topic": topic,
       "apns-push-type": type,
-      // Apple refuses priority 10 on a background push.
-      "apns-priority": type === "background" ? "5" : "10",
+      // Apple refuses priority 10 on a background push; a widget reload is budgeted, so it waits for the system too.
+      "apns-priority": type === "background" || type === "widgets" ? "5" : "10",
       "content-type": "application/json",
     },
     body: JSON.stringify(payload),

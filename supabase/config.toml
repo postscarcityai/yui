@@ -36,3 +36,6 @@ verify_jwt = false
 # The key vault's proxy (YUI-34): agents call it with their connection token.
 [functions.yui-vault]
 verify_jwt = false
+
+[functions.yui-widgets]
+verify_jwt = false

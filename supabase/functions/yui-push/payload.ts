@@ -29,3 +29,13 @@ export function apnsPayload(agent: PushAgent, msg: PushMessage, o: PushOptions =
     url: `yui://agent/${agent.id}/thread`,
   };
 }
+
+/** A WidgetKit push (YUI-40 step 4): asks the phone's widget for a new timeline. Apple wants
+ * `apns-push-type: widgets` and the topic `<bundle id>.push-type.widgets`, nothing else in aps. */
+export function widgetPush(topic: string) {
+  return {
+    topic: `${topic}.push-type.widgets`,
+    type: "widgets",
+    payload: { aps: { "content-changed": true } },
+  };
+}
