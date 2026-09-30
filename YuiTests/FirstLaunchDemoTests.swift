@@ -109,6 +109,30 @@ import XCTest
         XCTAssertFalse(fresh.meet(store.messages, agent: "a1"))
     }
 
+    /// Open on Arnold's card (YUI-225): before the first plan is built it lands on the first question
+    /// (the last page of the hello), after it the hello plays from its first line as before.
+    func testOpenLandsOnTheFirstQuestionUntilThePlanIsBuilt() {
+        let at = ISO8601DateFormatter().string(from: .now)
+        let hello = ThreadRow(id: "first-arnold", sender: "agent", body: AgentStore.demoFirst["arnold"]!, kind: "text",
+                              meta: .object(["native": .string("first")]), createdAt: at)
+        let store = ChatStore()
+        store.load([hello])
+        let model = StageFirstModel()
+        let id = store.messages.first(where: \.hello)!.id
+        XCTAssertTrue(model.show(reply: id, in: store.messages, toPlan: true))
+        let pages = StageChunks.hello(store.messages).pages
+        XCTAssertGreaterThan(pages, 1)
+        XCTAssertEqual(model.at, pages - 1, "Open lands on the questions")
+        let plain = StageFirstModel()
+        XCTAssertTrue(plain.show(reply: id, in: store.messages))
+        XCTAssertEqual(plain.at, 0, "a pill in the record still plays the hello from its first line")
+        let sent = ThreadRow(id: "u1", sender: "user", body: "Build my week", kind: "text", meta: nil, createdAt: at)
+        store.load([hello, sent])
+        let built = StageFirstModel()
+        XCTAssertTrue(built.show(reply: id, in: store.messages, toPlan: true))
+        XCTAssertEqual(built.at, 0, "after Build my week Open is not the intake")
+    }
+
     /// The real phone path, not the demo's memory: meeting an agent saves to UserDefaults.
     /// 0.5.0 (build 278) saved a slice there and aborted on switching agents, then on every launch.
     func testMeetingSavesOnThePhoneWithoutCrashing() {

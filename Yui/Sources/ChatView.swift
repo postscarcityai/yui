@@ -636,7 +636,7 @@ struct ChatView: View {
         guard let want = pushLanding, store.loaded, store.agent?.id == want.agent else { return }
         guard let id = PushLanding.message(store.messages, want: want.message) else { return }
         pushLanding = nil
-        openStage(id)
+        openStage(id, toPlan: true)
     }
 
     // MARK: The agent's drawer (YUI-54)
@@ -1584,7 +1584,8 @@ struct ChatView: View {
                 bar: barActions(tap: stageMicTap, type: {}) { withAnimation(theme.spring) { stageFirst.typing = true } },
                 send: send,
                 removePhoto: { p in photos.removeAll { $0.id == p.id } },
-                goScreen: { store.goToPage($0) },
+                // A hello playing sits on screen 1 (YUI-225); leaving it for a screen ends it.
+                goScreen: { if $0 != 1 { stageFirst.hello = nil }; store.goToPage($0) },
                 drawerDrag: { x in
                     guard !drawerOpen else { return }
                     stageFocused = false
@@ -1678,11 +1679,11 @@ struct ChatView: View {
     }
 
     /// A pill in the record: with stage first, the reply plays again from its chunk.
-    private func openStage(_ id: String) {
+    private func openStage(_ id: String, toPlan: Bool = false) {
         guard stageFirstOn else { store.openStage(id); return }
         focused = false
         withAnimation(reduceMotion ? .easeInOut(duration: 0.2) : theme.spring) {
-            if !stageFirst.show(reply: id, in: store.messages) { store.openStage(id) }
+            if !stageFirst.show(reply: id, in: store.messages, toPlan: toPlan) { store.openStage(id) }
         }
     }
 

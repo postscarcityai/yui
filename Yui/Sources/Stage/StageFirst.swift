@@ -133,7 +133,9 @@ final class StageFirstModel {
 
     /// Opens the stage at the chunk a reply in the record drew. False when the
     /// reply has no turn to play in (nothing the person said came before it).
-    func show(reply id: String, in messages: [ChatMessage]) -> Bool {
+    /// `toPlan` (YUI-225, Open on a card): a hello that ends in a first plan nobody has built yet
+    /// lands on its questions, not on the first line.
+    func show(reply id: String, in messages: [ChatMessage], toPlan: Bool = false) -> Bool {
         guard let i = messages.firstIndex(where: { $0.id == id }) else { return false }
         let start = messages[..<i].lastIndex(where: \.fromUser)
         // The hello's pill, before anything was said, plays the hello again (YUI-167).
@@ -143,7 +145,8 @@ final class StageFirstModel {
                 ?? (t.questions.contains { $0.scope == id } ? t.chunks.count : nil) else { return false }
         ask = start.map { messages[$0].id }
         hello = start == nil ? messages.first(where: \.hello)?.id : nil
-        self.at = at
+        // Nothing said yet means the first plan is still to build; once they sent it, Open is the agent's home.
+        self.at = toPlan && start == nil && t.plan != nil && !messages.contains(where: \.fromUser) ? max(0, t.pages - 1) : at
         typing = false
         open = true
         return true
@@ -357,7 +360,10 @@ struct StageFirstView: View {
     // MARK: Sideways between screens
 
     /// The screen on show: 1 is the answer or the home.
-    private var at: Int { screen > 1 && screens.contains(screen) ? screen : 1 }
+    private var at: Int {
+        // The hello is on screen 1, wherever the last agent's page was left (YUI-225: Open lands on its first question).
+        screen > 1 && screens.contains(screen) && model.hello == nil ? screen : 1
+    }
 
     /// A drag far enough (a fifth of a phone) or quick enough turns the screen; `by` is +1 right, -1 left.
     static func turns(_ x: CGFloat, _ v: CGFloat, by sign: CGFloat) -> Bool {
@@ -484,6 +490,8 @@ struct StageFirstView: View {
     private func arrive(at new: Int, from old: Int) {
         let released = releasedAt
         releasedAt = nil
+        // A hello playing keeps screen 1, whatever page the last agent left (YUI-225).
+        let new = model.hello != nil ? 1 : new
         guard new != shown else { return }
         let before = shown
         guard !look.reduced, pagerWidth > 0, screens.contains(before) || before == 1 else {
