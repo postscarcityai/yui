@@ -56,13 +56,41 @@ final class PushCenter: NSObject {
         #endif
     }
 
-    /// Signed in: ask once for permission, then hand the device token to Yui.
-    func start(account: Account) async {
+    /// True while the "Want a nudge?" line is up (YUI-230). YuiApp draws it.
+    private(set) var nudge = false
+    private static let nudgeKey = "yuiPushNudgeShown"
+    private static var startedThisLaunch = false
+
+    /// The first plan was just built: ask, in plain words first, once. Never when iOS already knows the answer.
+    func firstPlanBuilt() async {
+        guard !UserDefaults.standard.bool(forKey: Self.nudgeKey) else { return }
+        guard await UNUserNotificationCenter.current().notificationSettings().authorizationStatus == .notDetermined else { return }
+        UserDefaults.standard.set(true, forKey: Self.nudgeKey)
+        nudge = true
+    }
+
+    /// Yes raises the system prompt; Not now leaves it to Settings.
+    func answerNudge(yes: Bool) {
+        nudge = false
+        guard yes else { return }
+        Task {
+            _ = try? await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge])
+            if let account { await start(account: account) }
+        }
+    }
+
+    /// Signed in: hand the device token to Yui. The permission ask waits for the first plan
+    /// (`firstPlanBuilt`); it comes at sign-in only on a later launch if that line never showed.
+    func start(account: Account, ask: Bool = false) async {
         self.account = account
         UNUserNotificationCenter.current().delegate = self
         let center = UNUserNotificationCenter.current()
         var status = await center.notificationSettings().authorizationStatus
-        if status == .notDetermined {
+        let secondLaunch = Self.startedThisLaunch ? false : UserDefaults.standard.bool(forKey: "yuiPushStartedBefore")
+        Self.startedThisLaunch = true
+        UserDefaults.standard.set(true, forKey: "yuiPushStartedBefore")
+        if status == .notDetermined, ask || (secondLaunch && !UserDefaults.standard.bool(forKey: Self.nudgeKey)) {
+            UserDefaults.standard.set(true, forKey: Self.nudgeKey)
             _ = try? await center.requestAuthorization(options: [.alert, .sound, .badge])
             status = await center.notificationSettings().authorizationStatus
         }

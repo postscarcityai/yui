@@ -942,6 +942,8 @@ struct StageFirstView: View {
             var plan: [String: YLValue] = [:]
             for q in inPlan { if let e = model.answers[q.id], let v = YLComponent.answerValue(e) { plan[q.c.ylID] = v } }
             store.emit(p.c.event(["plan": .object(plan)], echo: YLComponent.foldText(inPlan.map(\.c), plan)))
+            // The first plan (Build my week): the moment to ask for notifications (YUI-230).
+            if p.c.ylID == "first" { Task { await PushCenter.shared.firstPlanBuilt() } }
         }
         let planned = Set(inPlan.map(\.id))
         for q in t.questions where !planned.contains(q.id) {

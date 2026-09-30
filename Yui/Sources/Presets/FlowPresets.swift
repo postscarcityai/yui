@@ -691,6 +691,8 @@ struct PlanPreset: View {
         emit(c.event(["plan": .object(plan)], echo: YLComponent.foldText(steps, answers)))
         RunnerProgress.clear(c.ylID)
         withAnimation(theme.spring) { submitted = true; reviewing = false }
+        // The first plan (Build my week): the moment to ask for notifications (YUI-230).
+        if c.ylID == "first" { Task { await PushCenter.shared.firstPlanBuilt() } }
     }
 }
 

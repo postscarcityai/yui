@@ -48,6 +48,7 @@ struct YuiApp: App {
             }
             .preferredColorScheme(appearance.colorScheme)
             .environment(PushCenter.shared)
+            .overlay(alignment: .bottom) { if PushCenter.shared.nudge { PushNudge() } }
             .task { await account.checkAppleCredential() }
             // Signed in with an agent: register for pushes. Sign out unregisters (Account.willSignOut).
             // A new account asks for notifications once its first agent exists, not on the first screen.
@@ -147,5 +148,27 @@ extension EnvironmentValues {
     var agentStyle: [String: String] {
         get { self[AgentStyleKey.self] }
         set { self[AgentStyleKey.self] = newValue }
+    }
+}
+
+/// "Want a nudge when Arnold checks in?" (YUI-230): shown once, after the first plan is built.
+private struct PushNudge: View {
+    @Environment(\.appTheme) private var theme
+    @Environment(\.colorScheme) private var scheme
+
+    var body: some View {
+        let s = theme.swatch(scheme)
+        VStack(alignment: .leading, spacing: theme.spacing.s) {
+            Text("Want a nudge when Arnold checks in?").font(theme.font(theme.type.body, .heavy)).foregroundStyle(s.ink)
+            HStack(spacing: theme.spacing.s) {
+                OptionPill(text: "Not now", fill: s.lavender, grow: true) { PushCenter.shared.answerNudge(yes: false) }
+                OptionPill(text: "Yes", fill: s.accent, ink: s.onAccent, grow: true) { PushCenter.shared.answerNudge(yes: true) }
+            }
+        }
+        .padding(theme.spacing.m)
+        .background(RoundedRectangle(cornerRadius: 20).fill(s.surface))
+        .shadow(color: .black.opacity(0.15), radius: 12, y: 4)
+        .padding()
+        .transition(.move(edge: .bottom).combined(with: .opacity))
     }
 }
