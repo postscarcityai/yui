@@ -119,6 +119,27 @@ const START: Record<string, string> = {
   arnold: "Get fit", basil: "Eat better", gouda: "Make music", penny: "Plan my week", quill: "Learn something",
 };
 
+/** The note on the Open card Yui sends after a starter tap (YUI-231): what that agent does, in its own words. */
+const NOTE: Record<string, string> = {
+  arnold: "Trainer. Workouts built around your week and body.", basil: "Nutritionist. Meals you like, macros without weighing.",
+  gouda: "Musician. Beats and songs you can play with.", penny: "Planner. Your lists and your week, out of your head.",
+  quill: "Tutor. Decks and quizzes for what you are learning.",
+};
+
+/** The crew starter a tap on Yui's hello named ("Get fit" is Arnold's), as its base, or null for any other words. */
+export function starterBase(words: string): string | null {
+  // A tap on a choose arrives as `[yui] n1 choose choice="Get fit"`; typed words arrive as they are.
+  const tap = words.trim().match(/^\[yui\]\s+\S+\s+choose\s+choice="([^"]*)"\s*$/);
+  const w = (tap ? tap[1] : words).trim().replace(/[.!]+$/, "").toLowerCase();
+  return Object.keys(START).find((b) => START[b].toLowerCase() === w) ?? null;
+}
+
+/** The hand-off the runtime owes a starter tap, so the Open card is never model luck (YUI-231). */
+export function starterHandoff(words: string): { target: string; note: string } | null {
+  const base = starterBase(words);
+  return base ? { target: base, note: NOTE[base] } : null;
+}
+
 /**
  * Yui's first words to someone who picked their crew (YUI-216): names only who joined.
  * `bases` is the person's pick (Yui is always there). With no one else, it says so

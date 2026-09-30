@@ -36,6 +36,7 @@ import { ADD_BODY as TODO_BODY, TASKS, addTasks, applyMove, applyOrder, applyPla
          ensureTools as ensurePlanner, moveBody, nextText, nextTask, planAsks, planBody as weekPlanBody, plansWeeks, remindLead, reminderMeta, reviewBody,
          screenLines as plannerScreenLines, syncReminders, tickTask, type Page as PlannerPage, type PlanAsk } from "./planner.ts";
 import { card as handoffCard, cards as handoffCards, chatIsNew, chatOf, handedIn, handlesIn, oneThread, threadOf, withCard } from "./handoff.ts";
+import { starterHandoff } from "./starters.ts";
 import { LESSON_PROMPT, PROBLEM_PROMPT, answerStep, applyQuiz, applyReview as applyCardReview, drawnShape as studyShape,
          ensureTools as ensureStudy, keepLesson, keepProblem, learnBody as lessonPlanBody, lessonAsk, lessonBody, nextText as dueText, parseLesson, parseProblem,
          problemAsk, problemBody, problems as problemRows, readLearn, readProblem, reviewBody as cardReviewBody, screenLines as studyScreenLines,
@@ -509,8 +510,12 @@ async function oneTurn(store: Store, agent: NativeAgent, rows: Row[], opts: Turn
   // The card goes under the answer, so the phone jumps to that agent once it has been read.
   const passes = depth === 0 && !handedIn(rows) && !thread;
   const drawn = handoffCards(body);
-  const handoff = passes ? [...out.handoff, ...drawn].map((h) => ({ ...h, to: mine.find((a) => a.profile.handle === h.target) }))
+  // A tap on Yui's hello ("Get fit") always ends in the Open card for that agent (YUI-231), whatever the model wrote.
+  const owed = passes && p.handle === "yui" && real.length === 1 ? starterHandoff(rows.find((r) => r.id === real[0])?.body ?? "") : null;
+  const handoff = passes ? [...(owed ? [owed] : []), ...out.handoff, ...drawn].map((h) => ({ ...h, to: mine.find((a) => a.profile.handle === h.target) ?? mine.find((a) => a.profile.base === h.target) }))
                                                         .find((h) => h.to && h.to.id !== agent.id) : undefined;
+  // The model's own try at that card (a `/thread` link, a bad handle) goes: the runtime's is the one that opens.
+  if (owed && handoff?.target === owed.target) body = body.replace(new RegExp(`^card\\b[^\\n]*\\burl=yui://agent/\\{?${owed.target}\\}?[^\\n]*\\n?`, "gim"), "");
   if (handoff && !drawn.some((d) => d.target === handoff.target)) body = withCard(body, handoffCard(handoff.to!.profile, handoff.note));
   // @handles in the words reach the person's other agents through the database, on a turn the person
   // started: a mention, or in a group an ask on its hop budget. Never the one being handed off to.

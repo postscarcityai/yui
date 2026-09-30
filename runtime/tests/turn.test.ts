@@ -310,7 +310,7 @@ test("a turn's written answer has no dashes", async () => {
   const { store, byHandle } = await freshYui();
   const yui = await byHandle("yui");
   const m = fakeModel(() => "Arnold's your trainer — tap Arnold.");
-  store.say(yui.id, "Get fit");
+  store.say(yui.id, "Who trains me?");
   const r = await runAgent(store, yui.id, { provider, fetch: m.fetch });
   assert.equal(store.data.rows.find((x) => x.id === r.replies[0])!.body, "Arnold's your trainer. Tap Arnold.");
   assert.match(system(m.calls[0]), /Never use an em dash/);
@@ -542,6 +542,35 @@ test("a whole turn: Basil's markdown answer reaches the phone as a list (t_a88dc
   assert.doesNotMatch(reply.body, /\*\*|^- /m);
   assert.match(reply.body, /list "Meal plans" "Macros from a photo"/);
   assert.match(system(m.calls[0]), /No markdown anywhere/);
+});
+
+test("a tap on Yui's hello always ends in the Open card for that agent, whatever the model wrote (YUI-231)", async () => {
+  const tap = '[yui] n1 choose choice="Get fit"';
+  // The model forgets the card entirely.
+  const a = await freshYui();
+  const yui = await a.byHandle("yui");
+  const arnold = await a.byHandle("arnold");
+  a.store.say(yui.id, tap);
+  const r = await runAgent(a.store, yui.id, { provider, fetch: fakeModel(() => "Arnold is your trainer. Tap Arnold.").fetch });
+  const reply = a.store.data.rows.find((x) => x.id === r.replies[0])!;
+  assert.match(reply.body, /card "Arnold" body="Trainer\. [^"]*" url=yui:\/\/agent\/arnold cta="Open Arnold"/);
+  assert.equal((reply.body.match(/url=yui:\/\/agent\//g) ?? []).length, 1);
+  assert.equal(r.turns, 2, "Arnold is handed the turn");
+  assert.ok(a.store.data.rows.some((x) => x.agent_id === arnold.id && x.sender === "agent" && x.id !== undefined && r.replies.includes(x.id)), "and answers in his own thread");
+  // The model wrote its own broken card (a /thread link with braces): replaced, never doubled.
+  const b = await freshYui();
+  const y2 = await b.byHandle("yui");
+  b.store.say(y2.id, tap);
+  const r2 = await runAgent(b.store, y2.id, { provider, fetch: fakeModel(() => 'Tap Arnold.\n```yui\ncard Arnold "Your trainer" url=yui://agent/{arnold}/thread cta="Open Arnold"\n```').fetch });
+  const b2 = b.store.data.rows.find((x) => x.id === r2.replies[0])!.body;
+  assert.equal((b2.match(/url=yui:\/\/agent\//g) ?? []).length, 1);
+  assert.match(b2, /url=yui:\/\/agent\/arnold cta="Open Arnold"/);
+  // Other words are the model's: no card.
+  const c = await freshYui();
+  const y3 = await c.byHandle("yui");
+  c.store.say(y3.id, "What can you do?");
+  const r3 = await runAgent(c.store, y3.id, { provider, fetch: fakeModel(() => "Plenty.").fetch });
+  assert.doesNotMatch(c.store.data.rows.find((x) => x.id === r3.replies[0])!.body, /url=yui:\/\/agent\//);
 });
 
 test("a person who writes during a hand-off is answered before the lock goes (t_a88dc3b5)", async () => {

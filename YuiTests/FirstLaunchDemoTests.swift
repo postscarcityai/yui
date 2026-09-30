@@ -133,6 +133,22 @@ import XCTest
         XCTAssertEqual(built.at, 0, "after Build my week Open is not the intake")
     }
 
+    /// Chat first (YUI-231): a thread that opens with its first plan unanswered lands on the plan's message,
+    /// and stops once the person has said anything.
+    func testFirstPlanLandingUntilSomethingIsSaid() {
+        let at = ISO8601DateFormatter().string(from: .now)
+        let hello = ThreadRow(id: "first-arnold", sender: "agent", body: AgentStore.demoFirst["arnold"]!, kind: "text",
+                              meta: .object(["native": .string("first")]), createdAt: at)
+        let store = ChatStore()
+        store.load([hello])
+        let id = store.messages.first(where: { $0.hello && $0.yl != nil })!.id
+        XCTAssertEqual(PushLanding.firstPlan(store.messages, answered: { _, _ in false }), id)
+        XCTAssertNil(PushLanding.firstPlan(store.messages, answered: { _, _ in true }), "a sent plan is not pending")
+        let said = ThreadRow(id: "u1", sender: "user", body: "Hi", kind: "text", meta: nil, createdAt: at)
+        store.load([hello, said])
+        XCTAssertNil(PushLanding.firstPlan(store.messages, answered: { _, _ in false }), "once they spoke, Open is the agent's home")
+    }
+
     /// The real phone path, not the demo's memory: meeting an agent saves to UserDefaults.
     /// 0.5.0 (build 278) saved a slice there and aborted on switching agents, then on every launch.
     func testMeetingSavesOnThePhoneWithoutCrashing() {

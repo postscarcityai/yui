@@ -91,6 +91,8 @@ struct ChatView: View {
     @State private var stageFirst = StageFirstModel()
     /// A notification tap waiting for its thread to load: the agent and the message it came with (YUI-199).
     @State private var pushLanding: (agent: String, message: String?)?
+    /// The agent whose pending first plan this open thread already landed on (YUI-231).
+    @State private var firstPlanLanded: String?
     @AppStorage(StageFirstModel.key) private var stageFirstStored = true
     @AppStorage(StageFirstModel.micKey) private var stageMic = true
     @AppStorage(StageFirstModel.typeKey) private var stageType = true
@@ -555,6 +557,7 @@ struct ChatView: View {
                              phase: scenePhase))
         .onChange(of: store.agent?.id, initial: true) {
             push.visibleAgentID = store.agent?.id
+            firstPlanLanded = nil
             window = Self.windowStep
             // Each thread keeps its own unsent words (feedback AK-9fNEZU).
             composer.show(agent: store.agent?.id)
@@ -573,7 +576,7 @@ struct ChatView: View {
         // A notification tap or yui://agent/<id>/thread: straight to that thread.
         .onChange(of: push.pendingAgentID, initial: true) { openPushedThread() }
         // ...and on the message that came (YUI-199), once that thread has loaded.
-        .onChange(of: [store.loaded ? store.agent?.id : nil, store.messages.last?.id]) { landPushed() }
+        .onChange(of: [store.loaded ? store.agent?.id : nil, store.messages.last?.id]) { landPushed(); landFirstPlan() }
         .tint(c.accent)
     }
 
@@ -636,6 +639,19 @@ struct ChatView: View {
         guard let want = pushLanding, store.loaded, store.agent?.id == want.agent else { return }
         guard let id = PushLanding.message(store.messages, want: want.message) else { return }
         pushLanding = nil
+        openStage(id, toPlan: true)
+    }
+
+    /// A thread that opens with its first plan still to answer (chat first, YUI-231: Open on Yui's card, the
+    /// agent bar, a relaunch) puts the first question on screen, not a collapsed "Your first plan" chip.
+    /// Its Skip card stays in the record under it. Once per opening: closing the stage keeps it closed.
+    /// Does not wait for the network (`loaded`): the hello is in the thread as soon as its rows are, and a slow
+    /// refresh must not leave the chip collapsed.
+    private func landFirstPlan() {
+        guard !stageFirstOn, let agent = store.agent, firstPlanLanded != agent.id,
+              !store.stageOpen, let id = PushLanding.firstPlan(store.messages, answered: { store.ylAnswers($0, $1)?["plan"] != nil })
+        else { return }
+        firstPlanLanded = agent.id
         openStage(id, toPlan: true)
     }
 

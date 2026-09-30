@@ -247,6 +247,16 @@ extension PushCenter: UNUserNotificationCenterDelegate {
 
 /// Where a tap lands in the thread (YUI-199b, Chris: "I should see the beginning page of the chat").
 enum PushLanding {
+    /// The agent's hello while its first plan waits (YUI-231): nothing said yet, and a `plan` group
+    /// nobody answered. The message the stage opens on, else nil.
+    static func firstPlan(_ messages: [ChatMessage], answered: (String, String) -> Bool) -> String? {
+        guard !messages.contains(where: \.fromUser),
+              let hello = messages.first(where: { m in m.hello && !m.home && m.yl?.components.contains { $0.preset == "plan" } == true }),
+              let plan = hello.yl?.components.first(where: { $0.preset == "plan" }),
+              !answered(hello.id, plan.ylID) else { return nil }
+        return hello.id
+    }
+
     /// The message the tap names, else the first thing the agent said in its newest turn (what
     /// came after the person's last word), so the stage opens on page one, never on the last.
     static func message(_ messages: [ChatMessage], want: String?) -> String? {

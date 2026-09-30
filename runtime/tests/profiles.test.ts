@@ -83,7 +83,8 @@ test("Yui answers a first turn locally, from her own folder", async () => {
   store.say(yui.id, "[yui] q1 choose choice=\"Plan my week\"", "event");
   const m = fakeModel(() => "Let's plan it.\n```yui\nplan \"Your week\"\nlist \"Must do\" +check\nend\n```");
   const r = await runAgent(store, yui.id, { provider, fetch: m.fetch });
-  assert.equal(r.turns, 1);
+  // "Plan my week" is Penny's starter: Yui's answer carries the Open card and Penny is handed the turn (YUI-231).
+  assert.equal(r.turns, 2);
   const s = system(m.calls[0]);
   assert.match(s, /## Who you are: Yui, helper and maker\n\nYou are Yui, the first agent/);
   assert.match(s, /Screens you reach for first: `choose`, `plan`, `list`, `card`, `shapes`/);
