@@ -187,7 +187,7 @@ from gateway.config import Platform, PlatformConfig
 from gateway.platforms.base import (BasePlatformAdapter, MessageEvent, MessageType, ProcessingOutcome,
                                     SendResult)
 
-from . import board, compat, connector, controls, doing, flywheel, groups, media, mentions, needs, outbox, restyle, sandbox, tables, talk, textbomb, vault
+from . import board, compat, connector, controls, doing, flywheel, groups, media, mentions, needs, outbox, restyle, sandbox, shown, tables, talk, textbomb, vault
 from . import commands as slash
 
 logger = logging.getLogger(__name__)
@@ -1048,6 +1048,10 @@ class YuiAdapter(BasePlatformAdapter):
             notes += await self._mention_notes(row["agent_id"], row.get("created_at"))
             for tid in groups.threads_in(rows):  # what the other members said (YUI-93)
                 notes += await self._group_notes(row["agent_id"], tid, row.get("created_at"))
+        if owner and len(rows) == 1 and shown.plain(texts[0]):  # a typed line about what is on screen (t_53b06721)
+            said = await self._shown_note(row)
+            if said:
+                notes.append(said)
         if notes and not texts[0].lstrip().startswith("/"):
             texts = notes + texts
         first_chat = self._chat_of(rows[0])
@@ -1097,6 +1101,28 @@ class YuiAdapter(BasePlatformAdapter):
         self._spawn(self._connect_call({"action": "heartbeat", "serving": self._serving,
                                         "sandbox": await self._sandbox()}))
         await self._flush_acks()
+
+    async def _shown_note(self, row: dict) -> Optional[str]:
+        """The agent's newest message before this typed line, as a note (shown.py).
+        Read from the table, so a card a cron sent through `hermes send` counts.
+        Best effort: none on a failure."""
+        params = {"select": "body,created_at", "agent_id": f"eq.{row['agent_id']}", "sender": "eq.agent",
+                  "kind": "eq.text", "order": "created_at.desc", "limit": "1"}
+        if row.get("created_at"):
+            params["created_at"] = f'lt.{row["created_at"]}'
+        chat = self._chat_of(row)
+        if chat and self._base_key(row) == row["agent_id"]:
+            params["meta->>chat"] = f'eq.{chat["id"]}'
+        try:
+            r = await self._client.get(f"{REST}/yui_messages", headers=self._rest_headers(), params=params)
+            if r.status_code >= 300:
+                logger.warning("[yui] shown note: %s %s", r.status_code, r.text[:120])
+                return None
+            rows = r.json()
+        except Exception as e:
+            logger.warning("[yui] shown note: %s", e)
+            return None
+        return shown.note(rows[0], row.get("created_at")) if rows else None
 
     async def _mention_notes(self, aid: str, upto: Optional[str]) -> List[str]:
         """Mentions of other agents from this thread, and their answers here,
