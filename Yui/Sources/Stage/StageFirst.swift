@@ -869,14 +869,20 @@ struct StageFirstView: View {
     private func questions(_ t: StageTurn, _ c: Swatch) -> some View {
         let sent = t.ask.map { model.sent.contains($0.id) } == true || alreadySent(t)
         let n = t.questions.count
+        let lone = n == 1 && t.plan == nil && (t.questions[0].c.string("q") ?? t.questions[0].c.string("title")) != nil
         return ScrollView {
             VStack(alignment: .leading, spacing: theme.spacing.m) {
-                Text(t.plan?.c.string("title") ?? (n == 1 ? "One question" : "Before I go"))
-                    .font(theme.font(theme.type.display, .heavy))
-                    .foregroundStyle(c.ink)
-                Text(sent ? "Sent. It's in the chat." : n == 1 ? "One quick question." : "\(n) quick questions, one Send.")
-                    .font(theme.font(theme.type.body))
-                    .foregroundStyle(c.inkSoft)
+                if !lone {
+                    Text(t.plan?.c.string("title") ?? (n == 1 ? "One question" : "Before I go"))
+                        .font(theme.font(theme.type.display, .heavy))
+                        .foregroundStyle(c.ink)
+                }
+                // A lone ask already heads itself with its question: no filler above it.
+                if sent || !lone {
+                    Text(sent ? "Sent. It's in the chat." : n == 1 ? "One quick question." : "\(n) quick questions, one Send.")
+                        .font(theme.font(theme.type.body))
+                        .foregroundStyle(c.inkSoft)
+                }
                 ForEach(Array(t.questions.enumerated()), id: \.element.id) { i, q in
                     PresetView(component: q.c)
                         .environment(\.ylComponents, q.all)
