@@ -35,6 +35,10 @@ struct Vector: Sendable, CustomTestStringConvertible {
     /// The visual after the input (spec section 5, The visual): an object, or
     /// .null when there is none. Nil when the vector leaves it out.
     let visual: YLValue?
+    /// A flow's runtime after the input (FLOWS.md section 4): answers, path, open, event.
+    let route: YLValue?
+    /// A flow variant (FLOWS.md section 9): the base flow as YL lines, the graph after the changes, a route on it.
+    let variant: YLValue?
     let style: [String: String]
     /// Ids that last from earlier replies, id -> preset (spec section 5).
     let known: [String: String]
@@ -69,6 +73,8 @@ enum Vectors {
                 rows: v["rows"],
                 doing: v["doing"],
                 visual: v["visual"],
+                route: v["route"],
+                variant: v["variant"],
                 style: v["style"]?.object?.compactMapValues { $0.string } ?? [:],
                 known: v["known"]?.object?.compactMapValues { $0.string } ?? [:]
             )
@@ -214,7 +220,37 @@ func conformance(_ v: Vector) {
         #expect(got == want, "rows: \(json(got))")
     }
 
+    if let want = v.route {
+        checkRoute(want, on: firstFlowGraph(v.input, known: v.known), "route")
+    }
+
+    if let want = v.variant, let base = want["base"]?.string {
+        let changes = YuiLines.parse(v.input, known: v.known).first { $0.op == .patch }?.props.map(YLFlowChange.list) ?? []
+        let g = YuiLines.flowVariant(firstFlowGraph(base, known: [:]), changes)
+        let got = g.value
+        let graph = want["graph"]!
+        #expect(got["start"] == graph["start"], "variant start: \(json(got))")
+        #expect(got["nodes"] == graph["nodes"], "variant nodes: \(json(got["nodes"]!))")
+        #expect(got["edges"] == graph["edges"], "variant edges: \(json(got["edges"]!))")
+        if let r = want["route"] { checkRoute(r, on: g, "variant route") }
+    }
+
     #expect(v.expected.contains { $0["op"] == "error" } == v.error, "`error` flag does not match expected")
+}
+
+/// The graph of the first flow patch the input gives.
+func firstFlowGraph(_ input: String, known: [String: String]) -> YLFlowGraph {
+    let props = YuiLines.parse(input, known: known).first { $0.op == .patch && $0.props?["nodes"] != nil }?.props ?? [:]
+    return YLFlowGraph(props: props)
+}
+
+func checkRoute(_ want: YLValue, on g: YLFlowGraph, _ label: String) {
+    let answers = want["answers"]?.object ?? [:]
+    let r = YuiLines.flowPath(g, answers)
+    #expect(r.path.map(YLValue.string) == want["path"]?.array, "\(label) path: \(r.path)")
+    #expect(r.open.map(YLValue.string) ?? .null == want["open"], "\(label) open: \(String(describing: r.open))")
+    let e = YuiLines.flowEvent(g, answers)
+    #expect(YLValue.object(["flow": .object(e.flow), "path": .array(e.path.map(YLValue.string))]) == want["event"], "\(label) event: \(e)")
 }
 
 @Test func suiteIsLoaded() {
@@ -262,7 +298,7 @@ func conformance(_ v: Vector) {
 
 /// Hub areas this parser has not taken on yet. Keep in step with
 /// `scripts/sync-vectors.sh`; drop a name here once the parser passes that file.
-let notYetInApp: Set<String> = ["26-flow.json", "30-tables.json", "36-flow-variant.json"]  // FLOW-1 (flows, variants) and YUI-89 (app halves)
+let notYetInApp: Set<String> = ["30-tables.json"]  // YUI-89 (app half)
 
 /// When the hub repo sits next to this one, the copied vectors must match it.
 @Test(.enabled(if: FileManager.default.fileExists(atPath: hubVectors.path)))

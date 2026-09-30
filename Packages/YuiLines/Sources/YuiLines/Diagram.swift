@@ -13,14 +13,14 @@ import Foundation
 private let W = "A-Za-z0-9_"
 private let diagramHeaderRE = JSRegex(#"^(flowchart|graph|sequenceDiagram|stateDiagram(?:-v2)?)(?=[\#(JSWS);]|$)"#)
 private let diagramOtherRE = JSRegex(#"^(classDiagram(?:-v2)?|erDiagram|journey|gantt|pie|mindmap|timeline|gitGraph|quadrantChart|requirementDiagram|C4[\#(W)]*|sankey-beta|xychart-beta|block-beta)(?=[\#(JSWS)]|$)"#)
-private let flowHeaderRE = JSRegex(#"^(flowchart|graph)([\#(JSWS)]|$)"#)
-private let flowSkipRE = JSRegex(#"^(classDef|class|style|linkStyle|click|direction|accTitle|accDescr)([\#(JSWS)]|:|$)"#)
-private let textLinkRE = JSRegex(#"^[\#(JSWS)]*<?(?:--|==|-\.)(?![->=.])[\#(JSWS)]*(.*?)[\#(JSWS)]*(?:-{2,}>|={2,}>|\.-+>|-{3,}|={3,}|\.-+)(?=[\#(JSWS)\#(W)])"#)
-private let linkRE = JSRegex(#"^[\#(JSWS)]*(<?)(-{2,}>|-{3,}|={2,}>|={3,}|-\.+->|-\.+-|--[ox]|==[ox]|~{3,})"#)
-private let pipeRE = JSRegex(#"^[\#(JSWS)]*\|([^|]*)\|"#)
+let flowHeaderRE = JSRegex(#"^(flowchart|graph)([\#(JSWS)]|$)"#)
+let flowSkipRE = JSRegex(#"^(classDef|class|style|linkStyle|click|direction|accTitle|accDescr)([\#(JSWS)]|:|$)"#)
+let textLinkRE = JSRegex(#"^[\#(JSWS)]*<?(?:--|==|-\.)(?![->=.])[\#(JSWS)]*(.*?)[\#(JSWS)]*(?:-{2,}>|={2,}>|\.-+>|-{3,}|={3,}|\.-+)(?=[\#(JSWS)\#(W)])"#)
+let linkRE = JSRegex(#"^[\#(JSWS)]*(<?)(-{2,}>|-{3,}|={2,}>|={3,}|-\.+->|-\.+-|--[ox]|==[ox]|~{3,})"#)
+let pipeRE = JSRegex(#"^[\#(JSWS)]*\|([^|]*)\|"#)
 private let subgraphRE1 = JSRegex(#"^subgraph[\#(JSWS)]+([\#(W)]+)[\#(JSWS)]*(?:\[(.*)\])?[\#(JSWS)]*$"#)
 private let subgraphRE2 = JSRegex(#"^subgraph[\#(JSWS)]+(.+?)[\#(JSWS)]*$"#)
-private let endRE = JSRegex(#"^end[\#(JSWS)]*;?$"#)
+let endRE = JSRegex(#"^end[\#(JSWS)]*;?$"#)
 
 private let seqPartRE = JSRegex(#"^(participant|actor)[\#(JSWS)]+([\#(W).]+)(?:[\#(JSWS)]+as[\#(JSWS)]+(.+))?$"#)
 private let seqAutoRE = JSRegex(#"^autonumber([\#(JSWS)]|$)"#)
@@ -50,12 +50,12 @@ private let nodeShapeName: [String: String] = [
 
 // MARK: - Small string helpers (JS semantics: trim, UTF-16 free)
 
-private func sc(_ s: String) -> Scalars { Array(s.unicodeScalars) }
-private func str<S: Sequence>(_ a: S) -> String where S.Element == Unicode.Scalar { String(String.UnicodeScalarView(a)) }
-private func dgTrim(_ s: String) -> String { str(trimJS(sc(s))) }
-private func dgTrimStart(_ s: String) -> String { str(sc(s).drop(while: isSpace)) }
-private func dropping(_ s: String, _ matched: String) -> String { str(s.unicodeScalars.dropFirst(matched.unicodeScalars.count)) }
-private func isWordChar(_ c: Unicode.Scalar) -> Bool { isAlpha(c) || isDigit(c) || c == "_" }
+func sc(_ s: String) -> Scalars { Array(s.unicodeScalars) }
+func str<S: Sequence>(_ a: S) -> String where S.Element == Unicode.Scalar { String(String.UnicodeScalarView(a)) }
+func dgTrim(_ s: String) -> String { str(trimJS(sc(s))) }
+func dgTrimStart(_ s: String) -> String { str(sc(s).drop(while: isSpace)) }
+func dropping(_ s: String, _ matched: String) -> String { str(s.unicodeScalars.dropFirst(matched.unicodeScalars.count)) }
+func isWordChar(_ c: Unicode.Scalar) -> Bool { isAlpha(c) || isDigit(c) || c == "_" }
 
 private func indexOf(_ hay: Scalars, _ needle: String, _ from: Int) -> Int? {
     let n = sc(needle)
@@ -114,7 +114,7 @@ func unlabel(_ s: String) -> String {
 }
 
 /// Splits a Mermaid line on ";" outside quotes and brackets.
-private func statements(_ line: String) -> [String] {
+func statements(_ line: String) -> [String] {
     var out: [String] = []
     var cur = Scalars()
     var q = false
@@ -129,7 +129,7 @@ private func statements(_ line: String) -> [String] {
     return out.map(dgTrim).filter { !$0.isEmpty }
 }
 
-private struct ReadNode {
+struct ReadNode {
     var id: String
     var label: String?
     var shape: String?
@@ -137,7 +137,7 @@ private struct ReadNode {
 }
 
 /// Reads one node at the start of `s`: id, then an optional shape with a label.
-private func readNode(_ s: String) -> ReadNode? {
+func readNode(_ s: String) -> ReadNode? {
     let u = sc(s)
     var i = 0
     while i < u.count, isWordChar(u[i]) { i += 1 }
@@ -171,7 +171,7 @@ private func readNode(_ s: String) -> ReadNode? {
 }
 
 /// A node, or several joined with "&".
-private func readNodes(_ s: String) -> (nodes: [ReadNode], rest: String)? {
+func readNodes(_ s: String) -> (nodes: [ReadNode], rest: String)? {
     var out: [ReadNode] = []
     var rest = dgTrimStart(s)
     while true {

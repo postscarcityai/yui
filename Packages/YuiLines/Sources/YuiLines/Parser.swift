@@ -117,20 +117,29 @@ public struct YLParser: Sendable {
     private var open: [(id: String, preset: String, screen: String)] = []
     /// An open `diagram`'s Mermaid, being read (Diagram.swift).
     var dgm: YLDiagramReader?
+    /// A flow head just added, waiting to see whether a Mermaid header follows, and an open flow being read (Flow.swift).
+    var flowHead: (id: String, screen: String, pre: [String])?
+    var flow: YLFlowReader?
 
     public init(known: [String: String] = [:]) { ids = known }
 
     /// Parses one line (no `\n`). Returns nil for blank and comment lines.
     public mutating func line(_ src: String) -> YLNode? {
-        // An open diagram reads Mermaid, not YL, until its `end`.
+        // An open flow or diagram reads Mermaid, not YL, until its `end`.
+        if let handled = flowLine(src) { return handled }
         if let handled = diagramLine(src) { return handled }
         let node = group(parseLine(src))
+        if let n = node, n.op == .add, n.preset == "flow", let id = n.id {
+            // `as=` makes it a variant of the saved flow it names: its lines follow.
+            if n.props?["as"] != nil { flow = YLFlowReader(variantId: id, screen: n.screen) }
+            else { flowHead = (id, n.screen, []) }
+        }
         if let n = node, n.op == .add, n.preset == "diagram", let id = n.id { dgm = YLDiagramReader(id: id, screen: n.screen) }
         return node
     }
 
     /// Ends the input: a diagram still open gives its patch now.
-    public mutating func finish() -> YLNode? { diagramDone(line: "") }
+    public mutating func finish() -> YLNode? { flowDone(line: "") ?? diagramDone(line: "") }
 
     /// Group bookkeeping for one parsed node. Errors (and nil) leave groups open.
     private mutating func group(_ node: YLNode?) -> YLNode? {
