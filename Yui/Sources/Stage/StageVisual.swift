@@ -194,6 +194,9 @@ private struct VisualUniforms {
     var a, b, c, ground: SIMD3<Float>
     /// Lows, mids, highs after the envelope (YUI-125).
     var bands: SIMD3<Float>
+    /// The blob's state weights (YUI-232): thinking, reading, running, searching; then talking, done, since.
+    var act: SIMD4<Float>
+    var act2: SIMD4<Float>
 }
 
 @MainActor
@@ -217,6 +220,10 @@ final class VisualRenderer: NSObject, MTKViewDelegate {
     private var raw = LevelMeter.Reading.zero
     private var lastFrame: CFTimeInterval = 0
     private var lastMeter: CFTimeInterval = 0
+    /// The blob's shape (YUI-232): each state's weight, eased toward the plan's action so the
+    /// shapes morph (action.mjs easeWeights), and seconds since the action changed (done's ring).
+    private var weights = BlobWeights()
+    private var since = 9.0
 
     func attach(_ view: MTKView) {
         view.enableSetNeedsDisplay = true
@@ -258,6 +265,8 @@ final class VisualRenderer: NSObject, MTKViewDelegate {
         guard let plan, let queue, let pass = view.currentRenderPassDescriptor, let drawable = view.currentDrawable,
               let pipeline = pipeline(plan.look, format: view.colorPixelFormat) else { return }
         let now = CACurrentMediaTime()
+        if weights.action != plan.action { weights.action = plan.action; since = 0 }
+        if plan.still { weights = BlobWeights(plan.action); since = 9 }
         if !plan.still {
             let dt = lastFrame == 0 ? 0 : min(now - lastFrame, 0.1)
             lastFrame = now
@@ -269,7 +278,10 @@ final class VisualRenderer: NSObject, MTKViewDelegate {
             let ms = dt * 1000, env = plan.env
             heard = .init(level: env.follow(heard.level, raw.level, dt: ms), low: env.follow(heard.low, raw.low, dt: ms),
                           mid: env.follow(heard.mid, raw.mid, dt: ms), high: env.follow(heard.high, raw.high, dt: ms))
-            let silent = max(heard.level, heard.low, heard.mid, heard.high) < 0.02
+            weights.ease(toward: plan.action, dt: dt)
+            since += dt
+            // A shape on the move draws at the full rate even when nothing is heard.
+            let silent = max(heard.level, heard.low, heard.mid, heard.high) < 0.02 && weights.settled(plan.action == .idle)
             let want = silent ? plan.idleFps : plan.fps
             if view.preferredFramesPerSecond != want { view.preferredFramesPerSecond = want }
         }
@@ -281,7 +293,9 @@ final class VisualRenderer: NSObject, MTKViewDelegate {
             dim: Float(plan.dim), scrim: Float(plan.scrim),
             zone: SIMD2(Float(plan.zone.low), Float(plan.zone.high)),
             a: Self.vec(plan.colors.a), b: Self.vec(plan.colors.b), c: Self.vec(plan.colors.c), ground: Self.vec(plan.colors.ground),
-            bands: SIMD3(Float(plan.env.shown(heard.low)), Float(plan.env.shown(heard.mid)), Float(plan.env.shown(heard.high))))
+            bands: SIMD3(Float(plan.env.shown(heard.low)), Float(plan.env.shown(heard.mid)), Float(plan.env.shown(heard.high))),
+            act: SIMD4(Float(weights[.thinking]), Float(weights[.reading]), Float(weights[.running]), Float(weights[.searching])),
+            act2: SIMD4(Float(weights[.talking]), Float(weights[.done]), Float(since), 0))
         pass.colorAttachments[0].loadAction = .dontCare
         pass.colorAttachments[0].storeAction = .store
         guard let buffer = queue.makeCommandBuffer(), let enc = buffer.makeRenderCommandEncoder(descriptor: pass) else { return }
@@ -314,4 +328,35 @@ final class VisualRenderer: NSObject, MTKViewDelegate {
         let c = RGB(hex: hex) ?? RGB(r: 0, g: 0, b: 0)
         return SIMD3(Float(c.r), Float(c.g), Float(c.b))
     }
+}
+
+/// The blob's state weights (YUI-232, action.mjs easeWeights): each 0...1, summing to 1, every
+/// one easing toward its target (in at 3.2 a second, out at 2.2), so two shapes overlap for a
+/// moment and the blob never snaps.
+struct BlobWeights: Equatable {
+    static let rateIn = 3.2, rateOut = 2.2
+    private(set) var w: [StageAction: Double]
+    var action: StageAction
+
+    /// All of it on one state: the start, and every still frame.
+    init(_ action: StageAction = .idle) {
+        self.action = action
+        w = Dictionary(uniqueKeysWithValues: StageAction.allCases.map { ($0, $0 == action ? 1.0 : 0.0) })
+    }
+
+    subscript(_ a: StageAction) -> Double { w[a] ?? 0 }
+
+    mutating func ease(toward target: StageAction, dt: Double) {
+        var sum = 0.0
+        for a in StageAction.allCases {
+            let x = w[a] ?? 0, goal = a == target ? 1.0 : 0.0
+            let k = 1 - exp(-(goal > x ? Self.rateIn : Self.rateOut) * max(0, dt))
+            w[a] = x + (goal - x) * k
+            sum += w[a]!
+        }
+        if sum > 0 { for a in StageAction.allCases { w[a]! /= sum } }
+    }
+
+    /// The target holds all but a hair: nothing left to morph. `idle` also asks that it be idle.
+    func settled(_ idle: Bool) -> Bool { idle && self[action] > 0.995 }
 }

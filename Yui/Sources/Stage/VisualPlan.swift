@@ -113,6 +113,8 @@ struct VisualPlan: Equatable, Sendable {
     var scale: Double
     var why: Why?
     var still: Bool { why != nil }
+    /// What the agent is doing: the orb's shape (YUI-232). Other looks leave it be.
+    var action: StageAction = .idle
     var label: String { "\(Self.names[look] ?? "Orb"), \(Self.hears[react] ?? Self.hears["voice"]!)" }
     /// What it does with the sound, for VoiceOver: "Orb pulses with the lows, ripples with the mids and glows with the highs."
     var hint: String? {
@@ -127,10 +129,12 @@ struct VisualPlan: Equatable, Sendable {
     ///   hidden               the stage is closed or the app is in the background
     ///   quiet                the agent's default (YUI-180): its strength, at the slower of its pace and the
     ///                        agent's, at 30 fps and 15 while nothing is heard
+    ///   action               what the agent is doing: the orb's shape (YUI-232)
     init?(_ v: YLVisual?, accent: String, ground: String, ink: String, motion: MotionLook,
           words: Bool = false, zone: Zone = .spec, lowPower: Bool = false, thermal: ProcessInfo.ThermalState = .nominal, hidden: Bool = false,
-          quiet def: VisualDefault? = nil) {
+          quiet def: VisualDefault? = nil, action: StageAction = .idle) {
         guard let v else { return nil }
+        self.action = action
         var motion = motion
         if let def, let k = MotionLook.paces[def.motionPace], k > (MotionLook.paces[motion.pace] ?? 1) { motion.pace = def.motionPace }
         look = v.look.flatMap { YuiLines.visualLooks.contains($0) ? $0 : nil } ?? "orb"

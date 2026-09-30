@@ -2,40 +2,10 @@ import XCTest
 import YuiLines
 @testable import Yui
 
-/// Stage motion (YUI-120 step 2, YUI-123 step 4): moods from the turn, looks from
+/// Stage motion (YUI-120 step 2, YUI-123 step 4): looks from
 /// the agent's theme. These are yuigui site/lib/yl/motion.test.mjs's cases for
-/// stageMood, doingMood, motionLook, motionTimings and mergeTheme.
+/// motionLook, motionTimings and mergeTheme.
 final class StageMotionTests: XCTestCase {
-    private func mood(_ f: StageFacts) -> StageMood { StageMotion.mood(f).mood }
-
-    func testTheTurnInOrder() {
-        XCTAssertEqual(mood(StageFacts()), .idle)
-        XCTAssertEqual(mood(StageFacts(listening: true)), .listen)
-        XCTAssertEqual(mood(StageFacts(sent: true)), .think)
-        XCTAssertEqual(mood(StageFacts(doing: "Checking TestFlight", sent: true)), .work)
-        XCTAssertEqual(StageMotion.mood(StageFacts(doing: "", sent: true)).flavor, .work, "a bare step keeps work")
-        XCTAssertEqual(mood(StageFacts(arrived: true, doing: "Reading", sent: true)), .found)
-        XCTAssertEqual(mood(StageFacts(chunk: 0, sent: true)), .done)
-        XCTAssertEqual(mood(StageFacts(chunk: 0, doing: "Reading")), .done, "chunk 0 is a chunk, not nothing")
-        XCTAssertEqual(mood(StageFacts(asking: true, chunk: 2)), .ask)
-        XCTAssertEqual(mood(StageFacts(failed: true, listening: true, asking: true)), .error)
-    }
-
-    func testDoingWordsPickTheKindOfWork() {
-        func f(_ s: String) -> StageFlavor { StageMotion.doingMood(s).flavor }
-        XCTAssertEqual(f("Checking TestFlight"), .scan)
-        XCTAssertEqual(f("Reading your calendar"), .scan)
-        XCTAssertEqual(f("Drafting the plan"), .make)
-        XCTAssertEqual(f("Reading the notes to draft a plan"), .scan, "the first verb wins")
-        XCTAssertEqual(f("Building the deck from your notes"), .make)
-        XCTAssertEqual(f("Thinking it over"), .work)
-        XCTAssertEqual(StageMotion.doingMood("Found a dry window").mood, .found)
-        XCTAssertEqual(StageMotion.doingMood("Got it: build 160").mood, .found)
-        XCTAssertEqual(StageMotion.doingMood("Checking what I found").mood, .work, "found only at the start")
-        let d = YuiLines.doing(of: YuiLines.parse("doing \"Reading your calendar\" 1/3\ndoing \"Found a dry window\" 3/3"))
-        XCTAssertEqual(StageMotion.doingMood(d?.text ?? "").mood, .found, "from real lines")
-    }
-
     func testAReplyOfOnlyErrorsFailsTheTurn() {
         // `theme app wobble` is an error line (no set named wobble).
         let only = YLScreen("theme app wobble")

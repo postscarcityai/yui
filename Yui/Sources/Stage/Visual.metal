@@ -6,7 +6,8 @@
 // The sound (YUI-125): `level` is the whole of it, `bands` its lows, mids and highs,
 // each 0..1 after the look's envelope. Each look says what it does with them, on
 // top of what the level already does (VisualPlan.listens has the same words):
-//   orb     pulses with the lows, ripples with the mids, glows with the highs
+//   orb     the shader blob (YUI-232): its shape says what the agent is doing;
+//           it pulses with the lows, ripples with the mids, glows with the highs
 //   aurora  widens with the lows, shimmers with the mids, glows with the highs
 //   waves   swell with the lows, ripple with the mids, glow with the highs
 //   grain   spreads with the lows, sparkles with the highs
@@ -29,6 +30,8 @@ struct VisualUniforms {
     float2 zone;  // the zone's bottom and top edge, fractions of the height from the bottom
     float3 a, b, c, ground;
     float3 bands; // lows, mids, highs
+    float4 act;   // the blob's state weights (YUI-232): thinking, reading, running, searching
+    float4 act2;  // talking, done, seconds since the state changed, unused
 };
 
 struct VisualVertex {
@@ -74,22 +77,88 @@ static float4 finish(float3 col, float m, float2 frag, constant VisualUniforms &
     return float4(mix(c, u.ground, u.scrim * zone), 1.0);
 }
 
-// A soft ball of light that swells when someone speaks, a little above the middle.
+static float2 rot(float2 p, float a) { float c = cos(a), s = sin(a); return float2(c * p.x - s * p.y, s * p.x + c * p.y); }
+
+// A lens on its side: half as long as l, half as wide as w (w < l).
+static float football(float2 p, float l, float w) {
+    float r = 0.5 * (l * l / w + w), d = r - w;
+    p = abs(p.yx);
+    float b = sqrt(r * r - d * d);
+    return ((p.y - b) * d > p.x * b) ? length(p - float2(0.0, b)) : length(p - float2(-d, 0.0)) - r;
+}
+
+static float roundBox(float2 p, float h, float k) {
+    float2 q = abs(p) - float2(h - k);
+    return length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - k;
+}
+
+// The shader blob (YUI-232, yuigui site/lib/visual/actionshader.mjs, spec/SHADER.md): one
+// blob a little above the middle whose SHAPE says what the agent is doing. Each state is a
+// distance to its edge; the weights (eased by StageVisual.swift) blend them, so it morphs:
+//   idle a perfect circle that breathes     thinking a cloud of five puffs, turning
+//   reading a football on its side          running a rounded square, a quarter turn a beat
+//   searching a drop whose point sweeps     talking a tall pill that stretches with the voice
+//   done the circle, one pop and one ring
+// The voice is `level` (after the look's envelope): it swells the blob and the pill.
 fragment float4 visualOrb(VisualVertex in [[stage_in]], constant VisualUniforms &u [[buffer(0)]]) {
     float2 frag = fragOf(in.position, u);
     float2 p = centered(frag, u) - float2(0.0, 0.06);
-    float r = length(p);
-    float2 dir = p / max(r, 0.0001);
-    float R = 0.2 + 0.09 * u.level + 0.035 * u.bands.x + 0.012 * sin(u.time * 1.3);
-    R += (0.035 + 0.05 * u.level) * (noise(dir * 1.7 + float2(7.0 + u.time * 0.45, 3.0 - u.time * 0.3)) - 0.5) * 2.0;
-    R += 0.03 * u.bands.y * (noise(dir * 5.0 + float2(u.time * 1.6, -u.time * 1.1)) - 0.5) * 2.0;
-    float body = sstep(R, R - 0.1, r);
-    float glow = exp(-max(r - R, 0.0) * (9.0 - 3.0 * u.level)) * (0.35 + 0.45 * u.level + 0.3 * u.bands.z);
-    float swirl = fbm(p * 3.2 + float2(u.time * 0.18, -u.time * 0.12));
-    float3 inside = mix(u.b, u.a, sstep(0.0, R, r));
-    inside = mix(inside, u.c, sstep(0.45, 0.8, swirl) * 0.6);
-    float m = max(body, glow);
-    return finish(mix(u.a, inside, body), m, frag, u);
+    float t = u.time, v = u.level;
+    float think = u.act.x, read = u.act.y, run = u.act.z, search = u.act.w, talk = u.act2.x, done = u.act2.y, since = u.act2.z;
+    float idle = clamp(1.0 - think - read - run - search - talk - done, 0.0, 1.0);
+    // Sized to the narrow side, so the football fits a tall phone.
+    float R = 0.19 * min(1.0, 1.4 * u.res.x / u.res.y) * (1.0 + 0.1 * v) + 0.03 * u.bands.x;
+
+    // Searching leans the whole blob toward where its point looks.
+    float look = t * 1.3 + 0.6 * sin(t * 0.65);
+    float2 q = p - float2(cos(look), sin(look)) * 0.03 * search;
+    float a = atan2(q.y, q.x), r = length(q);
+
+    float dIdle = r - R * (1.0 + 0.025 * sin(t * 1.3));
+    float dThink = r - R * (0.9 + 0.17 * abs(sin(2.5 * (a - t * 0.35))));
+    float dRead = football(rot(q, -0.18 + 0.08 * sin(t * 0.7)), 1.42 * R, 0.72 * R);
+    float beat = t * 0.85;
+    float turn = (floor(beat) + sstep(0.0, 0.3, fract(beat))) * 1.5707963;
+    float squeeze = 1.0 - 0.06 * exp(-fract(beat) * 7.0);
+    float dRun = roundBox(rot(q, turn) / squeeze, 0.86 * R, 0.3 * R) * squeeze;
+    float dSearch = r - R * (0.84 + 0.72 * pow(max(cos(a - look), 0.0), 12.0));
+    float dTalk = length(q / float2(0.78 - 0.06 * v, 1.16 + 0.22 * v)) - R;
+    dTalk -= 0.012 * v * sin(a * 6.0 + t * 5.0);
+    float pop = 1.0 + 0.14 * exp(-since * 4.0) * cos(since * 13.0);
+    float dDone = r - R * pop;
+    float d = idle * dIdle + think * dThink + read * dRead + run * dRun + search * dSearch + talk * dTalk + done * dDone;
+
+    // A soft living edge, kept small so the shape reads; the circle stays perfect. The mids ripple it.
+    float wob = 0.002 + 0.008 * (1.0 - idle - done) + 0.01 * think + 0.01 * v;
+    // Noise by direction, not angle: the angle wraps at the left and would leave a seam.
+    float2 qd = q / max(r, 0.0001);
+    d -= wob * (noise(qd * 1.7 + float2(7.0 + t * 0.45, 3.0 - t * 0.3)) - 0.5) * 2.0;
+    d -= 0.02 * u.bands.y * (noise(qd * 5.0 + float2(t * 1.6, -t * 1.1)) - 0.5) * 2.0;
+    float body = 1.0 - sstep(-0.025, 0.003, d);
+    float glow = exp(-max(d, 0.0) * 10.0) * (0.3 + 0.2 * v + 0.3 * u.bands.z);
+
+    // Inside: the colors mixed in a slow swirl. Thinking turns it over faster.
+    float ts = t * (0.16 + 0.3 * think);
+    float swirl = fbm(p * 3.2 + float2(ts, -ts * 0.7) + 2.0 * think * float2(cos(ts), sin(ts)));
+    float3 inside = mix(u.b, u.a, sstep(0.0, R * 1.2, r));
+    inside = mix(inside, u.c, sstep(0.42, 0.78, swirl) * (0.55 + 0.3 * think));
+    inside += 0.1 * v;
+
+    // Reading: a band of light reads across the football, left to right.
+    float bx = -1.4 * R + fract(t * 0.5) * 2.8 * R;
+    float bq = (q.x - bx) / (0.22 * R);
+    float band = exp(-bq * bq) * (0.6 + 0.4 * sin(q.y * 150.0));
+    inside = mix(inside, u.b + 0.18, band * 0.7 * read);
+
+    // Done: one bright ring, then it settles.
+    float rq = (length(p) - (R + since * 0.42)) / 0.02;
+    float ring = exp(-rq * rq) * exp(-since * 2.6) * done;
+
+    float m = max(max(body, glow), ring);
+    float3 col = mix(u.a, inside, body);
+    col = mix(col, u.b, clamp(ring, 0.0, 1.0) * 0.85);
+    col += (hash(floor(frag) + fract(t * 7.0) * 97.0) - 0.5) * 0.05 * body;
+    return finish(col, m, frag, u);
 }
 
 // Slow ribbons of color across the top, with fine curtains in them.

@@ -4,21 +4,11 @@ import YuiLines
 // Stage motion (YUI-120 step 2, spec yuigui/spec/YL.md section 5, Stage motion;
 // mock www.yuigui.com/playground?demo=stage-motion). Chris, TestFlight
 // AJq7CcQS8fyM: "How can this have dynamic animations based on the context of
-// the agent?" What the agent is doing sets the move (the mood), who it is sets
-// the character (the look). Nothing changes on the wire. The reference is
-// yuigui site/lib/yl/motion.mjs; YuiTests/StageMotionTests replays its cases.
+// the agent?" What the agent is doing sets the shader blob's shape (StageAction,
+// YUI-232), who it is sets the character (the look). Nothing changes on the wire.
+// The reference is yuigui site/lib/yl/motion.mjs; YuiTests/StageMotionTests replays its cases.
 
-/// What the agent is doing right now, read from the turn.
-enum StageMood: String, CaseIterable, Sendable {
-    case idle, listen, think, work, found, done, ask, error
-}
-
-/// What kind of work a `doing` line is: looking sweeps, making builds up, the rest morphs.
-enum StageFlavor: String, Sendable {
-    case scan, make, work, found
-}
-
-/// The turn as the stage sees it, newest facts first (motion.mjs stageMood).
+/// The turn as the stage sees it, newest facts first: StageMotion.action reads it for the blob's shape.
 struct StageFacts: Equatable, Sendable {
     /// The turn ended with an error (a reply of nothing but error lines, or the host failed).
     var failed = false
@@ -37,44 +27,6 @@ struct StageFacts: Equatable, Sendable {
 }
 
 enum StageMotion {
-    private static func re(_ p: String) -> NSRegularExpression {
-        try! NSRegularExpression(pattern: p, options: [.caseInsensitive])
-    }
-    private static let found = re(#"^(found|got|there(?:'s| is| are)|spotted|ready|done|all set|nailed)\b"#)
-    private static let scan = re(#"\b(check|read|look|search|scan|find|fetch|pull|load|listen|watch|compar|ask|query|open|brows|review|count)\w*"#)
-    private static let make = re(#"\b(writ|draft|build|draw|mak|plan|compos|sketch|render|cook|mix|design|shap|lay|put|sav|send)\w*"#)
-
-    /// A doing line's words: a find is the found beat, else the first verb picks looking or making.
-    static func doingMood(_ text: String) -> (mood: StageMood, flavor: StageFlavor) {
-        let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        let r = NSRange(t.startIndex..., in: t)
-        if found.firstMatch(in: t, range: r) != nil { return (.found, .found) }
-        let s = scan.firstMatch(in: t, range: r)?.range.location
-        let m = make.firstMatch(in: t, range: r)?.range.location
-        switch (s, m) {
-        case let (s?, m?): return (.work, s <= m ? .scan : .make)
-        case (.some, nil): return (.work, .scan)
-        case (nil, .some): return (.work, .make)
-        default: return (.work, .work)
-        }
-    }
-
-    /// The first true fact wins: error, listen, ask, done, found, work, think, idle.
-    static func mood(_ f: StageFacts) -> (mood: StageMood, flavor: StageFlavor?) {
-        if f.failed { return (.error, nil) }
-        if f.listening { return (.listen, nil) }
-        if f.asking { return (.ask, nil) }
-        if f.chunk != nil { return (.done, nil) }
-        if f.arrived { return (.found, .found) }
-        if let d = f.doing {
-            if d.trimmingCharacters(in: .whitespaces).isEmpty { return (.work, .work) }
-            let x = doingMood(d)
-            return (x.mood, x.flavor)
-        }
-        if f.sent { return (.think, nil) }
-        return (.idle, nil)
-    }
-
     /// A reply of nothing but error lines failed the turn.
     static func failed(_ yl: YLScreen?) -> Bool {
         guard let yl else { return false }
@@ -221,145 +173,44 @@ extension YuiAgent {
     }
 }
 
-// MARK: - The mark
+// MARK: - The blob's shape
 
-/// The one thing that moves: three layers of the agent's color, drawn per frame.
-/// idle breathes, think turns its layers over each other, work sweeps (looking),
-/// stacks up (making) or morphs, found bursts once and settles, error shakes and
-/// goes grey. Reduce Motion draws it still.
-struct StageMark: View {
-    let color: Color
-    let mood: StageMood
-    let flavor: StageFlavor?
-    let look: MotionLook
-    /// When this mood began: one-shot moves (the burst, the shake) count from here.
-    let since: Date
-    /// Room past each edge of the frame: the found ring grows to 1.6 times the mark.
-    static let headroom = 0.32
+/// What the shader blob shows (YUI-232, yuigui site/lib/visual/action.mjs, spec/SHADER.md):
+/// one shape per action, drawn by the orb in Visual.metal. Chris, Sep 30: "a perfect circle,
+/// a football, and so on". The vector mark that sat over the shader is gone; only the
+/// shader draws the agent.
+enum StageAction: String, CaseIterable, Sendable {
+    /// A perfect circle, a cloud, a football, a rounded square, a drop, a tall pill, the circle with a ring.
+    case idle, thinking, reading, running, searching, talking, done
 
-    var body: some View {
-        let t = look.timings
-        // The canvas runs past the frame so the breath, the pop and the found ring
-        // are never clipped; the layout keeps the frame the caller gave.
-        GeometryReader { geo in
-            TimelineView(.animation(minimumInterval: nil, paused: look.reduced)) { ctx in
-                Canvas { g, size in
-                    let now = look.reduced ? since : ctx.date
-                    draw(&g, size: size, t: now.timeIntervalSinceReferenceDate, tau: max(0, now.timeIntervalSince(since)), timings: t)
-                }
-            }
-            .padding(-min(geo.size.width, geo.size.height) * Self.headroom)
-        }
-        .allowsHitTesting(false)
-        .accessibilityHidden(true)
+    private static func re(_ p: String) -> NSRegularExpression {
+        try! NSRegularExpression(pattern: p, options: [.caseInsensitive])
     }
+    /// action.mjs RULES: the first hit wins, searching before reading (a "look up" is a search).
+    private static let rules: [(StageAction, NSRegularExpression)] = [
+        (.searching, re(#"\b(search|searching|find|finding|look(ing)? up|browse|browsing|fetch|fetching|crawl|scour)\b"#)),
+        (.reading, re(#"\b(read|reading|open|opening|review|reviewing|check|checking|scan|scanning|look(ing)? (at|through|over)|skim|parse|parsing)\b"#)),
+        (.running, re(#"\b(run|running|build|building|deploy|deploying|test|testing|send|sending|install|installing|writ(e|ing)|sav(e|ing)|compil(e|ing)|push|pushing|execut(e|ing)|render|rendering)\b"#)),
+    ]
 
-    private func draw(_ g: inout GraphicsContext, size: CGSize, t: Double, tau: Double, timings: MotionLook.Timings) {
-        let c = CGPoint(x: size.width / 2, y: size.height / 2)
-        // The mark's own radius: the canvas is (1 + 2 * headroom) times the frame.
-        let r = min(size.width, size.height) / 2 / (1 + 2 * Self.headroom)
-        let tint = mood == .error ? Color.gray : color
-        let layers: [(size: Double, opacity: Double)] = [(1.0, 0.30), (0.78, 0.45), (0.5, 1.0)]
-        let still = look.reduced
-        // One period for the breathing and the loops; pulse=still still needs one for a sweep.
-        let period = timings.breath > 0 ? timings.breath : 2.4
-        let beat = max(0.2, timings.beat)
-
-        var shake = 0.0
-        if mood == .error, !still { shake = 9 * exp(-tau * 5) * sin(tau * 42) }
-
-        // found: one burst and a settle.
-        var pop = 1.0
-        if mood == .found, !still {
-            let x = tau / (beat * 1.2)
-            if x < 1 {
-                let ring = Path(ellipseIn: CGRect(x: c.x - r * (1 + 0.6 * x), y: c.y - r * (1 + 0.6 * x),
-                                                  width: 2 * r * (1 + 0.6 * x), height: 2 * r * (1 + 0.6 * x)))
-                g.stroke(ring, with: .color(tint.opacity(0.5 * (1 - x))), lineWidth: 6 * (1 - x) + 1)
-            }
-            pop = 1 + 0.18 * exp(-tau * 5) * cos(tau * 14)
-        }
-
-        for (i, l) in layers.enumerated() {
-            var s = l.size * pop
-            var dx = shake, dy = 0.0
-            if !still {
-                switch (mood, flavor) {
-                case (.think, _):
-                    // The layers turn slowly over each other.
-                    let a = t * 2 * .pi / (period * 1.6) + Double(i) * 2 * .pi / 3
-                    dx += cos(a) * r * 0.07 * (1 - l.size + 0.3)
-                    dy += sin(a) * r * 0.07 * (1 - l.size + 0.3)
-                    s *= breath(t, period: period * 1.3, phase: Double(i) * 0.2, amp: 0.03)
-                case (.work, .make?):
-                    // The layers stack up, one after another, then again.
-                    let cycle = beat * 4
-                    let x = (t.truncatingRemainder(dividingBy: cycle)) / beat - Double(2 - i)
-                    s *= x < 0 ? 0.001 : min(1, easeOut(min(1, x)))
-                case (.idle, _), (.work, _), (.listen, _):
-                    s *= breath(t, period: period, phase: Double(i) * 0.18, amp: 0.05)
-                default: break
-                }
-            }
-            if mood == .work, flavor == .work, i == 0, !still {
-                // Other work: the outer layer morphs.
-                g.fill(blob(center: CGPoint(x: c.x + dx, y: c.y + dy), r: r * s, t: t, period: period),
-                       with: .color(tint.opacity(l.opacity)))
-                continue
-            }
-            let rr = r * s
-            g.fill(Path(ellipseIn: CGRect(x: c.x + dx - rr, y: c.y + dy - rr, width: 2 * rr, height: 2 * rr)),
-                   with: .color(tint.opacity(l.opacity)))
-        }
-
-        if mood == .work, flavor == .scan, !still {
-            // Looking: a light sweeps round the mark.
-            let a = Angle.radians(t * 2 * .pi / (beat * 2.4))
-            var sweep = g
-            sweep.translateBy(x: c.x, y: c.y)
-            sweep.rotate(by: a)
-            let arc = Path { p in
-                p.addArc(center: .zero, radius: r * 0.9, startAngle: .degrees(-50), endAngle: .degrees(0), clockwise: false)
-            }
-            sweep.stroke(arc, with: .color(.white.opacity(0.85)), style: StrokeStyle(lineWidth: r * 0.09, lineCap: .round))
-        }
+    /// The state a doing line's words name. Nil or no clue: the agent is thinking.
+    static func of(doing: String?) -> StageAction {
+        guard let t = doing, !t.trimmingCharacters(in: .whitespaces).isEmpty else { return .thinking }
+        let r = NSRange(t.startIndex..., in: t)
+        return rules.first { $0.1.firstMatch(in: t, range: r) != nil }?.0 ?? .thinking
     }
+}
 
-    /// One breath: soft is a slow sine, beat a double thump, tick a short step; still does not breathe.
-    private func breath(_ t: Double, period: Double, phase: Double, amp: Double) -> Double {
-        guard look.pulse != .still, period > 0 else { return 1 }
-        let x = (t / period + phase).truncatingRemainder(dividingBy: 1)
-        switch look.pulse {
-        case .soft: return 1 + amp * sin(x * 2 * .pi)
-        case .beat:
-            // lub-dub
-            let a = exp(-pow((x - 0.1) * 14, 2)), b = exp(-pow((x - 0.32) * 14, 2)) * 0.6
-            return 1 - amp * 0.5 + amp * 1.6 * (a + b)
-        case .tick: return x < 0.12 ? 1 + amp * 1.2 : 1 - amp * 0.2
-        case .still: return 1
-        }
-    }
-
-    private func easeOut(_ x: Double) -> Double {
-        switch look.ease {
-        case .spring: let y = 1 - pow(1 - x, 3); return y + 0.12 * sin(x * .pi)
-        case .heavy: return 1 - pow(1 - x, 4)
-        case .sharp: return 1 - pow(1 - x, 5)
-        case .float: return 0.5 - 0.5 * cos(x * .pi)
-        }
-    }
-
-    private func blob(center: CGPoint, r: Double, t: Double, period: Double) -> Path {
-        Path { p in
-            let n = 72
-            for k in 0...n {
-                let a = Double(k) / Double(n) * 2 * .pi
-                let w = 1 + 0.07 * sin(3 * a + t * 2 * .pi / period) + 0.04 * sin(5 * a - t * 2 * .pi / (period * 1.7))
-                let pt = CGPoint(x: center.x + cos(a) * r * w, y: center.y + sin(a) * r * w)
-                if k == 0 { p.move(to: pt) } else { p.addLine(to: pt) }
-            }
-            p.closeSubpath()
-        }
+extension StageMotion {
+    /// The blob's state for the turn: the mic open is talking, the reply's beat is done, a
+    /// doing line names its action, a sent ask with nothing yet is thinking, the rest is idle.
+    static func action(_ f: StageFacts) -> StageAction {
+        if f.failed { return .idle }
+        if f.listening { return .talking }
+        if f.asking || f.chunk != nil { return .idle }
+        if f.arrived { return .done }
+        if let d = f.doing { return .of(doing: d) }
+        return f.sent ? .thinking : .idle
     }
 }
 

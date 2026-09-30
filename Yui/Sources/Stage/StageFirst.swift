@@ -229,8 +229,6 @@ struct StageFirstView: View {
     @Environment(\.colorScheme) private var scheme
     @Environment(\.scenePhase) private var phase
     @Environment(\.openURL) private var openURL
-    /// When the mood on show began: the burst and the shake count from here.
-    @State private var moodSince = Date()
     /// The visual's scrim follows the words (YUI-124): the top of the chunk's words and the
     /// stage's height, both in global points.
     @State private var wordsTop: CGFloat?
@@ -250,11 +248,12 @@ struct StageFirstView: View {
     @State private var pull: CGFloat = 0
 
     static let small = BarButtons.small, touch = BarButtons.touch
+    /// The room kept for the shader blob above the working words.
+    static let blobRoom: CGFloat = 250
 
     var body: some View {
         let c = theme.swatch(scheme)
         let turn = model.turn(store.messages)
-        let (mood, _) = StageMotion.mood(facts(turn))
         VStack(spacing: 0) {
             topBar(c)
             Group {
@@ -316,7 +315,6 @@ struct StageFirstView: View {
         // The stage opens from the mic: a wash of the agent's color out of the bottom right.
         .overlay { StageWash(color: c.accent, look: look, trigger: model.opened).ignoresSafeArea() }
         .environment(\.ylOnStage, true)
-        .onChange(of: mood) { moodSince = .now }
         .onChange(of: mic.words) { voice &+= 1 }
         // The reply came in: one beat of found, then the first chunk (Stage motion).
         .onChange(of: turn?.pages ?? 0) { old, new in
@@ -539,12 +537,6 @@ struct StageFirstView: View {
                        personOff: agent.map { VisualSwitch.isOff($0.id) } ?? false)
     }
 
-    /// The agent's own line is up (not its default): the orb is the mark then.
-    private var saidOrb: Bool {
-        if case .said(let v) = choice { return (v.look ?? "orb") == "orb" }
-        return false
-    }
-
     /// What the visual draws now: dimmed with a scrim behind words, full strength alone
     /// (the agent working, nothing to read yet), still when the app is not on screen.
     /// A default stays quiet either way.
@@ -559,7 +551,7 @@ struct StageFirstView: View {
         let conditions = VisualConditions.shared
         return VisualPlan(v, accent: p.accent, ground: p.background, ink: p.ink, motion: look,
                           words: !working(turn), zone: wordsZone(turn), lowPower: conditions.lowPower, thermal: conditions.thermal,
-                          hidden: phase != .active, quiet: def)
+                          hidden: phase != .active, quiet: def, action: StageMotion.action(facts(turn)))
     }
 
     /// Where the scrim lies: under the chunk's words, over the whole stage for the questions
@@ -799,14 +791,12 @@ struct StageFirstView: View {
         withAnimation(look.enterAnimation) { model.at = to }
     }
 
-    /// The agent is on it: their words up top, a mark in its color breathing, and what it is doing.
+    /// The agent is on it: their words up top, and what it is doing under the blob. The shader
+    /// behind the stage draws the agent (YUI-232): its shape says what it is doing, so this
+    /// only keeps the blob's room clear above the words.
     private func working(_ c: Swatch) -> some View {
-        let (mood, flavor) = StageMotion.mood(facts(model.turn(store.messages)))
-        return VStack(spacing: theme.spacing.xl) {
-            // The orb visual sits where the mark lives: it is the mark then.
-            StageMark(color: c.accent, mood: mood, flavor: flavor, look: look, since: moodSince)
-                .opacity(saidOrb ? 0 : 1)
-                .frame(width: 170, height: 170)
+        VStack(spacing: theme.spacing.xl) {
+            Color.clear.frame(width: 170, height: Self.blobRoom)
             workingLine(c, big: true)
         }
         .accessibilityElement(children: .combine)
@@ -816,8 +806,6 @@ struct StageFirstView: View {
     /// error: a small shake, grey, and Try again. The words still say what happened.
     private func failed(_ t: StageTurn, _ c: Swatch) -> some View {
         VStack(spacing: theme.spacing.l) {
-            StageMark(color: c.accent, mood: .error, flavor: nil, look: look, since: moodSince)
-                .frame(width: 120, height: 120)
             Text("That didn't go through.")
                 .font(theme.font(theme.type.title, .bold))
                 .foregroundStyle(c.ink)
@@ -838,7 +826,7 @@ struct StageFirstView: View {
         .accessibilityIdentifier("stage-error")
     }
 
-    /// The turn as Stage motion reads it (StageMotion.mood).
+    /// The turn as the stage reads it (StageMotion.action picks the blob's shape).
     private func facts(_ t: StageTurn?) -> StageFacts {
         let pages = t?.pages ?? 0
         var f = StageFacts()
@@ -867,8 +855,11 @@ struct StageFirstView: View {
                     .tint(c.accent)
                     .frame(width: big ? 160 : 100)
                     .animation(look.reduced ? nil : look.enterAnimation, value: step)
+                    // Read as the row's value, so the row stays one element of one kind while the bar comes and goes.
+                    .accessibilityHidden(true)
             }
         }
+        .accessibilityValue(store.doing.flatMap { d in d.step.flatMap { s in d.of.map { "Step \(min(s, $0)) of \($0)" } } } ?? "")
         .accessibilityIdentifier("stage-working-line")
     }
 

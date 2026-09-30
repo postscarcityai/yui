@@ -25,20 +25,27 @@ struct VisualDefault: Codable, Equatable, Sendable {
     /// Every other agent: the soft orb.
     static let fallback = VisualDefault(look: "orb", hears: "voice", strength: "faint", pace: "slow")
 
-    /// The crew's picks (runtime/profiles/<name>/profile.json `visual`, the source).
+    /// The crew's picks (runtime/profiles/<name>/profile.json `visual`, the source). Every one
+    /// is the shader blob now (YUI-232, Chris Sep 30: one look, uniform; Basil's bloom goes); each
+    /// keeps what it hears, how strong and how fast.
     static let crew: [String: VisualDefault] = [
         "yui": .init(look: "orb", hears: "voice", strength: "dim", pace: "slow"),
-        "arnold": .init(look: "waves", hears: "music", strength: "dim", pace: "even"),
-        "basil": .init(look: "bloom", hears: "voice", strength: "dim", pace: "slow"),
-        "gouda": .init(look: "grain", hears: "music", strength: "dim", pace: "even"),
-        "penny": .init(look: "aurora", hears: "off", strength: "faint", pace: "slow"),
+        "arnold": .init(look: "orb", hears: "music", strength: "dim", pace: "even"),
+        "basil": .init(look: "orb", hears: "voice", strength: "dim", pace: "slow"),
+        "gouda": .init(look: "orb", hears: "music", strength: "dim", pace: "even"),
+        "penny": .init(look: "orb", hears: "off", strength: "faint", pace: "slow"),
         "quill": .init(look: "orb", hears: "voice", strength: "faint", pace: "slow"),
     ]
 
     /// What an agent draws with nothing else set: the list's pick, else its crew pick, else the orb.
+    /// A default is always the blob (YUI-232): the shader draws the agent and its shape says what
+    /// it is doing, so an older list's other look keeps only its hearing, strength and pace. A
+    /// `visual` line the agent says still draws any look.
     static func of(_ agent: YuiAgent?) -> VisualDefault {
         guard let agent else { return .fallback }
-        return agent.visual ?? (agent.kind == "hosted" ? crew[agent.handle] : nil) ?? .fallback
+        var d = agent.visual ?? (agent.kind == "hosted" ? crew[agent.handle] : nil) ?? .fallback
+        d.look = "orb"
+        return d
     }
 }
 

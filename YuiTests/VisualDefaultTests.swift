@@ -17,8 +17,8 @@ final class VisualDefaultTests: XCTestCase {
 
     func testTheCrewsPicksMatchTheSpec() {
         let want: [String: (String, String, String)] = [
-            "yui": ("orb", "voice", "dim"), "arnold": ("waves", "music", "dim"), "basil": ("bloom", "voice", "dim"),
-            "gouda": ("grain", "music", "dim"), "penny": ("aurora", "off", "faint"), "quill": ("orb", "voice", "faint"),
+            "yui": ("orb", "voice", "dim"), "arnold": ("orb", "music", "dim"), "basil": ("orb", "voice", "dim"),
+            "gouda": ("orb", "music", "dim"), "penny": ("orb", "off", "faint"), "quill": ("orb", "voice", "faint"),
         ]
         for (h, w) in want {
             let d = VisualDefault.of(agent(h))
@@ -29,7 +29,9 @@ final class VisualDefaultTests: XCTestCase {
 
     func testTheListsPickWinsOverTheCrewTableAndEveryoneElseGetsTheSoftOrb() {
         let own = VisualDefault(look: "aurora", hears: "mic", strength: "dim", pace: "even")
-        XCTAssertEqual(VisualDefault.of(agent("arnold", visual: own)), own)
+        var blob = own
+        blob.look = "orb"
+        XCTAssertEqual(VisualDefault.of(agent("arnold", visual: own)), blob, "the list's hearing, strength and pace; the blob's look (YUI-232)")
         XCTAssertEqual(VisualDefault.of(agent("hermes", kind: "hermes")), .fallback)
         XCTAssertEqual(VisualDefault.of(agent("arnold", kind: "hermes")), .fallback, "a paired agent named like the crew is not the crew")
         XCTAssertEqual(VisualDefault.of(nil), .fallback)
