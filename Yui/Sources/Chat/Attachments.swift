@@ -31,14 +31,13 @@ struct ComposerPhoto: Identifiable, Equatable {
 }
 
 enum Attachments {
-    /// Most photos one message carries. It is not ours to fix: the server's `yui_limits` row `photos_per_message`
-    /// (the lowest per-request image cap of Claude, OpenAI and Gemini, so any agent takes the whole send in one call)
-    /// is read on each thread open and kept here, so it moves without a build. Until it has been read once, 20.
+    /// Most photos one message carries: 10 (Chris, 2026-09-30). The server's `yui_limits` row `photos_per_message`
+    /// holds the same 10, read on each thread open and kept here. Until it has been read once, 10.
     nonisolated(unsafe) private(set) static var maxPhotos: Int = {
         let kept = UserDefaults.standard.integer(forKey: limitKey)
         return kept >= 1 ? kept : fallbackLimit
     }()
-    static let fallbackLimit = 20
+    static let fallbackLimit = 10
     private static let limitKey = "yuiPhotosPerMessage"
 
     /// `[{"value": 100}]`, what PostgREST answers for the limit; nil when it is not a whole number of 1 or more.

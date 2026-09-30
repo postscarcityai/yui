@@ -20,12 +20,13 @@ final class AttachmentsTests: XCTestCase {
 
     /// A full send (beta feedback AJKItOrwJW9B_3GUe2i2CkY): every photo up to the server's limit rides one row's meta, the next has no room.
     func testAFullSendRidesOneRowAndTheNextHasNoRoom() throws {
-        let full = 100
+        let full = Attachments.fallbackLimit
+        XCTAssertEqual(full, 10, "the cap is 10")
         let paths = (0..<full).map { "\(Self.user)/\(Self.agent)/user/p\($0).jpg" }
         let meta = try XCTUnwrap(Attachments.meta(paths: paths))
         XCTAssertEqual(Attachments.paths(meta).count, full)
-        XCTAssertEqual(Attachments.body(text: "", photos: full), "100 photos")
-        XCTAssertEqual(max(full - paths.count, 0), 0, "no room for one more")
+        XCTAssertEqual(Attachments.body(text: "", photos: full), "10 photos")
+        XCTAssertEqual(max(full - paths.count, 0), 0, "no room for an 11th")
     }
 
     /// The limit is the server's number, not a constant: read as PostgREST answers, and ignored when it is not a usable count.

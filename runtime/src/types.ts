@@ -105,8 +105,8 @@ export interface Routes {
   vision: string;
 }
 
-/** Photos one message carries when yui_limits has no photos_per_message: the lowest per-request image cap of Claude (100), OpenAI (1,500) and Gemini (3,600). */
-export const DEFAULT_PHOTO_LIMIT = 100;
+/** Photos one message carries when yui_limits has no photos_per_message: 10 (Chris, 2026-09-30), the same number as the app's fallback. */
+export const DEFAULT_PHOTO_LIMIT = 10;
 
 export const DEFAULT_ROUTES: Routes = { text: "z-ai/glm-5.2", vision: "z-ai/glm-5v-turbo" };
 

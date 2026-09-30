@@ -148,28 +148,28 @@ test("a full send reaches the model in one call, however many photos the limit a
   const basil = await byHandle("arnold");
   const m = fakeModel(() => "Lots of plates.");
   store.say(basil.id, "these", "text");
-  const urls = Array.from({ length: 100 }, (_, i) => `https://img.test/p${i + 1}.jpg`);
+  const urls = Array.from({ length: 10 }, (_, i) => `https://img.test/p${i + 1}.jpg`);
   store.data.rows.at(-1)!.meta = { photos: urls };
   await runAgent(store, basil.id, { provider, fetch: m.fetch });
   assert.equal(m.calls.length, 1, "one call");
   const parts = lastUser(m.calls[0]).content;
-  assert.deepEqual(parts.filter((p: any) => p.type === "image_url").map((p: any) => p.image_url.url), urls, "all 100, in order");
+  assert.deepEqual(parts.filter((p: any) => p.type === "image_url").map((p: any) => p.image_url.url), urls, "all 10, in order");
   assert.doesNotMatch(parts[0].text, /more photo/);
 });
 
 test("a photo limit lowered after a send leaves the oldest out and the model hears it", async () => {
   const { store, byHandle } = await freshYui();
-  store.data.photoLimit = 12;
+  store.data.photoLimit = 10;
   const basil = await byHandle("arnold"); // Basil logs a meal photo behind the scenes (meals.test.ts)
-  const m = fakeModel(() => "Twelve plates.");
+  const m = fakeModel(() => "Ten plates.");
   store.say(basil.id, "these", "text");
-  const urls = Array.from({ length: 13 }, (_, i) => `https://img.test/p${i + 1}.jpg`);
+  const urls = Array.from({ length: 11 }, (_, i) => `https://img.test/p${i + 1}.jpg`);
   store.data.rows.at(-1)!.meta = { photos: urls };
   await runAgent(store, basil.id, { provider, fetch: m.fetch });
   const parts = lastUser(m.calls[0]).content;
   const got = parts.filter((p: any) => p.type === "image_url").map((p: any) => p.image_url.url);
-  assert.deepEqual(got, urls.slice(1), "the newest 12");
-  assert.match(parts[0].text, /1 more photo came with this turn; you see only the newest 12/);
+  assert.deepEqual(got, urls.slice(1), "the newest 10");
+  assert.match(parts[0].text, /1 more photo came with this turn; you see only the newest 10/);
 });
 
 test("a composer photo (meta.photos, as the app sends it) reaches the model that sees", async () => {
