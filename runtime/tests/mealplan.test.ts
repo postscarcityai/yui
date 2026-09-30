@@ -9,7 +9,7 @@ import { clock, fromSeeds } from "../src/tables.ts";
 import { homeLines } from "../src/home.ts";
 import { crew } from "../src/profiles.ts";
 import { AVOID_OPTS, BUDGET_OPTS, COOK_OPTS, MEALS_OPTS, addQty, aisleOf, allowed, itemKey, groceryScreen, mealAsks, planWeek, readItems, readPrefs,
-         recipes, todayScreen, weekScreen } from "../src/mealplan.ts";
+         recipes, screenLines, todayScreen, weekScreen } from "../src/mealplan.ts";
 import { fakeModel, freshYui, provider } from "./helpers.ts";
 // @ts-ignore: the parser the app and the site share, as the MCP server ships it
 import { parse } from "../../supabase/functions/yui-mcp/yl.mjs";
@@ -357,4 +357,16 @@ test("pieces: amounts add up, items read from words, aisles", () => {
                    ["avocado", "avocado", "berry", "egg", "chicken-thigh", "hummu", "swiss-cheese", "oat"]);
   assert.deepEqual(readPrefs({}).slots, ["Breakfast", "Lunch", "Dinner"]);
   assert.deepEqual(readPrefs({ meals: "3 and a snack" }).slots, ["Breakfast", "Lunch", "Dinner", "Snack"]);
+});
+
+// YUI-183b: sending to a page brings it forward, so the page the ask is about is sent last.
+test("a meal log on a stale shape ends on Today, a grocery add on Groceries, a plan on the week", () => {
+  const store = fromSeeds(crew().basil.tables!);
+  const clk = clock(MON, "America/New_York");
+  const lastPage = (l: string[]) => l.filter((x) => /^>\d$/.test(x)).at(-1);
+  assert.equal(lastPage(screenLines(store, clk, undefined, ["today"]).lines), ">2", "meal log, first redraw");
+  assert.equal(lastPage(screenLines(store, clk, "v1;stale;stale", ["today"]).lines), undefined, "meal log on a known shape moves nobody");
+  assert.equal(lastPage(screenLines(store, clk, "v1;stale;stale", ["today", "week", "groceries"]).lines), ">3", "plan on a changed shape");
+  assert.equal(lastPage(screenLines(store, clk, undefined, ["groceries"]).lines), ">4");
+  assert.equal(lastPage(screenLines(store, clk, undefined, ["today", "week", "groceries"]).lines), ">3");
 });

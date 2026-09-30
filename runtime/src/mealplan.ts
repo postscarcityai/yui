@@ -660,16 +660,21 @@ export function screenLines(store: TableStore, clk: Clock, was: string | undefin
   const now = screenShape(store, clk);
   const want = new Set(only ?? ["today", "week", "groceries"]);
   const patch = (lines: string[]) => lines.map((l) => l.replace(/^[a-z]+@/, "~"));
-  const out: string[] = [];
-  if (want.has("today") || !prev) out.push(...(!prev ? [">2 clear", ">2", ...todayScreen(store, clk), "save today"] : patch(todayScreen(store, clk))));
+  // Sending to a page brings it forward, so the pages the ask is about are sent last (a meal log ends on Today, a
+  // grocery add on Groceries, a plan on the week) and pages drawn only because the phone had none go first (YUI-183b).
+  const chunks: Record<"today" | "week" | "groceries", string[]> = { today: [], week: [], groceries: [] };
+  if (want.has("today") || !prev) chunks.today = !prev ? [">2 clear", ">2", ...todayScreen(store, clk), "save today"] : patch(todayScreen(store, clk));
   if (want.has("week") || !prev) {
-    if (!prev || prev.week !== now.week) out.push(">3 clear", ">3", ...weekScreen(store, clk), "save this week");
-    else out.push(...patch(weekScreen(store, clk)));
+    if (!prev || prev.week !== now.week) chunks.week = [">3 clear", ">3", ...weekScreen(store, clk), "save this week"];
+    else chunks.week = patch(weekScreen(store, clk));
   }
   if (want.has("groceries") || !prev) {
-    if (!prev || prev.groceries !== now.groceries) out.push(">4 clear", ">4", ...groceryScreen(store), "save groceries");
-    else out.push(...patch(groceryScreen(store)));
+    if (!prev || prev.groceries !== now.groceries) chunks.groceries = [">4 clear", ">4", ...groceryScreen(store), "save groceries"];
+    else chunks.groceries = patch(groceryScreen(store));
   }
+  const asked = new Set(only ?? ["today", "week", "groceries"]);
+  const order = (["today", "week", "groceries"] as const).filter((k) => !asked.has(k)).concat((["today", "groceries", "week"] as const).filter((k) => asked.has(k)));
+  const out = order.flatMap((k) => chunks[k]);
   // What wasn't redrawn keeps the old shape, so it is drawn again the next time it is touched.
   const kept = { week: want.has("week") || !prev ? now.week : prev.week, groceries: want.has("groceries") || !prev ? now.groceries : prev.groceries };
   return { lines: out, shape: shapeText(kept) };
