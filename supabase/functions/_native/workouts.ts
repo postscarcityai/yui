@@ -117,6 +117,7 @@ export interface Move {
   each?: boolean;
   lb?: number; // the weight to start from; none: bodyweight
   cue?: string;
+  fail?: boolean; // the last set goes to failure with a safe stop (heavy lifters only)
 }
 
 /** A session as the runner shows it, kept in the runner's reply so its Send is read against it. */
@@ -128,6 +129,8 @@ export interface Session {
   minutes: number;
   workout: string; // the row's words
   moves: Move[];
+  /** The first plan chose failure sets: only then does a lift's last set go to failure. */
+  failure?: boolean;
 }
 
 const rowsOf = (store: TableStore, name: string): { key: string; row: Record<string, Cell> }[] => {
@@ -180,15 +183,31 @@ function startWeight(gear?: string): number | undefined {
   return undefined;
 }
 
+/** What the saved first plan says: the kit they own and whether it chose failure sets (YUI-217, YUI-220). */
+export function planChoices(store: TableStore): { kit?: ReturnType<typeof kit>; failure: boolean } {
+  const t = store.tables[PLAN_TABLE];
+  const gear = t?.rows.gear?.Answer;
+  const last = String(t?.rows.effort?.Answer ?? "");
+  return { ...(gear != null ? { kit: kit(String(gear)) } : {}), failure: /^to failure/i.test(last) };
+}
+
+/** Moves that never go to failure: core holds and hip work, held for time or form. */
+const NO_FAILURE = /\b(?:plank|dead bug|bird dog|glute bridge|bridge|walk|stretch)\b/i;
+
 /** A split day as a session on a date. */
 export function session(store: TableStore, from: SplitDay, day: string): Session {
-  const moves = parseWorkout(from.workout).slice(0, 8).map((w, i): Move => {
+  const choices = planChoices(store);
+  // Bands and bodyweight kits have nothing to load: no weight, even from an old log row.
+  const noWeight = choices.kit === "bands" || choices.kit === "bodyweight";
+  const moves = parseWorkout(from.workout).slice(0, 8).map((w, i, all): Move => {
     const info = exerciseInfo(store, w.name);
-    const lb = w.lb ?? lastWeight(store, w.name) ?? (w.secs ? undefined : startWeight(info.gear));
+    const lb = noWeight ? undefined : w.lb ?? lastWeight(store, w.name) ?? (w.secs ? undefined : startWeight(info.gear));
+    const fail = choices.failure && !w.secs && !NO_FAILURE.test(w.name) && w.sets > 1;
     return { n: i + 1, name: w.name, sets: w.sets, reps: w.reps, ...(w.secs ? { secs: w.secs } : {}), ...(w.each ? { each: true } : {}),
-             ...(lb != null ? { lb } : {}), ...(info.cue ? { cue: info.cue } : {}) };
+             ...(lb != null ? { lb } : {}), ...(info.cue ? { cue: info.cue } : {}), ...(fail ? { fail: true } : {}) };
   });
-  return { id: `wk-${day.replace(/-/g, "")}-${from.key}`, day, from: from.key, focus: from.focus, minutes: from.minutes, workout: from.workout, moves };
+  return { id: `wk-${day.replace(/-/g, "")}-${from.key}`, day, from: from.key, focus: from.focus, minutes: from.minutes, workout: from.workout, moves,
+           ...(choices.failure ? { failure: true } : {}) };
 }
 
 // ---------- lines ----------
@@ -198,6 +217,25 @@ const opts = (xs: string[]) => xs.map((x) => (/^[A-Za-z0-9_.-]+$/.test(x) ? x : 
 const target = (m: Move) => `${m.sets} x ${m.secs ? `${m.secs}s` : m.reps}${m.each ? " each side" : ""}`;
 const moveLine = (m: { name: string; sets: number; reps: number; secs?: number; each?: boolean }) =>
   `${m.name} ${m.sets}x${m.secs ? `${m.secs}s` : m.reps}${m.each ? " each" : ""}`;
+
+/** Arnold's one line for a move, caveman voice: the exercises table's cue when it has one, else a line for the kind of move. */
+export function coachCue(m: { name: string; cue?: string }): string {
+  const own = (m.cue ?? "").trim().split(/(?<=[.!])\s+/).slice(0, 2).join(" ");
+  if (own && own.length <= 70) return own;
+  const n = m.name.toLowerCase();
+  if (/plank|hollow|hold/.test(n)) return "Straight line. Squeeze everything.";
+  if (/dead bug|bird dog/.test(n)) return "Slow. Low back stays down.";
+  if (/deadlift|rdl|romanian|bridge/.test(n)) return "Flat back. Hips back.";
+  if (/squat|lunge|step/.test(n)) return "Brace. Knees out. Drive up.";
+  if (/press|push|bench|dip/.test(n)) return "Brace. Slow down.";
+  if (/row|pull|lat|curl/.test(n)) return "Chest up. Pull, pause, lower.";
+  return "Slow down. Own every rep.";
+}
+
+/** How long a work set runs on the clock: a timed move is its seconds, a rep move about four seconds a rep. */
+export function workSeconds(m: { reps: number; secs?: number }): number {
+  return m.secs ? m.secs : Math.max(20, Math.min(60, m.reps * 4));
+}
 
 /** The runner: one full-screen plan, what the session holds first, a step per move, how it felt last, one Send. */
 export function runnerLines(s: Session): string[] {
@@ -212,7 +250,7 @@ export function runnerLines(s: Session): string[] {
       // "Skip" lets a move go by with nothing ticked (a pick with no answer holds the flow's Next).
       const sets = [...Array.from({ length: m.sets }, (_, i) => `Set ${i + 1}`), SKIP];
       const body = `${m.cue ? `${m.cue} ` : ""}Target ${target(m)}${m.lb ? ` at ${m.lb} lb` : ""}. Tick each set as you finish it, or Skip.`;
-      out.push(`pick@e${m.n}-sets ${q(`${m.name}: sets done`)} ${opts(sets)} tag=${q(`${m.n} of ${s.moves.length}`)} title=${q(m.name)} body=${q(body.slice(0, 400))}`);
+      out.push(`pick@e${m.n}-sets ${q(`${m.name}: sets done`)} ${opts(sets)} tag=${q(`${m.n} of ${s.moves.length}`)} title=${q(m.name)} body=${q(body.slice(0, 400))} cue=${q(coachCue(m))} work=${workSeconds(m)}${m.fail ? " +fail" : ""}`);
       if (m.secs) out.push(`slide@e${m.n}-secs ${q(`${m.name}: seconds per set`)} 5-180 value=${m.secs} step=5`);
       else out.push(`slide@e${m.n}-reps ${q(`${m.name}: reps per set`)} 1-30 value=${m.reps}`);
       if (m.lb != null) out.push(`slide@e${m.n}-lb ${q(`${m.name}: weight in lb`)} 0-${Math.max(300, Math.ceil((m.lb * 2) / 50) * 50)} value=${m.lb} step=5 unit=lb`);
@@ -589,8 +627,10 @@ export function applyRunner(store: TableStore, s: Session, answers: Record<strin
     // A step they moved past without ticking counts as done: they pressed Finish on the whole session.
     const sets = ticked ? ticked.length : m.sets;
     if (!sets) continue;
+    // The set that went to failure is the set that counts: its reps are the ones logged.
+    const failReps = m.fail ? num(answers[`e${m.n}-fail`]) : undefined;
     items.push({ exercise: m.name, sets,
-                 ...(m.secs ? { secs: num(answers[`e${m.n}-secs`]) ?? m.secs } : { reps: num(answers[`e${m.n}-reps`]) ?? m.reps }),
+                 ...(m.secs ? { secs: num(answers[`e${m.n}-secs`]) ?? m.secs } : { reps: failReps ?? num(answers[`e${m.n}-reps`]) ?? m.reps }),
                  ...(m.lb != null ? { lb: num(answers[`e${m.n}-lb`]) ?? m.lb } : {}) });
   }
   let out = putLog(store, s.day, s.focus, items, feel, "runner", clk);

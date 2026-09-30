@@ -21,6 +21,16 @@ struct RunnerMove: Equatable {
     let skip: String?
     /// reps (or secs) first, then lb, when the plan has them.
     let nudges: [YLComponent]
+    /// Arnold's one line for the move (YUI-220). Nil: the app says its own.
+    var cue: String? = nil
+    /// How long a work set runs, in seconds, from the runtime. Nil: worked out from the reps or seconds.
+    var work: Int? = nil
+    /// The last set goes to failure with a safe stop: only when the first plan chose it.
+    var fail = false
+
+    /// The move's own name in ids: "e1" for `e1-sets`.
+    var tag: String { sets.ylID.hasSuffix("-sets") ? String(sets.ylID.dropLast(5)) : sets.ylID }
+    var name: String { sets.string("title") ?? sets.prompt }
 }
 
 /// A plan read as a workout, or nil when it is some other plan.
@@ -48,7 +58,8 @@ struct RunnerPlan: Equatable {
                 guard next.preset == "slide", let head, next.ylID.hasPrefix(head) else { break }
                 nudges.append(next)
             }
-            moves.append(RunnerMove(sets: step, labels: labels, skip: skip, nudges: nudges))
+            moves.append(RunnerMove(sets: step, labels: labels, skip: skip, nudges: nudges, cue: step.string("cue"),
+                                    work: step.number("work").map { max(5, min(Int($0), 600)) }, fail: step.flag("fail")))
         }
         guard !moves.isEmpty else { return nil }
         let words = steps.filter { $0.preset == "page" }.compactMap { $0.string("body") }.joined(separator: " ")
@@ -86,6 +97,8 @@ struct RunnerProgress: Codable, Equatable {
     var ticked: [String: [String]] = [:]
     var values: [String: Double] = [:]
     var rest: RestClock?
+    /// The timed session (YUI-220): where its clock is. Nil until Start.
+    var run: SessionRun?
 
     static func key(_ plan: String) -> String { "yui.runner.\(plan)" }
 
@@ -118,6 +131,8 @@ struct RunnerProgress: Codable, Equatable {
         for m in runner.moves {
             if let t = ticked[m.sets.ylID], !t.isEmpty { out[m.sets.ylID] = .array(t.map(YLValue.string)) }
             for n in m.nudges { if let v = values[n.ylID] ?? n.number("value") { out[n.ylID] = .number(v) } }
+            // The reps of the set that went to failure (the session's Stop).
+            if m.fail, let v = values["\(m.tag)-fail"] { out["\(m.tag)-fail"] = .number(v) }
         }
         return out
     }
@@ -156,8 +171,7 @@ struct RunnerMoveView: View {
     @Environment(\.yuiTheme) private var theme
     @Environment(\.colorScheme) private var scheme
 
-    /// The move's own name in ids: "e1" for `e1-sets`.
-    private var tag: String { move.sets.ylID.hasSuffix("-sets") ? String(move.sets.ylID.dropLast(5)) : move.sets.ylID }
+    private var tag: String { move.tag }
 
     var body: some View {
         let s = theme.swatch(scheme)

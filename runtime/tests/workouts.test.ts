@@ -417,3 +417,92 @@ test("Arnold's soul no longer runs his own intake or a follow-up wizard", async 
   assert.doesNotMatch(soul, /Build my own/);
   assert.match(soul, /Never write your own intake/);
 });
+
+// ---------- YUI-220: Arnold coaches a timed session ----------
+
+/** A store whose first plan was answered, then today's (Monday's) workout started: the runner's members. */
+async function startedAfterFirst(answers: Record<string, unknown>) {
+  const { store, byHandle } = await freshYui();
+  const arnold = await byHandle("arnold");
+  const m = noModel();
+  tap(store, arnold.id, "first", "plan", { plan: answers });
+  await runAgent(store, arnold.id, { provider, fetch: m.fetch, now: () => MON });
+  store.say(arnold.id, "Start today's workout");
+  await runAgent(store, arnold.id, { provider, fetch: m.fetch, now: () => MON });
+  assert.equal(m.calls.length, 0, "the session is the runtime's own");
+  const ops = lines(lastReply(store, arnold.id).body);
+  const plan = ops.find((o: any) => o.preset === "plan");
+  return { store, arnold, ops, members: ops.filter((o: any) => o.in === plan.id), meta: lastReply(store, arnold.id).meta };
+}
+
+test("a coach cue and a work time ride on every move's pick, in caveman voice, and the app has words to fall back on", async () => {
+  const { members } = await startedAfterFirst({ goal: "Lift heavy", days: "4", time: "60 min", gear: ["Barbell"], level: "Some experience" });
+  const picks = members.filter((o: any) => o.preset === "pick");
+  assert.ok(picks.length >= 3);
+  for (const p of picks) {
+    assert.ok(typeof p.props.cue === "string" && p.props.cue.length > 0 && p.props.cue.length <= 70, `${p.id} has a one line cue`);
+    assert.doesNotMatch(p.props.cue, /—|\n/);
+    assert.ok(Number(p.props.work) >= 20 && Number(p.props.work) <= 60, `${p.id} work seconds`);
+  }
+  const { coachCue, workSeconds } = await import("../src/workouts.ts");
+  assert.equal(coachCue({ name: "Bench press" }), "Brace. Slow down.");
+  assert.equal(coachCue({ name: "Plank" }), "Straight line. Squeeze everything.");
+  assert.equal(coachCue({ name: "Bench press", cue: "Feet flat, bar to mid chest." }), "Feet flat, bar to mid chest.", "his own cue wins");
+  assert.equal(coachCue({ name: "Zercher carry", cue: "x".repeat(200) }), "Slow down. Own every rep.", "a long cue is not a cue line");
+  assert.equal(workSeconds({ reps: 8 }), 32);
+  assert.equal(workSeconds({ reps: 2 }), 20);
+  assert.equal(workSeconds({ reps: 30 }), 60);
+  assert.equal(workSeconds({ reps: 0, secs: 45 }), 45);
+});
+
+test("heavy lifters get a to-failure last set on their lifts; holds never do", async () => {
+  const { members } = await startedAfterFirst({ goal: "Lift heavy", days: "4", time: "60 min", gear: ["A gym"], level: "Lifted for years" });
+  const picks = members.filter((o: any) => o.preset === "pick");
+  const failing = picks.filter((o: any) => o.props.fail === true);
+  assert.ok(failing.length >= 3, "the lifts carry +fail");
+  for (const p of picks) {
+    if (/dead bug|plank|bridge|bird dog/i.test(p.props.title)) assert.notEqual(p.props.fail, true, `${p.props.title} is a hold`);
+  }
+});
+
+test("new lifters and someone one rep short never see a failure set", async () => {
+  for (const level of ["New to lifting", "Some experience", "Not sure"]) {
+    const { members } = await startedAfterFirst({ goal: "Lift heavy", days: "4", time: "60 min", gear: ["A gym"], level });
+    assert.ok(members.filter((o: any) => o.preset === "pick").every((o: any) => o.props.fail !== true), level);
+  }
+  // No first plan at all (the starter week): none either.
+  const { store, byHandle } = await freshYui();
+  const arnold = await byHandle("arnold");
+  store.say(arnold.id, "Start today's workout");
+  await runAgent(store, arnold.id, { provider, fetch: noModel().fetch, now: () => MON });
+  assert.doesNotMatch(lastReply(store, arnold.id).body, /\+fail/);
+});
+
+test("bands and bodyweight kits get no weight slider; barbell keeps its weight", async () => {
+  for (const gear of [["Bands"], ["Just me"]]) {
+    const { members } = await startedAfterFirst({ goal: "Lift and cardio", days: "4", time: "45 min", gear, level: "Lifted for years" });
+    assert.ok(members.filter((o: any) => o.preset === "slide").every((o: any) => !/-lb$/.test(o.id)), `${gear} has no lb slider`);
+  }
+  const { members } = await startedAfterFirst({ goal: "Lift heavy", days: "4", time: "45 min", gear: ["Barbell"], level: "Some experience" });
+  assert.ok(members.some((o: any) => /-lb$/.test(o.id)), "barbell keeps its weight");
+});
+
+test("the Send reads the failure reps: the set that went to failure is the set logged", async () => {
+  const { store, arnold, members, meta } = await startedAfterFirst({ goal: "Lift heavy", days: "4", time: "60 min", gear: ["Barbell"], level: "Lifted for years" });
+  const first = members.find((o: any) => o.preset === "pick" && o.props.fail === true);
+  assert.ok(first, "a failure move to log");
+  const n = first.id.replace("-sets", "");
+  const id = meta.native.workout.id;
+  tap(store, arnold.id, id, "plan", { plan: { [first.id]: ["Set 1", "Set 2", "Set 3", "Set 4"], [`${n}-fail`]: 11, feel: "Hard" } });
+  await runAgent(store, arnold.id, { provider, fetch: noModel().fetch, now: () => MON });
+  const log = (await store.tables(arnold.id)).tables.workouts;
+  const row = Object.values(log.rows).find((r: any) => r.Exercise === first.props.title) as any;
+  assert.equal(row.Reps, 11, "the failure reps are the logged reps");
+  assert.equal(row.Feel, "Hard");
+  // Sent without them (an older app, or a session that ended early): the planned reps stay.
+  const again = await startedAfterFirst({ goal: "Lift heavy", days: "4", time: "60 min", gear: ["Barbell"], level: "Lifted for years" });
+  tap(again.store, again.arnold.id, again.meta.native.workout.id, "plan", { plan: { feel: "Easy" } });
+  await runAgent(again.store, again.arnold.id, { provider, fetch: noModel().fetch, now: () => MON });
+  const rows2 = Object.values((await again.store.tables(again.arnold.id)).tables.workouts.rows) as any[];
+  assert.ok(rows2.length > 0 && rows2.every((r) => r.Reps !== 11));
+});

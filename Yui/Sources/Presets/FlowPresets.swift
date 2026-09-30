@@ -525,7 +525,13 @@ struct PlanPreset: View {
         // On the stage the plan is the screen, not a card on it (YUI-82).
         PresetCard(flat: onStage) {
             if let t = c.string("title") { PresetTitle(text: t) }
-            if submitted {
+            // The timed session (YUI-220): once Start is tapped it owns the screen, to the log.
+            if let runner, progress.run != nil {
+                TimedSessionView(runner: runner, progress: $progress, logged: submitted) { feel in
+                    if let feel { answers["feel"] = .string(feel) }
+                    submit(everything)
+                }
+            } else if submitted {
                 summary(everything, s)
             } else if reviewing {
                 reviewList(steps, runner, s)
@@ -567,6 +573,12 @@ struct PlanPreset: View {
                     }
                 }
                 .frame(maxHeight: onStage ? .infinity : nil, alignment: .top)
+                if let runner, cur == 0 {
+                    OptionPill(text: "Start session", fill: s.accent, ink: s.onAccent, grow: true, icon: "play.fill") {
+                        withAnimation(theme.spring) { progress.run = SessionEngine(runner).begin() }
+                    }
+                    .accessibilityIdentifier("runner-start")
+                }
                 HStack(spacing: theme.spacing.s) {
                     OptionPill(text: "Back", fill: s.lavender, on: cur > 0, grow: true) {
                         withAnimation(theme.spring) { at = max(0, cur - 1) }
@@ -687,6 +699,8 @@ struct PlanPreset: View {
     private func submit(_ steps: [YLComponent]) {
         var plan: [String: YLValue] = [:]
         for step in steps where step.preset != "page" { if let v = answers[step.ylID] { plan[step.ylID] = v } }
+        // The reps of a set that went to failure: no step of their own, the runtime reads them by id.
+        for (id, v) in answers where id.hasSuffix("-fail") { plan[id] = v }
         // The echo is the fold-back: the chat shows it as the person's own message.
         emit(c.event(["plan": .object(plan)], echo: YLComponent.foldText(steps, answers)))
         RunnerProgress.clear(c.ylID)
