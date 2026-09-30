@@ -37,6 +37,9 @@ final class StageFirstModel {
     var answers: [String: YLEvent] = [:]
     /// Turns whose questions went.
     var sent: Set<String> = []
+    /// Picks waiting on the last page (YUI-208): set while the questions are up with something picked. Words
+    /// the person types or says then go with them as one answer; nil means the words go alone.
+    @ObservationIgnored var bundle: ((String) -> Bool)?
     /// Rows in the record when it was last looked at: the count on its button is the rest.
     var seen = 0
     /// The last move went back a chunk: the next one comes on from the other side (YUI-120).
@@ -707,26 +710,50 @@ struct StageFirstView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             // The end (YUI-195): the mic stays in the bar; the way out is a quiet line under the content.
-            if atEnd(t) { backHome(c) }
+            if atEnd(t), t.questions.isEmpty { pageEnd(c) }
             // More is coming: the working line stays under what already landed.
             if pages > 0, store.waiting { workingLine(c).frame(maxWidth: .infinity) }
         }
         .padding(.horizontal, theme.spacing.l)
         .padding(.top, theme.spacing.s)
+        .onChange(of: bundleKey(t), initial: true) {
+            // Kept while the mic is open (the page gives way to the listening view): the hook checks again when used.
+            model.bundle = { words in
+                guard model.open, model.ask != nil, canBundle(t) else { return false }
+                submit(t, said: words)
+                return true
+            }
+        }
     }
 
-    /// Back home, quiet: text and a house under the last page. Sends nothing: the agent never hears of it.
-    private func backHome(_ c: Swatch) -> some View {
-        Button { goHome() } label: {
-            Label("Back home", systemImage: "house")
+    /// Changes whenever a pick, the page or the sent state does, so the hook follows them.
+    private func bundleKey(_ t: StageTurn) -> String {
+        "\(t.ask?.id ?? "")|\(canBundle(t))|\(model.answers.count)|\(model.at)|\(model.sent.count)"
+    }
+
+    /// The end of the last page (YUI-208): Back home and New chat side by side, quiet. Back home sends
+    /// nothing: the agent never hears of it. New chat starts an empty one.
+    private func pageEnd(_ c: Swatch) -> some View {
+        HStack(spacing: theme.spacing.s) {
+            endButton("Back home", "house", c, id: "stage-home", hint: "Closes this and goes to the agent's home. Sends nothing.") { goHome() }
+            endButton("New chat", "square.and.pencil", c, id: "stage-page-new-chat", hint: "Starts a new chat with this agent.") { actions.newChat() }
+        }
+    }
+
+    private func endButton(_ title: String, _ icon: String, _ c: Swatch, id: String, hint: String,
+                           action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Label(title, systemImage: icon)
                 .font(theme.font(theme.type.caption, .semibold))
                 .foregroundStyle(c.inkSoft)
                 .frame(maxWidth: .infinity, minHeight: 44)
-                .contentShape(Rectangle())
+                .background(c.surface, in: Capsule())
+                .overlay(Capsule().stroke(c.outline, lineWidth: 1.5))
+                .contentShape(Capsule())
         }
-        .buttonStyle(.plain)
-        .accessibilityHint("Closes this and goes to the agent's home. Sends nothing.")
-        .accessibilityIdentifier("stage-home")
+        .buttonStyle(BounceButtonStyle())
+        .accessibilityHint(hint)
+        .accessibilityIdentifier(id)
     }
 
     /// One bar per chunk, the questions last; the ones read are filled.
@@ -894,9 +921,7 @@ struct StageFirstView: View {
                         .modifier(StaggerIn(index: i, look: look))
                 }
                 if !sent {
-                    // A form counts once a field has a value; one missing a required field holds Send.
-                    let ready = t.questions.contains { model.answers[$0.id].flatMap(YLComponent.answerValue) != nil }
-                        && !t.questions.contains { model.answers[$0.id]?.value["missing"] != nil }
+                    let ready = picked(t)
                     Button { submit(t) } label: {
                         Text(t.plan?.c.string("submit") ?? "Send")
                             .font(theme.font(theme.type.title, .heavy))
@@ -909,12 +934,26 @@ struct StageFirstView: View {
                     .padding(.top, theme.spacing.s)
                     .accessibilityIdentifier("stage-send")
                 }
+                // The way out lives on the page (YUI-208): the mic stays in the bar for a word to add.
+                if atEnd(t) { pageEnd(c) }
             }
             .padding(.vertical, theme.spacing.m)
         }
         .scrollBounceBehavior(.basedOnSize)
         .scrollIndicators(.hidden)
         .accessibilityIdentifier("stage-questions")
+    }
+
+    /// A form counts once a field has a value; one missing a required field holds Send.
+    private func picked(_ t: StageTurn) -> Bool {
+        t.questions.contains { model.answers[$0.id].flatMap(YLComponent.answerValue) != nil }
+            && !t.questions.contains { model.answers[$0.id]?.value["missing"] != nil }
+    }
+
+    /// Picks waiting to go, so the mic and T can take a word along with them.
+    private func canBundle(_ t: StageTurn) -> Bool {
+        let sent = t.ask.map { model.sent.contains($0.id) } == true || alreadySent(t)
+        return !t.questions.isEmpty && !sent && model.at >= t.chunks.count && picked(t)
     }
 
     /// Answered before (a relaunch, the record): the plan, or every loose question, has an answer.
@@ -926,22 +965,36 @@ struct StageFirstView: View {
 
     /// The plan's questions go as one `{plan: {...}}` event (its fold-back is the
     /// person's message in the record); loose ones as their own events, in line order.
-    private func submit(_ t: StageTurn) {
+    private func submit(_ t: StageTurn, said: String? = nil) {
+        var said = said
         var inPlan: [StageQuestion] = []
         if let p = t.plan { inPlan = t.questions.filter { $0.scope == p.scope && $0.c.inGroup == p.c.ylID } }
         if let p = t.plan, !inPlan.isEmpty {
             var plan: [String: YLValue] = [:]
             for q in inPlan { if let e = model.answers[q.id], let v = YLComponent.answerValue(e) { plan[q.c.ylID] = v } }
-            store.emit(p.c.event(["plan": .object(plan)], echo: YLComponent.foldText(inPlan.map(\.c), plan)))
+            var e = p.c.event(["plan": .object(plan)], echo: YLComponent.foldText(inPlan.map(\.c), plan))
+            if let w = said { e = withWords(e, w); said = nil }
+            store.emit(e)
             // The first plan (Build my week): the moment to ask for notifications (YUI-230).
             if p.c.ylID == "first" { Task { await PushCenter.shared.firstPlanBuilt() } }
         }
         let planned = Set(inPlan.map(\.id))
-        for q in t.questions where !planned.contains(q.id) {
-            if let e = model.answers[q.id], YLComponent.answerValue(e) != nil { store.emit(e) }
+        let loose = t.questions.filter { !planned.contains($0.id) && model.answers[$0.id].flatMap(YLComponent.answerValue) != nil }
+        for (i, q) in loose.enumerated() {
+            guard var e = model.answers[q.id] else { continue }
+            if i == loose.count - 1, let w = said { e = withWords(e, w); said = nil }
+            store.emit(e)
         }
         finishDecks(t)
         if let id = t.ask?.id { withAnimation(theme.spring) { _ = model.sent.insert(id) } }
+    }
+
+    /// The person's own words ride with the answer: one event, one message in the record.
+    private func withWords(_ e: YLEvent, _ words: String) -> YLEvent {
+        var e = e
+        e.value["said"] = .string(words)
+        e.echo = [e.echo, words].compactMap { $0 }.joined(separator: "\n")
+        return e
     }
 
     /// A lesson's quiz lands on this screen, not inside its deck, so the deck never saw the answers

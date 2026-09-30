@@ -1464,6 +1464,11 @@ struct ChatView: View {
         }
         keySendAnyway = false
         keyHeld = nil
+        // Picks waiting on the stage's last page (YUI-208): the words go in with them, one answer.
+        if photos.isEmpty, stageFirst.open, let bundle = stageFirst.bundle, bundle(text) {
+            clearComposer()
+            return
+        }
         if account.session?.userID != "demo" {
             guard store.agent != nil else { return }
             let to = mentioning
