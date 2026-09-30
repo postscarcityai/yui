@@ -16,6 +16,9 @@ struct YuiApp: App {
         LiveTimer.shared.setUp()
         // Siri and widget buttons run intents in this process: they use this account, never a second one.
         WidgetApp.account = account
+        #if DEBUG
+        WidgetSync.resetIfAsked()
+        #endif
         WidgetApp.applyTicks()
     }
 

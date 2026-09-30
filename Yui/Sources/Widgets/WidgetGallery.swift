@@ -12,12 +12,28 @@ struct WidgetGalleryOverlay: ViewModifier {
 /// rectangular lock screen size, from the same app group copy the widget reads (YUI-40 shots and tests).
 struct WidgetGallery: View {
     @Environment(\.colorScheme) private var scheme
-    private let screens = WidgetStore.read().screens
 
     var body: some View {
+        // Redrawn twice a second from the app group copy, so a button tapped here (its intent runs in the app,
+        // like a widget's does in the extension) shows at once (YUI-40 step 3 shots and tests).
+        TimelineView(.periodic(from: .now, by: 0.5)) { _ in
+            // Checklists first, then timers: the buttons the shots are about sit at the top.
+            gallery(WidgetStore.read().screens.sorted { rank($0) < rank($1) })
+        }
+    }
+
+    private func rank(_ s: WidgetScreen) -> Int {
+        switch s.parts.first?.preset { case "list": 0; case "timer": 1; default: 2 }
+    }
+
+    private func gallery(_ screens: [WidgetScreen]) -> some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
                 Text("widgets: \(screens.count)").font(.caption).accessibilityIdentifier("gallery-count")
+                Text(screens.map(\.name).joined(separator: ", ")).font(.caption2).accessibilityIdentifier("gallery-names")
+                let queue = WidgetQueue.pending()
+                Text("queue: \(queue.count)").font(.caption).accessibilityIdentifier("gallery-queue")
+                Text(queue.last?.body ?? "no event").font(.caption2).accessibilityIdentifier("gallery-event")
                 ForEach(screens) { s in
                     Text("\(s.agentName) / \(s.name)").font(.caption.bold())
                     HStack(alignment: .top, spacing: 12) {

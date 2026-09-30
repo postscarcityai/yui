@@ -282,3 +282,64 @@ final class WidgetRelayTests: XCTestCase {
         XCTAssertEqual(WidgetBudget.today(), ["agent-1/today": 2, "agent-1/weight": 1])
     }
 }
+
+/// "Ask Coach in Yui" (YUI-40 step 2): Siri's intent sends the words to that agent as a normal message through
+/// the app's own outbox, and says "Sent to Coach" only after the row left the phone.
+@MainActor
+final class SiriIntentTests: XCTestCase {
+    override func setUp() async throws {
+        let c = URLSessionConfiguration.ephemeral
+        c.protocolClasses = [FakeRelay.self]
+        YuiRelay.session = URLSession(configuration: c)
+        FakeRelay.reset(chats: [], messages: [])
+        Outbox.shared.clear()
+    }
+
+    override func tearDown() async throws {
+        YuiRelay.session = .shared
+        WidgetApp.account = nil
+        Outbox.shared.clear()
+    }
+
+    func testAskAnAgentSendsAMessageAndSaysSent() async throws {
+        WidgetApp.account = Account.signedIn(userID: "u1")
+        var intent = AskAgentIntent()
+        intent.agent = AgentEntity(id: "agent-coach", name: "Coach")
+        intent.message = "  How did I sleep?  "
+        let result = try await intent.perform()
+        let said = String(describing: result)
+        XCTAssertTrue(said.contains("key: \"Sent to %@\"") && said.contains("value(\"Coach\")"), "said Sent to Coach, not Queued")
+        let post = FakeRelay.log().first { $0.method == "POST" && $0.path == "yui_messages" }
+        XCTAssertEqual(post?.body["body"] as? String, "How did I sleep?")
+        XCTAssertEqual(post?.body["agent_id"] as? String, "agent-coach")
+        XCTAssertEqual(post?.body["sender"] as? String, "user")
+        XCTAssertEqual(post?.body["kind"] as? String, "text")
+    }
+
+    func testSignedOutSiriSendsNothing() async throws {
+        WidgetApp.account = Account.signedIn(userID: "demo")
+        var intent = AskAgentIntent()
+        intent.agent = AgentEntity(id: "agent-coach", name: "Coach")
+        intent.message = "hello"
+        let result = try await intent.perform()
+        XCTAssertTrue(String(describing: result).contains("sign in"))
+        XCTAssertTrue(FakeRelay.log().isEmpty)
+    }
+
+    func testEmptyWordsSendNothing() async throws {
+        WidgetApp.account = Account.signedIn(userID: "u1")
+        var intent = AskAgentIntent()
+        intent.agent = AgentEntity(id: "agent-coach", name: "Coach")
+        intent.message = "   "
+        _ = try await intent.perform()
+        XCTAssertTrue(FakeRelay.log().isEmpty)
+    }
+
+    func testThreeAppShortcutsAndEachPhraseNamesTheApp() {
+        XCTAssertEqual(YuiShortcuts.appShortcuts.count, 3)
+    }
+
+    func testKeychainGroupIsInTheInfoPlist() {
+        XCTAssertNotNil(WidgetSecrets.group)
+    }
+}

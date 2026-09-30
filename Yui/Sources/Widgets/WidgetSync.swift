@@ -57,6 +57,18 @@ enum WidgetSync {
         WidgetCenter.shared.reloadAllTimelines()
     }
 
+    #if DEBUG
+    /// `-yuiWidgetsReset` (UI tests): the app group starts empty, once per launch.
+    static func resetIfAsked() {
+        guard ProcessInfo.processInfo.arguments.contains("-yuiWidgetsReset") else { return }
+        WidgetStore.write(WidgetSnapshot())
+        if let dir = WidgetGroup.url {
+            for n in ["yui-widget-queue.json", "yui-widget-ticks.json"] { try? FileManager.default.removeItem(at: dir.appending(path: n)) }
+        }
+        WidgetSecrets.token = nil
+    }
+    #endif
+
     /// "Pin as widget": the edit sheet offers this screen first.
     static func pinNext(agent: String, name: String) {
         WidgetStore.update { $0.pinNext = "\(agent)/\(name)" }

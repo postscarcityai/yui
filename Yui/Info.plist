@@ -62,5 +62,7 @@
 	<string>$(YUI_CHANNEL_GUIDE)</string>
 	<key>YuiCommit</key>
 	<string>$(YUI_COMMIT)</string>
+	<key>YuiKeychainGroup</key>
+	<string>$(AppIdentifierPrefix)com.yuigui.shared</string>
 </dict>
 </plist>

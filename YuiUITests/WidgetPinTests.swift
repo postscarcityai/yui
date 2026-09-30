@@ -41,6 +41,10 @@ final class WidgetPinTests: XCTestCase {
         pin.tap()
         XCTAssertTrue(app.descendants(matching: .any)["pin-widget-sheet"].firstMatch.waitForExistence(timeout: 5), "no pin steps")
         shot("pin-sheet-\(appearance)")
+        // The demo saves one screen at a time: wait for all four before the copy is read.
+        for name in ["today", "trend", "workout"] {
+            XCTAssertTrue(app.buttons["Open \(name)"].waitForExistence(timeout: 30), "\(name) is not on the shelf")
+        }
         app.terminate()
 
         // The copy the widget reads is in the app group: draw it with the widget's views.
@@ -48,6 +52,9 @@ final class WidgetPinTests: XCTestCase {
         XCTAssertTrue(app.descendants(matching: .any)["widget-gallery"].firstMatch.waitForExistence(timeout: 20), "no widget gallery")
         let count = app.staticTexts["gallery-count"]
         XCTAssertTrue(count.waitForExistence(timeout: 5))
+        // The gallery redraws from the copy and the demo replays into it: settle on the four.
+        let end = Date().addingTimeInterval(20)
+        while count.label != "widgets: 4", Date() < end { Thread.sleep(forTimeInterval: 0.5) }
         XCTAssertEqual(count.label, "widgets: 4", "the app group copy does not hold the four saved screens")
         shot("widgets-\(appearance)")
     }
