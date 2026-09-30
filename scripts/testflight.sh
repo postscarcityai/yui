@@ -2,10 +2,34 @@
 # Archive Yui and upload to TestFlight with the App Store Connect API key.
 # Needs: YUI_TEAM_ID, ASC_KEY_ID, ASC_ISSUER_ID in ~/.appstoreconnect/yui.env,
 # key at ~/.appstoreconnect/private_keys/AuthKey_$ASC_KEY_ID.p8
+#
+# One upload per 24 h. Exits 3 if the newest build was uploaded less than 24 h
+# ago, unless --hotfix "<reason>" is passed. Hotfix reasons: crash, data loss,
+# sign-in blocker. Nothing else. The reason is printed for the ship card.
 set -euo pipefail
+HOTFIX=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --hotfix) HOTFIX="${2:-}"; [ -n "$HOTFIX" ] || { echo "--hotfix needs a reason" >&2; exit 2; }; shift 2 ;;
+    *) echo "unknown arg: $1" >&2; exit 2 ;;
+  esac
+done
 cd "$(dirname "$0")/.."
 source ~/.appstoreconnect/yui.env
 export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer YUI_TEAM_ID
+# 24 h guard: newest build's uploadedDate via asc.py.
+AGE=$(python3 scripts/asc.py GET "/v1/builds?filter[app]=6815454240&sort=-uploadedDate&limit=1&fields[builds]=uploadedDate,version" 2>/dev/null \
+  | python3 -c 'import json,sys,datetime as d; b=json.load(sys.stdin)["data"]
+print(int((d.datetime.now(d.timezone.utc)-d.datetime.fromisoformat(b[0]["attributes"]["uploadedDate"])).total_seconds()) if b else 999999999)' 2>/dev/null || echo "")
+if [ -z "$AGE" ]; then
+  [ -n "$HOTFIX" ] || { echo "testflight guard: could not read the newest build's uploadedDate from App Store Connect. Refusing. Pass --hotfix \"<reason>\" to override." >&2; exit 4; }
+elif [ "$AGE" -lt 86400 ]; then
+  if [ -z "$HOTFIX" ]; then
+    echo "testflight guard: newest build was uploaded $((AGE/3600))h$(((AGE%3600)/60))m ago. One upload per 24 h. Wait $(((86400-AGE)/3600))h$((((86400-AGE)%3600)/60))m, or pass --hotfix \"<reason>\" (crash, data loss, sign-in blocker only)." >&2
+    exit 3
+  fi
+fi
+[ -z "$HOTFIX" ] || echo "HOTFIX upload (bypassing the 24 h guard): $HOTFIX"
 KEY=~/.appstoreconnect/private_keys/AuthKey_${ASC_KEY_ID}.p8
 AUTH=(-allowProvisioningUpdates -authenticationKeyPath "$KEY" -authenticationKeyID "$ASC_KEY_ID" -authenticationKeyIssuerID "$ASC_ISSUER_ID")
 BUILD=$(git rev-list --count HEAD)
