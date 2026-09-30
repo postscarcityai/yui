@@ -286,6 +286,163 @@ export function editDayBody(store: TableStore, key: string): string {
   return `\`\`\`yui\n${lines.join("\n")}\n\`\`\``;
 }
 
+// ---------- the first plan (YUI-217, PROP-4) ----------
+
+export const PLAN_TABLE = "first_plan";
+export const NOT_SURE = "Not sure";
+export const FIRST_ID = "first";
+export const FIRST_SKIP = "first-skip";
+
+const GOALS = ["Lift heavy", "Lift and cardio", "Mostly cardio", "Just move more"];
+const TIMES = ["30 min", "45 min", "60 min"];
+const GEAR = ["Just me", "Bands", "Dumbbells", "Barbell", "A gym"];
+const LEVELS = ["New to lifting", "Some experience", "Lifted for years"];
+
+/** The intake, as first.yui and a rebuild send it: five steps, one Send. The days step is one tap, Not sure picks three. */
+export function firstLines(): string[] {
+  return [
+    `plan@${FIRST_ID} "Your first plan" submit="Build my week"`,
+    `choose@goal "What are we training for?" ${opts([...GOALS, NOT_SURE])}`,
+    `choose@days "How many days a week?" ${opts(["2", "3", "4", "5", "6", NOT_SURE])}`,
+    `choose@time "How long per session?" ${opts([...TIMES, NOT_SURE])}`,
+    `pick@gear "What do you have?" ${opts(GEAR)}`,
+    `choose@level "How much have you lifted?" ${opts([...LEVELS, NOT_SURE])} body="Heavy lifters finish the last set of each lift at failure with a safe stop. New lifters stop well short."`,
+    `end`,
+    `card@${FIRST_SKIP} "Not now" "Keep the starter week. Build yours any time from This week." cta="Skip for now"`,
+  ];
+}
+
+/** The rebuild's reply: a line, then the intake. */
+export function firstBody(): string {
+  return `Five taps and you have a week you'll do. It's a rough draft, and you can change any day.\n\`\`\`yui\n${firstLines().join("\n")}\n\`\`\``;
+}
+
+/** What one goal trains across n days: a focus per training day, in order. */
+function focuses(goal: string, n: number): string[] {
+  const heavy: Record<number, string[]> = {
+    2: ["Full body", "Full body"], 3: ["Full body", "Full body", "Full body"], 4: ["Upper", "Lower", "Upper", "Lower"],
+    5: ["Push", "Pull", "Legs", "Upper", "Lower"], 6: ["Push", "Pull", "Legs", "Push", "Pull", "Legs"],
+  };
+  const mixed: Record<number, string[]> = {
+    2: ["Full body", "Cardio"], 3: ["Full body", "Cardio", "Full body"], 4: ["Upper", "Cardio", "Lower", "Cardio"],
+    5: ["Upper", "Cardio", "Lower", "Cardio", "Full body"], 6: ["Push", "Cardio", "Pull", "Cardio", "Legs", "Cardio"],
+  };
+  if (/^lift heavy$/i.test(goal)) return heavy[n];
+  if (/^lift and cardio$/i.test(goal)) return mixed[n];
+  // Mostly cardio and just move more: one lifting day, the rest on your feet.
+  return Array.from({ length: n }, (_, i) => (i === 1 ? "Full body" : "Cardio"));
+}
+
+const DAYS_FOR: Record<number, string[]> = {
+  2: ["mon", "thu"], 3: ["mon", "wed", "fri"], 4: ["mon", "tue", "thu", "fri"], 5: ["mon", "tue", "wed", "fri", "sat"],
+  6: ["mon", "tue", "wed", "thu", "fri", "sat"],
+};
+
+/** The moves a focus holds with a full gym; smaller kits swap moves out of it. */
+const MOVES: Record<string, string[]> = {
+  "Full body": ["Squat", "Bench press", "Lat pulldown", "Romanian deadlift", "Plank"],
+  Push: ["Bench press", "Overhead press", "Push-up", "Plank"],
+  Pull: ["Lat pulldown", "Dumbbell row", "Pull-up", "Dead bug"],
+  Legs: ["Squat", "Romanian deadlift", "Step-up", "Glute bridge"],
+  Upper: ["Bench press", "Dumbbell row", "Overhead press", "Lat pulldown"],
+  Lower: ["Deadlift", "Squat", "Step-up", "Dead bug"],
+};
+const SWAPS: Record<string, Record<string, string>> = {
+  gym: {},
+  barbell: { "Lat pulldown": "Pull-up", "Step-up": "Reverse lunge" },
+  dumbbells: { Squat: "Goblet squat", "Bench press": "Dumbbell bench press", Deadlift: "Romanian deadlift", "Lat pulldown": "Dumbbell row",
+               "Pull-up": "Dumbbell row", "Step-up": "Reverse lunge" },
+  bands: { Squat: "Banded squat", "Bench press": "Push-up", Deadlift: "Glute bridge", "Romanian deadlift": "Glute bridge", "Lat pulldown": "Banded row",
+           "Dumbbell row": "Banded row", "Pull-up": "Banded row", "Step-up": "Reverse lunge", "Overhead press": "Banded overhead press" },
+  bodyweight: { Squat: "Air squat", "Bench press": "Push-up", Deadlift: "Glute bridge", "Romanian deadlift": "Glute bridge", "Lat pulldown": "Bird dog",
+                "Dumbbell row": "Bird dog", "Pull-up": "Bird dog", "Step-up": "Reverse lunge", "Overhead press": "Pike push-up" },
+};
+const CORE = new Set(["Plank", "Dead bug", "Bird dog", "Glute bridge"]);
+
+/** The kit that counts is the biggest one they picked. */
+export function kit(answer: unknown): "gym" | "barbell" | "dumbbells" | "bands" | "bodyweight" {
+  const have = (list(answer) ?? []).map((x) => x.toLowerCase());
+  if (have.some((x) => /gym/.test(x))) return "gym";
+  if (have.some((x) => /barbell/.test(x))) return "barbell";
+  if (have.some((x) => /dumbbell/.test(x))) return "dumbbells";
+  if (have.some((x) => /band/.test(x))) return "bands";
+  return "bodyweight";
+}
+
+/** How hard the last set of a lift goes: from how much they have lifted. Not sure is the middle. */
+export function effort(level: unknown): "failure" | "short" | "ease" {
+  const l = String(level ?? "");
+  if (/years/i.test(l)) return "failure";
+  if (/^new/i.test(l)) return "ease";
+  return "short";
+}
+
+/** The words a focus is written in on This week, moves as "Squat 3x8". */
+export function firstWorkout(focus: string, tier: ReturnType<typeof kit>, eff: ReturnType<typeof effort>, heavy: boolean): string {
+  const swaps = SWAPS[tier];
+  const moves = (MOVES[focus] ?? MOVES["Full body"]).map((m) => swaps[m] ?? m).filter((m, i, a) => a.indexOf(m) === i);
+  const [sets, reps] = heavy && eff === "failure" ? [4, 6] : eff === "ease" ? [2, 10] : heavy ? [3, 8] : [3, 10];
+  return moves.map((m) => (m === "Plank" ? "Plank 3x30s" : CORE.has(m) ? `${m} 3x10` : `${m} ${sets}x${reps}`)).join(", ");
+}
+
+/** The split the intake builds, as This week's rows. */
+export function firstSplit(answers: Record<string, unknown>): { key: string; focus: string; workout: string; minutes: number }[] {
+  const goalRaw = String(answers.goal ?? "");
+  const goal = GOALS.find((g) => g.toLowerCase() === goalRaw.toLowerCase()) ?? GOALS[0];
+  const n = Math.max(2, Math.min(6, num(answers.days) ?? 3));
+  const minutes = num(String(answers.time ?? "").replace(/\s*min.*/i, "")) ?? 45;
+  const tier = kit(answers.gear);
+  const eff = effort(answers.level);
+  const heavy = /^lift/i.test(goal);
+  const plan = new Map(DAYS_FOR[n].map((k, i) => [k, focuses(goal, n)[i]]));
+  return DAY_KEYS.map((key) => {
+    const focus = plan.get(key);
+    if (!focus) return { key, focus: "Rest", workout: "Rest", minutes: 0 };
+    if (focus === "Cardio") return { key, focus, workout: /^just move/i.test(goal) ? "A brisk walk, easy pace" : FOCUS_WORKOUTS.Cardio.workout, minutes };
+    return { key, focus, workout: firstWorkout(focus, tier, eff, heavy), minutes };
+  });
+}
+
+/** The intake's Send: This week rewritten, the answers saved in first_plan. */
+export function applyFirst(store: TableStore, answers: Record<string, unknown>, clk: Clock): { store: TableStore; days: number; effort: ReturnType<typeof effort>; kit: ReturnType<typeof kit>; minutes: number } {
+  let out = store;
+  if (!out.tables[WEEK_TABLE]) {
+    const r = write(out, { op: "table", name: WEEK_TABLE, cols: [{ name: "Day", type: "text" }, { name: "Focus", type: "text" }, { name: "Workout", type: "text" },
+                                                                  { name: "Minutes", type: "number" }, { name: "Done", type: "bool" }] });
+    if (!r.error) out = r.store;
+  }
+  const split = firstSplit(answers);
+  for (const d of split) {
+    const r = write(out, { op: "put", table: WEEK_TABLE, key: d.key, values: { Day: DAY_NAMES[d.key].slice(0, 3), Focus: d.focus, Workout: d.workout, Minutes: d.minutes, Done: false } }, clk);
+    if (!r.error) out = r.store;
+  }
+  if (!out.tables[PLAN_TABLE]) {
+    const r = write(out, { op: "table", name: PLAN_TABLE, cols: [{ name: "Question", type: "text" }, { name: "Answer", type: "text" }] });
+    if (!r.error) out = r.store;
+  }
+  const eff = effort(answers.level);
+  const saved: [string, string][] = [["goal", "Goal"], ["days", "Days a week"], ["time", "Session length"], ["gear", "Gear"], ["level", "Experience"]];
+  for (const [k, label] of saved) {
+    const v = list(answers[k])?.join(", ") ?? NOT_SURE;
+    const r = write(out, { op: "put", table: PLAN_TABLE, key: k, values: { Question: label, Answer: v } }, clk);
+    if (!r.error) out = r.store;
+  }
+  const r = write(out, { op: "put", table: PLAN_TABLE, key: "effort", values: { Question: "Last set", Answer: eff === "failure" ? "To failure, safe stop" : eff === "short" ? "One rep short" : "Ease in" } }, clk);
+  if (!r.error) out = r.store;
+  const days = split.filter((d) => d.focus !== "Rest");
+  return { store: out, days: days.length, effort: eff, kit: kit(answers.gear), minutes: days[0]?.minutes ?? 45 };
+}
+
+/** What Arnold says when the week is built: what it is, how hard the last set goes, that it can change. */
+export function firstLine(r: { days: number; effort: ReturnType<typeof effort>; kit: ReturnType<typeof kit>; minutes: number }): string {
+  const gear = ({ gym: "a full gym", barbell: "a barbell", dumbbells: "dumbbells", bands: "bands", bodyweight: "just you" } as const)[r.kit];
+  const hard = r.effort === "failure"
+    ? "The last set of each lift goes to failure, with a safe stop: use the rack pins or a spotter on barbell work."
+    : r.effort === "short" ? "The last set of each lift stops one rep short. Ask me to push it later."
+    : "We ease in. Every set stays well short of failure.";
+  return `Your week is built: ${r.days} days, about ${r.minutes} minutes, ${gear}. ${hard} It's a starting point. Tap any day to change it.`;
+}
+
 // ---------- taps ----------
 
 /** A tap or words the runtime answers itself. */
@@ -296,7 +453,10 @@ export type WorkoutAsk =
   | { kind: "edit"; row: Row; day: string }
   | { kind: "runner"; row: Row; id: string; answers: Record<string, unknown> }
   | { kind: "logged"; row: Row; answers: Record<string, unknown> }
-  | { kind: "day"; row: Row; day: string; answers: Record<string, unknown> };
+  | { kind: "day"; row: Row; day: string; answers: Record<string, unknown> }
+  | { kind: "first"; row: Row; answers: Record<string, unknown> }
+  | { kind: "again"; row: Row }
+  | { kind: "skipfirst"; row: Row };
 
 const START = /^\s*(?:let'?s\s+)?(?:start|begin|run)\s+(?:(?:today'?s|my|the|a)\s+)?(?:workout|session|training)(?:\s+today)?\s*[.!]*\s*$/i;
 const LOG = /^\s*log\s+(?:(?:today'?s|my|a|the)\s+)?(?:workout|session)(?:\s+today)?\s*[.!]*\s*$/i;
@@ -346,6 +506,12 @@ export function workoutAsks(rows: Row[]): { asks: WorkoutAsk[]; rest: Row[] } {
         a = { kind: "logged", row: r, answers: v.plan as Record<string, unknown> };
       } else if (e.preset === "plan" && /^day-(mon|tue|wed|thu|fri|sat|sun)$/.test(e.id) && v.plan && typeof v.plan === "object") {
         a = { kind: "day", row: r, day: e.id.slice(4), answers: v.plan as Record<string, unknown> };
+      } else if (e.preset === "plan" && e.id === FIRST_ID && v.plan && typeof v.plan === "object") {
+        a = { kind: "first", row: r, answers: v.plan as Record<string, unknown> };
+      } else if (e.preset === "card" && e.id === FIRST_SKIP) {
+        a = { kind: "skipfirst", row: r };
+      } else if (e.preset === "card" && e.id === "split" && v.cta != null) {
+        a = { kind: "again", row: r };
       } else if (e.preset === "choose" && e.id === "edit-day" && typeof v.choice === "string") {
         const day = DAY_KEYS.find((d) => d === v.choice.toString().toLowerCase().slice(0, 3));
         if (day) a = { kind: "edit", row: r, day };

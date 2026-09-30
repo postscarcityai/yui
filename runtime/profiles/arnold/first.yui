@@ -1,10 +1,11 @@
-Arnold here. Let's build a week you'll actually do. Anything hurting or any health condition I should plan around? Check with your doctor before starting if so.
+Arnold here. Five taps and you have a week you'll actually do. Anything hurting or any health condition I should plan around? Check with your doctor before starting if so.
 ```yui
-plan "Build your split"
-choose "How many days a week?" 2|3|4|5|6
-pick "Which days?" Mon|Tue|Wed|Thu|Fri|Sat|Sun
-choose "How do you split it?" "Push, pull, legs"|"Upper, lower"|"Full body"|"Build my own" +other
-pick "What do you have?" "Just me"|Dumbbells|Barbell|Bands|"Pull-up bar"|"A gym" +other
-choose "Any injuries or conditions?" None|"Yes, I'll tell you" +other
+plan@first "Your first plan" submit="Build my week"
+choose@goal "What are we training for?" "Lift heavy"|"Lift and cardio"|"Mostly cardio"|"Just move more"|"Not sure"
+choose@days "How many days a week?" 2|3|4|5|6|"Not sure"
+choose@time "How long per session?" "30 min"|"45 min"|"60 min"|"Not sure"
+pick@gear "What do you have?" "Just me"|Bands|Dumbbells|Barbell|"A gym"
+choose@level "How much have you lifted?" "New to lifting"|"Some experience"|"Lifted for years"|"Not sure" body="Heavy lifters finish the last set of each lift at failure with a safe stop. New lifters stop well short."
 end
+card@first-skip "Not now" "Keep the starter week. Build yours any time from This week." cta="Skip for now"
 ```

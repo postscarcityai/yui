@@ -23,7 +23,7 @@ import { keyModel, providerLabel, PROVIDERS } from "./models.ts";
 import { type Clock, type TableStore, LIMITS, applyHeld, applyTables, asText, changed, clock, diff, draw, emptyStore, fromSeeds, pretty,
          readQueries, tablesPrompt } from "./tables.ts";
 import type { NativeAgent, OwnKey, Row, ScheduleItem } from "./types.ts";
-import { applyDay, applyLogged, applyRunner, editDayBody, logBody, loggedLine, progressShape, screenLines, session, splitDays, startReply,
+import { applyDay, applyFirst, applyLogged, applyRunner, editDayBody, firstBody, firstLine, logBody, loggedLine, progressShape, screenLines, session, splitDays, startReply,
          trains, workoutAsks, type Session, type WorkoutAsk } from "./workouts.ts";
 import { ACK, type MealFix, applyFix, fixTaps, logsMeals, mealTurn, runMealJob, spoken } from "./meals.ts";
 import { ADD_BODY, GOAL, GROCERIES, LOG_BODY, MEALS as MEAL_LOG, PLAN as MEAL_PLAN, addGroceries, applyMealFix, applyPlan, applySwap, ensureTools,
@@ -1189,8 +1189,20 @@ async function workoutTools(store: Store, agent: NativeAgent, asks: WorkoutAsk[]
       await say(editDayBody(tables, a.day), turn);
       continue;
     }
+    if (a.kind === "again") {
+      await say(firstBody(), turn);
+      continue;
+    }
+    if (a.kind === "skipfirst") {
+      await say("No problem. The starter week is on This week. Tap Build my split whenever you want yours.", turn);
+      continue;
+    }
     let text: string;
-    if (a.kind === "runner") {
+    if (a.kind === "first") {
+      const r = applyFirst(tables, a.answers, clk);
+      tables = r.store;
+      text = firstLine(r);
+    } else if (a.kind === "runner") {
       history ??= await store.history(agent.id, before, HISTORY_ROWS, null, chatOf(a.row));
       let s: Session | undefined = [...history].reverse().find((h) => h.sender === "agent" && h.meta?.native?.workout?.id === a.id)?.meta.native.workout;
       if (!s) {

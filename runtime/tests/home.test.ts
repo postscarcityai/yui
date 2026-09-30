@@ -100,16 +100,17 @@ test("the home prompt: a crew agent from before homes uses its starter's; custom
   assert.equal(homePrompt(crew().blank), null);
 });
 
-test("Arnold's kickoff builds a split: days, which days, how to split them (or his own), gear, injuries", () => {
+test("Arnold's kickoff is the first plan (YUI-217): goal, days, time, gear, experience, a softer Not sure, a Skip", () => {
   const a = crew().arnold;
   const screen = a.first.match(/```yui\n([\s\S]+?)\n```/)![1].split("\n");
-  assert.equal(screen[0], 'plan "Build your split"');
-  assert.match(screen[1], /^choose "How many days a week\?" 2\|3\|4\|5\|6$/);
-  assert.match(screen[2], /^pick "Which days\?" Mon\|Tue\|Wed\|Thu\|Fri\|Sat\|Sun$/);
-  assert.match(screen[3], /"Push, pull, legs"\|"Upper, lower"\|"Full body"\|"Build my own" \+other$/);
-  assert.match(screen[4], /^pick "What do you have\?"/);
-  assert.match(screen[5], /^choose "Any injuries or conditions\?"/);
+  assert.equal(screen[0], 'plan@first "Your first plan" submit="Build my week"');
+  assert.match(screen[1], /^choose@goal "What are we training for\?" "Lift heavy"\|"Lift and cardio"\|"Mostly cardio"\|"Just move more"\|"Not sure"$/);
+  assert.match(screen[2], /^choose@days "How many days a week\?" 2\|3\|4\|5\|6\|"Not sure"$/);
+  assert.match(screen[3], /^choose@time "How long per session\?"/);
+  assert.match(screen[4], /^pick@gear "What do you have\?"/);
+  assert.match(screen[5], /^choose@level "How much have you lifted\?"/);
   assert.equal(screen[6], "end");
+  assert.match(screen[7], /^card@first-skip .* cta="Skip for now"$/);
   assert.match(a.soul, /plan "Your days"/, "his own split: a choose per day");
   assert.match(a.soul, /~days "Mon Push" "Wed Pull"/, "and This week is patched from it");
 });

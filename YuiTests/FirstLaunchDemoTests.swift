@@ -89,7 +89,7 @@ import XCTest
         let t = model.turn(store.messages)
         XCTAssertEqual(t?.hello, true)
         XCTAssertNil(t?.ask)
-        XCTAssertEqual(t?.chunks.first?.line, "Arnold here. Let's build a week you'll actually do.")
+        XCTAssertEqual(t?.chunks.first?.line, "Arnold here. Five taps and you have a week you'll actually do.")
         XCTAssertEqual(t?.plan?.c.preset, "plan", "the plan's questions come last, one Send")
         XCTAssertEqual(t?.questions.count, 5, "days, which days, the split, gear, injuries (YUI-168)")
         // Back to the greeting, then opened again: it has been seen.

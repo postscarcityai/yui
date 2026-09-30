@@ -297,3 +297,82 @@ test("Progress: a streak of weeks, the best set, a chart per main lift (three at
   assert.equal(streak(store as any, clock(Date.parse("2026-10-07T12:00:00Z"), "UTC")), 3);
   assert.equal(streak(store as any, clock(Date.parse("2026-10-20T12:00:00Z"), "UTC")), 0);
 });
+
+// ---------- YUI-217: the first plan ----------
+
+test("first.yui carries the intake: one plan, five steps, a Skip card; every line parses and matches firstLines", async () => {
+  const { readFileSync } = await import("node:fs");
+  const { firstLines, firstBody } = await import("../src/workouts.ts");
+  const first = readFileSync(new URL("../profiles/arnold/first.yui", import.meta.url), "utf8");
+  assert.equal(fence(first), firstLines().join("\n"), "first.yui and firstLines drifted");
+  const ops = lines(firstBody());
+  assert.deepEqual(ops.filter((o: any) => o.op === "add" && o.in).map((o: any) => o.id), ["goal", "days", "time", "gear", "level"]);
+  assert.ok(ops.some((o: any) => o.id === "first-skip"), "Skip is there");
+  for (const step of ["goal", "days", "time", "level"]) {
+    assert.ok(ops.find((o: any) => o.id === step).props.options.includes("Not sure"), `${step} has a softer Not sure`);
+  }
+});
+
+test("the intake's Send builds the week: rows rewritten for the days, gear and effort; answers saved; pages redrawn; no model", async () => {
+  const { store, byHandle } = await freshYui();
+  const arnold = await byHandle("arnold");
+  const m = noModel();
+  tap(store, arnold.id, "first", "plan", { plan: { goal: "Lift heavy", days: "4", time: "60 min", gear: ["Dumbbells", "Bands"], level: "Lifted for years" } });
+  await runAgent(store, arnold.id, { provider, fetch: m.fetch, now: () => MON });
+  const t = (await store.tables(arnold.id)).tables;
+  const w = t.this_week.rows;
+  assert.deepEqual([w.mon.Focus, w.tue.Focus, w.wed.Focus, w.thu.Focus, w.fri.Focus, w.sat.Focus, w.sun.Focus], ["Upper", "Lower", "Rest", "Upper", "Lower", "Rest", "Rest"]);
+  assert.equal(w.mon.Minutes, 60);
+  assert.match(w.mon.Workout, /^Dumbbell bench press 4x6, Dumbbell row 4x6, Overhead press 4x6/);
+  assert.equal(w.wed.Workout, "Rest");
+  assert.equal(t.first_plan.rows.days.Answer, "4");
+  assert.equal(t.first_plan.rows.gear.Answer, "Dumbbells, Bands");
+  assert.equal(t.first_plan.rows.effort.Answer, "To failure, safe stop");
+  const body = lastReply(store, arnold.id).body;
+  assert.match(body, /^Your week is built: 4 days, about 60 minutes, dumbbells\. The last set of each lift goes to failure, with a safe stop/);
+  assert.match(fence(body), /stat@week-done "0 of 4"/);
+  assert.match(fence(body), /"Mon Upper" "Tue Lower" "Thu Upper" "Fri Lower"/);
+  lines(body);
+  // every move in the built week reads as sets to run
+  for (const d of ["mon", "tue", "thu", "fri"]) assert.ok(parseWorkout(w[d].Workout).length >= 3, d);
+  assert.equal(m.calls.length, 0);
+});
+
+test("Not sure and an empty pick fall back to a gentle plan: three days, 45 minutes, bodyweight, one rep short", async () => {
+  const { store, byHandle } = await freshYui();
+  const arnold = await byHandle("arnold");
+  const m = noModel();
+  tap(store, arnold.id, "first", "plan", { plan: { goal: "Not sure", days: "Not sure", time: "Not sure", level: "Not sure" } });
+  await runAgent(store, arnold.id, { provider, fetch: m.fetch, now: () => MON });
+  const t = (await store.tables(arnold.id)).tables;
+  const w = t.this_week.rows;
+  assert.deepEqual([w.mon.Focus, w.wed.Focus, w.fri.Focus, w.tue.Focus], ["Full body", "Full body", "Full body", "Rest"]);
+  assert.equal(w.mon.Minutes, 45);
+  assert.match(w.mon.Workout, /^Air squat 2x10|^Air squat 3x8/);
+  assert.equal(t.first_plan.rows.effort.Answer, "One rep short");
+  assert.match(lastReply(store, arnold.id).body, /just you\. The last set of each lift stops one rep short/);
+  assert.equal(m.calls.length, 0);
+});
+
+test("a new lifter eases in; cardio goals keep one lifting day; Skip keeps the starter week; Build my split reopens the intake", async () => {
+  const { store, byHandle } = await freshYui();
+  const arnold = await byHandle("arnold");
+  const m = noModel();
+  tap(store, arnold.id, "first-skip", "card", { cta: "Skip for now" });
+  await runAgent(store, arnold.id, { provider, fetch: m.fetch, now: () => MON });
+  assert.match(lastReply(store, arnold.id).body, /^No problem\. The starter week is on This week/);
+  assert.equal((await store.tables(arnold.id)).tables.this_week.rows.mon.Focus, "Full body A", "Skip changes nothing");
+  assert.equal((await store.tables(arnold.id)).tables.first_plan, undefined);
+
+  tap(store, arnold.id, "split", "card", { cta: "Build my split" });
+  await runAgent(store, arnold.id, { provider, fetch: m.fetch, now: () => MON });
+  assert.equal(lines(lastReply(store, arnold.id).body)[0].id, "first");
+
+  tap(store, arnold.id, "first", "plan", { plan: { goal: "Mostly cardio", days: "5", time: "30 min", gear: "A gym", level: "New to lifting" } });
+  await runAgent(store, arnold.id, { provider, fetch: m.fetch, now: () => MON });
+  const w = (await store.tables(arnold.id)).tables.this_week.rows;
+  assert.deepEqual([w.mon.Focus, w.tue.Focus, w.wed.Focus, w.fri.Focus, w.sat.Focus], ["Cardio", "Full body", "Cardio", "Cardio", "Cardio"]);
+  assert.match(w.tue.Workout, /^Squat 2x10, Bench press 2x10/);
+  assert.match(lastReply(store, arnold.id).body, /We ease in\./);
+  assert.equal(m.calls.length, 0);
+});

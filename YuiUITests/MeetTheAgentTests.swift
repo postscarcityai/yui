@@ -39,9 +39,10 @@ final class MeetTheAgentTests: XCTestCase {
         sleep(2)
         shot("01-arnold-hello")
         // Its questions come after, one Send.
-        let next = app.buttons["stage-next"]
-        if next.waitForExistence(timeout: 3) { next.tap() }
-        XCTAssertTrue(text("How many days a week?").waitForExistence(timeout: 8), "the hello's questions never came")
+        for _ in 0..<4 where !text("What are we training for?").waitForExistence(timeout: 1) {
+            if app.buttons["stage-next"].exists { app.buttons["stage-next"].tap() }
+        }
+        XCTAssertTrue(text("What are we training for?").waitForExistence(timeout: 8), "the hello's questions never came")
         sleep(1)
         shot("02-arnold-questions")
 
