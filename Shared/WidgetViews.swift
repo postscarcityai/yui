@@ -1,3 +1,4 @@
+import AppIntents
 import Charts
 import SwiftUI
 import WidgetKit
@@ -98,11 +99,11 @@ struct SavedScreenView: View {
     @ViewBuilder private func body(_ s: WidgetScreen, _ p: WidgetPart, _ look: WidgetLook) -> some View {
         let small = family == .systemSmall
         switch p.preset {
-        case "stat": StatBody(p: p, look: look, small: small)
+        case "stat": StatBody(s: s, p: p, look: look, small: small)
         case "chart": ChartBody(p: p, look: look, small: small)
-        case "list": ListBody(p: p, look: look, rows: small ? 3 : 4)
-        case "timer": TimerBody(p: p, look: look, small: small)
-        case "card": CardBody(p: p, look: look, small: small)
+        case "list": ListBody(s: s, p: p, look: look, rows: small ? 3 : 4)
+        case "timer": TimerBody(s: s, p: p, look: look, small: small)
+        case "card": CardBody(s: s, p: p, look: look, small: small)
         case "table": TableBody(p: p, look: look, rows: small ? 0 : 3)
         default: TimelineBody(s: s, look: look, rows: small ? 1 : 3)
         }
@@ -131,14 +132,20 @@ struct SavedScreenView: View {
             ChartBody(p: p, look: look, small: true, compact: true)
         case "list":
             let next = p.list("items").first { !p.ticked.contains($0) }
-            VStack(alignment: .leading, spacing: 0) {
+            let label = VStack(alignment: .leading, spacing: 0) {
                 Text(p.string("title") ?? s.name).font(.caption2.weight(.semibold))
                 Text(next ?? "All done").font(.headline).lineLimit(2)
+            }
+            // The next item is a button: one tap ticks it (Face ID first on a locked phone).
+            if p.flag("check"), let next {
+                Button(intent: WidgetTickIntent(agent: s.agentID, screen: s.name, part: p.ylID, item: next)) { label }.buttonStyle(.plain)
+            } else {
+                label
             }
         case "timer":
             VStack(alignment: .leading, spacing: 0) {
                 Text(p.string("label") ?? "Timer").font(.caption2.weight(.semibold))
-                Text(TimerBody.clock(p)).font(.system(size: 24, weight: .bold, design: look.design).monospacedDigit())
+                TimerBody.time(p, size: 24, look: look)
             }
         case "card":
             VStack(alignment: .leading, spacing: 0) {
@@ -216,8 +223,30 @@ struct SavedScreenView: View {
 
 // MARK: Presets
 
+/// A `cta` on a stat or card, as a button on the widget (spec section 5): the agent gets `{cta, saved, via: widget}`.
+struct WidgetCTA: View {
+    let s: WidgetScreen, p: WidgetPart, look: WidgetLook
+
+    /// Only a button that sends something: a card whose `cta` has a `url` opens a link, and a widget cannot.
+    static func label(_ p: WidgetPart) -> String? {
+        guard p.props["url"] == nil, p.props["open"] == nil, let c = p.string("cta"), !c.isEmpty else { return nil }
+        return c
+    }
+
+    var body: some View {
+        if let label = Self.label(p) {
+            Button(intent: WidgetCtaIntent(agent: s.agentID, screen: s.name, part: p.ylID, label: label)) {
+                Text(label).font(look.font(12, .heavy)).foregroundStyle(look.onAccent).lineLimit(1)
+                    .padding(.horizontal, 10).padding(.vertical, 5)
+                    .background(look.accent, in: Capsule())
+            }
+            .buttonStyle(.plain)
+        }
+    }
+}
+
 struct StatBody: View {
-    let p: WidgetPart, look: WidgetLook, small: Bool
+    let s: WidgetScreen, p: WidgetPart, look: WidgetLook, small: Bool
 
     static func value(_ p: WidgetPart, unit: Bool = true) -> String {
         let v = p.string("value") ?? "–"
@@ -253,6 +282,7 @@ struct StatBody: View {
                 .chartXAxis(.hidden).chartYAxis(.hidden).chartYScale(domain: .automatic(includesZero: false))
                 .frame(maxHeight: 40)
             }
+            WidgetCTA(s: s, p: p, look: look)
         }
     }
 }
@@ -297,7 +327,7 @@ struct ChartBody: View {
 }
 
 struct ListBody: View {
-    let p: WidgetPart, look: WidgetLook, rows: Int
+    let s: WidgetScreen, p: WidgetPart, look: WidgetLook, rows: Int
 
     var body: some View {
         let items = p.list("items")
@@ -305,12 +335,20 @@ struct ListBody: View {
             if let t = p.string("title") { Text(t).font(look.font(13, .heavy)).foregroundStyle(look.inkSoft).lineLimit(1) }
             ForEach(Array(items.prefix(rows).enumerated()), id: \.offset) { i, item in
                 let done = p.ticked.contains(item)
-                HStack(spacing: 6) {
+                let row = HStack(spacing: 6) {
                     Image(systemName: p.flag("check") ? (done ? "checkmark.circle.fill" : "circle") : (p.flag("num") ? "\(i + 1).circle" : "circle.fill"))
                         .font(.system(size: p.flag("check") || p.flag("num") ? 14 : 5))
                         .foregroundStyle(done ? look.mint : look.accent)
                     Text(item).font(look.font(13, .semibold)).foregroundStyle(done ? look.inkSoft : look.ink)
                         .strikethrough(done).lineLimit(1)
+                    Spacer(minLength: 0)
+                }
+                // Each row of a checklist is a toggle: it flips on the widget at once, then the agent hears it.
+                if p.flag("check") {
+                    Button(intent: WidgetTickIntent(agent: s.agentID, screen: s.name, part: p.ylID, item: item)) { row.contentShape(Rectangle()) }
+                        .buttonStyle(.plain)
+                } else {
+                    row
                 }
             }
             if items.count > rows {
@@ -321,7 +359,7 @@ struct ListBody: View {
 }
 
 struct TimerBody: View {
-    let p: WidgetPart, look: WidgetLook, small: Bool
+    let s: WidgetScreen, p: WidgetPart, look: WidgetLook, small: Bool
 
     /// The first phase of the timer, as it reads before it starts.
     static func clock(_ p: WidgetPart) -> String {
@@ -329,19 +367,47 @@ struct TimerBody: View {
         return TimerActivityAttributes.clock(p.number("work") ?? 60, up: false)
     }
 
+    /// The clock: counting on its own while the timer runs (one entry, no reloads), still when it does not.
+    @ViewBuilder static func time(_ p: WidgetPart, size: Double, look: WidgetLook) -> some View {
+        let font = look.font(size, .heavy).monospacedDigit()
+        if p.liveKey != nil, let end = p.endsAt, end > .now {
+            Text(timerInterval: Date.now...end, countsDown: true).font(font)
+        } else if p.liveKey != nil {
+            Text(p.endsAt == nil ? "Paused" : "0:00").font(font)
+        } else {
+            Text(clock(p)).font(font)
+        }
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(p.string("label") ?? "Timer").font(look.font(13, .heavy)).foregroundStyle(look.inkSoft).lineLimit(1)
-            Text(Self.clock(p)).font(look.font(small ? 38 : 44, .heavy).monospacedDigit()).foregroundStyle(look.ink)
+            Self.time(p, size: small ? 38 : 44, look: look).foregroundStyle(look.ink)
             if let rounds = p.number("rounds"), rounds > 1 {
                 Text("\(Int(rounds)) rounds").font(look.font(12, .semibold)).foregroundStyle(look.inkSoft)
             }
+            button
         }
+    }
+
+    /// Start, Pause, Resume. Start and Pause run in the app (a Live Activity intent): the lock screen and the
+    /// Dynamic Island carry the clock from then on.
+    @ViewBuilder private var button: some View {
+        if let key = p.liveKey {
+            Button(intent: TimerToggleIntent(id: key)) { pill(p.endsAt == nil ? "Resume" : "Pause") }.buttonStyle(.plain)
+        } else {
+            Button(intent: WidgetTimerStartIntent(agent: s.agentID, screen: s.name, part: p.ylID)) { pill("Start") }.buttonStyle(.plain)
+        }
+    }
+
+    private func pill(_ text: String) -> some View {
+        Text(text).font(look.font(12, .heavy)).foregroundStyle(look.onAccent)
+            .padding(.horizontal, 12).padding(.vertical, 5).background(look.accent, in: Capsule())
     }
 }
 
 struct CardBody: View {
-    let p: WidgetPart, look: WidgetLook, small: Bool
+    let s: WidgetScreen, p: WidgetPart, look: WidgetLook, small: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 3) {
@@ -349,6 +415,7 @@ struct CardBody: View {
             Text(p.string("title") ?? "").font(look.font(small ? 16 : 18, .heavy)).foregroundStyle(look.ink).lineLimit(small ? 3 : 2)
             if !small, let b = p.string("body") { Text(b).font(look.font(13, .medium)).foregroundStyle(look.inkSoft).lineLimit(2) }
             if let sub = p.string("sub") { Text(sub).font(look.font(12, .semibold)).foregroundStyle(look.inkSoft).lineLimit(1) }
+            WidgetCTA(s: s, p: p, look: look)
         }
     }
 }

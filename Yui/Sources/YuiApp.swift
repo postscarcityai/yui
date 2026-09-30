@@ -14,6 +14,9 @@ struct YuiApp: App {
         _account = State(initialValue: account)
         _agents = State(initialValue: AgentStore(account: account))
         LiveTimer.shared.setUp()
+        // Siri and widget buttons run intents in this process: they use this account, never a second one.
+        WidgetApp.account = account
+        WidgetApp.applyTicks()
     }
 
     var body: some Scene {
@@ -55,7 +58,10 @@ struct YuiApp: App {
             .task(id: "\(account.session?.userID ?? "")|\(agents.agents.isEmpty)") {
                 // The demo account (screenshots) never asks for notifications.
                 guard account.isSignedIn, account.session?.userID != "demo", !agents.agents.isEmpty else { return }
-                account.willSignOut = { await PushCenter.shared.stop() }
+                account.willSignOut = { [account] in
+                    await PushCenter.shared.stop()
+                    await WidgetApp.signOut(account)
+                }
                 await PushCenter.shared.start(account: account)
             }
             // Speed rows (YUI-102) go out with this account's token; the demo account sends none.
@@ -88,7 +94,10 @@ struct YuiApp: App {
             // Open on a thread: its answers show there, no push (YUI-24).
             .onChange(of: scenePhase, initial: true) {
                 PushCenter.shared.setForeground(scenePhase == .active)
-                if scenePhase == .active { Outbox.shared.kick() }
+                if scenePhase == .active {
+                    Outbox.shared.kick()
+                    if account.isSignedIn { Task { await WidgetApp.foreground(account) } }
+                }
             }
             // A grant was revoked (silent push, YUI-97): the list drops the agent now.
             .onChange(of: PushCenter.shared.listChanged) {

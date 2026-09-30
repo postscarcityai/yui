@@ -56,6 +56,8 @@ targets:
         YuiCommit: $(YUI_COMMIT)
         YuiBuildDate: $(YUI_BUILD_DATE)
         YuiChannelGuide: $(YUI_CHANNEL_GUIDE)
+        # The keychain group the widget token lives in (YUI-40); the widget reads the same key.
+        YuiKeychainGroup: $(AppIdentifierPrefix)com.yuigui.shared
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
         # A running timer on the lock screen and in the Dynamic Island (YUI-30).
         NSSupportsLiveActivities: true
@@ -94,6 +96,7 @@ targets:
       path: YuiWidgets/Info.plist
       properties:
         CFBundleDisplayName: Yui
+        YuiKeychainGroup: $(AppIdentifierPrefix)com.yuigui.shared
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         NSExtension:

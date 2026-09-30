@@ -577,6 +577,12 @@ private struct SpeedSwitch: View {
                 Text("Speed").font(theme.font(theme.type.body, .bold)).foregroundStyle(c.ink)
                 Text("Log every timing and show the frame rate. Dev builds only.")
                     .font(theme.font(theme.type.caption)).foregroundStyle(c.inkSoft)
+                // The widget reload budget (YUI-40): timelines the widgets were asked for today, by saved screen.
+                let reloads = WidgetBudget.today()
+                Text(reloads.isEmpty ? "Widget reloads today: none" : "Widget reloads today: " + reloads.sorted { $0.key < $1.key }
+                    .map { "\($0.key.split(separator: "/").last ?? "") \($0.value)" }.joined(separator: ", "))
+                    .font(theme.font(theme.type.caption)).foregroundStyle(c.inkSoft)
+                    .accessibilityIdentifier("widgetReloads")
             }
         }
         .tint(c.accent)

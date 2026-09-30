@@ -1,4 +1,5 @@
 import AppIntents
+import CoreSpotlight
 import Foundation
 import YuiLines
 
@@ -20,6 +21,10 @@ struct WidgetPart: Codable, Equatable, Sendable {
     var props: [String: YLValue]
     /// A checklist's ticked items (kept on the phone, YUI-183).
     var ticked: [String] = []
+    /// A timer started from the widget or Siri: the Live Activity's key while it exists, and when the
+    /// running phase ends (nil while paused). The widget shows Pause and a counting clock from these.
+    var liveKey: String?
+    var endsAt: Date?
 
     func string(_ k: String) -> String? {
         switch props[k] {
@@ -94,11 +99,56 @@ enum WidgetStore {
     static func screen(agent: String, name: String) -> WidgetScreen? {
         read().screens.first { $0.agentID == agent && $0.name == name }
     }
+
+    /// A widget row was tapped: flips the item in the copy (spec section 5, "right away on the widget") and
+    /// returns the new state, or nil when the screen, list or item is not there.
+    static func toggleTick(agent: String, screen: String, part: String, item: String) -> (screen: WidgetScreen, part: WidgetPart, checked: Bool)? {
+        var out: (WidgetScreen, WidgetPart, Bool)?
+        update { snap in
+            guard let si = snap.screens.firstIndex(where: { $0.agentID == agent && $0.name == screen }),
+                  let pi = snap.screens[si].parts.firstIndex(where: { $0.ylID == part && $0.preset == "list" }),
+                  snap.screens[si].parts[pi].list("items").contains(item) else { return }
+            var on = Set(snap.screens[si].parts[pi].ticked)
+            let checked = !on.contains(item)
+            if checked { on.insert(item) } else { on.remove(item) }
+            snap.screens[si].parts[pi].ticked = on.sorted()
+            out = (snap.screens[si], snap.screens[si].parts[pi], checked)
+        }
+        return out
+    }
+}
+
+/// A tick made on the widget, for the app to apply to its own list ticks the next time it runs (the
+/// widget process cannot reach the app's UserDefaults).
+struct WidgetTick: Codable, Equatable, Sendable {
+    var agentID: String
+    var partID: String
+    var item: String
+    var checked: Bool
+    var at: Date
+}
+
+enum WidgetTickLog {
+    private static var file: URL? { WidgetGroup.url?.appending(path: "yui-widget-ticks.json") }
+
+    static func add(_ t: WidgetTick) {
+        var all = take(clear: false)
+        all.append(t)
+        guard let file, let data = try? JSONEncoder().encode(Array(all.suffix(200))) else { return }
+        try? data.write(to: file, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+    }
+
+    /// Everything waiting, oldest first; the app clears it once applied.
+    static func take(clear: Bool = true) -> [WidgetTick] {
+        guard let file, let data = try? Data(contentsOf: file), let all = try? JSONDecoder().decode([WidgetTick].self, from: data) else { return [] }
+        if clear { try? FileManager.default.removeItem(at: file) }
+        return all
+    }
 }
 
 // MARK: Entities (names only, YUI-40 step 2)
 
-struct AgentEntity: AppEntity {
+struct AgentEntity: AppEntity, IndexedEntity {
     static let typeDisplayRepresentation: TypeDisplayRepresentation = "Agent"
     static let defaultQuery = AgentQuery()
     var id: String
@@ -122,7 +172,7 @@ struct AgentQuery: EntityQuery, EntityStringQuery {
     }
 }
 
-struct ScreenEntity: AppEntity {
+struct ScreenEntity: AppEntity, IndexedEntity {
     static let typeDisplayRepresentation: TypeDisplayRepresentation = "Saved screen"
     static let defaultQuery = ScreenQuery()
     var id: String
@@ -155,5 +205,38 @@ struct ScreenQuery: EntityQuery, EntityStringQuery {
     }
     private func all() -> [ScreenEntity] {
         WidgetStore.read().screens.map { ScreenEntity(id: $0.id, agentID: $0.agentID, agentName: $0.agentName, name: $0.name) }
+    }
+}
+
+/// A saved screen that holds a timer, for "Start Tabata in Yui" (spec section 6). The id is agent/screen/part.
+struct TimerEntity: AppEntity {
+    static let typeDisplayRepresentation: TypeDisplayRepresentation = "Timer"
+    static let defaultQuery = TimerQuery()
+    var id: String
+    var agentID: String
+    var screen: String
+    var part: String
+    var name: String
+    var agentName: String
+    var displayRepresentation: DisplayRepresentation {
+        DisplayRepresentation(title: "\(name)", subtitle: "\(agentName)")
+    }
+}
+
+struct TimerQuery: EntityQuery, EntityStringQuery {
+    func entities(for identifiers: [String]) async throws -> [TimerEntity] { all().filter { identifiers.contains($0.id) } }
+    func suggestedEntities() async throws -> [TimerEntity] { all() }
+    func entities(matching string: String) async throws -> [TimerEntity] {
+        all().filter { $0.name.localizedCaseInsensitiveContains(string) || $0.screen.localizedCaseInsensitiveContains(string) }
+    }
+    private func all() -> [TimerEntity] { Self.timers(in: WidgetStore.read()) }
+
+    static func timers(in snap: WidgetSnapshot) -> [TimerEntity] {
+        snap.screens.flatMap { s in
+            s.parts.filter { $0.preset == "timer" }.map { p in
+                TimerEntity(id: "\(s.id)/\(p.ylID)", agentID: s.agentID, screen: s.name, part: p.ylID,
+                            name: p.string("label") ?? s.name, agentName: s.agentName)
+            }
+        }
     }
 }

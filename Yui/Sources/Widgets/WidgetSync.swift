@@ -24,12 +24,29 @@ enum WidgetSync {
         var changed = false
         WidgetStore.update { snap in
             let old = snap.screens.filter { $0.agentID == agent.id }
+            // A timer started from the widget or Siri keeps running through a republish.
+            var screens = screens
+            for i in screens.indices {
+                for j in screens[i].parts.indices {
+                    guard let was = old.first(where: { $0.name == screens[i].name })?.parts.first(where: { $0.ylID == screens[i].parts[j].ylID }) else { continue }
+                    screens[i].parts[j].liveKey = was.liveKey
+                    screens[i].parts[j].endsAt = was.endsAt
+                }
+            }
             guard old != screens else { return }
             snap.screens.removeAll { $0.agentID == agent.id }
             snap.screens += screens
             changed = true
         }
-        if changed { WidgetCenter.shared.reloadAllTimelines() }
+        if changed {
+            WidgetCenter.shared.reloadAllTimelines()
+            // Spotlight and Siri know the new names, and the relay the new lasting ids.
+            Task {
+                await WidgetIndex.reindex(WidgetStore.read())
+                YuiShortcuts.updateAppShortcutParameters()
+                if let account = WidgetApp.account { await WidgetRegistry.sync(account: account) }
+            }
+        }
     }
 
     /// Signed out, or an agent removed: its copies go with it.

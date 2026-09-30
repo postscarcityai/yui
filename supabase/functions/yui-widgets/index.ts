@@ -13,6 +13,9 @@
 //       A button on the widget (a tick, Start, a cta): the event row a tap in the thread would
 //       send, with "via": "widget" in it. Only for an agent the phone has pinned a screen of.
 //       A resend of the same id is a 200 (it landed before).
+//   {action: "push_token", push_token, environment?}
+//       The widgets' own WidgetKit push token changed (one was added or removed). Rows the app
+//       already registered take it at once; the app registers the rest when it next opens.
 //   {action: "read", agent_id, since?}
 //       The agent's rows newer than `since` that carry patches or saves, oldest first, so the
 //       widget can catch up after a push. Only for a pinned agent.
@@ -59,10 +62,12 @@ Deno.serve(async (req) => {
         return await register(userId, body);
       }
       case "event":
+      case "push_token":
       case "read": {
         const token = bearer(req);
         if (!token.startsWith(WIDGET_PREFIX)) return json({ error: "unauthorized" }, 401);
         const hash = await sha256Hex(token);
+        if (body.action === "push_token") return await pushToken(hash, body);
         return body.action === "event" ? await event(hash, body) : await read(hash, body);
       }
       default:
@@ -141,6 +146,20 @@ async function pinned(db: DB, hash: string, agentId: unknown): Promise<{ user_id
   if (typeof agentId !== "string" || !UUID.test(agentId)) return null;
   const { data } = await db.from("yui_widgets").select("user_id").eq("token_hash", hash).eq("agent_id", agentId).limit(1);
   return data?.[0] ?? null;
+}
+
+async function pushToken(hash: string, b: Body): Promise<Response> {
+  const db = admin();
+  const push = typeof b.push_token === "string" ? b.push_token.toLowerCase() : "";
+  if (!TOKEN.test(push)) return json({ error: "invalid_token" }, 400);
+  const environment = b.environment ?? "production";
+  if (environment !== "production" && environment !== "sandbox") return json({ error: "invalid_environment" }, 400);
+  const { data, error } = await db.from("yui_widgets")
+    .update({ push_token: push, environment, last_error: null, updated_at: new Date().toISOString() })
+    .eq("token_hash", hash).select("id");
+  if (error) throw error;
+  if (!data?.length) return json({ error: "not_found" }, 404);
+  return json({ ok: true, rows: data.length });
 }
 
 async function event(hash: string, b: Body): Promise<Response> {

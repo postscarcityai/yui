@@ -9,14 +9,6 @@ import YuiLines
 // Drawn from the app group copy the app keeps; the timeline policy is .never, so a
 // reload only ever has a reason (the app changed the copy, a push, a widget button).
 
-struct SavedScreenConfig: WidgetConfigurationIntent {
-    static let title: LocalizedStringResource = "Saved screen"
-    static let description = IntentDescription("Pick one of your agent's saved screens.")
-
-    @Parameter(title: "Saved screen") var screen: ScreenEntity?
-    @Parameter(title: "Hide on the lock screen until unlocked", default: true) var hideOnLock: Bool
-}
-
 struct SavedScreenProvider: AppIntentTimelineProvider {
     func placeholder(in context: Context) -> SavedScreenEntry {
         SavedScreenEntry(date: .now, screen: Self.sample, hideOnLock: false)
@@ -28,7 +20,15 @@ struct SavedScreenProvider: AppIntentTimelineProvider {
     }
 
     func timeline(for config: SavedScreenConfig, in context: Context) async -> Timeline<SavedScreenEntry> {
-        Timeline(entries: [entry(config)], policy: .never)
+        var e = entry(config)
+        if let s = e.screen, !context.isPreview {
+            WidgetBudget.log(screen: s.id)
+            // Woken by a push (or the app, or a button): catch up with what the agent patched since the copy.
+            e = SavedScreenEntry(date: .now, screen: await WidgetCatchUp.refresh(s), hideOnLock: e.hideOnLock)
+            // A tick made offline goes out with this reload too.
+            await WidgetQueue.flush()
+        }
+        return Timeline(entries: [e], policy: .never)
     }
 
     private func entry(_ c: SavedScreenConfig) -> SavedScreenEntry {
@@ -45,15 +45,31 @@ struct SavedScreenProvider: AppIntentTimelineProvider {
 }
 
 struct SavedScreenWidget: Widget {
-    static let kind = "YuiSavedScreen"
+    static let kind = WidgetKinds.savedScreen
 
     var body: some WidgetConfiguration {
         AppIntentConfiguration(kind: Self.kind, intent: SavedScreenConfig.self, provider: SavedScreenProvider()) { entry in
             SavedScreenView(entry: entry)
                 .containerBackground(for: .widget) { SavedScreenBackground(screen: entry.screen) }
         }
+        .pushHandler(YuiWidgetPush.self)
         .configurationDisplayName("Saved screen")
         .description("A screen your agent saved, kept current.")
         .supportedFamilies([.systemSmall, .systemMedium, .accessoryRectangular, .accessoryCircular, .accessoryInline])
+    }
+}
+
+/// The WidgetKit push token (spec section 3): the app registers it with the pins, and a change while the app is
+/// closed goes straight to the rows that are already registered.
+struct YuiWidgetPush: WidgetPushHandler {
+    func pushTokenDidChange(_ pushInfo: WidgetPushInfo, widgets: [WidgetInfo]) {
+        let token = pushInfo.token.map { String(format: "%02x", $0) }.joined()
+        WidgetSecrets.pushToken = token
+        #if DEBUG
+        let environment = "sandbox"
+        #else
+        let environment = "production"
+        #endif
+        Task { await WidgetRelay.pushToken(token, environment: environment) }
     }
 }

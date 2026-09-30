@@ -29,6 +29,8 @@ final class PushCenter: NSObject {
     var pendingSettings: String?
     /// `yui://agent/<id>/thread?show=<name>` (a widget tap, YUI-40): the saved screen to put on the stage once that thread is up.
     var pendingShow: String?
+    /// `yui://agent/<id>/thread?talk=1` (the Talk to Yui control, YUI-40): the thread opens with hands-free voice on.
+    var pendingTalk = false
     /// `yui://snap` (YUI-166): hold to snap and say, in the thread on screen. ChatView consumes it.
     var pendingSnap = false
     /// Bumped by a silent push that says the agent list changed (a revoke, YUI-97).
@@ -176,6 +178,7 @@ final class PushCenter: NSObject {
         }
         guard let id = Self.agentTarget(url) else { return false }
         pendingShow = Self.showName(url)
+        pendingTalk = Self.talks(url)
         pendingAgentID = id
         return true
     }
@@ -192,6 +195,11 @@ final class PushCenter: NSObject {
     /// The saved screen a widget link names (`?show=`). The app checks it against its own shelf before it opens.
     nonisolated static func showName(_ url: URL) -> String? {
         URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first { $0.name == "show" }?.value
+    }
+
+    /// `?talk=1`: the Talk to Yui control's link.
+    nonisolated static func talks(_ url: URL) -> Bool {
+        URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.contains { $0.name == "talk" && $0.value == "1" } ?? false
     }
 
     /// A hand-off link jumps the phone when its card lands live; `yui://agent/<id>/thread` does not.

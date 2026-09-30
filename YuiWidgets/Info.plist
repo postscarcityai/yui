@@ -25,5 +25,7 @@
 		<key>NSExtensionPointIdentifier</key>
 		<string>com.apple.widgetkit-extension</string>
 	</dict>
+	<key>YuiKeychainGroup</key>
+	<string>$(AppIdentifierPrefix)com.yuigui.shared</string>
 </dict>
 </plist>

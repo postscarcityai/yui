@@ -7,5 +7,6 @@ struct YuiWidgets: WidgetBundle {
     var body: some Widget {
         TimerLiveActivity()
         SavedScreenWidget()
+        TalkControl()
     }
 }

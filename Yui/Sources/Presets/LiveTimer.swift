@@ -55,6 +55,7 @@ final class LiveTimer {
     func setUp() {
         TimerIntentBridge.toggle = { [weak self] in self?.toggle($0) }
         TimerIntentBridge.end = { [weak self] in self?.end($0) }
+        WidgetTimerBridge.start = { [weak self] agent, screen, part in self?.startSaved(agent: agent, screen: screen, part: part) }
         let current = activity?.id
         Task {
             for a in Activity<TimerActivityAttributes>.activities where a.id != current {
@@ -65,6 +66,11 @@ final class LiveTimer {
 
     /// The timer view calls this after Start, Pause and Resume.
     func sync(_ run: TimerRun, key: String, _ c: YLComponent, theme: YuiTheme, scheme: ColorScheme) {
+        sync(run, key: key, c, palette: theme.palette(for: scheme), design: theme.type.design)
+    }
+
+    /// The same, with the agent's look as it was saved (a widget's Start or Siri has no thread on screen).
+    func sync(_ run: TimerRun, key: String, _ c: YLComponent, palette: YuiTheme.Palette, design: String) {
         if key != self.key {
             guard run.running else { return }
             close(.immediate)
@@ -74,17 +80,33 @@ final class LiveTimer {
             sound = c.string("sound") != "off"
             start(TimerActivityAttributes(
                 id: key, label: c.string("label") ?? (plan.up ? "Stopwatch" : "Timer"),
-                rounds: plan.rounds, up: plan.up, palette: theme.palette(for: scheme), design: theme.type.design))
+                rounds: plan.rounds, up: plan.up, palette: palette, design: design))
         } else {
             plan = c.timerPlan
             if activity == nil, run.running {
                 // Taken off the lock screen, then resumed: put it back.
                 start(TimerActivityAttributes(
                     id: key, label: c.string("label") ?? (plan.up ? "Stopwatch" : "Timer"),
-                    rounds: plan.rounds, up: plan.up, palette: theme.palette(for: scheme), design: theme.type.design))
+                    rounds: plan.rounds, up: plan.up, palette: palette, design: design))
             }
         }
         refresh()
+    }
+
+    /// Start on a pinned timer, or "Start Tabata in Yui": the saved timer runs as a Live Activity with no thread
+    /// on screen, and the agent hears `started` like it would from the widget button (spec sections 5 and 6).
+    func startSaved(agent: String, screen: String, part: String) {
+        guard let s = WidgetStore.screen(agent: agent, name: screen),
+              let p = s.parts.first(where: { $0.ylID == part && $0.preset == "timer" }) else { return }
+        let key = WidgetLive.key(agent: agent, screen: screen, part: part)
+        let c = YLComponent(serial: 0, ylID: p.ylID, preset: "timer", screen: "1", props: p.props, line: "")
+        let run = TimerRun()
+        run.started = true
+        run.since = .now
+        let dark = UITraitCollection.current.userInterfaceStyle == .dark
+        sync(run, key: key, c, palette: s.palette(dark: dark), design: s.design)
+        WidgetQueue.add(WidgetEvent.make(screen: s, part: p, value: ["started": .bool(true)]))
+        Task { await WidgetQueue.flush() }
     }
 
     /// Reset in the app: the timer is back at zero, so it leaves the lock screen.
@@ -143,6 +165,7 @@ final class LiveTimer {
 
     private func push(_ state: TimerActivityAttributes.ContentState) {
         shown = state
+        WidgetLive.report(key: key, state: state)
         guard let activity else { return }
         if state.phase == .done { self.activity = nil }
         let id = activity.id
@@ -151,6 +174,7 @@ final class LiveTimer {
 
     private func close(_ policy: ActivityUIDismissalPolicy) {
         stopWatching()
+        WidgetLive.clear(key: key)
         if let id = activity?.id {
             send(id, nil, end: true, policy: policy)
         }
