@@ -136,6 +136,7 @@ struct ShelfBar: View {
     let screens: [SavedScreen]
     let open: (String) -> Void
     let remove: (String) -> Void
+    var pin: ((String) -> Void)?
     @Environment(\.yuiTheme) private var theme
     @Environment(\.colorScheme) private var scheme
 
@@ -155,6 +156,7 @@ struct ShelfBar: View {
                     }
                     .buttonStyle(.plain)
                     .contextMenu {
+                        if let pin { Button("Pin as widget", systemImage: "rectangle.on.rectangle") { pin(s.name) } }
                         Button("Remove", systemImage: "minus.circle", role: .destructive) { remove(s.name) }
                     }
                     .accessibilityLabel("Open \(s.name)")

@@ -62,6 +62,10 @@ struct YuiApp: App {
             .task(id: account.session?.userID ?? "") { PerfMonitor.shared.signedIn(account.isSignedIn ? account : nil) }
             // Dev builds with Speed on: the last keystroke and the frame rate (PERF.md section 4).
             .overlay(alignment: .topTrailing) { SpeedOverlay() }
+            #if DEBUG
+            // -yuiWidgetsGallery: the widget views at their sizes, drawn from the app group copy (YUI-40 shots and tests).
+            .modifier(WidgetGalleryOverlay())
+            #endif
             // Messages that didn't make it out (no network, app killed) go now (YUI-28).
             .task(id: account.session?.userID ?? "") {
                 guard account.isSignedIn, account.session?.userID != "demo" else { return }

@@ -584,12 +584,18 @@ final class ChatStore {
     private func file(_ ops: [ShelfOp], at: Date) {
         var changed = false
         for op in ops { changed = shelf.apply(op, at: at) || changed }
-        if changed, let agentID = agent?.id { shelf.store(agentID: agentID) }
+        if changed, let agentID = agent?.id { shelf.store(agentID: agentID); publishWidgets() }
     }
 
     /// A patch to an id that lasts reaches the shelf's copies of it (YUI-75).
     private func shelve(_ node: YLNode, at: Date) {
-        if shelf.patch(node, at: at), let agentID = agent?.id { shelf.store(agentID: agentID) }
+        if shelf.patch(node, at: at), let agentID = agent?.id { shelf.store(agentID: agentID); publishWidgets() }
+    }
+
+    /// The widget's copy of this agent's saved screens (YUI-40).
+    func publishWidgets() {
+        guard let agent else { return }
+        WidgetSync.publish(agent: agent, shelf: shelf)
     }
 
     /// A tap on the shelf: the saved screen opens on the stage, fresh, with no turn.
@@ -605,7 +611,7 @@ final class ChatStore {
     /// Held on the shelf, Remove. Only a later save brings it back.
     func unshelve(_ name: String) {
         withAnimation(spring) { shelf.remove(name) }
-        if let agentID = agent?.id { shelf.store(agentID: agentID) }
+        if let agentID = agent?.id { shelf.store(agentID: agentID); publishWidgets() }
     }
 
     // MARK: The drawer's lists (YUI-86, spec YL.md section 5, The drawer)
@@ -750,6 +756,7 @@ final class ChatStore {
         client = agent.map { ThreadClient(account: account, agentID: $0.id) }
         self.account = account
         shelf = agent.map { Shelf.load(agentID: $0.id) } ?? Shelf()
+        publishWidgets()
         menu = agent.map { AgentMenu.load(agentID: $0.id) } ?? AgentMenu()
         resetThread()
         guard client != nil else { return }

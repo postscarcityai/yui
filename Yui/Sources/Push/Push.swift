@@ -27,6 +27,8 @@ final class PushCenter: NSObject {
     var pendingMessageID: String?
     /// Settings to open from a link (`yui://settings/search`, YUI-142): the section, "" for the top. ChatView consumes it.
     var pendingSettings: String?
+    /// `yui://agent/<id>/thread?show=<name>` (a widget tap, YUI-40): the saved screen to put on the stage once that thread is up.
+    var pendingShow: String?
     /// `yui://snap` (YUI-166): hold to snap and say, in the thread on screen. ChatView consumes it.
     var pendingSnap = false
     /// Bumped by a silent push that says the agent list changed (a revoke, YUI-97).
@@ -173,6 +175,7 @@ final class PushCenter: NSObject {
             return true
         }
         guard let id = Self.agentTarget(url) else { return false }
+        pendingShow = Self.showName(url)
         pendingAgentID = id
         return true
     }
@@ -184,6 +187,11 @@ final class PushCenter: NSObject {
         guard url.scheme == "yui", url.host() == "agent", let id = url.pathComponents.dropFirst().first,
               !id.isEmpty else { return nil }
         return id
+    }
+
+    /// The saved screen a widget link names (`?show=`). The app checks it against its own shelf before it opens.
+    nonisolated static func showName(_ url: URL) -> String? {
+        URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first { $0.name == "show" }?.value
     }
 
     /// A hand-off link jumps the phone when its card lands live; `yui://agent/<id>/thread` does not.

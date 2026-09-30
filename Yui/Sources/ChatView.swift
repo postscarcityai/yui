@@ -24,6 +24,10 @@ struct ChatView: View {
     @State private var composer = ComposerModel()
     @State private var store = ChatStore(messages: ChatView.seed)
     @State private var outbox = Outbox.shared
+    /// "Pin as widget" on the shelf: the saved screen the two steps are for (YUI-40).
+    @State private var pinning: PinName?
+    /// A widget tap's saved screen, waiting for its thread (YUI-40).
+    @State private var showLanding: (agent: String, name: String)?
     @State private var showSettings = ProcessInfo.processInfo.arguments.contains("-yuiSettings")
     /// A section to scroll to when Settings opens from a link (`yui://settings/search`).
     @State private var settingsFocus: String?
@@ -294,6 +298,11 @@ struct ChatView: View {
                     .presentationDetents([.medium, .large], selection: $settingsDetent)
                     .presentationCornerRadius(appTheme.radius.card)
                     .environment(\.yuiTheme, appTheme)
+            }
+            .sheet(item: $pinning) { name in
+                PinWidgetSheet(name: name.id, agent: store.agent?.name ?? "your agent")
+                    .presentationDetents([.medium])
+                    .presentationCornerRadius(theme.radius.card)
             }
             .sheet(item: $keyMove) { shape in
                 KeyMoveSheet(text: shape.key) {
@@ -582,8 +591,15 @@ struct ChatView: View {
         // A notification tap or yui://agent/<id>/thread: straight to that thread.
         .onChange(of: push.pendingAgentID, initial: true) { openPushedThread() }
         // ...and on the message that came (YUI-199), once that thread has loaded.
-        .onChange(of: [store.loaded ? store.agent?.id : nil, store.messages.last?.id]) { landPushed(); landFirstPlan() }
+        .onChange(of: [store.loaded ? store.agent?.id : nil, store.messages.last?.id]) { landPushed(); landFirstPlan(); landShow() }
         .tint(c.accent)
+    }
+
+    /// A widget tap: the saved screen on the stage, with no turn, once that thread's shelf is in.
+    private func landShow() {
+        guard let want = showLanding, store.loaded, store.agent?.id == want.agent else { return }
+        showLanding = nil
+        if store.shelf[want.name] != nil { store.reopen(want.name) }
     }
 
     /// A notification tap or yui://agent/<id>/thread: straight to that thread (and chat).
@@ -595,7 +611,14 @@ struct ChatView: View {
             settleDrawer(open: false)
             // A hand-off card names the agent by handle (yui://agent/basil, YUI-144).
             let target = agents.idFor(id)
-            pushLanding = (agent: target, message: push.pendingMessageID)
+            // A widget tap names a saved screen: it goes on the stage, nothing else lands (YUI-40).
+            if let name = push.pendingShow {
+                push.pendingShow = nil
+                showLanding = (agent: target, name: name)
+                pushLanding = nil
+            } else {
+                pushLanding = (agent: target, message: push.pendingMessageID)
+            }
             push.pendingMessageID = nil
             // A push names the chat it came from (YUI-169): that one opens, not the newest.
             if let chat = push.pendingChatID {
@@ -928,7 +951,11 @@ struct ChatView: View {
             // The agent's saved screens, one tap from the stage (YUI-32).
             .safeAreaInset(edge: .top, spacing: 0) {
                 if !store.shelf.screens.isEmpty {
-                    ShelfBar(screens: store.shelf.screens, open: store.reopen, remove: store.unshelve)
+                    ShelfBar(screens: store.shelf.screens, open: store.reopen, remove: store.unshelve,
+                             pin: { name in
+                                 if let id = store.agent?.id { WidgetSync.pinNext(agent: id, name: name) }
+                                 pinning = PinName(id: name)
+                             })
                         .transition(.move(edge: .top).combined(with: .opacity))
                 }
             }
