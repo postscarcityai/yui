@@ -32,7 +32,7 @@ import { PLAN_TABLE, applyDay, applyFirst, applyLogged, applyRunner, editDayBody
 import { ACK, type MealFix, applyFix, fixTaps, logsMeals, mealTurn, runMealJob, spoken } from "./meals.ts";
 import { ADD_BODY, GOAL, GROCERIES, LOG_BODY, MEALS as MEAL_LOG, PLAN as MEAL_PLAN, addGroceries, applyMealFix, applyPlan, applySwap, ensureTools,
          drawnShape, fixBody, groceryText, lastPrefs, logPlanned, mealAsks, nextPlanned, planBody, plansMeals, readItems, screenLines as mealScreenLines, tickGrocery,
-         weekDeck, type MealAsk } from "./mealplan.ts";
+         weekDeck, applyMealFirst, firstLine as mealFirstLine, type MealAsk } from "./mealplan.ts";
 import { applyBar, applyLearn, applyOpen, applyPracticed, applySave, applyScale, applySpeed, drawnShape as musicShape, ensureTools as ensureMusic,
          keepDraft, learnBody, logPractice, musicAsks, musicPages, pasteBody, playBpm, lesson, playsMusic, practiceBody, readTake, saveBody,
          screenLines as musicScreenLines, streak, type MusicAsk, type Page as MusicPage } from "./music.ts";
@@ -727,6 +727,15 @@ async function mealTools(store: Store, agent: NativeAgent, asks: MealAsk[], now:
       const days = new Set(r.planned.map((x) => x.day)).size;
       text = `Your ${days} ${days === 1 ? "day is" : "days are"} planned. Tap any meal to swap it.${r.missing.length ? ` Nothing fit for ${r.missing.join(" or ").toLowerCase()}, so I left it out.` : ""}`;
       extra = weekDeck(tables, clk, r.prefs);
+    } else if (a.kind === "first") {
+      // The first open's Send (YUI-221): the week lands on the week's page, one line on top, no question after.
+      const r = applyMealFirst(tables, a.answers, clk);
+      tables = r.store;
+      if (!r.planned.length) {
+        await say("Nothing in my recipes fits all of that. Plan my meals again with fewer things left out, or tell me a few meals you like.", turn);
+        continue;
+      }
+      text = mealFirstLine(r);
     } else if (a.kind === "swap") {
       const r = applySwap(tables, a.day, a.choice, clk);
       if (!r.to) {

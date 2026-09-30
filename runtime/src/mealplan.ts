@@ -76,9 +76,12 @@ const kcal = (n: number) => Math.round(n).toLocaleString("en-US");
 const ymd = (day: string) => day.replace(/-/g, "");
 const fromYmd = (s: string) => `${s.slice(0, 4)}-${s.slice(4, 6)}-${s.slice(6, 8)}`;
 export const slug = (s: string) => s.toLowerCase().normalize("NFKD").replace(/&/g, " and ").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 48) || "item";
-function weekday(day: string): string {
+const utcDay = (day: string) => {
   const [y, m, d] = day.split("-").map(Number);
-  return WEEKDAY[new Date(Date.UTC(y, m - 1, d)).getUTCDay()];
+  return new Date(Date.UTC(y, m - 1, d)).getUTCDay();
+};
+function weekday(day: string): string {
+  return WEEKDAY[utcDay(day)];
 }
 const rowsOf = (store: TableStore, name: string) => {
   const t = store.tables[name];
@@ -147,7 +150,9 @@ export function recipes(store: TableStore): Recipe[] {
 
 // ---------- what they asked for ----------
 
-export interface Prefs { days: number; slots: string[]; likes: string[]; avoid: string[]; budget: number; cook: number; words: Record<string, string> }
+export interface Prefs { days: number; slots: string[]; likes: string[]; avoid: string[]; budget: number; cook: number; words: Record<string, string>;
+                         /** The weekdays (0 = Sunday) a first plan was asked for: the week covers these days of the next seven, not the next n days. */
+                         weekdays?: number[] }
 
 /** The plan's answers as what the planner needs. Unanswered questions take the easy default. */
 export function readPrefs(a: Record<string, unknown>): Prefs {
@@ -188,13 +193,15 @@ function score(r: Recipe, target: number, p: Prefs, used: Map<string, number>, s
   return s + hash(`${seed}:${r.key}`) * 1.2;
 }
 
-/** Recipes for a slot that fit, easing off the budget, then the time, then the slot's own kind; never a no-go.
+/** Recipes for a slot that fit, easing off the budget, then the time a step at a time, then the slot's own kind; never a no-go.
  *  `keep` is what else must hold (not twice a day, not three times a week): easing off comes before breaking it. */
 function candidates(all: Recipe[], slot: string, p: Prefs, keep: (r: Recipe) => boolean = () => true): Recipe[] {
   const ok = all.filter((r) => allowed(r, p));
   const tries: ((r: Recipe) => boolean)[] = [
     (r) => r.meal === slot && r.cost <= p.budget && r.minutes <= p.cook,
     (r) => r.meal === slot && r.minutes <= p.cook,
+    // No slot recipe that quick: the next time step up that has one, before any time at all.
+    ...[30, 45, 60].filter((m) => m > p.cook).map((m) => (r: Recipe) => r.meal === slot && r.minutes <= m),
     (r) => r.meal === slot,
     (r) => (slot === "Snack" ? r.meal === "Snack" : r.meal !== "Snack"),
   ];
@@ -213,8 +220,9 @@ export function planWeek(store: TableStore, p: Prefs, clk: Clock): { planned: Pl
   const used = new Map<string, number>();
   const planned: Planned[] = [];
   const missing: string[] = [];
-  for (let i = 0; i < p.days; i++) {
+  for (let i = 0; i < (p.weekdays ? 7 : p.days); i++) {
     const day = shift(clk.today, i);
+    if (p.weekdays && !p.weekdays.includes(utcDay(day))) continue;
     const today = new Set<string>();
     for (const slot of p.slots) {
       const pool = candidates(all, slot, p, (r) => !today.has(r.key) && (used.get(r.key) ?? 0) < 2);
@@ -243,8 +251,8 @@ function putPlanned(store: TableStore, x: Planned, clk: Clock): TableStore {
 }
 
 /** The Send: the week written (days from today on replaced), the answers kept, the grocery list rebuilt. */
-export function applyPlan(store: TableStore, answers: Record<string, unknown>, clk: Clock): { store: TableStore; planned: Planned[]; missing: string[]; prefs: Prefs } {
-  const prefs = readPrefs(answers);
+export function applyPlan(store: TableStore, answers: Record<string, unknown>, clk: Clock, asked?: Prefs): { store: TableStore; planned: Planned[]; missing: string[]; prefs: Prefs } {
+  const prefs = asked ?? readPrefs(answers);
   const { planned, missing } = planWeek(store, prefs, clk);
   let out = store;
   for (const { key, row } of rowsOf(out, PLAN)) {
@@ -257,6 +265,79 @@ export function applyPlan(store: TableStore, answers: Record<string, unknown>, c
   out = rebuildGroceries(out, clk);
   return { store: out, planned, missing, prefs };
 }
+
+// ---------- the first plan (YUI-221, PROP-4) ----------
+
+export const FIRST_ID = "first";
+export const FIRST_TABLE = "first_meals";
+export const NOT_SURE = "Not sure";
+export const SKIP = "Skip";
+const FIRST_GOALS = ["Eat better", "Lose weight", "Build muscle", "Save time"];
+const FIRST_DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+const FIRST_MEALS = ["2", "3", "3 and a snack", "4 or more"];
+const FIRST_AVOID = ["Meat", "Fish", "Dairy", "Gluten", "Nuts", "Eggs", "Nothing"];
+const FIRST_COOK = ["15 minutes", "30 minutes", "An hour", "I like a project"];
+const softer = (xs: string[]) => opts([...xs, NOT_SURE, SKIP]);
+
+/** The intake, as first.yui and its test send it: five questions, Not sure and Skip on each, one Send. */
+export function firstLines(): string[] {
+  return [
+    `plan@${FIRST_ID} "Your first meal plan" submit="Plan my week"`,
+    `choose@goal "What's the goal?" ${softer(FIRST_GOALS)}`,
+    `pick@days "Which days should I plan?" ${softer(FIRST_DAYS)}`,
+    `choose@meals "How many meals a day?" ${softer(FIRST_MEALS)}`,
+    `pick@avoid "What should I leave out? Allergies and conditions count." ${softer(FIRST_AVOID)} +other`,
+    `choose@cook "How long can you cook?" ${softer(FIRST_COOK)}`,
+    `end`,
+  ];
+}
+
+const real = (xs: string[]) => xs.map((x) => x.trim()).filter((x) => x && !/^(?:not sure|skip)$/i.test(x));
+
+/**
+ * The first plan's answers as what the planner needs. Not sure and Skip (or no answer) fall back to every day,
+ * three meals and 30 minutes; a leave-out the planner has no tag for still matches by name or ingredient.
+ */
+export function readFirstPrefs(a: Record<string, unknown>): Prefs {
+  const picked = real(list(a.days)).map((d) => FIRST_DAYS.findIndex((x) => x.toLowerCase() === d.toLowerCase().slice(0, 3))).filter((i) => i >= 0);
+  const weekdays = [...new Set(picked.map((i) => (i + 1) % 7))];
+  const days = weekdays.length || 7;
+  const m = real([String(a.meals ?? "")])[0] ?? "3";
+  const slots = /snack|^4/i.test(m) ? ["Breakfast", "Lunch", "Dinner", "Snack"] : /^2/.test(m) ? ["Lunch", "Dinner"] : ["Breakfast", "Lunch", "Dinner"];
+  const avoid = real(list(a.avoid)).filter((x) => !/^(?:nothing|none)$/i.test(x));
+  const c = real([String(a.cook ?? "")])[0] ?? "30 minutes";
+  const cook = /^15/.test(c) ? 15 : /^30/.test(c) ? 30 : /hour/i.test(c) ? 60 : /project/i.test(c) ? 999 : 30;
+  return { days, slots, likes: [], avoid, budget: 2, cook, weekdays: weekdays.length ? weekdays : undefined,
+           words: { days: `${days} days`, meals: slots.length === 4 ? "3 and a snack" : `${slots.length} meals`, likes: "Anything", avoid: avoid.join(", ") || "None",
+                    budget: "In between", cook: c } };
+}
+
+/** The first plan's Send: the week built from the answers, the answers saved in first_meals and plan_prefs. */
+export function applyMealFirst(store: TableStore, answers: Record<string, unknown>, clk: Clock): { store: TableStore; planned: Planned[]; missing: string[]; prefs: Prefs } {
+  const prefs = readFirstPrefs(answers);
+  const r = applyPlan(store, answers, clk, prefs);
+  let out = r.store;
+  if (!out.tables[FIRST_TABLE]) {
+    const t = write(out, { op: "table", name: FIRST_TABLE, cols: [{ name: "Question", type: "text" }, { name: "Answer", type: "text" }] });
+    if (!t.error) out = t.store;
+  }
+  const saved: [string, string][] = [["goal", "Goal"], ["days", "Days"], ["meals", "Meals a day"], ["avoid", "Leaving out"], ["cook", "Time to cook"]];
+  for (const [k, label] of saved) {
+    const v = list(answers[k]).join(", ") || NOT_SURE;
+    const w = write(out, { op: "put", table: FIRST_TABLE, key: k, values: { Question: label, Answer: v } }, clk);
+    if (!w.error) out = w.store;
+  }
+  return { ...r, store: out };
+}
+
+/** What Basil says on top of the week: what it holds, what it leaves out, that a tap swaps a meal. */
+export function firstLine(r: { planned: Planned[]; missing: string[]; prefs: Prefs }): string {
+  const days = new Set(r.planned.map((x) => x.day)).size;
+  const out = r.prefs.avoid.length ? `, nothing with ${joinList(r.prefs.avoid.map((x) => x.toLowerCase()))}` : "";
+  const gap = r.missing.length ? ` Nothing fit for ${r.missing.join(" or ").toLowerCase()}, so I left it out.` : "";
+  return `Your week of meals is set: ${days} ${days === 1 ? "day" : "days"}, ${r.prefs.slots.length === 4 ? "3 meals and a snack" : `${r.prefs.slots.length} meals`} a day${out}. Tap any meal to swap it.${gap}`;
+}
+const joinList = (xs: string[]) => (xs.length < 2 ? xs.join("") : `${xs.slice(0, -1).join(", ")} or ${xs[xs.length - 1]}`);
 
 /** The last answers, as Prefs: what a swap keeps to. */
 export function lastPrefs(store: TableStore): Prefs {
@@ -685,6 +766,7 @@ export function screenLines(store: TableStore, clk: Clock, was: string | undefin
 export type MealAsk =
   | { kind: "plan"; row: Row }
   | { kind: "planned"; row: Row; answers: Record<string, unknown> }
+  | { kind: "first"; row: Row; answers: Record<string, unknown> }
   | { kind: "swap"; row: Row; day: string; choice: string }
   | { kind: "add"; row: Row }
   | { kind: "added"; row: Row; words: string }
@@ -723,6 +805,7 @@ export function mealAsks(rows: Row[]): { asks: MealAsk[]; rest: Row[] } {
       const v = e.value;
       const plan = v.plan && typeof v.plan === "object" ? (v.plan as Record<string, unknown>) : null;
       if (e.preset === "plan" && e.id === "mealplan" && plan) a = { kind: "planned", row: r, answers: plan };
+      else if (e.preset === "plan" && e.id === FIRST_ID && plan) a = { kind: "first", row: r, answers: plan };
       else if (e.preset === "plan" && ID(/^mfix-\d{8}-[a-z]+$/, e.id) && plan) {
         const [, d, meal] = e.id.split("-");
         a = { kind: "fixed", row: r, day: fromYmd(d), meal: meal[0].toUpperCase() + meal.slice(1), answers: plan };

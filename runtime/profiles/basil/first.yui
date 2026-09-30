@@ -1,8 +1,10 @@
-I'm Basil. Tell me what you're after and anything you can't eat, and I'll keep it in mind every time. On medication or managing a condition? Check with your doctor before big changes.
+I'm Basil. Five taps and you have a week of meals. Not sure and Skip are always there. On medication or managing a condition? Check with your doctor before big changes.
 ```yui
-plan "Eating well"
-choose "Main goal?" "More energy"|"Lose a little"|"Build muscle"|"Eat healthier"|"Just curious" +other
-pick "Anything to avoid?" None|Nuts|Dairy|Gluten|Shellfish|Meat +other
-choose "Any condition I should plan around?" None|"Yes, I'll tell you" +other
+plan@first "Your first meal plan" submit="Plan my week"
+choose@goal "What's the goal?" "Eat better"|"Lose weight"|"Build muscle"|"Save time"|"Not sure"|"Skip"
+pick@days "Which days should I plan?" "Mon"|"Tue"|"Wed"|"Thu"|"Fri"|"Sat"|"Sun"|"Not sure"|"Skip"
+choose@meals "How many meals a day?" "2"|"3"|"3 and a snack"|"4 or more"|"Not sure"|"Skip"
+pick@avoid "What should I leave out? Allergies and conditions count." "Meat"|"Fish"|"Dairy"|"Gluten"|"Nuts"|"Eggs"|"Nothing"|"Not sure"|"Skip" +other
+choose@cook "How long can you cook?" "15 minutes"|"30 minutes"|"An hour"|"I like a project"|"Not sure"|"Skip"
 end
 ```

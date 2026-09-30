@@ -8,7 +8,7 @@ import { LocalStore } from "../src/store.ts";
 import { clock, fromSeeds } from "../src/tables.ts";
 import { homeLines } from "../src/home.ts";
 import { crew } from "../src/profiles.ts";
-import { AVOID_OPTS, BUDGET_OPTS, COOK_OPTS, MEALS_OPTS, addQty, aisleOf, allowed, itemKey, groceryScreen, mealAsks, planWeek, readItems, readPrefs,
+import { AVOID_OPTS, BUDGET_OPTS, COOK_OPTS, MEALS_OPTS, readFirstPrefs, addQty, aisleOf, allowed, itemKey, groceryScreen, mealAsks, planWeek, readItems, readPrefs,
          recipes, screenLines, todayScreen, weekScreen } from "../src/mealplan.ts";
 import { fakeModel, freshYui, provider } from "./helpers.ts";
 // @ts-ignore: the parser the app and the site share, as the MCP server ships it
@@ -369,4 +369,114 @@ test("a meal log on a stale shape ends on Today, a grocery add on Groceries, a p
   assert.equal(lastPage(screenLines(store, clk, "v1;stale;stale", ["today", "week", "groceries"]).lines), ">3", "plan on a changed shape");
   assert.equal(lastPage(screenLines(store, clk, undefined, ["groceries"]).lines), ">4");
   assert.equal(lastPage(screenLines(store, clk, undefined, ["today", "week", "groceries"]).lines), ">3");
+});
+
+// ---------- YUI-221: Basil's first plan ----------
+
+const FIRST = { goal: "Build muscle", days: ["Mon", "Wed", "Fri"], meals: "2", avoid: ["Dairy", "Nuts", "mushrooms"], cook: "15 minutes" };
+
+test("first.yui carries the intake: one plan, five questions, Not sure and Skip on each, the doctor line; matches firstLines", async () => {
+  const { readFileSync } = await import("node:fs");
+  const { firstLines } = await import("../src/mealplan.ts");
+  const first = readFileSync(new URL("../profiles/basil/first.yui", import.meta.url), "utf8");
+  assert.equal(fence(first), firstLines().join("\n"), "first.yui and firstLines drifted");
+  assert.match(first, /Check with your doctor/);
+  const ops = lines(`${first}`, {});
+  assert.deepEqual(ops.filter((o: any) => o.op === "add" && o.in === "first").map((o: any) => o.id), ["goal", "days", "meals", "avoid", "cook"]);
+  for (const o of ops.filter((o: any) => o.op === "add" && o.in === "first")) {
+    assert.ok(o.props.options.includes("Not sure") && o.props.options.includes("Skip"), `${o.id} has Not sure and Skip`);
+  }
+  assert.ok(ops.find((o: any) => o.id === "avoid").props.other, "a condition or allergy can be typed");
+});
+
+test("readFirstPrefs: days are weekdays, meals a day and cook time read from the words; Not sure and Skip are the defaults", () => {
+  const p = readFirstPrefs(FIRST);
+  assert.deepEqual(p.weekdays!.sort(), [1, 3, 5]);
+  assert.deepEqual(p.slots, ["Lunch", "Dinner"]);
+  assert.deepEqual(p.avoid, ["Dairy", "Nuts", "mushrooms"]);
+  assert.equal(p.cook, 15);
+  for (const a of [{}, { goal: "Skip", days: ["Skip"], meals: "Skip", avoid: ["Skip"], cook: "Skip" }, { goal: "Not sure", days: ["Not sure"], meals: "Not sure", avoid: ["Not sure"], cook: "Not sure" }]) {
+    const d = readFirstPrefs(a);
+    assert.equal(d.weekdays, undefined);
+    assert.equal(d.days, 7);
+    assert.deepEqual(d.slots, ["Breakfast", "Lunch", "Dinner"]);
+    assert.deepEqual(d.avoid, []);
+    assert.equal(d.cook, 30);
+  }
+  assert.deepEqual(readFirstPrefs({ avoid: ["Nothing"], meals: "3 and a snack" }).slots, ["Breakfast", "Lunch", "Dinner", "Snack"]);
+  assert.deepEqual(readFirstPrefs({ meals: "4 or more" }).slots, ["Breakfast", "Lunch", "Dinner", "Snack"]);
+  assert.equal(readFirstPrefs({ cook: "An hour" }).cook, 60);
+  assert.equal(readFirstPrefs({ cook: "I like a project" }).cook, 999);
+});
+
+test("the first Send builds only the chosen days and meals, leaves out the no-gos, keeps to the cook time, no model; answers saved", async () => {
+  const { store, basil } = await basilYui();
+  const m = noModel();
+  tap(store, basil.id, "first", "plan", { plan: FIRST });
+  await runAgent(store, basil.id, { provider, fetch: m.fetch, now });
+  assert.equal(m.calls.length, 0, "no model turn");
+  const t = await store.tables(basil.id);
+  const rows = t.tables.meal_plan.order.map((k: string) => t.tables.meal_plan.rows[k]) as any[];
+  // Monday 2026-09-28 is today: Mon, Wed, Fri of the next seven days, two meals each.
+  assert.deepEqual([...new Set(rows.map((r) => r.Day))], ["2026-09-28", "2026-09-30", "2026-10-02"]);
+  assert.equal(rows.length, 6, "3 days x 2 meals");
+  assert.deepEqual([...new Set(rows.map((r) => r.Slot))].sort(), ["Dinner", "Lunch"]);
+  const byKey = Object.fromEntries(recipes(t).map((r) => [r.key, r]));
+  for (const r of rows) {
+    const rec = byKey[r.Recipe];
+    assert.ok(!rec.tags.includes("dairy") && !rec.tags.includes("nuts"), `${r.Name} holds a no-go`);
+    assert.ok(!/mushroom/i.test(rec.name + rec.ingredients.map((i: any) => i.item).join(",")), `${r.Name} holds mushrooms`);
+    // Nothing for dinner takes 15 minutes, and few lunches do once the no-gos are out: those ease to the next step up (30), never past it.
+    assert.ok(rec.minutes <= 30, `${r.Name} takes ${rec.minutes} minutes`);
+  }
+  assert.equal(t.tables.first_meals.rows.avoid.Answer, "Dairy, Nuts, mushrooms");
+  assert.equal(t.tables.first_meals.rows.days.Answer, "Mon, Wed, Fri");
+  assert.equal(t.tables.first_meals.rows.goal.Answer, "Build muscle");
+  assert.equal(t.tables.plan_prefs.rows.last.Meals, "2 meals");
+  assert.equal(t.tables.plan_prefs.rows.last.Avoid, "Dairy, Nuts, mushrooms");
+  assert.ok(Object.keys(t.tables.groceries.rows).length > 0, "the grocery list follows");
+});
+
+test("the first Send with Skip everywhere builds the defaults: every day, 3 meals, 30 minutes or less", async () => {
+  const { store, basil } = await basilYui();
+  tap(store, basil.id, "first", "plan", { plan: { goal: "Skip", days: ["Skip"], meals: "Skip", avoid: ["Skip"], cook: "Skip" } });
+  await runAgent(store, basil.id, { provider, fetch: noModel().fetch, now });
+  const t = await store.tables(basil.id);
+  const rows = t.tables.meal_plan.order.map((k: string) => t.tables.meal_plan.rows[k]) as any[];
+  assert.equal(new Set(rows.map((r) => r.Day)).size, 7);
+  assert.equal(rows.length, 21);
+  const byKey = Object.fromEntries(recipes(t).map((r) => [r.key, r]));
+  assert.ok(rows.every((r) => byKey[r.Recipe].minutes <= 30));
+  assert.equal(t.tables.first_meals.rows.cook.Answer, "Skip");
+});
+
+test("the reply lands on the week: one line on top, the pages after with the week last, no question, all parses", async () => {
+  const { store, basil } = await basilYui();
+  tap(store, basil.id, "first", "plan", { plan: FIRST });
+  await runAgent(store, basil.id, { provider, fetch: noModel().fetch, now });
+  const body = lastReply(store, basil.id).body;
+  assert.match(body, /^Your week of meals is set: 3 days, 2 meals a day, nothing with dairy, nuts or mushrooms\. Tap any meal to swap it\.\n```yui/);
+  assert.ok(!/\?/.test(body.split("\n```yui")[0]), "no question on top");
+  const l = fence(body).split("\n");
+  assert.ok(l.indexOf(">3") > l.indexOf(">4") || l.indexOf(">3") > l.indexOf(">2"), "the week is drawn after Today");
+  const pages = l.filter((x) => /^>\d$/.test(x));
+  assert.equal(pages.at(-1), ">3", "the week page is the last one sent, so it is the one in front");
+  assert.ok(l.some((x) => /^choose@wk-20260928 /.test(x)) && l.some((x) => /^choose@wk-20260930 /.test(x)) && !l.some((x) => /^choose@wk-20260929 /.test(x)), "a card for each chosen day only");
+  lines(body);
+});
+
+test("a swap after the first plan keeps to the no-gos and the cook time", async () => {
+  const { store, basil } = await basilYui();
+  tap(store, basil.id, "first", "plan", { plan: { ...FIRST, meals: "3" } });
+  await runAgent(store, basil.id, { provider, fetch: noModel().fetch, now });
+  const t = await store.tables(basil.id);
+  const row = t.tables.meal_plan.rows["2026-09-28-dinner"];
+  tap(store, basil.id, "wk-20260928", "choose", { choice: row.Name });
+  await runAgent(store, basil.id, { provider, fetch: noModel().fetch, now });
+  const after = await store.tables(basil.id);
+  const now2 = after.tables.meal_plan.rows["2026-09-28-dinner"];
+  assert.notEqual(now2.Name, row.Name);
+  const rec = recipes(after).find((r) => r.key === now2.Recipe)!;
+  assert.ok(!rec.tags.includes("dairy") && !rec.tags.includes("nuts"));
+  assert.ok(rec.minutes <= 30, "dinner has nothing at 15: the next step up");
 });
