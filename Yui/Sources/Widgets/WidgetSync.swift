@@ -10,6 +10,7 @@ import YuiLines
 enum WidgetSync {
     /// One agent's shelf, written over that agent's older copies. `at` is when the agent last changed each screen.
     static func publish(agent: YuiAgent, shelf: Shelf) {
+        WidgetApp.applyTicks()  // a tick made on the widget must not be written back over
         let theme = agent.yuiTheme
         let screens = shelf.screens.map { saved in
             WidgetScreen(

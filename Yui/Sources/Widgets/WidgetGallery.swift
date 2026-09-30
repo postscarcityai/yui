@@ -31,6 +31,7 @@ struct WidgetGallery: View {
             VStack(alignment: .leading, spacing: 14) {
                 Text("widgets: \(screens.count)").font(.caption).accessibilityIdentifier("gallery-count")
                 Text(screens.map(\.name).joined(separator: ", ")).font(.caption2).accessibilityIdentifier("gallery-names")
+                Text("ticked: " + screens.flatMap { $0.parts.flatMap(\.ticked) }.joined(separator: ",")).font(.caption2).accessibilityIdentifier("gallery-ticked")
                 let queue = WidgetQueue.pending()
                 Text("queue: \(queue.count)").font(.caption).accessibilityIdentifier("gallery-queue")
                 Text(queue.last?.body ?? "no event").font(.caption2).accessibilityIdentifier("gallery-event")

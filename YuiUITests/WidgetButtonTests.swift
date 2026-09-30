@@ -77,6 +77,8 @@ final class WidgetButtonTests: XCTestCase {
         }
         XCTAssertTrue(eventually { queued.label == "queue: 1" }, "the tick never reached the queue: \(queued.label)")
         XCTAssertEqual(app.staticTexts["gallery-event"].label, "[yui] today list checked item=\"Walk 30 min\" saved=today via=widget")
+        XCTAssertTrue(eventually { app.staticTexts["gallery-ticked"].label == "ticked: Walk 30 min" }, "the widget copy lost the tick: \(app.staticTexts["gallery-ticked"].label)")
+        Thread.sleep(forTimeInterval: 1)
         shot("widget-buttons-\(appearance)-2-ticked")
 
         // Start on the timer: the clock runs, the button reads Pause.
