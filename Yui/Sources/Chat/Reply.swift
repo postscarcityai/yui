@@ -19,6 +19,12 @@ struct ReplyQuote: Equatable, Sendable {
     let fromUser: Bool
     /// Its first line (a card's title), short.
     let quote: String
+    /// A card's next rows after its title, so a reply about a screen carries the screen.
+    let rows: [String]
+
+    /// The most rows a card quotes, and the longest row.
+    static let rowLimit = 3
+    static let rowChars = 60
 
     /// The longest quote, in characters.
     static let limit = 120
@@ -29,13 +35,23 @@ struct ReplyQuote: Equatable, Sendable {
         let line = Self.firstLine(text)
         guard !line.isEmpty || !m.photos.isEmpty else { return nil }
         self.init(msg: m.rowID, fromUser: m.fromUser,
-                  quote: line.isEmpty ? Attachments.placeholder(m.photos.count) : line)
+                  quote: line.isEmpty ? Attachments.placeholder(m.photos.count) : line,
+                  rows: m.yl.map { Self.rows($0, after: line) } ?? [])
     }
 
-    init(msg: String, fromUser: Bool, quote: String) {
+    init(msg: String, fromUser: Bool, quote: String, rows: [String] = []) {
         self.msg = msg.lowercased()
         self.fromUser = fromUser
         self.quote = quote
+        self.rows = rows
+    }
+
+    /// The first things a card says after its title, short, at most `rowLimit`.
+    static func rows(_ screen: YLScreen, after title: String) -> [String] {
+        words(screen).split(separator: "\n").map { String($0) }
+            .filter { firstLine($0) != title }
+            .prefix(rowLimit)
+            .map { $0.count > rowChars ? String($0.prefix(rowChars)).trimmingCharacters(in: .whitespaces) + "…" : $0 }
     }
 
     /// "Yui" or "You": who the quote is from, as the bar and the chip say it.
@@ -89,7 +105,13 @@ struct ReplyQuote: Equatable, Sendable {
     /// `[yui] reply to=<row id> from=agent quote="..."`
     static func line(_ q: ReplyQuote) -> String {
         let quote = q.quote.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"")
-        return "[yui] reply to=\(q.msg) from=\(q.fromUser ? "user" : "agent") quote=\"\(quote)\""
+        var out = "[yui] reply to=\(q.msg) from=\(q.fromUser ? "user" : "agent") quote=\"\(quote)\""
+        if !q.rows.isEmpty {
+            let rows = q.rows.joined(separator: " | ")
+                .replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"")
+            out += " rows=\"\(rows)\""
+        }
+        return out
     }
 
     /// The bubble's words from a row's body: the reply line comes off.
@@ -103,15 +125,18 @@ struct ReplyQuote: Equatable, Sendable {
     static func meta(_ base: YLValue?, replyingTo q: ReplyQuote?) -> YLValue? {
         guard let q else { return base }
         var o = base?.object ?? [:]
-        o["reply_to"] = .object(["msg": .string(q.msg), "from": .string(q.fromUser ? "user" : "agent"),
-                                 "quote": .string(q.quote)])
+        var r: [String: YLValue] = ["msg": .string(q.msg), "from": .string(q.fromUser ? "user" : "agent"),
+                                    "quote": .string(q.quote)]
+        if !q.rows.isEmpty { r["rows"] = .array(q.rows.map { .string($0) }) }
+        o["reply_to"] = .object(r)
         return .object(o)
     }
 
     /// The quote a row carries, if it is a reply.
     static func from(meta: YLValue?) -> ReplyQuote? {
         guard let r = meta?.object?["reply_to"]?.object, let msg = r["msg"]?.string, !msg.isEmpty else { return nil }
-        return ReplyQuote(msg: msg, fromUser: r["from"]?.string == "user", quote: r["quote"]?.string ?? "")
+        return ReplyQuote(msg: msg, fromUser: r["from"]?.string == "user", quote: r["quote"]?.string ?? "",
+                          rows: r["rows"]?.array?.compactMap(\.string) ?? [])
     }
 }
 
@@ -146,6 +171,12 @@ struct ReplyBar: View {
                     .font(theme.font(theme.type.caption, .semibold))
                     .foregroundStyle(c.inkSoft)
                     .lineLimit(1)
+                if !quote.rows.isEmpty {
+                    Text(quote.rows.joined(separator: " · "))
+                        .font(theme.font(theme.type.caption, .regular))
+                        .foregroundStyle(c.inkSoft.opacity(0.8))
+                        .lineLimit(1)
+                }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .accessibilityElement(children: .combine)

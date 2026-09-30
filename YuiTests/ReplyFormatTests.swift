@@ -32,6 +32,19 @@ final class ReplyFormatTests: XCTestCase {
         XCTAssertEqual(try XCTUnwrap(ReplyQuote(paged)).quote, "Send it?", "the card in the chat, not the screen 2 list")
     }
 
+    func testCardsQuoteTheirFirstRowsToo() throws {
+        let m = ChatMessage(text: "", fromUser: false, yl: YLScreen("card \"Stand By Me\" \"Key of A, 8 bars.\" sub=\"Learning now\"\ncard \"Next up\" \"Wonderwall\""))
+        let q = try XCTUnwrap(ReplyQuote(m))
+        XCTAssertEqual(q.quote, "Stand By Me")
+        XCTAssertEqual(q.rows.first, "Key of A, 8 bars.", "the rows after the title ride along")
+        XCTAssertLessThanOrEqual(q.rows.count, ReplyQuote.rowLimit)
+        XCTAssertFalse(q.rows.contains("Stand By Me"))
+        XCTAssertTrue(ReplyQuote.line(q).contains(" rows=\""))
+        XCTAssertEqual(ReplyQuote.from(meta: ReplyQuote.meta(nil, replyingTo: q)), q, "rows survive the meta")
+        let plain = ReplyQuote(msg: Self.row, fromUser: false, quote: "hi")
+        XCTAssertFalse(ReplyQuote.line(plain).contains("rows="), "a bubble adds no rows")
+    }
+
     func testBodyIsTheReplyLineThenTheWords() {
         let q = ReplyQuote(msg: Self.row, fromUser: false, quote: "Say \"yes\" or no")
         XCTAssertEqual(ReplyQuote.body("Yes, do it", replyingTo: q),

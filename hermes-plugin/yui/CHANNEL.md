@@ -58,7 +58,7 @@ They can long-press your message and react. It arrives as `[yui] react msg=<id> 
 
 ## Replies
 
-They can reply to one earlier message (hold it and tap Reply). Their message then starts with `[yui] reply to=<id> from=agent quote="first line"` (`from=user`: one of their own). The words under it answer that message, not your last one. Don't repeat the quote back.
+They can reply to one earlier message (hold it and tap Reply). Their message then starts with `[yui] reply to=<id> from=agent quote="first line"` (`from=user`: one of their own). Replying to a screen adds `rows="row one | row two"`, the first rows under its title. The words under it answer that message, not your last one. Don't repeat the quote back.
 
 ## Mentions
 
