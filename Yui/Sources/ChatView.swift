@@ -203,6 +203,11 @@ struct ChatView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(c.background)
+            // A screen is full screen, but it is not a dead end (YUI-235): a plan lands the pager on
+            // its last screen, and the nav bar is off there, so the drawer and the chat were pages away.
+            .overlay(alignment: .top) {
+                if pagedChat, !onChat, !firstRun { screenBar(c) }
+            }
             .safeAreaInset(edge: .bottom) {
                 if !firstRun {
                     VStack(spacing: theme.spacing.s) {
@@ -674,6 +679,32 @@ struct ChatView: View {
             .accessibilityLabel("Agent menu")
             .accessibilityValue(n > 0 ? "\(n) waiting on you" : "")
         }
+    }
+
+    /// The way out of a screen: the drawer top left, the chat top right.
+    private func screenBar(_ c: Swatch) -> some View {
+        func circle(_ icon: String, _ label: String, _ id: String, _ action: @escaping () -> Void) -> some View {
+            Button(action: action) {
+                Image(systemName: icon)
+                    .font(.system(size: 17, weight: .bold))
+                    .foregroundStyle(c.ink)
+                    .frame(width: 44, height: 44)
+                    .background(c.surface, in: Circle())
+                    .overlay(Circle().stroke(c.outline, lineWidth: 1.5))
+                    .contentShape(Circle())
+            }
+            .buttonStyle(BounceButtonStyle())
+            .accessibilityLabel(label)
+            .accessibilityIdentifier(id)
+        }
+        return HStack {
+            circle("line.3.horizontal", "Screen menu", "screen-menu") { settleDrawer(open: true) }
+                .modifier(WaitingDot(waiting: store.waitingCount > 0, reduceMotion: reduceMotion))
+            Spacer()
+            circle("bubble.left", "Back to chat", "screen-back-to-chat") { store.goToPage(1) }
+        }
+        .padding(.horizontal, theme.spacing.l)
+        .transition(.opacity)
     }
 
     private var drawerWidth: CGFloat { (UIApplication.shared.connectedScenes.first as? UIWindowScene)?.screen.bounds.width ?? 390 }

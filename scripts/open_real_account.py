@@ -2,7 +2,7 @@
 """YUI-231: Open on Yui's card on a REAL account. Fresh throwaway account on the live backend (never
 Chris's, never the demo account), chat first, then YuiUITests/OpenRealAccountTests.
 
-  python3 scripts/open_real_account.py --sim UDID --out DIR [--appearance dark|light] [--build]
+  python3 scripts/open_real_account.py --sim UDID --out DIR [--appearance dark|light] [--build] [--only TestClass]
 
 --build builds for testing first. The account is deleted at the end (0 rows left is printed)."""
 import argparse, hashlib, os, secrets, subprocess, sys, uuid
@@ -12,6 +12,7 @@ REPO = Path(__file__).resolve().parent.parent
 ap = argparse.ArgumentParser()
 ap.add_argument("--sim", required=True); ap.add_argument("--out", required=True)
 ap.add_argument("--appearance", default="dark"); ap.add_argument("--build", action="store_true")
+ap.add_argument("--only", default="OpenRealAccountTests")
 args = ap.parse_args()
 
 exec(open(REPO / "supabase/tests/agents_test.py").read().split("results = []")[0])
@@ -31,7 +32,7 @@ env = {**DEV, "TEST_RUNNER_YUI_RT": rt, "TEST_RUNNER_YUI_USER": T, "TEST_RUNNER_
 code = 1
 try:
     subprocess.run(["xcrun", "simctl", "ui", args.sim, "appearance", args.appearance], env=DEV)
-    code = subprocess.run(["xcodebuild", "test-without-building", *dest, "-only-testing:YuiUITests/OpenRealAccountTests"],
+    code = subprocess.run(["xcodebuild", "test-without-building", *dest, f"-only-testing:YuiUITests/{args.only}"],
                           cwd=REPO, env=env, stdout=open(OUT / "xcodebuild.log", "w"), stderr=subprocess.STDOUT).returncode
     print("xcodebuild exit", code)
 finally:

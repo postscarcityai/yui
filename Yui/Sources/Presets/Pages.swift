@@ -113,9 +113,9 @@ struct ScreenPage: View {
                     .padding(.vertical, theme.spacing.m)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                // A screen has no nav bar (ChatView hides it off the chat): a little
-                // room under the status bar for the first card.
-                .contentMargins(.top, theme.spacing.xl, for: .scrollContent)
+                // A screen has no nav bar (ChatView hides it off the chat and lays two buttons over the top): room
+                // under them for the first card.
+                .contentMargins(.top, theme.spacing.xl + 52, for: .scrollContent)
             }
         }
         .background(c.background)
