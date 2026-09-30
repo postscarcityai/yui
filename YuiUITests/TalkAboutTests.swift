@@ -51,8 +51,8 @@ final class TalkAboutTests: XCTestCase {
                 XCTAssertTrue(app.buttons["drawer-close"].waitForExistence(timeout: 5), "the drawer did not open")
                 sleep(1)
             }
-            let tab = app.buttons["drawer-tab-controls"]
-            XCTAssertTrue(tab.waitForExistence(timeout: 15), "no Controls tab for an owned agent")
+            let tab = app.buttons["drawer-tab-agent"]
+            XCTAssertTrue(tab.waitForExistence(timeout: 15), "no Agent tab for an owned agent")
             tab.tap()
             let row = app.buttons["controls-\(area)"]
             XCTAssertTrue(row.waitForExistence(timeout: 5))

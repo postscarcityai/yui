@@ -20,8 +20,8 @@ final class AgentKeyTests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments = ["-yuiDemoAccount", "-yuiDemoFirstLaunch", "-yuiDemoNative", "-yuiAgent", "basil", "-yuiDrawer", "-appearance", appearance]
         app.launch()
-        let tab = app.buttons["drawer-tab-controls"]
-        XCTAssertTrue(tab.waitForExistence(timeout: 20), "no Controls tab")
+        let tab = app.buttons["drawer-tab-agent"]
+        XCTAssertTrue(tab.waitForExistence(timeout: 20), "no Agent tab")
         tab.tap()
         let row = app.buttons["controls-model"]
         XCTAssertTrue(row.waitForExistence(timeout: 5), "no Model row")

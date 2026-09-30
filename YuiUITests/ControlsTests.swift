@@ -46,8 +46,8 @@ final class ControlsTests: XCTestCase {
             app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", s)).firstMatch
         }
         launch(app, appearance, agent: "coach")
-        let tab = app.buttons["drawer-tab-controls"]
-        XCTAssertTrue(tab.waitForExistence(timeout: 15), "no Controls tab for an owned agent")
+        let tab = app.buttons["drawer-tab-agent"]
+        XCTAssertTrue(tab.waitForExistence(timeout: 15), "no Agent tab for an owned agent")
         tab.tap()
         let soul = app.buttons["controls-soul"]
         XCTAssertTrue(soul.waitForExistence(timeout: 5))
@@ -168,24 +168,31 @@ final class ControlsTests: XCTestCase {
         shot("20-offline")
         app.terminate()
 
-        // A host that shares nothing: the About card and one line.
+        // A host that shares nothing: identity, facts and the What it does card, no second line.
         launch(app, appearance, agent: "nova")
         XCTAssertTrue(tab.waitForExistence(timeout: 15))
         tab.tap()
-        XCTAssertTrue(app.descendants(matching: .any)["controls-not-shared"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.descendants(matching: .any)["controls-about-card"].exists)
+        XCTAssertTrue(app.descendants(matching: .any)["about-not-shared"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.descendants(matching: .any)["about-facts"].exists)
+        XCTAssertTrue(app.buttons["drawer-edit-agent"].exists, "no In Yui row")
+        XCTAssertFalse(app.descendants(matching: .any)["controls-about-card"].exists, "the old About card is back")
+        XCTAssertFalse(app.descendants(matching: .any)["controls-not-shared"].exists, "the second message is back")
         XCTAssertFalse(app.buttons["controls-soul"].exists)
         sleep(1)
         shot("21-not-shared")
         app.terminate()
 
-        // A shared agent: no Controls tab at all.
+        // A shared agent: the Agent tab shows who it is and who shared it, no settings.
         app.launchArguments = ["-yuiDemoAccount", "-yuiDemoShared", "-yuiDemoControls", "-yuiAgent", "penny",
                                "-yuiDrawer", "-appearance", appearance]
         app.launch()
         XCTAssertTrue(app.buttons["drawer-tab-home"].waitForExistence(timeout: 15))
-        XCTAssertFalse(app.buttons["drawer-tab-controls"].exists, "a shared agent's drawer has Controls")
+        app.buttons["drawer-tab-agent"].tap()
+        XCTAssertTrue(app.descendants(matching: .any)["about-facts"].waitForExistence(timeout: 5), "a shared agent's Agent tab has no facts")
+        XCTAssertTrue(app.descendants(matching: .any)["about-shared-by"].exists, "no Shared by line")
+        XCTAssertFalse(app.buttons["drawer-edit-agent"].exists, "a shared agent's drawer has an edit row")
+        XCTAssertFalse(app.buttons["controls-soul"].exists, "a shared agent's drawer has host rows")
         sleep(1)
-        shot("22-shared-no-controls")
+        shot("22-shared-agent")
     }
 }

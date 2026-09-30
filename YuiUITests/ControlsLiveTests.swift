@@ -39,8 +39,8 @@ final class ControlsLiveTests: XCTestCase {
             app.launch()
             let allow = springboard.buttons["Allow"]
             if allow.waitForExistence(timeout: 6) { allow.tap() }
-            let tab = app.buttons["drawer-tab-controls"]
-            XCTAssertTrue(tab.waitForExistence(timeout: 30), "no Controls tab (\(appearance))")
+            let tab = app.buttons["drawer-tab-agent"]
+            XCTAssertTrue(tab.waitForExistence(timeout: 30), "no Agent tab (\(appearance))")
             tab.tap()
             XCTAssertTrue(app.buttons["controls-soul"].waitForExistence(timeout: 20), "the host's report never arrived")
             let live = NSPredicate(format: "isEnabled == true")

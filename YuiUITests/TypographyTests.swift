@@ -69,12 +69,9 @@ final class TypographyTests: XCTestCase {
         app.buttons["drawer-tab-review"].tap()
         sleep(1)
         shot("4-drawer-review")
-        app.buttons["drawer-tab-controls"].tap()
+        app.buttons["drawer-tab-agent"].tap()
         sleep(1)
-        shot("5-drawer-controls")
-        app.buttons["drawer-tab-about"].tap()
-        sleep(1)
-        shot("6-drawer-about")
+        shot("5-drawer-agent")
 
         let settings = app.buttons["drawer-settings"]
         if settings.waitForExistence(timeout: 3) {

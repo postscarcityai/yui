@@ -151,8 +151,8 @@ final class FirstLaunchTests: XCTestCase {
 
         // 4. Controls: the model by its name on the eval list, and the profile's version.
         launch(app, ["-yuiAgent", "basil", "-yuiDrawer"])
-        let tab = app.buttons["drawer-tab-controls"]
-        XCTAssertTrue(tab.waitForExistence(timeout: 15), "no Controls tab for a native agent")
+        let tab = app.buttons["drawer-tab-agent"]
+        XCTAssertTrue(tab.waitForExistence(timeout: 15), "no Agent tab for a native agent")
         tab.tap()
         let model = app.buttons["controls-model"]
         XCTAssertTrue(model.waitForExistence(timeout: 5), "no Model row")

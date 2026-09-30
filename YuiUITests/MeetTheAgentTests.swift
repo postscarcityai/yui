@@ -70,7 +70,7 @@ final class MeetTheAgentTests: XCTestCase {
         let close = app.buttons["drawer-close"]
         XCTAssertTrue(close.waitForExistence(timeout: 5), "the menu did not open the drawer")
         XCTAssertTrue(app.buttons["drawer-agent-bar"].exists, "the agent bar is missing from the bottom of the drawer")
-        app.buttons["drawer-tab-about"].tap()
+        app.buttons["drawer-tab-agent"].tap()
         let tagline = app.descendants(matching: .any)["about-tagline"]
         XCTAssertTrue(tagline.waitForExistence(timeout: 5), "About has no tagline")
         XCTAssertEqual(tagline.label, "Workouts built around your week and body")

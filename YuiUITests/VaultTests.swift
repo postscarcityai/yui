@@ -204,7 +204,7 @@ final class VaultUITests: XCTestCase {
 
         // The drawer: Controls > Keys.
         app.buttons["Agent menu"].firstMatch.tap()
-        let tab = app.buttons["drawer-tab-controls"]
+        let tab = app.buttons["drawer-tab-agent"]
         XCTAssertTrue(tab.waitForExistence(timeout: 10))
         tab.tap()
         let keys = app.buttons["controls-keys"]

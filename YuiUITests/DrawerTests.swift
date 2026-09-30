@@ -91,15 +91,12 @@ final class DrawerTests: XCTestCase {
         sleep(1)
         shot("3-review-done")
 
-        // Controls and About.
-        app.buttons["drawer-tab-controls"].tap()
+        // The one Agent tab: settings and who it is (YUI-128).
+        app.buttons["drawer-tab-agent"].tap()
         XCTAssertTrue(app.buttons["drawer-edit-agent"].waitForExistence(timeout: 3), "no controls")
+        XCTAssertTrue(app.descendants(matching: .any)["about-facts"].exists, "no facts on the Agent tab")
         sleep(1)
-        shot("4-controls")
-        app.buttons["drawer-tab-about"].tap()
-        XCTAssertTrue(app.staticTexts["What it does"].waitForExistence(timeout: 3), "no About")
-        sleep(1)
-        shot("5-about")
+        shot("4-agent")
 
         // The agent bar sits at the bottom of the drawer (YUI-194).
         XCTAssertTrue(app.buttons["drawer-agent-bar"].exists, "the agent bar is missing from the bottom of the drawer")

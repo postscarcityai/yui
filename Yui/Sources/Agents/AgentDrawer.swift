@@ -155,8 +155,7 @@ struct AgentDrawer: View {
                     case .home: DrawerHome(store: store, waiting: waiting, close: close, compose: compose,
                                            newChat: newChat, openChat: openChat) { tab = .review }
                     case .review: DrawerReview(store: store, items: waiting, close: close, compose: compose)
-                    case .controls: DrawerControls(store: store, close: close, edit: edit)
-                    case .about: DrawerAbout(agent: store.agent) { words in
+                    case .agent: DrawerAgent(store: store, close: close, edit: edit) { words in
                         close()
                         _ = store.send(words)
                     }
@@ -224,16 +223,14 @@ struct AgentDrawer: View {
 }
 
 enum DrawerTab: String, CaseIterable, Identifiable {
-    case home = "Home", review = "Review", controls = "Controls", about = "About"
+    case home = "Home", review = "Review", agent = "Agent"
     var id: String { rawValue }
 
-    /// Only the owner sees Controls (YUI-70): a shared agent's drawer has none.
-    static func shown(for agent: YuiAgent?) -> [DrawerTab] {
-        agent?.isShared == true ? allCases.filter { $0 != .controls } : allCases
-    }
+    /// One agent tab (YUI-128): who it is and its settings. A shared agent shows it too, minus the settings.
+    static func shown(for agent: YuiAgent?) -> [DrawerTab] { allCases }
 }
 
-/// Four tabs in a capsule; the one on show sits on a coral pill that slides between them.
+/// Three tabs in a capsule; the one on show sits on a coral pill that slides between them.
 private struct TabStrip: View {
     @Binding var tab: DrawerTab
     let tabs: [DrawerTab]
@@ -276,7 +273,7 @@ private struct TabStrip: View {
                 .accessibilityIdentifier("drawer-tab-\(t.rawValue.lowercased())")
             }
         }
-        // Four tabs share one row: like the system tab bar, they stop growing at XL so no label truncates.
+        // The tabs share one row: like the system tab bar, they stop growing at XL so no label truncates.
         .dynamicTypeSize(...DynamicTypeSize.xLarge)
         .padding(4)
         .background(c.surface, in: Capsule())
@@ -721,16 +718,19 @@ enum MenuAction {
     }
 }
 
-// MARK: Controls
+// MARK: Agent (YUI-128: About and Controls in one tab)
 
-/// The agent's own settings, straight on its computer (YUI-70, spec yuigui
-/// spec/CONTROLS.md): one row per area its host reports; each opens its screen.
-/// A host that reports nothing gets the About card and one line. An offline host
-/// greys the rows out instead of queueing changes.
-private struct DrawerControls: View {
+/// One scroll, top to bottom: who the agent is (badge, name, status, what it says it does),
+/// where it runs, then its settings: "In Yui", the areas its host reports (YUI-70, spec yuigui
+/// spec/CONTROLS.md; each opens its screen), Keys. A host that reports nothing gets the dashed
+/// "What it does" card instead of a second line. An offline host greys the rows out instead of
+/// queueing changes. A shared agent shows who it is and who shared it, no settings.
+private struct DrawerAgent: View {
     let store: ChatStore
     let close: () -> Void
     let edit: (YuiAgent) -> Void
+    /// A starter tapped: it goes as the person's message.
+    let send: (String) -> Void
     /// The area on show, with its model: one value, so the sheet never opens without it.
     @State private var open: Opened?
     /// Controls > Keys (YUI-34): the keys this agent may use, an app screen, not the host's.
@@ -746,41 +746,19 @@ private struct DrawerControls: View {
 
     var body: some View {
         let c = theme.swatch(scheme)
-        let name = store.agent?.name ?? "your agent"
-        VStack(alignment: .leading, spacing: theme.spacing.s) {
-            if let agent = store.agent, let report = agent.controls, !report.shown.isEmpty {
-                DrawerHeading(text: "In Yui")
-                DrawerRow(icon: "paintpalette.fill", title: "Name, look and notifications",
-                          sub: agent.muted ? "Notifications off" : "Notifications on", tint: c.accent.opacity(0.6)) {
-                    edit(agent)
-                }
-                .accessibilityIdentifier("drawer-edit-agent")
-                DrawerHeading(text: "On its computer")
-                let live = agent.liveness == .online
-                if !live {
-                    Label("\(name)'s computer is \(agent.liveness.spoken). Controls come back when it's online.",
-                          systemImage: "moon.zzz.fill")
+        VStack(alignment: .leading, spacing: theme.spacing.m) {
+            if let agent = store.agent {
+                identity(agent, c)
+                if said(agent) { says(agent, c) }
+                facts(agent, c)
+                if agent.isShared {
+                    Label("Shared by \(agent.sharedBy ?? "its owner")", systemImage: "person.2.fill")
                         .font(theme.font(theme.type.caption, .semibold))
                         .foregroundStyle(c.inkSoft)
-                        .padding(.bottom, theme.spacing.xs)
-                        .accessibilityIdentifier("controls-offline")
+                        .accessibilityIdentifier("about-shared-by")
+                } else {
+                    settings(agent, c)
                 }
-                ForEach(report.shown) { s in
-                    DrawerRow(icon: s.icon, title: s.title, sub: s.sub(name), tint: tint(s, c)) {
-                        if let m = store.controlsModel() { open = Opened(section: s, model: m) }
-                    }
-                    .disabled(!live)
-                    .opacity(live ? 1 : 0.45)
-                    .accessibilityIdentifier("controls-\(s.rawValue)")
-                }
-                keysRow(agent, c)
-            } else {
-                ControlsAboutCard(agent: store.agent) { if let a = store.agent { edit(a) } }
-                Text("This agent's host doesn't share its settings yet.")
-                    .font(theme.font(15)).foregroundStyle(c.inkSoft)
-                    .padding(.top, theme.spacing.s)
-                    .accessibilityIdentifier("controls-not-shared")
-                if let agent = store.agent { keysRow(agent, c) }
             }
         }
         .sheet(item: $keysFor) { a in
@@ -798,15 +776,112 @@ private struct DrawerControls: View {
         }
     }
 
+    private func identity(_ agent: YuiAgent, _ c: Swatch) -> some View {
+        HStack(spacing: theme.spacing.m) {
+            AgentBadge(agent: agent, size: 64)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(agent.name).font(theme.font(theme.type.display, theme.strong)).foregroundStyle(c.ink)
+                if let line = agent.line {
+                    Text(line)
+                        .font(theme.font(15, .semibold)).foregroundStyle(c.ink.opacity(0.8))
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("about-tagline")
+                }
+                StatusLine(agent: agent)
+            }
+        }
+        .padding(.top, theme.spacing.s)
+    }
+
+    /// What it does, in its own words (YUI-165/167), then three things to ask it.
+    @ViewBuilder private func says(_ agent: YuiAgent, _ c: Swatch) -> some View {
+        if let about = agent.about, !about.isEmpty {
+            Text(about)
+                .font(theme.font(theme.type.body)).foregroundStyle(c.ink)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityIdentifier("about-what")
+        }
+        if !agent.starters.isEmpty {
+            DrawerHeading(text: "Ask \(agent.name)")
+            ForEach(Array(agent.starters.enumerated()), id: \.offset) { i, words in
+                DrawerRow(icon: "bubble.left.fill", title: words, sub: nil, tint: c.accent.opacity(0.6), trailing: "arrow.right") {
+                    send(words)
+                }
+                .accessibilityHint("Sends it to \(agent.name)")
+                .accessibilityIdentifier("about-can-\(i)")
+            }
+        }
+    }
+
+    /// Where it runs: lower and quieter than what it does.
+    private func facts(_ agent: YuiAgent, _ c: Swatch) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            fact("Runs on", agent.connectorName ?? host(agent.kind))
+            if let ref = agent.remoteRef, !ref.isEmpty { fact("Profile", ref) }
+            if let n = agent.commands?.count, n > 0 { fact("Commands", "\(n)") }
+            if agent.isDefault { fact("Default", "Yes") }
+        }
+        .opacity(said(agent) ? 0.75 : 1)
+        .overlay(RoundedRectangle(cornerRadius: 16).stroke(c.outline, lineWidth: 1))
+        .accessibilityIdentifier("about-facts")
+    }
+
+    /// The owner's rows. A host that reports nothing gets the dashed card (its one message), unless
+    /// the agent already said what it does.
+    @ViewBuilder private func settings(_ agent: YuiAgent, _ c: Swatch) -> some View {
+        let name = agent.name
+        DrawerHeading(text: "In Yui")
+        DrawerRow(icon: "paintpalette.fill", title: "Name, look and notifications",
+                  sub: agent.muted ? "Notifications off" : "Notifications on", tint: c.accent.opacity(0.6)) {
+            edit(agent)
+        }
+        .accessibilityIdentifier("drawer-edit-agent")
+        if let report = agent.controls, !report.shown.isEmpty {
+            DrawerHeading(text: "On its computer")
+            let live = agent.liveness == .online
+            if !live {
+                Label("\(name)'s computer is \(agent.liveness.spoken). Controls come back when it's online.",
+                      systemImage: "moon.zzz.fill")
+                    .font(theme.font(theme.type.caption, .semibold))
+                    .foregroundStyle(c.inkSoft)
+                    .padding(.bottom, theme.spacing.xs)
+                    .accessibilityIdentifier("controls-offline")
+            }
+            ForEach(report.shown) { s in
+                DrawerRow(icon: s.icon, title: s.title, sub: s.sub(name), tint: tint(s, c)) {
+                    if let m = store.controlsModel() { open = Opened(section: s, model: m) }
+                }
+                .disabled(!live)
+                .opacity(live ? 1 : 0.45)
+                .accessibilityIdentifier("controls-\(s.rawValue)")
+            }
+        } else if !said(agent) {
+            notShared(c)
+        }
+        keysRow(agent, c)
+    }
+
+    private func notShared(_ c: Swatch) -> some View {
+        VStack(alignment: .leading, spacing: theme.spacing.s) {
+            Text("What it does")
+                .font(theme.font(theme.type.title, theme.strong)).foregroundStyle(c.ink)
+            Text("Yui doesn't own your agent, so this comes from where it runs. Once its host shares a profile, what it does, what it can reach and which model it uses show here.")
+                .font(theme.font(15)).foregroundStyle(c.inkSoft)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(theme.spacing.l)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .overlay(RoundedRectangle(cornerRadius: 20).stroke(c.outline, style: StrokeStyle(lineWidth: 1.5, dash: [5, 4])))
+        .accessibilityIdentifier("about-not-shared")
+    }
+
     /// A person's own agent only: a shared agent never uses its client's keys (YUI-34).
     @ViewBuilder private func keysRow(_ agent: YuiAgent, _ c: Swatch) -> some View {
-        if !agent.isShared {
-            DrawerHeading(text: "Keys")
-            DrawerRow(icon: "key.horizontal.fill", title: "Keys", sub: "What \(agent.name) may spend, and Revoke", tint: c.butter) {
-                keysFor = agent
-            }
-            .accessibilityIdentifier("controls-keys")
+        DrawerHeading(text: "Keys")
+        DrawerRow(icon: "key.horizontal.fill", title: "Keys", sub: "What \(agent.name) may spend, and Revoke", tint: c.butter) {
+            keysFor = agent
         }
+        .accessibilityIdentifier("controls-keys")
     }
 
     private func tint(_ s: ControlSection, _ c: Swatch) -> Color {
@@ -814,117 +889,6 @@ private struct DrawerControls: View {
         case .soul, .schedules: c.lavender
         case .memory, .channels: c.mint
         case .skills, .model: c.butter
-        }
-    }
-}
-
-/// The About card, for a host that shares no settings: who it is, where it runs.
-private struct ControlsAboutCard: View {
-    let agent: YuiAgent?
-    let edit: () -> Void
-    @Environment(\.yuiTheme) private var theme
-    @Environment(\.colorScheme) private var scheme
-
-    var body: some View {
-        let c = theme.swatch(scheme)
-        if let agent {
-            VStack(alignment: .leading, spacing: theme.spacing.m) {
-                HStack(spacing: theme.spacing.m) {
-                    AgentBadge(agent: agent, size: 48)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(agent.name).font(theme.font(theme.type.title, theme.strong)).foregroundStyle(c.ink)
-                        StatusLine(agent: agent)
-                    }
-                    Spacer(minLength: 0)
-                }
-                if !agent.isShared {
-                    Button("Name, look and notifications", systemImage: "paintpalette.fill", action: edit)
-                        .font(theme.font(15, .bold))
-                        .foregroundStyle(c.accent)
-                        .accessibilityIdentifier("drawer-edit-agent")
-                }
-            }
-            .padding(theme.spacing.l)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(c.surface, in: .rect(cornerRadius: 20))
-            .overlay(RoundedRectangle(cornerRadius: 20).stroke(c.outline, lineWidth: 1))
-            .padding(.top, theme.spacing.m)
-            // A container, so its id doesn't cover the button's (drawer-edit-agent).
-            .accessibilityElement(children: .contain)
-            .accessibilityIdentifier("controls-about-card")
-        }
-    }
-}
-
-// MARK: About
-
-private struct DrawerAbout: View {
-    let agent: YuiAgent?
-    /// A starter tapped: it goes as the person's message.
-    let send: (String) -> Void
-    @Environment(\.yuiTheme) private var theme
-    @Environment(\.colorScheme) private var scheme
-
-    var body: some View {
-        let c = theme.swatch(scheme)
-        VStack(alignment: .leading, spacing: theme.spacing.m) {
-            if let agent {
-                HStack(spacing: theme.spacing.m) {
-                    AgentBadge(agent: agent, size: 64)
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(agent.name).font(theme.font(theme.type.display, theme.strong)).foregroundStyle(c.ink)
-                        if let line = agent.line {
-                            Text(line)
-                                .font(theme.font(15, .semibold)).foregroundStyle(c.ink.opacity(0.8))
-                                .fixedSize(horizontal: false, vertical: true)
-                                .accessibilityIdentifier("about-tagline")
-                        }
-                        StatusLine(agent: agent)
-                    }
-                }
-                .padding(.top, theme.spacing.s)
-                if said(agent) {
-                    // What it does, in its own words (YUI-165/167), then three things to ask it.
-                    if let about = agent.about, !about.isEmpty {
-                        Text(about)
-                            .font(theme.font(theme.type.body)).foregroundStyle(c.ink)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .accessibilityIdentifier("about-what")
-                    }
-                    if !agent.starters.isEmpty {
-                        DrawerHeading(text: "Ask \(agent.name)")
-                        ForEach(Array(agent.starters.enumerated()), id: \.offset) { i, words in
-                            DrawerRow(icon: "bubble.left.fill", title: words, sub: nil, tint: c.accent.opacity(0.6), trailing: "arrow.right") {
-                                send(words)
-                            }
-                            .accessibilityHint("Sends it to \(agent.name)")
-                            .accessibilityIdentifier("about-can-\(i)")
-                        }
-                    }
-                } else {
-                    VStack(alignment: .leading, spacing: theme.spacing.s) {
-                        Text("What it does")
-                            .font(theme.font(theme.type.title, theme.strong)).foregroundStyle(c.ink)
-                        Text("Yui doesn't own your agent, so this comes from where it runs. Once its host shares a profile, what it does, what it can reach and which model it uses show here.")
-                            .font(theme.font(15)).foregroundStyle(c.inkSoft)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                    .padding(theme.spacing.l)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .overlay(RoundedRectangle(cornerRadius: 20).stroke(c.outline, style: StrokeStyle(lineWidth: 1.5, dash: [5, 4])))
-                    .accessibilityIdentifier("about-not-shared")
-                }
-                // Where it runs: lower and quieter than what it does.
-                VStack(alignment: .leading, spacing: 0) {
-                    fact("Runs on", agent.connectorName ?? host(agent.kind))
-                    if let ref = agent.remoteRef, !ref.isEmpty { fact("Profile", ref) }
-                    if let n = agent.commands?.count, n > 0 { fact("Commands", "\(n)") }
-                    if agent.isDefault { fact("Default", "Yes") }
-                }
-                .opacity(said(agent) ? 0.75 : 1)
-                .overlay(RoundedRectangle(cornerRadius: 16).stroke(c.outline, lineWidth: 1))
-                .padding(.top, theme.spacing.s)
-            }
         }
     }
 

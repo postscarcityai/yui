@@ -51,8 +51,8 @@ final class TalkLiveTests: XCTestCase {
         }
         func openItem(_ area: String, _ row: String? = nil) {
             app.buttons["Agent menu"].tap()
-            let tab = app.buttons["drawer-tab-controls"]
-            XCTAssertTrue(tab.waitForExistence(timeout: 10), "no Controls tab")
+            let tab = app.buttons["drawer-tab-agent"]
+            XCTAssertTrue(tab.waitForExistence(timeout: 10), "no Agent tab")
             tab.tap()
             let areaRow = app.buttons["controls-\(area)"]
             XCTAssertTrue(areaRow.waitForExistence(timeout: 20), "the host's report never arrived")
