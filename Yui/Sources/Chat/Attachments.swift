@@ -31,8 +31,31 @@ struct ComposerPhoto: Identifiable, Equatable {
 }
 
 enum Attachments {
-    /// Most photos one message carries. Each is shrunk to 2048 px before it goes; the runtime shows the model all 12.
-    static let maxPhotos = 12
+    /// Most photos one message carries. It is not ours to fix: the server's `yui_limits` row `photos_per_message`
+    /// (the lowest per-request image cap of Claude, OpenAI and Gemini, so any agent takes the whole send in one call)
+    /// is read on each thread open and kept here, so it moves without a build. Until it has been read once, 20.
+    nonisolated(unsafe) private(set) static var maxPhotos: Int = {
+        let kept = UserDefaults.standard.integer(forKey: limitKey)
+        return kept >= 1 ? kept : fallbackLimit
+    }()
+    static let fallbackLimit = 20
+    private static let limitKey = "yuiPhotosPerMessage"
+
+    /// `[{"value": 100}]`, what PostgREST answers for the limit; nil when it is not a whole number of 1 or more.
+    static func limit(from data: Data) -> Int? {
+        guard let rows = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]],
+              let value = (rows.first?["value"] as? NSNumber)?.doubleValue, value >= 1, value <= 10_000 else { return nil }
+        return Int(value)
+    }
+
+    /// Reads the limit from the server and keeps it. A failed read leaves the last one in place.
+    @MainActor static func refreshLimit(_ account: Account) async {
+        var c = URLComponents(url: YuiBackend.url.appending(path: "rest/v1/yui_limits"), resolvingAgainstBaseURL: false)!
+        c.queryItems = [URLQueryItem(name: "select", value: "value"), URLQueryItem(name: "name", value: "eq.photos_per_message")]
+        guard let data = try? await YuiRelay.data(account, URLRequest(url: c.url!)), let n = limit(from: data) else { return }
+        maxPhotos = n
+        UserDefaults.standard.set(n, forKey: limitKey)
+    }
 
     /// The row's body: the words, or a stand-in when there are only photos (body is never empty).
     static func body(text: String, photos: Int) -> String {

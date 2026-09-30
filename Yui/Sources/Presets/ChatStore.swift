@@ -874,8 +874,7 @@ final class ChatStore {
         guard !photos.isEmpty else { if !send(text, mention: mention, screen: screen) { throw AccountError.signedOut }; return }
         guard client != nil, let agentID = agent?.id, let account else { throw AccountError.signedOut }
         let media = YuiMedia(account: account, agentID: agentID)
-        var paths: [String] = []
-        for p in photos { paths.append(try await media.upload(photo: p.jpeg)) }
+        let paths = try await media.upload(photos: photos.map(\.jpeg))
         guard agent?.id == agentID else { throw AccountError.signedOut }  // switched threads mid-upload
         let body = Attachments.body(text: text, photos: paths.count)
         if let screen {

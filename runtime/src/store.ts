@@ -4,7 +4,7 @@
 // Everything a turn needs goes through here, so the turn itself never knows
 // where it runs.
 import type { MemoryItem, NativeAgent, OwnKey, Profile, Routes, Row, ScheduleItem, SearchTake } from "./types.ts";
-import { DEFAULT_ROUTES } from "./types.ts";
+import { DEFAULT_PHOTO_LIMIT, DEFAULT_ROUTES } from "./types.ts";
 import { HOME_META, homeBody } from "./home.ts";
 import { type TableChange, type TableStore, emptyStore, fromSeeds } from "./tables.ts";
 import type { JobItem } from "./meals.ts";
@@ -31,6 +31,8 @@ export interface Store {
   guide(): Promise<string>;
   /** A URL the model can fetch for one of the person's photos, or null. */
   signMedia(path: string): Promise<string | null>;
+  /** Most photos one message carries (yui_limits photos_per_message): the model gets them all in one call. */
+  photoLimit(): Promise<number>;
   /** Takes one free turn this month; false when they are used up. */
   takeTurn(userId: string): Promise<{ ok: boolean; left: number; limit: number }>;
   /** One turn at a time per agent. */
@@ -78,6 +80,7 @@ export interface LocalData {
   memory: MemoryItem[];
   rows: (Row & { agent_id: string; delivered_at?: string | null; handled_at?: string | null; doing?: any })[];
   routes?: Routes;
+  photoLimit?: number;
   schedules?: ScheduleItem[];
   timezones?: Record<string, string>;
   keys?: Record<string, OwnKey>; // a person's default key
@@ -207,6 +210,9 @@ export class LocalStore implements Store {
   }
   async signMedia(path: string) {
     return /^(https?:|data:)/.test(path) ? path : null;
+  }
+  async photoLimit() {
+    return this.data.photoLimit ?? DEFAULT_PHOTO_LIMIT;
   }
   async takeTurn(userId: string) {
     const month = new Date().toISOString().slice(0, 7);

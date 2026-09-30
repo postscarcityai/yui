@@ -18,14 +18,25 @@ final class AttachmentsTests: XCTestCase {
         XCTAssertEqual(Attachments.body(text: "hi", photos: 0), "hi")
     }
 
-    /// Twelve photos in one message (beta feedback AJKItOrwJW9B_3GUe2i2CkY): all twelve ride the row's meta, the 13th has no room.
-    func testTwelvePhotosRideOneRowAndThe13thHasNoRoom() throws {
-        XCTAssertEqual(Attachments.maxPhotos, 12)
-        let paths = (0..<Attachments.maxPhotos).map { "\(Self.user)/\(Self.agent)/user/p\($0).jpg" }
+    /// A full send (beta feedback AJKItOrwJW9B_3GUe2i2CkY): every photo up to the server's limit rides one row's meta, the next has no room.
+    func testAFullSendRidesOneRowAndTheNextHasNoRoom() throws {
+        let full = 100
+        let paths = (0..<full).map { "\(Self.user)/\(Self.agent)/user/p\($0).jpg" }
         let meta = try XCTUnwrap(Attachments.meta(paths: paths))
-        XCTAssertEqual(Attachments.paths(meta).count, 12)
-        XCTAssertEqual(Attachments.body(text: "", photos: 12), "12 photos")
-        XCTAssertEqual(max(Attachments.maxPhotos - paths.count, 0), 0, "no room for a 13th")
+        XCTAssertEqual(Attachments.paths(meta).count, full)
+        XCTAssertEqual(Attachments.body(text: "", photos: full), "100 photos")
+        XCTAssertEqual(max(full - paths.count, 0), 0, "no room for one more")
+    }
+
+    /// The limit is the server's number, not a constant: read as PostgREST answers, and ignored when it is not a usable count.
+    func testTheLimitComesFromTheServerRow() {
+        XCTAssertEqual(Attachments.limit(from: Data(#"[{"value":100}]"#.utf8)), 100)
+        XCTAssertEqual(Attachments.limit(from: Data(#"[{"value":12.0}]"#.utf8)), 12)
+        XCTAssertNil(Attachments.limit(from: Data("[]".utf8)), "no row")
+        XCTAssertNil(Attachments.limit(from: Data(#"[{"value":0}]"#.utf8)), "zero would lock the picker")
+        XCTAssertNil(Attachments.limit(from: Data(#"[{"value":99999}]"#.utf8)))
+        XCTAssertNil(Attachments.limit(from: Data("nope".utf8)))
+        XCTAssertGreaterThanOrEqual(Attachments.maxPhotos, 1)
     }
 
     func testMetaCarriesThePaths() throws {

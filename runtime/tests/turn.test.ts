@@ -143,8 +143,23 @@ test("a photo goes to the model that sees, as an image part", async () => {
   assert.deepEqual(last.content[1], { type: "image_url", image_url: { url: "https://img.test/plate.jpg" } });
 });
 
-test("twelve photos in one turn all reach the model; a 13th is left out and the model hears it", async () => {
+test("a full send reaches the model in one call, however many photos the limit allows", async () => {
   const { store, byHandle } = await freshYui();
+  const basil = await byHandle("arnold");
+  const m = fakeModel(() => "Lots of plates.");
+  store.say(basil.id, "these", "text");
+  const urls = Array.from({ length: 100 }, (_, i) => `https://img.test/p${i + 1}.jpg`);
+  store.data.rows.at(-1)!.meta = { photos: urls };
+  await runAgent(store, basil.id, { provider, fetch: m.fetch });
+  assert.equal(m.calls.length, 1, "one call");
+  const parts = lastUser(m.calls[0]).content;
+  assert.deepEqual(parts.filter((p: any) => p.type === "image_url").map((p: any) => p.image_url.url), urls, "all 100, in order");
+  assert.doesNotMatch(parts[0].text, /more photo/);
+});
+
+test("a photo limit lowered after a send leaves the oldest out and the model hears it", async () => {
+  const { store, byHandle } = await freshYui();
+  store.data.photoLimit = 12;
   const basil = await byHandle("arnold"); // Basil logs a meal photo behind the scenes (meals.test.ts)
   const m = fakeModel(() => "Twelve plates.");
   store.say(basil.id, "these", "text");

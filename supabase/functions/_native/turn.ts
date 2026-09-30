@@ -16,8 +16,6 @@ import { applyMemory } from "./memory.ts";
 import { applyAgentOps } from "./agents.ts";
 import { buildTurn, photoPaths, type CrewEntry } from "./prompt.ts";
 
-/** Most photos the model sees in one turn; the app sends 12 at most (Attachments.maxPhotos). */
-const MAX_PHOTOS = 12;
 import { next, parseLine, validZone } from "./schedule.ts";
 import { Firecrawl, LookupError, searchInvite, searchOnYui, sourceCards, type Source } from "./search.ts";
 import type { Store } from "./store.ts";
@@ -374,9 +372,11 @@ async function oneTurn(store: Store, agent: NativeAgent, rows: Row[], opts: Turn
   const crew: CrewEntry[] = [...mine.map((a) => ({ handle: a.profile.handle, name: a.profile.name, role: a.profile.role })),
                              ...others.map((o) => ({ handle: o.handle, name: o.name, role: "", connected: true }))];
 
-  // Up to 12 photos per turn, the newest (the app sends at most 12); the model hears how many it missed.
+  // Every photo of the turn goes to the model in one call. The app sends at most yui_limits photos_per_message,
+  // so the cap only bites when that number was lowered after a send; then the model hears how many it missed.
   const photos = photoPaths(rows);
-  const images = (await Promise.all(photos.slice(-MAX_PHOTOS).map((x) => store.signMedia(x)))).filter((u): u is string => !!u);
+  const maxPhotos = await store.photoLimit();
+  const images = (await Promise.all(photos.slice(-maxPhotos).map((x) => store.signMedia(x)))).filter((u): u is string => !!u);
   // A turn with a picture goes to the model that sees (spec/NATIVE.md section 6).
   if (images.length && own && blindKey(own)) {
     // No seeing model for this key: one line, not a silent fail and not a call on Yui's route.
@@ -388,7 +388,7 @@ async function oneTurn(store: Store, agent: NativeAgent, rows: Row[], opts: Turn
   }
   const model = (images.length && own ? ownVision(own) : provider.model) ?? (images.length ? routes.vision : p.model && p.model !== "default" ? p.model : routes.text);
   const { messages } = buildTurn({
-    guide, agent, memory, crew, history: history.filter((h) => !real.includes(h.id)), turn: turnRows, chatNew: chatIsNew(rows), images, photosLeftOut: Math.max(photos.length - MAX_PHOTOS, 0),
+    guide, agent, memory, crew, history: history.filter((h) => !real.includes(h.id)), turn: turnRows, chatNew: chatIsNew(rows), images, photosLeftOut: Math.max(photos.length - maxPhotos, 0),
     context: opts.context, reserve: (opts.maxTokens ?? 2000) + (provider.reasoning ?? 0), now, tz: tzRaw ? tz : undefined, schedules,
     tables: tablesPrompt(tables, clk),
   });

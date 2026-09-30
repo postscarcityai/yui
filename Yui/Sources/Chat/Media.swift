@@ -19,13 +19,32 @@ struct YuiMedia {
 
     nonisolated static let bucket = "yui-media"
     static let storage = YuiBackend.url.appending(path: "storage/v1")
-    /// The longest side of a photo we send. Plenty for vision, light on a phone connection.
-    nonisolated static let maxSide: CGFloat = 2048
+    /// The longest side of a photo we send. Plenty for vision, light on a phone connection, and inside the
+    /// 2000 px Claude allows per image once a request carries more than 20.
+    nonisolated static let maxSide: CGFloat = 2000
 
     /// JPEG-encodes a photo and uploads it. Returns the bucket path the agent gets.
     func upload(photo data: Data) async throws -> String {
         guard let jpeg = Self.jpeg(data) else { throw AccountError.server("not_a_photo") }
         return try await upload(jpeg, type: "image/jpeg", ext: "jpg")
+    }
+
+    /// Uploads a whole send, a few at a time so a full count does not wait on each round trip. Bucket paths come back in the order given.
+    func upload(photos jpegs: [Data], parallel: Int = 4) async throws -> [String] {
+        var paths = [String](repeating: "", count: jpegs.count)
+        var from = 0
+        while from < jpegs.count {
+            let batch = Array(from..<min(from + parallel, jpegs.count))
+            let tasks = batch.map { i in Task { try await self.upload(jpegs[i], type: "image/jpeg", ext: "jpg") } }
+            do {
+                for (n, task) in tasks.enumerated() { paths[batch[n]] = try await task.value }
+            } catch {
+                tasks.forEach { $0.cancel() }
+                throw error
+            }
+            from += parallel
+        }
+        return paths
     }
 
     /// Uploads bytes the way a photo goes (a music take's .m4a and .mid, YUI-116

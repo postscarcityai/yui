@@ -440,6 +440,7 @@ struct ChatView: View {
         .onChange(of: store.loaded) { keepPage() }
         #if DEBUG
         // -yuiReactDemo bar|select|<meaning> ("love it"): the reaction bar open, Select text open, or a reacted bubble, for screenshots.
+        .task { await Attachments.refreshLimit(account) }
         .task {
             guard let mode = UserDefaults.standard.string(forKey: "yuiReactDemo") else { return }
             try? await Task.sleep(for: .seconds(1))
@@ -1055,9 +1056,14 @@ struct ChatView: View {
             guard !items.isEmpty else { return }
             picked = []
             Task {
-                var datas: [Data] = []
-                for item in items { if let d = try? await item.loadTransferable(type: Data.self) { datas.append(d) } }
-                add(datas)
+                // One photo at a time, shrunk as it loads: a full pick never holds every original in memory (or the main thread).
+                var over = false
+                for item in items {
+                    guard let d = try? await item.loadTransferable(type: Data.self) else { continue }
+                    guard photos.count < Attachments.maxPhotos else { over = true; break }
+                    if let photo = await Task.detached(priority: .userInitiated, operation: { ComposerPhoto(d) }).value { photos.append(photo) }
+                }
+                if over { flash("Up to \(Attachments.maxPhotos) photos in one message.") }
             }
         }
         #if DEBUG

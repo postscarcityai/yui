@@ -5,13 +5,14 @@
 import type { Store } from "./store.ts";
 import type { JobItem } from "./meals.ts";
 import { type Cell, type TableChange, type TableStore, emptyStore } from "./tables.ts";
-import { DEFAULT_ROUTES, type MemoryItem, type NativeAgent, type OwnKey, type Profile, type Routes, type Row, type ScheduleItem, type SearchTake } from "./types.ts";
+import { DEFAULT_PHOTO_LIMIT, DEFAULT_ROUTES, type MemoryItem, type NativeAgent, type OwnKey, type Profile, type Routes, type Row, type ScheduleItem, type SearchTake } from "./types.ts";
 
 export class SupabaseStore implements Store {
   private url: string;
   private key: string;
   private fetch: typeof fetch;
   private guideCache?: { at: number; body: string };
+  private photoCache?: { at: number; n: number };
 
   constructor(url: string, serviceKey: string, fetchImpl: typeof fetch = fetch) {
     this.url = url.replace(/\/+$/, "");
@@ -150,6 +151,17 @@ export class SupabaseStore implements Store {
     const [g] = await this.rest("GET", "yui_channel_guides?select=body&order=created_at.desc&limit=1");
     this.guideCache = { at: Date.now(), body: g?.body ?? "" };
     return this.guideCache.body;
+  }
+
+  async photoLimit() {
+    if (this.photoCache && Date.now() - this.photoCache.at < 60_000) return this.photoCache.n;
+    let n = DEFAULT_PHOTO_LIMIT;
+    try {
+      const [row] = await this.rest("GET", "yui_limits?select=value&name=eq.photos_per_message");
+      if (Number(row?.value) >= 1) n = Math.floor(Number(row.value));
+    } catch { /* the default stands */ }
+    this.photoCache = { at: Date.now(), n };
+    return n;
   }
 
   async signMedia(path: string) {
