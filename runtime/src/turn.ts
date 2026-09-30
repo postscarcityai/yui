@@ -23,6 +23,7 @@ import type { Store } from "./store.ts";
 import { Stopped, guard } from "./stop.ts";
 import { crew } from "./profiles.ts";
 import { jevLine, jevRoute } from "./jev.ts";
+import { gate as oneLineGate, onelineNote, type OneLineMode } from "./oneline.ts";
 import { keyModel, providerLabel, PROVIDERS } from "./models.ts";
 import { type Clock, type TableStore, LIMITS, applyHeld, applyTables, asText, changed, clock, diff, draw, emptyStore, fromSeeds, pretty,
          readQueries, tablesPrompt } from "./tables.ts";
@@ -107,6 +108,7 @@ export interface TurnOptions {
   newId?: () => string;
   signal?: AbortSignal; // the person's Stop (YUI-190): aborted, the model call ends and nothing more is written
   stopPoll?: number; // ms between looks for a Stop while a turn runs, default 1500
+  oneLine?: OneLineMode; // one line and a picture (VIS-3): shadow (default) counts what it would rewrite, on saves the rewrite, off skips
   jev?: { key: string; fetch?: typeof fetch }; // shadow tool router (YUI-215): logs what Jev would route, changes nothing; none: no call
 }
 
@@ -537,6 +539,10 @@ async function oneTurn(store: Store, agent: NativeAgent, rows: Row[], opts: Turn
   else if (real.length && silent(answer.text)) body = `${p.name} couldn't put an answer together. Send that again?`;
 
   if (last) await store.doing(last, null);
+  // One line and a picture (VIS-3): a wall or a second prose bubble is rewritten before it is saved. Shadow saves it as written and keeps the counts.
+  const line = body.trim() ? oneLineGate(body.trim(), 0, opts.oneLine ?? "shadow") : null;
+  if (line && line.action !== "ok") log(`${p.name}: one-line ${line.action}: ${line.before.words} words, ${line.before.bubbles} bubbles`);
+  if (line) body = line.body;
   if (body.trim()) {
     await say(body.trim(), {
       ...(real.length ? { turn: real } : {}),
@@ -544,7 +550,8 @@ async function oneTurn(store: Store, agent: NativeAgent, rows: Row[], opts: Turn
       native: { model, ...(answer.usage ? { usage: answer.usage } : {}), ...(budget.left <= 10 ? { left: budget.left } : {}),
                 ...(looked.sources.length ? { sources: looked.sources.slice(0, 8) } : {}), ...(looked.capped ? { search_capped: looked.capped.why } : {}), ...(looked.onYui ? { search_on_yui: true } : {}),
                 ...(t.held ? { held: t.held } : {}), ...(reminded ? { reminders: reminded } : {}),
-                ...(slip ? { slips: [...new Set([...t.problems, ...notes])].slice(0, 6) } : {}) },
+                ...(slip ? { slips: [...new Set([...t.problems, ...notes])].slice(0, 6) } : {}),
+                ...(line && line.action !== "ok" ? { oneline: onelineNote(line) } : {}) },
       ...(depth === 0 && !real.length && rows[0]?.body.startsWith("[yui] check-in") ? { checkin: true } : {}),
     });
   }
