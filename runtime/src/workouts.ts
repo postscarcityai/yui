@@ -455,9 +455,17 @@ export type WorkoutAsk =
   | { kind: "day"; row: Row; day: string; answers: Record<string, unknown> }
   | { kind: "first"; row: Row; answers: Record<string, unknown> }
   | { kind: "again"; row: Row }
+  | { kind: "planwords"; row: Row }
   | { kind: "skipfirst"; row: Row };
 
 const START = /^\s*(?:let'?s\s+)?(?:start|begin|run)\s+(?:(?:today'?s|my|the|a)\s+)?(?:workout|session|training)(?:\s+today)?\s*[.!]*\s*$/i;
+/** Asking for a plan in words ("build me a plan", "get fit, 4 days a week", "a weekly plan"). Short, and nothing about pain or a condition: that one is the model's to word. */
+const PLAN_WORDS = [
+  /\b(?:build|make|create|set\s*up|design|write|give|need|want|start)\b[^.?!]*\b(?:plan|split|program(?:me)?|routine|schedule)\b/i,
+  /^\W*(?:a\s+|my\s+)?(?:(?:weekly|workout|training|first)\s+)*(?:plan|split|program(?:me)?|routine)\W*$/i,
+  /\b(?:get\s+fit|get\s+in\s+shape|get\s+stronger|build\s+muscle|lose\s+weight)\b/i,
+];
+const CARE_WORDS = /\b(?:hurt|hurts|pain|painful|injur\w*|surgery|pregnan\w*|heart|asthma|doctor|condition|diagnos\w*|dizzy)\b/i;
 const LOG = /^\s*log\s+(?:(?:today'?s|my|a|the)\s+)?(?:workout|session)(?:\s+today)?\s*[.!]*\s*$/i;
 
 /** An event row as {id, preset, value}: from its meta when the app sent one, else read from its line. */
@@ -497,6 +505,7 @@ export function workoutAsks(rows: Row[]): { asks: WorkoutAsk[]; rest: Row[] } {
     if (!e && r.kind !== "event") {
       if (START.test(body)) a = { kind: "start", row: r };
       else if (LOG.test(body)) a = { kind: "log", row: r };
+      else if (!/^\[yui\]/.test(body) && !r.thread_id && body.length <= 160 && PLAN_WORDS.some((w) => w.test(body)) && !CARE_WORDS.test(body)) a = { kind: "planwords", row: r };
     } else if (e) {
       const v = e.value;
       if (e.preset === "plan" && /^wk-\d{8}-(mon|tue|wed|thu|fri|sat|sun)$/.test(e.id) && v.plan && typeof v.plan === "object") {

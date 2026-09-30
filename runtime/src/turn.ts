@@ -23,7 +23,7 @@ import { keyModel, providerLabel, PROVIDERS } from "./models.ts";
 import { type Clock, type TableStore, LIMITS, applyHeld, applyTables, asText, changed, clock, diff, draw, emptyStore, fromSeeds, pretty,
          readQueries, tablesPrompt } from "./tables.ts";
 import type { NativeAgent, OwnKey, Row, ScheduleItem } from "./types.ts";
-import { applyDay, applyFirst, applyLogged, applyRunner, editDayBody, firstBody, firstLine, logBody, loggedLine, progressShape, screenLines, session, splitDays, startReply,
+import { PLAN_TABLE, applyDay, applyFirst, applyLogged, applyRunner, editDayBody, firstBody, firstLine, logBody, loggedLine, progressShape, screenLines, session, splitDays, startReply,
          trains, workoutAsks, type Session, type WorkoutAsk } from "./workouts.ts";
 import { ACK, type MealFix, applyFix, fixTaps, logsMeals, mealTurn, runMealJob, spoken } from "./meals.ts";
 import { ADD_BODY, GOAL, GROCERIES, LOG_BODY, MEALS as MEAL_LOG, PLAN as MEAL_PLAN, addGroceries, applyMealFix, applyPlan, applySwap, ensureTools,
@@ -296,7 +296,15 @@ async function oneTurn(store: Store, agent: NativeAgent, rows: Row[], opts: Turn
 
   // Arnold's tools (YUI-182): Start, the runner's Send, the log and a changed day are answered here, with no model turn.
   if (trains(agent)) {
-    const { asks, rest } = workoutAsks(rows);
+    let { asks, rest } = workoutAsks(rows);
+    // Plan words get the intake only until a week is built (YUI-228): after that they are a talk for the model.
+    if (asks.some((a) => a.kind === "planwords")) {
+      const built = Object.keys((await store.tables(agent.id)).tables[PLAN_TABLE]?.rows ?? {}).length > 0;
+      if (built) {
+        rest = rows.filter((r) => rest.includes(r) || asks.some((a) => a.kind === "planwords" && a.row === r));
+        asks = asks.filter((a) => a.kind !== "planwords");
+      }
+    }
     if (asks.length) {
       await workoutTools(store, agent, asks, rows[0].created_at, now, say, log);
       const done = asks.map((a) => a.row.id).filter((id) => !id.startsWith(SYNTHETIC));
@@ -1189,7 +1197,7 @@ async function workoutTools(store: Store, agent: NativeAgent, asks: WorkoutAsk[]
       await say(editDayBody(tables, a.day), turn);
       continue;
     }
-    if (a.kind === "again") {
+    if (a.kind === "again" || a.kind === "planwords") {
       await say(firstBody(), turn);
       continue;
     }

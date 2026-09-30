@@ -376,3 +376,44 @@ test("a new lifter eases in; cardio goals keep one lifting day; Skip keeps the s
   assert.match(lastReply(store, arnold.id).body, /We ease in\./);
   assert.equal(m.calls.length, 0);
 });
+
+// ---------- YUI-228: the plan right after the intake, no second wizard ----------
+
+test("asking for a plan in words gets the intake, never a model-written wizard; once a week is built the words are the model's", async () => {
+  const { store, byHandle } = await freshYui();
+  const arnold = await byHandle("arnold");
+  const m = noModel();
+  store.say(arnold.id, "I want to get fit, 4 days a week");
+  await runAgent(store, arnold.id, { provider, fetch: m.fetch, now: () => MON });
+  const asked = lastReply(store, arnold.id).body;
+  assert.match(fence(asked), /^plan@first "Your first plan" submit="Build my week"$/m);
+  assert.doesNotMatch(asked, /Two things left|Finish your split/);
+  assert.equal(m.calls.length, 0, "the intake is the runtime's");
+  // The Send builds the week at once, with nothing else asked.
+  tap(store, arnold.id, "first", "plan", { plan: { goal: "Lift heavy", days: "4" } });
+  await runAgent(store, arnold.id, { provider, fetch: m.fetch, now: () => MON });
+  const built = lastReply(store, arnold.id).body;
+  assert.match(built, /^Your week is built: 4 days, about 45 minutes/);
+  assert.doesNotMatch(fence(built), /^(plan|pick)@|^choose@(goal|days|time|level|split)/m, "no second round of questions");
+  assert.equal(m.calls.length, 0);
+  // Built: plan words are a conversation again.
+  store.say(arnold.id, "make my plan harder");
+  const m2 = fakeModel(() => "Sure. Which day first?");
+  await runAgent(store, arnold.id, { provider, fetch: m2.fetch, now: () => MON });
+  assert.equal(m2.calls.length, 1, "after the week is built the model answers");
+  // Words about pain are the model's to word, even with no week yet.
+  const fresh = await freshYui();
+  const a2 = await fresh.byHandle("arnold");
+  const m3 = fakeModel(() => "Sorry about the knee. Check with your doctor first.");
+  fresh.store.say(a2.id, "my knee hurts, build me a plan");
+  await runAgent(fresh.store, a2.id, { provider, fetch: m3.fetch, now: () => MON });
+  assert.equal(m3.calls.length, 1);
+});
+
+test("Arnold's soul no longer runs his own intake or a follow-up wizard", async () => {
+  const { readFileSync } = await import("node:fs");
+  const soul = readFileSync(new URL("../profiles/arnold/soul.md", import.meta.url), "utf8");
+  assert.doesNotMatch(soul, /plan "Your days"/);
+  assert.doesNotMatch(soul, /Build my own/);
+  assert.match(soul, /Never write your own intake/);
+});

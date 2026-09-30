@@ -111,7 +111,7 @@ test("Arnold's kickoff is the first plan (YUI-217): goal, days, time, gear, expe
   assert.match(screen[5], /^choose@level "How much have you lifted\?"/);
   assert.equal(screen[6], "end");
   assert.match(screen[7], /^card@first-skip .* cta="Skip for now"$/);
-  assert.match(a.soul, /plan "Your days"/, "his own split: a choose per day");
+  assert.match(a.soul, /Never write your own intake/, "the runtime builds the split, he asks nothing more (YUI-228)");
   assert.match(a.soul, /~days "Mon Push" "Wed Pull"/, "and This week is patched from it");
 });
 
