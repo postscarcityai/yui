@@ -40,10 +40,10 @@ TUNER_BUILD = 205  # YUI-116 step 4: tuner and metronome drawn and played (7b18b
 MAP_BUILD = 219  # YUI-158 step 2: maps drawn and pinched (the app commit's count)
 # DRAW-2: no build draws `diagram` (Mermaid) or `mock` (a UI from parts) yet. Set this to
 # the DRAW-2 app commit's count (git rev-list --count) when it lands. Until then it is a
-# sentinel like FLOW_BUILD, so every phone gets the words and agents are told to skip them.
+# sentinel, so every phone gets the words and agents are told to skip them.
 DRAW_BUILD = 1_000_000
-# YUI-115: no build runs flows yet. Set this to that app commit's count when it lands.
-FLOW_BUILD = 1_000_000
+# YUI-115: the app runs flows from this build (the runtime commit's count); older builds get a plan.
+FLOW_BUILD = 414
 
 # First app build whose parser knows each preset (git rev-list --count of the
 # commit that added it to Packages/YuiLines/Sources/YuiLines/Presets.swift).
@@ -58,7 +58,7 @@ MIN_BUILD: Dict[str, int] = {
     "tuner": TUNER_BUILD, "metronome": TUNER_BUILD,      # YUI-116 step 4: a tuner and a click
     "map": MAP_BUILD, "area": MAP_BUILD, "pin": MAP_BUILD, "route": MAP_BUILD,  # YUI-158: places on a map
     "diagram": DRAW_BUILD, "mock": DRAW_BUILD, "part": DRAW_BUILD,  # DRAW-2: a Mermaid diagram, a UI mock
-    "flow": FLOW_BUILD,                                  # YUI-115: runs as a plan until then
+    "flow": FLOW_BUILD,                                  # YUI-115: older builds get a plan
 }
 GROUPS = {"sketch": {"row", "after"}, "timeline": {"done", "now", "next"}, "shapes": {"shape"},
           "map": {"area", "pin", "route"}, "mock": {"part"}}
