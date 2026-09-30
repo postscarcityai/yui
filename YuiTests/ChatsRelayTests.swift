@@ -182,7 +182,8 @@ final class ChatsRelayTests: XCTestCase {
         XCTAssertEqual(store.chatTitle, "Protein on rest days")
         XCTAssertTrue(FakeRelay.log().contains { $0.path == "yui_messages" && $0.query["chat_id"] == "eq.c-two" },
                       "the read names the chat")
-        XCTAssertFalse(FakeRelay.log().contains { $0.path == "yui_messages" && $0.method == "GET" && $0.query["chat_id"] == nil && $0.query["body"] == nil },
+        // The key vault's control read (YUI-34) is the agent's, not a chat's rows.
+        XCTAssertFalse(FakeRelay.log().contains { $0.path == "yui_messages" && $0.method == "GET" && $0.query["chat_id"] == nil && $0.query["body"] == nil && $0.query["kind"] != "eq.control" },
                        "no read of the agent's whole thread")
     }
 
@@ -316,6 +317,20 @@ final class ChatsRelayTests: XCTestCase {
         store.attach(Self.basil, account: account)
         await until("opened on the pushed chat") { store.chatID == "c-hi" && store.loaded }
         XCTAssertEqual(store.chatTitle, "Hi Basil")
+    }
+
+    /// Build 332: New chat (or a push) before the first list answer left chatID set, so the list
+    /// was dropped and the drawer showed New chat with nothing under it, for good.
+    func testTheListStillLoadsWhenAChatIsOpenedBeforeItArrives() async {
+        let store = ChatStore()
+        store.attach(Self.basil, account: account)
+        store.newChat()
+        XCTAssertTrue(store.chats.openIsDraft)
+        await until("the list is in the drawer") { store.chats.loaded }
+        XCTAssertEqual(store.chats.items.map(\.id), ["c-two", "c-hi"])
+        XCTAssertTrue(store.chats.openIsDraft, "the chat you opened stays open")
+        store.openChat("c-hi")
+        XCTAssertEqual(store.chatID, "c-hi", "and a past chat opens from the list")
     }
 
     func testOlderChatsLoadAsTheListScrolls() async {

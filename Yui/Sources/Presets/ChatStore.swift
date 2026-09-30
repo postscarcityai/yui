@@ -1081,7 +1081,7 @@ final class ChatStore {
         let first = !loaded
         do {
             // Which chat: the list comes first, and the thread is that chat's rows (YUI-169).
-            if chatsOn, chatID == nil { try await resolveChat() }
+            if chatsOn, chatID == nil || !chats.loaded { try await resolveChat() }
             // A chat made here with nothing said in it is not on the server: nothing to read.
             if chats.openIsDraft { loaded = true; return }
             guard let client, agent?.id == agentID else { return }
@@ -1493,7 +1493,8 @@ enum YLSamples {
 extension ChatStore {
     /// The list first, then the chat the thread opens on: a push's, the last one open with this
     /// agent, else the newest. An agent with none opens an empty one. A server with no chats
-    /// yet answers 404: the thread stays the agent's, as before.
+    /// yet answers 404: the thread stays the agent's, as before. The list is kept even when a chat
+    /// is already open by the time it arrives, so the drawer is never left without it.
     fileprivate func resolveChat() async throws {
         guard let chatClient, let agentID = agent?.id else { return }
         let page: [ChatInfo]
@@ -1503,8 +1504,10 @@ extension ChatStore {
             chatsOn = false
             return
         }
-        guard agent?.id == agentID, chatID == nil else { return }
+        guard agent?.id == agentID else { return }
         chats.apply(page: page, keep: Array(justSaved.values))
+        // A chat was already opened before the list came (New chat, a push): the list still fills in.
+        guard chatID == nil else { return }
         let known = Set(page.map(\.id))
         let pick = wantedChat ?? lastChat[agentID].flatMap { known.contains($0) ? $0 : nil } ?? page.first?.id
         wantedChat = nil
