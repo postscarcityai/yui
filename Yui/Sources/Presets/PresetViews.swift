@@ -174,10 +174,13 @@ struct OptionPill: View {
 
     var body: some View {
         let c = theme.swatch(scheme)
+        // A long answer wraps in a rounded box, not a capsule that clips it (Chris, TestFlight AIUAO8VH).
+        let shape = text.count > 28 ? AnyShape(RoundedRectangle(cornerRadius: theme.radius.card)) : AnyShape(Capsule())
         Button(action: action) {
             HStack(spacing: theme.spacing.xs) {
                 if check { Image(systemName: on ? "checkmark.circle.fill" : "circle") }
                 Text(text).fixedSize(horizontal: false, vertical: true)
+                    .multilineTextAlignment(text.count > 28 ? .leading : .center)
                 if let icon { Image(systemName: icon).accessibilityHidden(true) }
             }
             .font(theme.font(theme.type.body, .bold))
@@ -185,8 +188,8 @@ struct OptionPill: View {
             .padding(.horizontal, theme.spacing.l)
             .padding(.vertical, theme.spacing.m)
             .frame(maxWidth: grow ? .infinity : nil)
-            .background(on ? fill : c.background, in: Capsule())
-            .overlay(Capsule().stroke(on ? .clear : c.outline, lineWidth: 1.5))
+            .background(on ? fill : c.background, in: shape)
+            .overlay(shape.stroke(on ? .clear : c.outline, lineWidth: 1.5))
             .opacity(dim ? 0.4 : 1)
         }
         .buttonStyle(BounceButtonStyle())

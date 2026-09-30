@@ -63,7 +63,7 @@ final class MusicTests: XCTestCase {
         shot("2-playing")
         app.buttons["loop-play"].tap()
 
-        app.buttons["loop-send"].tap()
+        XCTAssertFalse(app.buttons["loop-send"].exists, "the looper still has a Send button")
         waitFor("the pattern to go out") { !events("loop").isEmpty }
         let e = events("loop").last
         XCTAssertEqual(e?["bpm"] as? Int, 98)

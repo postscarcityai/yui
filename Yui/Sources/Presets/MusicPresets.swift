@@ -174,8 +174,8 @@ struct MusicButton: View {
 // MARK: - loop
 
 /// `loop [BPM] [title]`: a step grid. Rows are sounds or notes, columns are
-/// steps. Tap a cell to turn it on; every change plays at once. Send hands the
-/// pattern back in the words the agent writes.
+/// steps. Tap a cell to turn it on; every change plays at once. Stopping the loop hands the
+/// changes back in the words the agent writes.
 struct LoopPreset: View {
     let c: YLComponent
     /// The person's grid, until a patch from the agent replaces it.
@@ -183,6 +183,8 @@ struct LoopPreset: View {
     @State private var bpm = 96
     @State private var swing = 0
     @State private var sent = false
+    /// Changes the agent has not seen: the loop sends them when it stops.
+    @State private var dirty = false
     @State private var tapped = 0
     private var host: MusicHost { .shared }
     @Environment(\.ylEmit) private var emit
@@ -232,9 +234,6 @@ struct LoopPreset: View {
             }
             BluetoothHint()
             TakeControl(c: c, bpm: Double(bpm)) { ["bpm": .number(Double(bpm))] }
-            OptionPill(text: sent ? "Sent" : "Send", fill: s.accent, ink: s.onAccent, check: sent, grow: true) { send() }
-                .disabled(c.locked)
-                .accessibilityIdentifier("loop-send")
         }
         .modifier(SoundHold())
         .sensoryFeedback(.selection, trigger: tapped)
@@ -349,7 +348,10 @@ struct LoopPreset: View {
         let theirs = LoopPattern.strings(LoopPattern.grid(c.strings("p") ?? [], rows: rows.count, steps: steps))
         if p == theirs, bpm == c.clamp("bpm", 40...240, 96), swing == c.clamp("swing", 0...75, 0) {
             LoopDrafts.shared.clear(agent, c.ylID)
+            dirty = false
         } else {
+            sent = false
+            dirty = true
             LoopDrafts.shared.set(agent, c.ylID, .init(base: base, p: p, bpm: bpm, swing: swing))
         }
     }
@@ -372,6 +374,9 @@ struct LoopPreset: View {
         YuiSound.shared.stopLoop()
         host.loopOwner = nil
         host.drop("loop")
+        // No Send button (Chris, TestFlight AOz3mPMK: tapped by accident): the beat goes to the
+        // agent when the loop stops with changes it has not seen.
+        if dirty, !c.locked { send() }
     }
 
     private func send() {
@@ -380,6 +385,7 @@ struct LoopPreset: View {
             "rows": .array(rows.map(YLValue.string)), "p": .array(LoopPattern.strings(grid).map(YLValue.string)),
         ], echo: "Sent my beat, \(bpm) BPM"))
         sent = true
+        dirty = false
     }
 }
 

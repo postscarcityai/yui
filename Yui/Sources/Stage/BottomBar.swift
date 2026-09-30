@@ -161,20 +161,39 @@ struct BarButtons: View {
         .accessibilityIdentifier(lockArmed ? "\(prefix)-lock-armed" : "\(prefix)-lock")
     }
 
+    /// How far left the finger goes to arm the trash (the same 110 the chat mic uses).
+    static let trashReach: CGFloat = 110
+
+    private func trash(_ c: Swatch) -> some View {
+        Image(systemName: armed ? "trash.fill" : "trash")
+            .font(.system(size: 17, weight: .bold))
+            .foregroundStyle(armed ? c.onAccent : c.ink)
+            .frame(width: Self.small, height: Self.small)
+            .background(armed ? c.accent : c.surface, in: Circle())
+            .overlay(Circle().stroke(armed ? .clear : c.outline, lineWidth: 1.5))
+            .scaleEffect(armed && !reduceMotion ? 1.2 : 1)
+            .animation(reduceMotion ? nil : theme.spring, value: armed)
+            .allowsHitTesting(false)
+            .transition(.opacity)
+            .accessibilityElement()
+            .accessibilityLabel(armed ? "Let go to cancel" : "Slide left to cancel")
+            .accessibilityIdentifier(armed ? "\(prefix)-trash-armed" : "\(prefix)-trash")
+    }
+
     /// A tap talks hands-free; a hold talks until the finger lets go. The drag runs in
     /// global space so the finger sliding off the circle still counts.
     private func mic(_ c: Swatch) -> some View {
-        Image(systemName: armed ? "trash.fill" : micOn ? "waveform" : "mic.fill")
+        Image(systemName: micOn ? "waveform" : "mic.fill")
             .font(.system(size: Self.micSize * 0.42 * 0.8, weight: .bold))
             .foregroundStyle(c.onAccent)
-            .symbolEffect(.variableColor.iterative, isActive: micLive && !armed && !reduceMotion)
+            .symbolEffect(.variableColor.iterative, isActive: micLive && !reduceMotion)
             .contentTransition(.symbolEffect(.replace))
             .frame(width: Self.micSize, height: Self.micSize)
             .background {
-                if let look, micLive, !armed, !look.reduced { MicRing(color: c.accent, look: look, voice: voice) }
+                if let look, micLive, !look.reduced { MicRing(color: c.accent, look: look, voice: voice) }
             }
-            .background(armed ? c.inkSoft : c.accent, in: Circle())
-            .shadow(color: c.accent.opacity(armed ? 0 : 0.45), radius: 9, y: 6)
+            .background(c.accent, in: Circle())
+            .shadow(color: c.accent.opacity(0.45), radius: 9, y: 6)
             .scaleEffect(press != nil && !reduceMotion ? 0.94 : micLive && !reduceMotion ? 1.08 : 1)
             .animation(reduceMotion ? nil : theme.spring, value: press != nil)
             .animation(reduceMotion ? nil : theme.spring, value: micLive)
@@ -191,6 +210,9 @@ struct BarButtons: View {
             .sensoryFeedback(.impact(weight: .medium), trigger: lockArmed)
             // The lock: a spot just above the mic. Slide up onto it and let go to keep recording.
             .overlay(alignment: .top) { if held, !armed { lock(c).offset(y: -(Self.micSize + 26)) } }
+            // The trash: its own target to the left, like the lock. The mic stays a mic.
+            // Let go over it cancels; let go anywhere else does not.
+            .overlay(alignment: .leading) { if held { trash(c).offset(x: -Self.trashReach - Self.small / 2) } }
             .accessibilityElement()
             .accessibilityAddTraits(.isButton)
             .accessibilityLabel(micOn ? "Stop talking" : "Talk")

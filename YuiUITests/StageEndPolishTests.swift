@@ -50,6 +50,39 @@ final class StageEndPolishTests: XCTestCase {
         shot("3-type-your-own", "light")
     }
 
+    /// A long typed answer stays whole once added: a wrapping box, not a capsule that clips it (AIUAO8VH).
+    func testLongOwnAnswerStaysVisible() throws {
+        let app = launch("dark")
+        send(app, "Plan it")
+        toQuestions(app)
+        app.buttons["Type your own"].tap()
+        let field = app.textFields["other-field"].exists ? app.textFields["other-field"] : app.textViews["other-field"]
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        field.tap()
+        let words = "Don't spend any money, just hook up the API's. I'll test it for you later. I want her to be able to add their API keys and use it, and we should just trust that it works."
+        field.typeText(words)
+        shot("4-long-typing", "dark")
+        app.buttons["other-add"].tap()
+        sleep(1)
+        shot("4-long-added", "dark")
+        let pill = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Don't spend any money")).firstMatch
+        XCTAssertTrue(pill.waitForExistence(timeout: 5), "the long answer is not on screen whole")
+        XCTAssertGreaterThan(pill.frame.height, 90, "the long answer is still one clipped line")
+        XCTAssertLessThanOrEqual(pill.frame.maxX, app.frame.maxX, "the long answer runs off the screen")
+    }
+
+    /// The trash is its own target: the mic does not turn into it, and only letting go over it cancels.
+    func testTrashIsItsOwnTarget() throws {
+        let app = launch("light", extra: ["-yuiPTTFake", "Cancel this one"])
+        let mic = app.buttons["stage-mic"]
+        XCTAssertTrue(mic.waitForExistence(timeout: 15), "no mic")
+        let from = mic.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+        // Held over the trash: it is a separate target and the mic is still a mic.
+        from.press(forDuration: 1.0, thenDragTo: from.withOffset(CGVector(dx: -140, dy: 0)), withVelocity: .slow, thenHoldForDuration: 1.5)
+        sleep(1)
+        XCTAssertFalse(app.staticTexts["Cancel this one"].exists, "a recording let go over the trash was sent")
+    }
+
     /// Read through to the questions, the last page.
     private func toQuestions(_ app: XCUIApplication) {
         let questions = app.descendants(matching: .any)["stage-questions"]
@@ -61,7 +94,7 @@ final class StageEndPolishTests: XCTestCase {
         shot("0-questions", "\(app.debugDescription.contains("Type your own") ? "seen" : "unseen")")
     }
 
-    private func launch(_ appearance: String) -> XCUIApplication {
+    private func launch(_ appearance: String, extra: [String] = []) -> XCUIApplication {
         let reply = [
             "Two things.",
             "plan \"Before I go\"",
@@ -72,7 +105,7 @@ final class StageEndPolishTests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments = ["-yuiStageFirst", "YES", "-yuiDemoAccount", "-yuiDemoAgents", "-yuiAgent", "yui",
                                "-appearance", appearance, "-yuiDemoReply", reply,
-                               "-yuiDemoPickupAfter", "0.5", "-yuiDemoReplyAfter", "6"]
+                               "-yuiDemoPickupAfter", "0.5", "-yuiDemoReplyAfter", "6"] + extra
         app.launch()
         return app
     }

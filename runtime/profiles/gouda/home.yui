@@ -6,7 +6,7 @@ menu shortcut@log "Log practice" say="Log practice"
 menu shortcut@learn "Learn a song" say="Learn a song"
 >2
 loop@looper 92 "Lazy Sunday" p=x...x...|..x...x.|........|x.x.x.x. +inline
-choose@sessions "Open a beat" "Lazy Sunday"|"Boom bap"|"Four on the floor"|"Rock backbeat"|"One drop" body="Send on the looper saves your version."
+choose@sessions "Open a beat" "Lazy Sunday"|"Boom bap"|"Four on the floor"|"Rock backbeat"|"One drop" body="Stop the looper and your changes go to Gouda."
 save looper
 >3
 card@lesson "Learn a song" "Pick a song or paste its chords. The click counts you in and your keys stay in key." cta="Learn a song"
