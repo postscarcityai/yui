@@ -56,6 +56,10 @@ final class OpenRealAccountTests: XCTestCase {
         shot("2-after-open")
         XCTAssertTrue(landed, "Open did not land on Arnold's first question within 4 s")
         print("open-to-question \(Date().timeIntervalSince(t0))s")
+        // Still there once Arnold's own reply to the hand-off has landed.
+        sleep(14)
+        shot("2a-14s-after-open")
+        XCTAssertTrue(text(question).exists, "the first question closed itself after the hand-off reply came")
 
         // 2. Away to Yui and back by the agent bar: the question is on screen again within 4 s.
         func switchTo(_ name: String) {

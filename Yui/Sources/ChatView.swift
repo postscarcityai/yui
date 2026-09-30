@@ -639,6 +639,9 @@ struct ChatView: View {
         guard let want = pushLanding, store.loaded, store.agent?.id == want.agent else { return }
         guard let id = PushLanding.message(store.messages, want: want.message) else { return }
         pushLanding = nil
+        // A message with nothing staged (a hello's words, the plan is its next part) has nothing to open: opening
+        // it would only pull the stage off the first plan `landFirstPlan` just put up, and settle shut (YUI-234).
+        guard store.messages.first(where: { $0.id == id })?.yl?.staged(store.style).isEmpty == false else { return }
         openStage(id, toPlan: true)
     }
 
