@@ -144,7 +144,7 @@ final class StageFirstModel {
         // The hello's pill, before anything was said, plays the hello again (YUI-167).
         guard start != nil || messages[i].hello else { return false }
         let t = start.map { StageChunks.turn(messages, ask: messages[$0].id) } ?? StageChunks.hello(messages)
-        guard let at = t.chunks.firstIndex(where: { $0.scope == id })
+        guard let at = t.chunks.firstIndex(where: { $0.scopes.contains(id) })
                 ?? (t.questions.contains { $0.scope == id } ? t.chunks.count : nil) else { return false }
         ask = start.map { messages[$0].id }
         hello = start == nil ? messages.first(where: \.hello)?.id : nil
@@ -769,36 +769,14 @@ struct StageFirstView: View {
         .accessibilityIdentifier("stage-segments")
     }
 
-    /// A line to read and its picture. A tap on the left third goes back, anywhere else on.
-    private func chunk(_ k: StageChunk, _ c: Swatch) -> some View {
-        GeometryReader { geo in
+    /// A page: up to 3 ideas, each a line and its picture, stacked. A tap on the left third goes back,
+    /// anywhere else on. One idea centers; several share the height so the page fills the phone (VIS-4).
+    private func chunk(_ page: StageChunk, _ c: Swatch) -> some View {
+        let blocks = page.blocks
+        return GeometryReader { geo in
             ScrollView {
-                VStack(alignment: .leading, spacing: theme.spacing.l) {
-                    if let pic = k.pic {
-                        PresetView(component: pic)
-                            .environment(\.ylComponents, k.all)
-                            .environment(\.ylScope, k.scope)
-                    }
-                    if let line = k.line, !line.isEmpty {
-                        // Big type is for one short line; longer words read as body (YUI-196).
-                        ReadingText(text: line, ink: c.ink, soft: c.inkSoft, accent: c.accent,
-                                    headlineSize: k.pic == nil ? theme.type.display + 4 : theme.type.display)
-                            .accessibilityIdentifier("stage-line")
-                            .onGeometryChange(for: CGFloat.self, of: { $0.frame(in: .global).minY }) { wordsTop = $0 }
-                    }
-                    if let page = k.page {
-                        if let body = page.string("body") {
-                            ReadingText(text: body, ink: c.inkSoft, soft: c.inkSoft, accent: c.accent)
-                                .onGeometryChange(for: CGFloat.self, of: { $0.frame(in: .global).minY }) { top in
-                                    if k.line?.isEmpty != false { wordsTop = top }
-                                }
-                        }
-                        ForEach(Array((page.strings("points") ?? []).enumerated()), id: \.offset) { _, p in
-                            Label { Text(p) } icon: { Circle().fill(c.accent).frame(width: 7, height: 7) }
-                                .font(theme.font(theme.type.body, .semibold))
-                                .foregroundStyle(c.ink)
-                        }
-                    }
+                VStack(alignment: .leading, spacing: blocks.count > 1 ? theme.spacing.xl : theme.spacing.l) {
+                    ForEach(blocks) { k in block(k, c, room: blocks.count > 1 ? geo.size.width * 0.5 : nil) }
                 }
                 .frame(maxWidth: .infinity, minHeight: geo.size.height, alignment: .center)
             }
@@ -807,6 +785,59 @@ struct StageFirstView: View {
             // Buttons and drawings inside keep their own taps; a tap on words or space turns the page.
             .contentShape(.rect)
             .onTapGesture { p in step(p.x < geo.size.width / 3 ? -1 : 1) }
+        }
+        .accessibilityIdentifier("stage-page-\(blocks.count)")
+    }
+
+    /// One idea: its drawing, then its line (stacked: the line, then its drawing).
+    @ViewBuilder private func block(_ k: StageChunk, _ c: Swatch, room: CGFloat?) -> some View {
+        let stacked = room != nil
+        VStack(alignment: .leading, spacing: stacked ? theme.spacing.s : theme.spacing.l) {
+            // Stacked ideas read line first, so each drawing sits under the words it shows.
+            if stacked {
+            if let line = k.line, !line.isEmpty {
+                // Big type is for one short line; longer words read as body (YUI-196). Stacked ideas read a size down.
+                ReadingText(text: line, ink: c.ink, soft: c.inkSoft, accent: c.accent,
+                            headlineSize: stacked ? theme.type.title : k.pic == nil ? theme.type.display + 4 : theme.type.display)
+                    .accessibilityIdentifier("stage-line")
+                    .onGeometryChange(for: CGFloat.self, of: { $0.frame(in: .global).minY }) { wordsTop = $0 }
+            }
+            if let pic = k.pic {
+                PresetView(component: pic)
+                    .environment(\.ylComponents, k.all)
+                    .environment(\.ylScope, k.scope)
+                    // Stacked ideas share the height: a scene scales down to half the width so its height shrinks with it; a sketch keeps its own height and the page scrolls if it must.
+                    .frame(maxWidth: k.pic?.preset == "shapes" ? room : nil)
+            }
+            } else {
+            if let pic = k.pic {
+                PresetView(component: pic)
+                    .environment(\.ylComponents, k.all)
+                    .environment(\.ylScope, k.scope)
+                    // Stacked ideas share the height: a scene scales down to half the width so its height shrinks with it; a sketch keeps its own height and the page scrolls if it must.
+                    .frame(maxWidth: k.pic?.preset == "shapes" ? room : nil)
+            }
+            if let line = k.line, !line.isEmpty {
+                // Big type is for one short line; longer words read as body (YUI-196). Stacked ideas read a size down.
+                ReadingText(text: line, ink: c.ink, soft: c.inkSoft, accent: c.accent,
+                            headlineSize: stacked ? theme.type.title : k.pic == nil ? theme.type.display + 4 : theme.type.display)
+                    .accessibilityIdentifier("stage-line")
+                    .onGeometryChange(for: CGFloat.self, of: { $0.frame(in: .global).minY }) { wordsTop = $0 }
+            }
+            }
+            if let page = k.page {
+                if let body = page.string("body") {
+                    ReadingText(text: body, ink: c.inkSoft, soft: c.inkSoft, accent: c.accent)
+                        .onGeometryChange(for: CGFloat.self, of: { $0.frame(in: .global).minY }) { top in
+                            if k.line?.isEmpty != false { wordsTop = top }
+                        }
+                }
+                ForEach(Array((page.strings("points") ?? []).enumerated()), id: \.offset) { _, p in
+                    Label { Text(p) } icon: { Circle().fill(c.accent).frame(width: 7, height: 7) }
+                        .font(theme.font(theme.type.body, .semibold))
+                        .foregroundStyle(c.ink)
+                }
+            }
         }
     }
 

@@ -77,22 +77,15 @@ final class StageFirstTests: XCTestCase {
         XCTAssertTrue(app.descendants(matching: .any)["stage-you"].exists, "their words are not at the top")
         shot("3-working", appearance)
 
-        // The reply plays: three chunks, a line and a picture each, then the questions.
-        XCTAssertTrue(line(app, "0.3.2 is building").waitForExistence(timeout: 20), "chunk 1 never showed")
-        // The rest streams in, a line every 220 ms: three chunks and the questions.
-        let all4 = app.descendants(matching: .any).matching(NSPredicate(format: "identifier == 'stage-segments' AND label == 'Part 1 of 4'")).firstMatch
-        XCTAssertTrue(all4.waitForExistence(timeout: 15), "the reply never grew to four parts")
-        shot("4-chunk-1", appearance)
-        app.buttons["stage-next"].tap()
-        XCTAssertTrue(line(app, "Keys and chords ride along").waitForExistence(timeout: 3))
-        shot("5-chunk-2", appearance)
-        app.buttons["stage-next"].tap()
-        XCTAssertTrue(line(app, "The faster Send tap").waitForExistence(timeout: 3))
-        shot("6-chunk-3", appearance)
-        // Back works too.
-        app.buttons["stage-back"].tap()
-        XCTAssertTrue(line(app, "Keys and chords ride along").waitForExistence(timeout: 3))
-        app.buttons["stage-next"].tap()
+        // The reply plays: three ideas on ONE page (VIS-4), each a line and a picture, then the questions.
+        XCTAssertTrue(line(app, "0.3.2 is building").waitForExistence(timeout: 20), "idea 1 never showed")
+        // The rest streams in, a line every 220 ms: the page takes all three, the questions follow.
+        let both = app.descendants(matching: .any).matching(NSPredicate(format: "identifier == 'stage-segments' AND label == 'Part 1 of 2'")).firstMatch
+        XCTAssertTrue(both.waitForExistence(timeout: 15), "the reply never grew to a page and the questions")
+        XCTAssertTrue(line(app, "Keys and chords ride along").exists, "idea 2 is not on the same page")
+        XCTAssertTrue(line(app, "The faster Send tap").exists, "idea 3 is not on the same page")
+        XCTAssertTrue(app.descendants(matching: .any)["stage-page-3"].exists, "the page does not hold three ideas")
+        shot("4-three-ideas-one-page", appearance)
         app.buttons["stage-next"].tap()
 
         // Every question on one screen, one Send.

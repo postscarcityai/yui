@@ -22,6 +22,17 @@ struct StageChunk: Identifiable, Equatable {
     var pic: YLComponent?
     /// The reply's components, so a drawing finds its members.
     var all: [YLComponent] = []
+    /// The ideas that share this page (VIS-4): up to 2 more, stacked under this one.
+    var more: [StageChunk] = []
+
+    /// Every idea on the page, top to bottom.
+    var blocks: [StageChunk] {
+        var first = self
+        first.more = []
+        return [first] + more
+    }
+    /// The replies whose words are on this page.
+    var scopes: Set<String> { Set(blocks.map(\.scope)) }
 }
 
 /// A question waiting for the end of the turn.
@@ -55,6 +66,40 @@ struct StageTurn: Equatable {
 }
 
 enum StageChunks {
+    /// Ideas on one page (VIS-4, Chris 2026-09-30: "we can put up to 3 ideas on a card, as long as we're showing them").
+    static let perPage = 3
+    /// Words a page holds before the next idea starts a new one.
+    static let pageWords = 60
+    /// Drawings that share a page: they scale to the width and stack. A map, a game, a timer or a
+    /// form keeps a page of its own.
+    static let stackable: Set<String> = ["sketch", "shapes", "chart", "stat", "timeline", "list", "table", "row", "card", "compare", "math", "step"]
+
+    /// Packs a turn's chunks onto pages, up to `perPage` ideas each (mirror: `packPages` in
+    /// yuigui site/lib/yl/chunks.mjs). A deck or plan page, and any chunk that is not a line with
+    /// a stackable drawing (or a line alone), is a page of its own.
+    static func pack(_ chunks: [StageChunk]) -> [StageChunk] {
+        var out: [StageChunk] = []
+        var words = 0
+        for c in chunks {
+            let w = c.line.map { $0.split(whereSeparator: \.isWhitespace).count } ?? 0
+            if canStack(c), var last = out.last, canStack(last), last.blocks.count < perPage, words + w <= pageWords {
+                last.more.append(c)
+                out[out.count - 1] = last
+                words += w
+            } else {
+                out.append(c)
+                words = canStack(c) ? w : pageWords
+            }
+        }
+        return out
+    }
+
+    private static func canStack(_ c: StageChunk) -> Bool {
+        guard c.page == nil else { return false }
+        if let pic = c.pic { return stackable.contains(pic.preset) }
+        return c.line?.isEmpty == false
+    }
+
     /// Things to answer. On the stage they wait for the end, all on one screen.
     static let questions: Set<String> = ["ask", "choose", "pick", "slide", "form", "mic", "camera"]
     /// Groups whose pages become chunks and whose questions join the end.
@@ -164,6 +209,7 @@ enum StageChunks {
             if m.stopped { t.stopped = true; continue }  // a note in the record, never a chunk (YUI-190)
             add(m, to: &t)
         }
+        t.chunks = pack(t.chunks)
         return t
     }
 
@@ -175,6 +221,7 @@ enum StageChunks {
             if m.fromUser { break }
             if m.hello { add(m, to: &t) }
         }
+        t.chunks = pack(t.chunks)
         return t
     }
 
