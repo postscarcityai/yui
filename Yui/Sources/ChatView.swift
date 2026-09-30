@@ -1204,20 +1204,7 @@ struct ChatView: View {
                 .overlay(Circle().stroke(talk.listening ? .clear : c.outline, lineWidth: 1.5))
                 .scaleEffect(talk.listening ? 1.25 : 1)
                 .contentShape(Circle())
-                // The trash is its own target to the left; the mic stays where it is.
-                .overlay(alignment: .leading) {
-                    if talk.listening {
-                        Image(systemName: cancelArmed ? "trash.fill" : "trash")
-                            .font(.system(size: 17, weight: .bold))
-                            .foregroundStyle(cancelArmed ? c.onAccent : c.ink)
-                            .frame(width: 40, height: 40)
-                            .background(cancelArmed ? c.accent : c.surface, in: Circle())
-                            .scaleEffect(cancelArmed && !reduceMotion ? 1.2 : 1)
-                            .offset(x: -Self.cancelDistance - 20)
-                            .allowsHitTesting(false)
-                            .accessibilityHidden(true)
-                    }
-                }
+                // The trash is the one in the listening bar on the left; the mic stays where it is.
                 // Global space: the button moves under the finger, so its own space would jitter.
                 .gesture(DragGesture(minimumDistance: 0, coordinateSpace: .global)
                     .updating($micPress) { v, state, _ in state = v.translation.width })

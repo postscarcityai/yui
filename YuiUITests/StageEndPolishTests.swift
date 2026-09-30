@@ -83,6 +83,14 @@ final class StageEndPolishTests: XCTestCase {
         XCTAssertFalse(app.staticTexts["Cancel this one"].exists, "a recording let go over the trash was sent")
     }
 
+    /// The stage bar mid-hold, slid over the trash: the mic is still a mic, the trash sits to its left.
+    func testTrashArmedOnTheStageBar() throws {
+        let app = launch("dark", extra: ["-yuiPTTDemo", "Book me a haircut Friday at four", "-yuiPTTDemoCancel"])
+        XCTAssertTrue(app.buttons["stage-mic"].waitForExistence(timeout: 15), "no mic")
+        sleep(2)
+        shot("5-trash-armed", "dark")
+    }
+
     /// Read through to the questions, the last page.
     private func toQuestions(_ app: XCUIApplication) {
         let questions = app.descendants(matching: .any)["stage-questions"]
