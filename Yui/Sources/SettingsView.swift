@@ -4,7 +4,7 @@ struct SettingsView: View {
     /// A section to open at (`yui://settings/search`).
     var focus: String? = nil
     /// The sections a `yui://settings/<section>` link can open at.
-    static let sections: Set<String> = ["search", "key", "keys"]
+    static let sections: Set<String> = ["search", "key", "keys", "account"]
 
     @AppStorage("appearance") private var appearance: Appearance = .system
     @Environment(\.yuiTheme) private var theme
@@ -34,6 +34,8 @@ struct SettingsView: View {
                     .padding(theme.spacing.l)
                     .background(c.surface, in: .rect(cornerRadius: theme.radius.card))
                     .overlay(RoundedRectangle(cornerRadius: theme.radius.card).stroke(c.outline, lineWidth: 1.5))
+                    // Delete account in reach (YUI-237): Account sits right under Appearance, no scrolling hunt.
+                    AccountSection().id("account")
                     StageFirstSection()
                     HomeActionsSection()
                     LookSection()
@@ -42,7 +44,6 @@ struct SettingsView: View {
                     ModelKeySection().id("key")
                     SearchKeySection().id("search")
                     HelpSection()
-                    AccountSection()
                     AboutSection()
                     // Dev builds only (PERF.md section 4): TestFlight and App Store builds have no switch.
                     if PerfSettings.available { SpeedSwitch() }
@@ -481,11 +482,6 @@ private struct AccountSection: View {
                 }
                 Spacer(minLength: 0)
             }
-            Link(destination: YuiBackend.privacyPolicy) {
-                Label("Privacy policy", systemImage: "hand.raised.fill")
-                    .font(theme.font(theme.type.body, .semibold))
-            }
-            .tint(c.ink)
             HStack(spacing: theme.spacing.s) {
                 Button {
                     Task { working = true; await account.signOut(); working = false }
@@ -506,6 +502,11 @@ private struct AccountSection: View {
             if let error {
                 Text(error).font(theme.font(theme.type.caption, .semibold)).foregroundStyle(.red)
             }
+            Link(destination: YuiBackend.privacyPolicy) {
+                Label("Privacy policy", systemImage: "hand.raised.fill")
+                    .font(theme.font(theme.type.body, .semibold))
+            }
+            .tint(c.ink)
         }
         .padding(theme.spacing.l)
         .background(c.surface, in: .rect(cornerRadius: theme.radius.card))
