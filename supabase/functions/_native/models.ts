@@ -12,8 +12,8 @@ export const MODELS: ModelChoice[] = [
 ];
 
 /** Where a person's own key runs. `model` and `vision` are the defaults when they name none, so a key needs no model id;
- *  `vision` null means the provider has no seeing default (a photo turn says so). `scored` is false until the channel eval
- *  passes the provider on a live turn (spec/NATIVE.md section 6): the app is not offered it and key_set refuses it. */
+ *  `vision` null means the provider has no seeing default (a photo turn says so). `scored` false means the app is not offered the
+ *  provider and key_set refuses it. Claude, ChatGPT, Gemini and Grok are on unscored: Chris chose to trust the wiring and test with his own keys (2026-09-29). */
 export interface ProviderChoice {
   id: ProviderId; label: string; url: string; needsModel: boolean; web: boolean;
   model?: string; vision?: string | null; scored: boolean;
@@ -33,13 +33,13 @@ export const PROVIDERS: ProviderChoice[] = [
   { id: "trustedrouter", label: "TrustedRouter", url: "https://api.trustedrouter.com/v1", needsModel: false, web: false, scored: true },
   { id: "groq", label: "Groq", url: "https://api.groq.com/openai/v1", needsModel: true, web: false, scored: true },
   { id: "custom", label: "My computer", url: "", needsModel: true, web: false, scored: true, keyless: true },
-  { id: "anthropic", label: "Claude", url: "https://api.anthropic.com/v1", needsModel: false, web: false, scored: false,
+  { id: "anthropic", label: "Claude", url: "https://api.anthropic.com/v1", needsModel: false, web: false, scored: true,
     model: "claude-sonnet-5-5", vision: "claude-sonnet-5-5", keyUrl: "https://console.anthropic.com/settings/keys", plan: PLAN },
-  { id: "openai", label: "ChatGPT", url: "https://api.openai.com/v1", needsModel: false, web: false, scored: false,
+  { id: "openai", label: "ChatGPT", url: "https://api.openai.com/v1", needsModel: false, web: false, scored: true,
     model: "gpt-5.5", vision: "gpt-5.5", keyUrl: "https://platform.openai.com/api-keys", plan: "A ChatGPT Plus or Pro plan can't pay for another app. Only an API key can." },
-  { id: "gemini", label: "Gemini", url: "https://generativelanguage.googleapis.com/v1beta/openai", needsModel: false, web: false, scored: false,
+  { id: "gemini", label: "Gemini", url: "https://generativelanguage.googleapis.com/v1beta/openai", needsModel: false, web: false, scored: true,
     model: "gemini-3-flash", vision: "gemini-3-flash", keyUrl: "https://aistudio.google.com/apikey" },
-  { id: "xai", label: "Grok", url: "https://api.x.ai/v1", needsModel: false, web: false, scored: false,
+  { id: "xai", label: "Grok", url: "https://api.x.ai/v1", needsModel: false, web: false, scored: true,
     model: "grok-4.7", vision: "grok-4.7", keyUrl: "https://console.x.ai" },
 ];
 
