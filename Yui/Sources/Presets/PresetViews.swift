@@ -44,7 +44,11 @@ struct YLItemsView: View {
             case .steps(let cs): StepperPreset(steps: cs)
             case .pill(let cs):
                 // A sent plan leaves a record instead of a pill (YUI-51).
-                if let plan = cs.first(where: { $0.preset == "plan" }), answers(scope, plan.ylID)?["plan"] != nil {
+                if let flow = cs.first(where: { $0.preset == "flow" }), answers(scope, flow.ylID)?["flow"] != nil {
+                    FlowRecord(flow: flow, open: openStage)
+                    let rest = cs.filter { $0.serial != flow.serial }
+                    if !rest.isEmpty { StagePill(components: rest, scope: scope, open: openStage) }
+                } else if let plan = cs.first(where: { $0.preset == "plan" }), answers(scope, plan.ylID)?["plan"] != nil {
                     PlanRecord(plan: plan, open: openStage)
                     let rest = cs.filter { $0.serial != plan.serial }
                     if !rest.isEmpty { StagePill(components: rest, scope: scope, open: openStage) }
@@ -88,6 +92,7 @@ struct PresetView: View {
         case "deck": DeckPreset(c: component)
         case "page": PagePreset(c: component, standalone: true)
         case "plan": PlanPreset(c: component)
+        case "flow": FlowPreset(c: component)
         case "project": ProjectPreset(c: component)
         case "narrate": NarratePreset(c: component)
         case "timeline", "done", "now", "next": TimelinePreset(c: component)

@@ -118,7 +118,7 @@ struct StageView: View {
 
     /// One deck, plan or narrate and nothing else: it gets the whole height.
     private var immersive: Bool {
-        components.count == 1 && ["deck", "plan", "narrate"].contains(components[0].preset)
+        components.count == 1 && ["deck", "plan", "flow", "narrate"].contains(components[0].preset)
     }
 
     /// A timeline reads top down like a page, so it starts at the top (YUI-112).
@@ -238,6 +238,7 @@ struct StagePill: View {
         case "camera": "Camera"
         case "mic": "Voice note"
         case "plan": "Plan"
+        case "flow": "Flow"
         default: c.preset.capitalized
         }
         return c.string("label") ?? c.string("title") ?? c.string("q") ?? c.string("prompt") ?? c.string("text") ?? named
@@ -250,6 +251,7 @@ struct StagePill: View {
         case "mic": "mic.fill"
         case "deck": "rectangle.stack.fill"
         case "plan": "list.bullet.clipboard.fill"
+        case "flow": "arrow.triangle.branch"
         case "gallery": "photo.on.rectangle"
         default: "arrow.up.left.and.arrow.down.right"
         }

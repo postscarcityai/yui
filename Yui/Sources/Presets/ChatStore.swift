@@ -521,6 +521,7 @@ final class ChatStore {
         let id = UUID().uuidString.lowercased()
         // A sent plan is done with the whole phone: back to the chat, where its answers land (YUI-51).
         if e.preset == "plan", e.value["plan"] != nil, stageOpen { closeStage() }
+        if e.preset == "flow", e.value["flow"] != nil, stageOpen { closeStage() }
         if let echo = e.echo {
             withAnimation(spring) { messages.append(ChatMessage(id: id, text: echo, fromUser: true)) }
         }
@@ -1405,7 +1406,14 @@ final class ChatStore {
     /// Adds an agent reply and feeds it through the stream parser a line at a
     /// time, the way a model's tokens will arrive, so each preset lands on its own.
     func stream(_ text: String, lineDelay: Duration = .milliseconds(220)) {
-        let msg = ChatMessage(text: "", fromUser: false, yl: YLScreen())
+        var msg = ChatMessage(text: "", fromUser: false, yl: YLScreen())
+        #if DEBUG
+        // -yuiStableMessageIds (UI tests): the demo thread's messages keep their ids across a relaunch, as a
+        // real thread's do, so a run kept by message and flow id (YUI-115) is found again.
+        if ProcessInfo.processInfo.arguments.contains("-yuiStableMessageIds") {
+            msg.id = "demo-\(messages.filter { !$0.fromUser }.count + 1)"
+        }
+        #endif
         withAnimation(spring) { messages.append(msg) }
         Task {
             var parser = YLStreamParser(known: lastingIds)
