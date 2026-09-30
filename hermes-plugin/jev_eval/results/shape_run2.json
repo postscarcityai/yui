@@ -1,0 +1,237 @@
+{
+ "eval": {
+  "n": 88,
+  "answered": 88,
+  "jev_shape_acc": 62.5,
+  "by_label": {
+   "card": {
+    "right": 38,
+    "n": 59
+   },
+   "full": {
+    "right": 4,
+    "n": 8
+   },
+   "line": {
+    "right": 6,
+    "n": 7
+   },
+   "pages": {
+    "right": 6,
+    "n": 13
+   },
+   "yesno": {
+    "right": 1,
+    "n": 1
+   }
+  },
+  "cuts": {
+   "0.5": {
+    "acts": 79.5,
+    "n": 70,
+    "right": 70.0
+   },
+   "0.6": {
+    "acts": 68.2,
+    "n": 60,
+    "right": 71.7
+   },
+   "0.7": {
+    "acts": 58.0,
+    "n": 51,
+    "right": 70.6
+   },
+   "0.8": {
+    "acts": 43.2,
+    "n": 38,
+    "right": 81.6
+   },
+   "0.9": {
+    "acts": 23.9,
+    "n": 21,
+    "right": 85.7
+   }
+  },
+  "calibration": {
+   "0.5-0.7": {
+    "n": 19,
+    "mean_conf": 0.59,
+    "right": 68.4
+   },
+   "0.7-0.8": {
+    "n": 13,
+    "mean_conf": 0.74,
+    "right": 38.5
+   },
+   "0.8-0.9": {
+    "n": 17,
+    "mean_conf": 0.85,
+    "right": 76.5
+   },
+   "0.9-1.0": {
+    "n": 21,
+    "mean_conf": 0.97,
+    "right": 85.7
+   },
+   "<0.5": {
+    "n": 18,
+    "mean_conf": 0.35,
+    "right": 33.3
+   }
+  },
+  "map": {
+   "n": 88,
+   "positives": 5,
+   "acc": 96.6,
+   "true_pos": 3,
+   "false_pos": 1,
+   "missed": 2
+  },
+  "camera": {
+   "n": 88,
+   "positives": 1,
+   "acc": 97.7,
+   "true_pos": 0,
+   "false_pos": 0,
+   "missed": 1
+  },
+  "hint_all": {
+   "said": 37,
+   "of": 88,
+   "right": 30,
+   "right_pct": 81.1
+  },
+  "hint": {
+   "said": 27,
+   "of": 88,
+   "right": 25,
+   "right_pct": 92.6
+  }
+ },
+ "real": {
+  "n": 141,
+  "answered": 141,
+  "jev_shape_acc": 66.7,
+  "today_shape_acc": 29.1,
+  "today_n": 141,
+  "jev_acc_same_rows": 66.7,
+  "by_label": {
+   "card": {
+    "right": 19,
+    "n": 26
+   },
+   "full": {
+    "right": 5,
+    "n": 8
+   },
+   "line": {
+    "right": 49,
+    "n": 72
+   },
+   "pages": {
+    "right": 10,
+    "n": 22
+   },
+   "yesno": {
+    "right": 11,
+    "n": 13
+   }
+  },
+  "cuts": {
+   "0.5": {
+    "acts": 58.9,
+    "n": 83,
+    "right": 85.5
+   },
+   "0.6": {
+    "acts": 43.3,
+    "n": 61,
+    "right": 90.2
+   },
+   "0.7": {
+    "acts": 36.9,
+    "n": 52,
+    "right": 94.2
+   },
+   "0.8": {
+    "acts": 27.0,
+    "n": 38,
+    "right": 94.7
+   },
+   "0.9": {
+    "acts": 17.7,
+    "n": 25,
+    "right": 96.0
+   }
+  },
+  "calibration": {
+   "0.5-0.7": {
+    "n": 31,
+    "mean_conf": 0.58,
+    "right": 71.0
+   },
+   "0.7-0.8": {
+    "n": 14,
+    "mean_conf": 0.75,
+    "right": 92.9
+   },
+   "0.8-0.9": {
+    "n": 13,
+    "mean_conf": 0.85,
+    "right": 92.3
+   },
+   "0.9-1.0": {
+    "n": 25,
+    "mean_conf": 0.96,
+    "right": 96.0
+   },
+   "<0.5": {
+    "n": 58,
+    "mean_conf": 0.35,
+    "right": 39.7
+   }
+  },
+  "map": {
+   "n": 141,
+   "positives": 1,
+   "acc": 100.0,
+   "true_pos": 1,
+   "false_pos": 0,
+   "missed": 0
+  },
+  "camera": {
+   "n": 141,
+   "positives": 0,
+   "acc": 100.0,
+   "true_pos": 0,
+   "false_pos": 0,
+   "missed": 0
+  },
+  "hint_all": {
+   "said": 37,
+   "of": 141,
+   "right": 35,
+   "right_pct": 94.6
+  },
+  "hint": {
+   "said": 15,
+   "of": 141,
+   "right": 14,
+   "right_pct": 93.3
+  }
+ },
+ "latency_ms": {
+  "n": 229,
+  "p50": 263,
+  "p95": 392,
+  "max": 1241,
+  "over_600": 2,
+  "mean": 278
+ },
+ "cost": {
+  "calls": 229,
+  "total_usd": 0.00771,
+  "per_1000_turns_usd": 0.0337,
+  "mean_input_tokens": 801
+ }
+}

@@ -1,0 +1,207 @@
+{
+ "cut": 0.8,
+ "all": {
+  "n": 315,
+  "positives": 124,
+  "negatives": 191,
+  "today": {
+   "caught": 65,
+   "of": 124,
+   "caught_pct": 52.4,
+   "wrong_route": 0,
+   "false_route_on_none": 0
+  },
+  "jev_alone": {
+   "caught": 114,
+   "of": 124,
+   "caught_pct": 91.9,
+   "wrong_route": 2,
+   "false_route_on_none": 2
+  },
+  "combined": {
+   "caught": 120,
+   "of": 124,
+   "caught_pct": 96.8,
+   "wrong_route": 2,
+   "false_route_on_none": 2
+  },
+  "today_misses": {
+   "n": 59,
+   "jev_reaches": 55
+  },
+  "jev_raw_acc": 97.5
+ },
+ "cuts": {
+  "0.5": {
+   "caught": 122,
+   "of": 124,
+   "caught_pct": 98.4,
+   "wrong_route": 3,
+   "false_route_on_none": 3,
+   "jev_alone": {
+    "caught": 121,
+    "of": 124,
+    "caught_pct": 97.6,
+    "wrong_route": 3,
+    "false_route_on_none": 3
+   }
+  },
+  "0.6": {
+   "caught": 122,
+   "of": 124,
+   "caught_pct": 98.4,
+   "wrong_route": 3,
+   "false_route_on_none": 3,
+   "jev_alone": {
+    "caught": 120,
+    "of": 124,
+    "caught_pct": 96.8,
+    "wrong_route": 3,
+    "false_route_on_none": 3
+   }
+  },
+  "0.7": {
+   "caught": 122,
+   "of": 124,
+   "caught_pct": 98.4,
+   "wrong_route": 2,
+   "false_route_on_none": 2,
+   "jev_alone": {
+    "caught": 119,
+    "of": 124,
+    "caught_pct": 96.0,
+    "wrong_route": 2,
+    "false_route_on_none": 2
+   }
+  },
+  "0.8": {
+   "caught": 120,
+   "of": 124,
+   "caught_pct": 96.8,
+   "wrong_route": 2,
+   "false_route_on_none": 2,
+   "jev_alone": {
+    "caught": 114,
+    "of": 124,
+    "caught_pct": 91.9,
+    "wrong_route": 2,
+    "false_route_on_none": 2
+   }
+  },
+  "0.9": {
+   "caught": 116,
+   "of": 124,
+   "caught_pct": 93.5,
+   "wrong_route": 1,
+   "false_route_on_none": 1,
+   "jev_alone": {
+    "caught": 107,
+    "of": 124,
+    "caught_pct": 86.3,
+    "wrong_route": 1,
+    "false_route_on_none": 1
+   }
+  }
+ },
+ "synthetic": {
+  "n": 174,
+  "positives": 124,
+  "negatives": 50,
+  "today": {
+   "caught": 65,
+   "of": 124,
+   "caught_pct": 52.4,
+   "wrong_route": 0,
+   "false_route_on_none": 0
+  },
+  "jev_alone": {
+   "caught": 114,
+   "of": 124,
+   "caught_pct": 91.9,
+   "wrong_route": 0,
+   "false_route_on_none": 0
+  },
+  "combined": {
+   "caught": 120,
+   "of": 124,
+   "caught_pct": 96.8,
+   "wrong_route": 0,
+   "false_route_on_none": 0
+  },
+  "today_misses": {
+   "n": 59,
+   "jev_reaches": 55
+  },
+  "jev_raw_acc": 98.3
+ },
+ "real": {
+  "n": 141,
+  "positives": 0,
+  "negatives": 141,
+  "today": {
+   "caught": 0,
+   "of": 0,
+   "caught_pct": null,
+   "wrong_route": 0,
+   "false_route_on_none": 0
+  },
+  "jev_alone": {
+   "caught": 0,
+   "of": 0,
+   "caught_pct": null,
+   "wrong_route": 2,
+   "false_route_on_none": 2
+  },
+  "combined": {
+   "caught": 0,
+   "of": 0,
+   "caught_pct": null,
+   "wrong_route": 2,
+   "false_route_on_none": 2
+  },
+  "today_misses": {
+   "n": 0,
+   "jev_reaches": 0
+  },
+  "jev_raw_acc": 96.5
+ },
+ "calibration": {
+  "0.5-0.7": {
+   "n": 7,
+   "mean_conf": 0.59,
+   "right": 71.4
+  },
+  "0.7-0.8": {
+   "n": 8,
+   "mean_conf": 0.75,
+   "right": 100.0
+  },
+  "0.8-0.9": {
+   "n": 11,
+   "mean_conf": 0.86,
+   "right": 90.9
+  },
+  "0.9-1.0": {
+   "n": 284,
+   "mean_conf": 0.99,
+   "right": 99.6
+  },
+  "<0.5": {
+   "n": 5,
+   "mean_conf": 0.4,
+   "right": 20.0
+  }
+ },
+ "latency_ms": {
+  "n": 315,
+  "p50": 246,
+  "p95": 356,
+  "max": 1832
+ },
+ "cost": {
+  "calls": 315,
+  "total_usd": 0.00578,
+  "per_1000_calls_usd": 0.0183,
+  "mean_input_tokens": 437
+ }
+}

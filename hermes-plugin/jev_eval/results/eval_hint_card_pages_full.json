@@ -1,0 +1,83 @@
+{
+ "hinted_cases": 25,
+ "all_cases": 88,
+ "all_no_hint": {
+  "r1": {
+   "n": 88,
+   "pass": 77,
+   "shape_match": 70
+  },
+  "r2": {
+   "n": 88,
+   "pass": 75,
+   "shape_match": 71
+  }
+ },
+ "hinted_subset": {
+  "base_r1": {
+   "n": 25,
+   "pass": 22,
+   "shape_match": 19
+  },
+  "base_r2": {
+   "n": 25,
+   "pass": 21,
+   "shape_match": 19
+  },
+  "hint_r1": {
+   "n": 25,
+   "pass": 25,
+   "shape_match": 21
+  },
+  "hint_r2": {
+   "n": 25,
+   "pass": 25,
+   "shape_match": 21
+  }
+ },
+ "noise_base_r1_to_r2": {
+  "pass_to_fail": 1,
+  "fail_to_pass": 0
+ },
+ "hint_vs_base_r1": {
+  "pass_to_fail": 0,
+  "fail_to_pass": 3
+ },
+ "hint_vs_base_r2": {
+  "pass_to_fail": 0,
+  "fail_to_pass": 4
+ },
+ "hint_vs_base_detail": {
+  "r1": {
+   "pass_to_fail": [],
+   "fail_to_pass": [
+    "context-sample-not-ask",
+    "decision-three-options",
+    "music-chords-song"
+   ]
+  },
+  "r2": {
+   "pass_to_fail": [],
+   "fail_to_pass": [
+    "context-sample-not-ask",
+    "decision-three-options",
+    "music-chords-song",
+    "report-pages-picture"
+   ]
+  }
+ },
+ "shape_flips_hint_vs_base": {
+  "r1": {
+   "gained": 2,
+   "lost": 0
+  },
+  "r2": {
+   "gained": 2,
+   "lost": 0
+  }
+ },
+ "shape_flips_noise_base_r1_r2": {
+  "gained": 0,
+  "lost": 0
+ }
+}

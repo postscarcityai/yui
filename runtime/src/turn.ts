@@ -19,6 +19,7 @@ import { Firecrawl, LookupError, searchInvite, searchOnYui, sourceCards, type So
 import type { Store } from "./store.ts";
 import { Stopped, guard } from "./stop.ts";
 import { crew } from "./profiles.ts";
+import { jevLine, jevRoute } from "./jev.ts";
 import { keyModel, providerLabel, PROVIDERS } from "./models.ts";
 import { type Clock, type TableStore, LIMITS, applyHeld, applyTables, asText, changed, clock, diff, draw, emptyStore, fromSeeds, pretty,
          readQueries, tablesPrompt } from "./tables.ts";
@@ -103,6 +104,7 @@ export interface TurnOptions {
   newId?: () => string;
   signal?: AbortSignal; // the person's Stop (YUI-190): aborted, the model call ends and nothing more is written
   stopPoll?: number; // ms between looks for a Stop while a turn runs, default 1500
+  jev?: { key: string; fetch?: typeof fetch }; // shadow tool router (YUI-215): logs what Jev would route, changes nothing; none: no call
 }
 
 export interface SearchOptions {
@@ -313,6 +315,13 @@ async function oneTurn(store: Store, agent: NativeAgent, rows: Row[], opts: Turn
       if (!rest.length) return { handled: true };
       return oneTurn(store, agent, rest, opts, log, result, depth);
     }
+  }
+
+  // Jev shadow (YUI-215): no pattern caught these words, so the model gets the turn. Ask Jev which tool they meant, beside the
+  // model call, and only log it. Plain typed words only; never awaited: the model call is far longer than Jev's 600 ms.
+  const typed = rows.filter((r) => r.kind === "text" && r.sender === "user" && !/^\[yui\]|^\//.test(r.body ?? "") && !r.id.startsWith(SYNTHETIC));
+  if (opts.jev && typed.length === 1) {
+    void jevRoute(opts.jev, agent, typed[0].body).then((r) => r && log(jevLine(agent, r)));
   }
 
   // A person's own key: their model, no monthly cap. Otherwise Yui's key and free turns.

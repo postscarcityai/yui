@@ -1,0 +1,443 @@
+{
+ "plain-fact": {
+  "shape": "line",
+  "map": false,
+  "camera": false
+ },
+ "plain-thanks": {
+  "shape": "line",
+  "map": false,
+  "camera": false
+ },
+ "plain-explain": {
+  "shape": "line",
+  "map": false,
+  "camera": false
+ },
+ "plain-math": {
+  "shape": "line",
+  "map": false,
+  "camera": false
+ },
+ "dead-logged-water": {
+  "shape": "line",
+  "map": false,
+  "camera": false
+ },
+ "fact-one-sentence": {
+  "shape": "line",
+  "map": false,
+  "camera": false
+ },
+ "short-release-go-ahead": {
+  "shape": "line",
+  "map": false,
+  "camera": false
+ },
+ "short-status-latest-build": {
+  "shape": "yesno",
+  "map": false,
+  "camera": false
+ },
+ "workout-leg-day": {
+  "shape": "card",
+  "map": false,
+  "camera": false
+ },
+ "workout-tabata": {
+  "shape": "card",
+  "map": false,
+  "camera": false
+ },
+ "workout-plank": {
+  "shape": "card",
+  "map": false,
+  "camera": false
+ },
+ "workout-gear-question": {
+  "shape": "card",
+  "map": false,
+  "camera": false
+ },
+ "checkin-evening-voice": {
+  "shape": "card",
+  "map": false,
+  "camera": false
+ },
+ "today-plan": {
+  "shape": "card",
+  "map": false,
+  "camera": false
+ },
+ "schedule-call": {
+  "shape": "card",
+  "map": false,
+  "camera": false
+ },
+ "decision-three-options": {
+  "shape": "card",
+  "map": false,
+  "camera": false
+ },
+ "list-groceries": {
+  "shape": "card",
+  "map": false,
+  "camera": false
+ },
+ "list-packing": {
+  "shape": "card",
+  "map": false,
+  "camera": false
+ },
+ "data-weight-trend": {
+  "shape": "card",
+  "map": false,
+  "camera": false
+ },
+ "focus-second-screen": {
+  "shape": "card",
+  "map": false,
+  "camera": false
+ },
+ "theme-autumn": {
+  "shape": "card",
+  "map": false,
+  "camera": false
+ },
+ "no-html-pricing": {
+  "shape": "card",
+  "map": false,
+  "camera": false
+ },
+ "dead-status-report": {
+  "shape": "card",
+  "map": false,
+  "camera": false
+ },
+ "save-reusable-workout": {
+  "shape": "card",
+  "map": false,
+  "camera": false
+ },
+ "show-saved-workout": {
+  "shape": "card",
+  "map": false,
+  "camera": false
+ },
+ "keep-list-on-page": {
+  "shape": "card",
+  "map": false,
+  "camera": false
+ },
+ "project-timeline": {
+  "shape": "card",
+  "map": false,
+  "camera": false
+ },
+ "game-offer": {
+  "shape": "card",
+  "map": false,
+  "camera": false
+ },
+ "talk-keep-plan-editable": {
+  "shape": "card",
+  "map": false,
+  "camera": false
+ },
+ "menu-shortcut": {
+  "shape": "card",
+  "map": false,
+  "camera": false
+ },
+ "restyle-app-autumn": {
+  "shape": "card",
+  "map": false,
+  "camera": false
+ },
+ "idea-shapes-heatpump": {
+  "shape": "card",
+  "map": false,
+  "camera": false
+ },
+ "idea-shapes-flywheel": {
+  "shape": "card",
+  "map": false,
+  "camera": false
+ },
+ "teach-one-screen": {
+  "shape": "card",
+  "map": false,
+  "camera": false
+ },
+ "music-jam-beat": {
+  "shape": "card",
+  "map": false,
+  "camera": false
+ },
+ "music-finger-drums": {
+  "shape": "card",
+  "map": false,
+  "camera": false
+ },
+ "music-keys-scale": {
+  "shape": "card",
+  "map": false,
+  "camera": false
+ },
+ "music-chords-song": {
+  "shape": "card",
+  "map": false,
+  "camera": false
+ },
+ "music-tuner-guitar": {
+  "shape": "card",
+  "map": false,
+  "camera": false
+ },
+ "music-metronome-practice": {
+  "shape": "card",
+  "map": false,
+  "camera": false
+ },
+ "explain-monsoon-how": {
+  "shape": "card",
+  "map": false,
+  "camera": false
+ },
+ "data-lunch-macros": {
+  "shape": "card",
+  "map": false,
+  "camera": false
+ },
+ "list-no-escaped-breaks": {
+  "shape": "card",
+  "map": false,
+  "camera": false
+ },
+ "items-board-cards-drawn": {
+  "shape": "card",
+  "map": false,
+  "camera": false
+ },
+ "when-two-days-timeline": {
+  "shape": "card",
+  "map": false,
+  "camera": false
+ },
+ "facts-stacked-list": {
+  "shape": "card",
+  "map": false,
+  "camera": false
+ },
+ "tiles-board-status": {
+  "shape": "card",
+  "map": false,
+  "camera": false
+ },
+ "outcome-invite-declined": {
+  "shape": "card",
+  "map": false,
+  "camera": false
+ },
+ "outcome-worker-running": {
+  "shape": "card",
+  "map": false,
+  "camera": false
+ },
+ "context-sample-not-ask": {
+  "shape": "card",
+  "map": false,
+  "camera": false
+ },
+ "showhere-before-after": {
+  "shape": "card",
+  "map": false,
+  "camera": false
+ },
+ "showhere-progress-page": {
+  "shape": "card",
+  "map": false,
+  "camera": false
+ },
+ "showhere-after-linkout": {
+  "shape": "card",
+  "map": false,
+  "camera": false
+ },
+ "showhere-demo": {
+  "shape": "card",
+  "map": false,
+  "camera": false
+ },
+ "showlink-waiting-shots": {
+  "shape": "card",
+  "map": false,
+  "camera": false
+ },
+ "showlink-only-url": {
+  "shape": "card",
+  "map": false,
+  "camera": false
+ },
+ "showlink-build-changes": {
+  "shape": "card",
+  "map": false,
+  "camera": false
+ },
+ "showlink-demo-page": {
+  "shape": "card",
+  "map": false,
+  "camera": false
+ },
+ "showlean-waiting": {
+  "shape": "card",
+  "map": false,
+  "camera": false
+ },
+ "showlean-new-hero": {
+  "shape": "card",
+  "map": false,
+  "camera": false
+ },
+ "showpick-four-looks": {
+  "shape": "card",
+  "map": false,
+  "camera": false
+ },
+ "showpick-two-looks": {
+  "shape": "card",
+  "map": false,
+  "camera": false
+ },
+ "showpick-only-url": {
+  "shape": "card",
+  "map": false,
+  "camera": false
+ },
+ "too-much-week": {
+  "shape": "pages",
+  "map": false,
+  "camera": false
+ },
+ "report-card-done": {
+  "shape": "pages",
+  "map": false,
+  "camera": false
+ },
+ "report-long-walkthrough": {
+  "shape": "pages",
+  "map": false,
+  "camera": false
+ },
+ "report-draw-change": {
+  "shape": "pages",
+  "map": false,
+  "camera": false
+ },
+ "draw-screen-fix": {
+  "shape": "pages",
+  "map": false,
+  "camera": false
+ },
+ "report-pages-picture": {
+  "shape": "pages",
+  "map": false,
+  "camera": false
+ },
+ "doing-long-turn": {
+  "shape": "pages",
+  "map": false,
+  "camera": false
+ },
+ "show-phase-one": {
+  "shape": "pages",
+  "map": false,
+  "camera": false
+ },
+ "show-new-layout": {
+  "shape": "pages",
+  "map": false,
+  "camera": false
+ },
+ "last-page-next-step": {
+  "shape": "pages",
+  "map": false,
+  "camera": false
+ },
+ "last-page-walkthrough": {
+  "shape": "pages",
+  "map": false,
+  "camera": false
+ },
+ "checkin-morning": {
+  "shape": "full",
+  "map": false,
+  "camera": false
+ },
+ "teach-compound-interest": {
+  "shape": "full",
+  "map": false,
+  "camera": false
+ },
+ "flow-onboard-goal": {
+  "shape": "full",
+  "map": false,
+  "camera": false
+ },
+ "dead-plan-submit": {
+  "shape": "full",
+  "map": false,
+  "camera": false
+ },
+ "flow-findings-then-questions": {
+  "shape": "full",
+  "map": false,
+  "camera": false
+ },
+ "flow-two-questions-one-plan": {
+  "shape": "full",
+  "map": false,
+  "camera": false
+ },
+ "library-flow-intake": {
+  "shape": "full",
+  "map": false,
+  "camera": false
+ },
+ "flow-interview-old-app": {
+  "shape": "full",
+  "map": false,
+  "camera": false
+ },
+ "explain-mongols-geography": {
+  "shape": "pages",
+  "map": true,
+  "camera": false
+ },
+ "explain-rome-rise-fall": {
+  "shape": "pages",
+  "map": true,
+  "camera": false
+ },
+ "where-trip-route": {
+  "shape": "card",
+  "map": true,
+  "camera": false
+ },
+ "where-delivery-area": {
+  "shape": "card",
+  "map": true,
+  "camera": false
+ },
+ "where-quick-country": {
+  "shape": "card",
+  "map": true,
+  "camera": false
+ },
+ "meal-log-no-photo": {
+  "shape": "card",
+  "map": false,
+  "camera": true,
+  "camera_kind": "meal"
+ }
+}

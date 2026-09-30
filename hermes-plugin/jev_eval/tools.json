@@ -1,0 +1,28 @@
+{
+  "penny": {
+    "plan_week": "The person wants their week planned, sorted, organized or laid out.",
+    "whats_next": "The person asks what is next, what is on their plate, or what to do now.",
+    "evening_review": "The person wants to review, wrap up or recap their day.",
+    "add_todo": "The person wants a task or reminder added to their to-do list."
+  },
+  "basil": {
+    "plan_meals": "The person wants a meal plan, a menu or the week's meals planned.",
+    "add_grocery": "The person wants something added to the grocery or shopping list.",
+    "share_grocery": "The person wants the grocery list sent, shared or copied."
+  },
+  "gouda": {
+    "learn_song": "The person wants to learn or be taught a song or its chords.",
+    "log_practice": "The person wants to log a practice session or says how long they practiced."
+  },
+  "quill": {
+    "learn_topic": "The person wants to be taught or to study a topic.",
+    "review_cards": "The person wants to be quizzed or to review their flashcards now.",
+    "whats_due": "The person asks what to review next or which cards are due.",
+    "walk_problem": "The person wants a problem worked through step by step."
+  },
+  "arnold": {
+    "start_workout": "The person wants to start today's workout or session now.",
+    "log_workout": "The person wants a workout or session logged.",
+    "build_plan": "The person wants a workout plan, routine, split or program built."
+  }
+}

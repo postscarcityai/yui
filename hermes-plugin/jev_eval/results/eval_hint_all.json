@@ -1,0 +1,98 @@
+{
+ "hinted_cases": 37,
+ "all_cases": 88,
+ "all_no_hint": {
+  "r1": {
+   "n": 88,
+   "pass": 77,
+   "shape_match": 70
+  },
+  "r2": {
+   "n": 88,
+   "pass": 75,
+   "shape_match": 71
+  }
+ },
+ "hinted_subset": {
+  "base_r1": {
+   "n": 37,
+   "pass": 34,
+   "shape_match": 30
+  },
+  "base_r2": {
+   "n": 37,
+   "pass": 33,
+   "shape_match": 31
+  },
+  "hint_r1": {
+   "n": 37,
+   "pass": 31,
+   "shape_match": 27
+  },
+  "hint_r2": {
+   "n": 37,
+   "pass": 30,
+   "shape_match": 27
+  }
+ },
+ "noise_base_r1_to_r2": {
+  "pass_to_fail": 1,
+  "fail_to_pass": 0
+ },
+ "hint_vs_base_r1": {
+  "pass_to_fail": 6,
+  "fail_to_pass": 3
+ },
+ "hint_vs_base_r2": {
+  "pass_to_fail": 7,
+  "fail_to_pass": 4
+ },
+ "hint_vs_base_detail": {
+  "r1": {
+   "pass_to_fail": [
+    "checkin-morning",
+    "explain-monsoon-how",
+    "outcome-invite-declined",
+    "outcome-worker-running",
+    "plain-fact",
+    "showlean-waiting"
+   ],
+   "fail_to_pass": [
+    "context-sample-not-ask",
+    "decision-three-options",
+    "music-chords-song"
+   ]
+  },
+  "r2": {
+   "pass_to_fail": [
+    "checkin-morning",
+    "explain-monsoon-how",
+    "outcome-invite-declined",
+    "outcome-worker-running",
+    "plain-fact",
+    "show-phase-one",
+    "showlean-waiting"
+   ],
+   "fail_to_pass": [
+    "context-sample-not-ask",
+    "decision-three-options",
+    "music-chords-song",
+    "report-pages-picture"
+   ]
+  }
+ },
+ "shape_flips_hint_vs_base": {
+  "r1": {
+   "gained": 2,
+   "lost": 5
+  },
+  "r2": {
+   "gained": 2,
+   "lost": 6
+  }
+ },
+ "shape_flips_noise_base_r1_r2": {
+  "gained": 1,
+  "lost": 0
+ }
+}

@@ -77,6 +77,14 @@ Transport: the gateway dials OUT to Supabase (the yuigui project). No inbound po
      same meta.mentions by the group's hop budget, and a turn that answers a
      group row starts with notes on what the other members said there.
 
+ 11b. Jev (YUI-215, jev.py): with OPENROUTER_API_KEY in the gateway's
+     environment, one call per plain owner message asks Jev (TypeSafe, on
+     OpenRouter) which reply shape fits (line, yes/no, card, pages, full
+     screen), how many things, map, camera. Shadow by default: the decision
+     is logged (numbers only) beside the shape the agent then sent, in
+     <profile home>/yui/jev.jsonl. With `yui.jev_hint: true` an answer above
+     the confidence line adds one hint line to the turn. 600 ms, never blocks.
+
  12. Text bombs (YUI-79, textbomb.py): a message whose chat text (outside
      ```yui fences) runs over 60 words is noted by profile, source and word
      count, never its text, in <profile home>/yui/textbombs.jsonl, with a
@@ -187,7 +195,7 @@ from gateway.config import Platform, PlatformConfig
 from gateway.platforms.base import (BasePlatformAdapter, MessageEvent, MessageType, ProcessingOutcome,
                                     SendResult)
 
-from . import board, compat, connector, controls, doing, flywheel, groups, media, mentions, needs, outbox, restyle, sandbox, shown, tables, talk, textbomb, vault
+from . import board, compat, connector, controls, doing, flywheel, groups, jev, media, mentions, needs, outbox, restyle, sandbox, shown, tables, talk, textbomb, vault
 from . import commands as slash
 
 logger = logging.getLogger(__name__)
@@ -328,6 +336,8 @@ class YuiAdapter(BasePlatformAdapter):
                                  or connector.current_profile() or "default")
         self._client: Optional["httpx.AsyncClient"] = None
         self._tasks: List[asyncio.Task] = []
+        self._jev_pending: Dict[str, tuple] = {}  # key -> (Jev's decision, agent name) until the reply is written (YUI-215)
+        self._last_shape: Dict[str, str] = {}      # key -> the shape of the agent's last reply
         self._token: str = ""
         self._token_exp: float = 0.0
         self._user_id: str = ""
@@ -1035,6 +1045,12 @@ class YuiAdapter(BasePlatformAdapter):
             user_name="Yui user" if owner else "Yui user (shared)",
         )
         texts, photos, types = [], [], []
+        # Jev (YUI-215): start the reply-shape call now, it overlaps the network work below. Plain owner
+        # messages only (no taps, events or slash commands); never awaited past its own timeout.
+        jev_task = None
+        if owner and len(rows) == 1 and jev.enabled() and row.get("kind") == "text" and jev.plain(row["body"]):
+            jev_task = asyncio.ensure_future(asyncio.wait_for(asyncio.to_thread(
+                jev.decide, row["body"], agent.get("name", ""), False, self.__dict__.get("_last_shape", {}).get(key, "none")), jev.TIMEOUT))
         # A connected gateway (or one handed its Talk): never a bare adapter in a test.
         t = getattr(self, "_talk", None) or (self._talky() if getattr(self, "_client", None) and self._remote_ref else None)
         if t:  # whose turn this is, for a proposal made during it (YUI-69)
@@ -1078,6 +1094,16 @@ class YuiAdapter(BasePlatformAdapter):
                 notes.append(said)
         if notes and not texts[0].lstrip().startswith("/"):
             texts = notes + texts
+        jev_line = ""
+        if jev_task is not None:
+            try:
+                d = await jev_task
+            except Exception:  # timeout, cancelled, anything: no decision, the turn goes on
+                d = None
+            if d:
+                jev_line = jev.hint(d, shapes=jev.hint_shapes(self.config.extra)) if jev.hint_on(self.config.extra) else ""
+                d["hinted"] = bool(jev_line)
+                self.__dict__.setdefault("_jev_pending", {})[key] = (d, agent.get("name", ""))
         first_chat = self._chat_of(rows[0])
         if first_chat and first_chat.get("new") and not first_chat.get("first") and not rows[0]["body"].lstrip().startswith("/"):
             texts = ["[yui] chat new"] + texts  # the agent's first line in a new chat (YUI-169)
@@ -1090,7 +1116,7 @@ class YuiAdapter(BasePlatformAdapter):
             raw_message=row if len(rows) == 1 else rows,
             message_id=row["id"],
             timestamp=_parse_ts(row.get("created_at")),
-            channel_prompt="\n".join(p for p in (look_prompt(agent), restyle_prompt(owner)) if p),
+            channel_prompt="\n".join(p for p in (look_prompt(agent), restyle_prompt(owner), jev_line) if p),
         )
         self._last_inbound[key] = time.time()
         for r in rows:
@@ -1306,6 +1332,12 @@ class YuiAdapter(BasePlatformAdapter):
                 return SendResult(success=True, message_id=None)
         flywheel.record(body, connector.current_profile())  # custom shapes only, off unless yui.flywheel
         textbomb.record(body, connector.current_profile(), "handoff" if sender else "reply", logger)
+        if not sender:  # the shape actually sent, beside what Jev said (YUI-215)
+            sent = jev.sent_shape(body)
+            self.__dict__.setdefault("_last_shape", {})[key] = sent
+            pend = self.__dict__.setdefault("_jev_pending", {}).pop(key, None)
+            if pend:
+                jev.record(pend[0], sent, connector.current_profile(), pend[1])
         body = compat.downgrade(body, build)  # what the phone can't draw: words
         body = await asyncio.to_thread(media.rewrite, body, lambda src: self._host(agent_id, user_id, src), logger)
         row = {"id": str(uuid.uuid4()), "user_id": user_id, "agent_id": agent_id, "sender": "agent",

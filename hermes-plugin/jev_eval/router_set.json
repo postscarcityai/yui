@@ -1,0 +1,872 @@
+[
+ {
+  "agent": "penny",
+  "tool": "plan_week",
+  "text": "plan my week"
+ },
+ {
+  "agent": "penny",
+  "tool": "plan_week",
+  "text": "Could you sort my week out?"
+ },
+ {
+  "agent": "penny",
+  "tool": "plan_week",
+  "text": "can you organize the week"
+ },
+ {
+  "agent": "penny",
+  "tool": "plan_week",
+  "text": "help me plan out this week"
+ },
+ {
+  "agent": "penny",
+  "tool": "plan_week",
+  "text": "I need to figure out my week, it's a mess"
+ },
+ {
+  "agent": "penny",
+  "tool": "plan_week",
+  "text": "lay out the next seven days for me"
+ },
+ {
+  "agent": "penny",
+  "tool": "plan_week",
+  "text": "get my week in order please"
+ },
+ {
+  "agent": "penny",
+  "tool": "plan_week",
+  "text": "what should my week look like? plan it"
+ },
+ {
+  "agent": "penny",
+  "tool": "plan_week",
+  "text": "time to map out my week ahead"
+ },
+ {
+  "agent": "penny",
+  "tool": "plan_week",
+  "text": "let's schedule everything for this week"
+ },
+ {
+  "agent": "penny",
+  "tool": "whats_next",
+  "text": "what's next"
+ },
+ {
+  "agent": "penny",
+  "tool": "whats_next",
+  "text": "what is up next for me today"
+ },
+ {
+  "agent": "penny",
+  "tool": "whats_next",
+  "text": "whats on my plate today"
+ },
+ {
+  "agent": "penny",
+  "tool": "whats_next",
+  "text": "what do I have next"
+ },
+ {
+  "agent": "penny",
+  "tool": "whats_next",
+  "text": "what should I be doing right now"
+ },
+ {
+  "agent": "penny",
+  "tool": "whats_next",
+  "text": "anything coming up for me?"
+ },
+ {
+  "agent": "penny",
+  "tool": "whats_next",
+  "text": "tell me my next task"
+ },
+ {
+  "agent": "penny",
+  "tool": "whats_next",
+  "text": "which thing is first on my list?"
+ },
+ {
+  "agent": "penny",
+  "tool": "evening_review",
+  "text": "evening review"
+ },
+ {
+  "agent": "penny",
+  "tool": "evening_review",
+  "text": "wrap up my day"
+ },
+ {
+  "agent": "penny",
+  "tool": "evening_review",
+  "text": "how did my day go"
+ },
+ {
+  "agent": "penny",
+  "tool": "evening_review",
+  "text": "review the day with me"
+ },
+ {
+  "agent": "penny",
+  "tool": "evening_review",
+  "text": "let's close out today"
+ },
+ {
+  "agent": "penny",
+  "tool": "evening_review",
+  "text": "end of day check-in, what got done?"
+ },
+ {
+  "agent": "penny",
+  "tool": "evening_review",
+  "text": "I'm done for the night, recap my day"
+ },
+ {
+  "agent": "penny",
+  "tool": "evening_review",
+  "text": "can we do the nightly review"
+ },
+ {
+  "agent": "penny",
+  "tool": "add_todo",
+  "text": "add call the dentist to my todo list"
+ },
+ {
+  "agent": "penny",
+  "tool": "add_todo",
+  "text": "put pick up dry cleaning on my list"
+ },
+ {
+  "agent": "penny",
+  "tool": "add_todo",
+  "text": "add a task: renew passport"
+ },
+ {
+  "agent": "penny",
+  "tool": "add_todo",
+  "text": "remind me to email Sam on Friday"
+ },
+ {
+  "agent": "penny",
+  "tool": "add_todo",
+  "text": "I need to buy a birthday gift for Mick by Thursday"
+ },
+ {
+  "agent": "penny",
+  "tool": "add_todo",
+  "text": "note down: book the car service"
+ },
+ {
+  "agent": "penny",
+  "tool": "add_todo",
+  "text": "don't let me forget to water the plants tonight"
+ },
+ {
+  "agent": "penny",
+  "tool": "add_todo",
+  "text": "throw 'send invoice' onto today"
+ },
+ {
+  "agent": "penny",
+  "tool": "none",
+  "text": "thanks penny"
+ },
+ {
+  "agent": "penny",
+  "tool": "none",
+  "text": "why do I always run out of time?"
+ },
+ {
+  "agent": "penny",
+  "tool": "none",
+  "text": "what's a good way to focus in the morning?"
+ },
+ {
+  "agent": "penny",
+  "tool": "none",
+  "text": "how long is a pomodoro?"
+ },
+ {
+  "agent": "penny",
+  "tool": "none",
+  "text": "you're the best"
+ },
+ {
+  "agent": "penny",
+  "tool": "none",
+  "text": "I'm tired today"
+ },
+ {
+  "agent": "penny",
+  "tool": "none",
+  "text": "can you explain the Eisenhower matrix"
+ },
+ {
+  "agent": "penny",
+  "tool": "none",
+  "text": "hi"
+ },
+ {
+  "agent": "penny",
+  "tool": "none",
+  "text": "tell me a joke about calendars"
+ },
+ {
+  "agent": "penny",
+  "tool": "none",
+  "text": "did the build ship?"
+ },
+ {
+  "agent": "basil",
+  "tool": "plan_meals",
+  "text": "plan my meals"
+ },
+ {
+  "agent": "basil",
+  "tool": "plan_meals",
+  "text": "make me a meal plan for the week"
+ },
+ {
+  "agent": "basil",
+  "tool": "plan_meals",
+  "text": "could you build the menu for this week"
+ },
+ {
+  "agent": "basil",
+  "tool": "plan_meals",
+  "text": "what are we eating all week? plan it"
+ },
+ {
+  "agent": "basil",
+  "tool": "plan_meals",
+  "text": "set up dinners for the next seven days"
+ },
+ {
+  "agent": "basil",
+  "tool": "plan_meals",
+  "text": "I want a week of meals that are high protein"
+ },
+ {
+  "agent": "basil",
+  "tool": "plan_meals",
+  "text": "figure out my food for the week"
+ },
+ {
+  "agent": "basil",
+  "tool": "plan_meals",
+  "text": "sort out meals for this week"
+ },
+ {
+  "agent": "basil",
+  "tool": "add_grocery",
+  "text": "add eggs to my grocery list"
+ },
+ {
+  "agent": "basil",
+  "tool": "add_grocery",
+  "text": "put oat milk on the shopping list"
+ },
+ {
+  "agent": "basil",
+  "tool": "add_grocery",
+  "text": "add to the groceries: rice, beans, limes"
+ },
+ {
+  "agent": "basil",
+  "tool": "add_grocery",
+  "text": "we're out of butter, add it to my list"
+ },
+ {
+  "agent": "basil",
+  "tool": "add_grocery",
+  "text": "need spinach and garlic from the store"
+ },
+ {
+  "agent": "basil",
+  "tool": "add_grocery",
+  "text": "toss bananas onto the groceries"
+ },
+ {
+  "agent": "basil",
+  "tool": "add_grocery",
+  "text": "add chicken thighs to the shopping list please"
+ },
+ {
+  "agent": "basil",
+  "tool": "add_grocery",
+  "text": "don't forget lemons on my grocery list"
+ },
+ {
+  "agent": "basil",
+  "tool": "share_grocery",
+  "text": "share my grocery list"
+ },
+ {
+  "agent": "basil",
+  "tool": "share_grocery",
+  "text": "send me the shopping list"
+ },
+ {
+  "agent": "basil",
+  "tool": "share_grocery",
+  "text": "text me the groceries"
+ },
+ {
+  "agent": "basil",
+  "tool": "share_grocery",
+  "text": "copy my grocery list so I can paste it"
+ },
+ {
+  "agent": "basil",
+  "tool": "share_grocery",
+  "text": "send the grocery list to my partner"
+ },
+ {
+  "agent": "basil",
+  "tool": "share_grocery",
+  "text": "can you share the list I can take to the store"
+ },
+ {
+  "agent": "basil",
+  "tool": "none",
+  "text": "is oatmeal healthy?"
+ },
+ {
+  "agent": "basil",
+  "tool": "none",
+  "text": "thanks"
+ },
+ {
+  "agent": "basil",
+  "tool": "none",
+  "text": "how do I cook quinoa"
+ },
+ {
+  "agent": "basil",
+  "tool": "none",
+  "text": "what's a good source of iron"
+ },
+ {
+  "agent": "basil",
+  "tool": "none",
+  "text": "I ate too much last night"
+ },
+ {
+  "agent": "basil",
+  "tool": "none",
+  "text": "hi basil"
+ },
+ {
+  "agent": "basil",
+  "tool": "none",
+  "text": "what's the difference between baking soda and powder"
+ },
+ {
+  "agent": "basil",
+  "tool": "none",
+  "text": "can I freeze rice"
+ },
+ {
+  "agent": "basil",
+  "tool": "none",
+  "text": "how many calories in an avocado"
+ },
+ {
+  "agent": "basil",
+  "tool": "none",
+  "text": "I love this app"
+ },
+ {
+  "agent": "gouda",
+  "tool": "learn_song",
+  "text": "learn a song"
+ },
+ {
+  "agent": "gouda",
+  "tool": "learn_song",
+  "text": "teach me a song"
+ },
+ {
+  "agent": "gouda",
+  "tool": "learn_song",
+  "text": "let's learn a new song"
+ },
+ {
+  "agent": "gouda",
+  "tool": "learn_song",
+  "text": "I want to learn to play Wonderwall"
+ },
+ {
+  "agent": "gouda",
+  "tool": "learn_song",
+  "text": "help me learn a song on guitar"
+ },
+ {
+  "agent": "gouda",
+  "tool": "learn_song",
+  "text": "can you teach me the chords to Let It Be"
+ },
+ {
+  "agent": "gouda",
+  "tool": "learn_song",
+  "text": "I'd like to work on a new tune"
+ },
+ {
+  "agent": "gouda",
+  "tool": "learn_song",
+  "text": "show me how to play Riptide"
+ },
+ {
+  "agent": "gouda",
+  "tool": "log_practice",
+  "text": "log practice"
+ },
+ {
+  "agent": "gouda",
+  "tool": "log_practice",
+  "text": "I practiced for 30 minutes"
+ },
+ {
+  "agent": "gouda",
+  "tool": "log_practice",
+  "text": "I just practised 45 min on scales"
+ },
+ {
+  "agent": "gouda",
+  "tool": "log_practice",
+  "text": "track my practice session"
+ },
+ {
+  "agent": "gouda",
+  "tool": "log_practice",
+  "text": "add a practice session"
+ },
+ {
+  "agent": "gouda",
+  "tool": "log_practice",
+  "text": "record that I played for an hour today"
+ },
+ {
+  "agent": "gouda",
+  "tool": "log_practice",
+  "text": "I did half an hour of chords"
+ },
+ {
+  "agent": "gouda",
+  "tool": "log_practice",
+  "text": "put my practice time in the log"
+ },
+ {
+  "agent": "gouda",
+  "tool": "none",
+  "text": "what's a good beat for boom bap"
+ },
+ {
+  "agent": "gouda",
+  "tool": "none",
+  "text": "thanks gouda"
+ },
+ {
+  "agent": "gouda",
+  "tool": "none",
+  "text": "how do I tune a ukulele"
+ },
+ {
+  "agent": "gouda",
+  "tool": "none",
+  "text": "explain the circle of fifths"
+ },
+ {
+  "agent": "gouda",
+  "tool": "none",
+  "text": "play something funky"
+ },
+ {
+  "agent": "gouda",
+  "tool": "none",
+  "text": "what's swing feel"
+ },
+ {
+  "agent": "gouda",
+  "tool": "none",
+  "text": "I can't hear the notes clearly"
+ },
+ {
+  "agent": "gouda",
+  "tool": "none",
+  "text": "hi"
+ },
+ {
+  "agent": "gouda",
+  "tool": "none",
+  "text": "my fingers hurt"
+ },
+ {
+  "agent": "gouda",
+  "tool": "none",
+  "text": "what's a good metronome speed for beginners"
+ },
+ {
+  "agent": "quill",
+  "tool": "learn_topic",
+  "text": "teach me about black holes"
+ },
+ {
+  "agent": "quill",
+  "tool": "learn_topic",
+  "text": "I want to learn about the French Revolution"
+ },
+ {
+  "agent": "quill",
+  "tool": "learn_topic",
+  "text": "help me learn about photosynthesis"
+ },
+ {
+  "agent": "quill",
+  "tool": "learn_topic",
+  "text": "could you teach me about compound interest"
+ },
+ {
+  "agent": "quill",
+  "tool": "learn_topic",
+  "text": "learn about the Roman senate"
+ },
+ {
+  "agent": "quill",
+  "tool": "learn_topic",
+  "text": "let's study how vaccines work"
+ },
+ {
+  "agent": "quill",
+  "tool": "learn_topic",
+  "text": "I'd like to understand how blockchains work"
+ },
+ {
+  "agent": "quill",
+  "tool": "learn_topic",
+  "text": "give me a lesson on supply and demand"
+ },
+ {
+  "agent": "quill",
+  "tool": "review_cards",
+  "text": "quiz me"
+ },
+ {
+  "agent": "quill",
+  "tool": "review_cards",
+  "text": "start my review"
+ },
+ {
+  "agent": "quill",
+  "tool": "review_cards",
+  "text": "review my flashcards"
+ },
+ {
+  "agent": "quill",
+  "tool": "review_cards",
+  "text": "let's go through my cards"
+ },
+ {
+  "agent": "quill",
+  "tool": "review_cards",
+  "text": "review time"
+ },
+ {
+  "agent": "quill",
+  "tool": "review_cards",
+  "text": "test me on what I've learned"
+ },
+ {
+  "agent": "quill",
+  "tool": "review_cards",
+  "text": "drill my deck"
+ },
+ {
+  "agent": "quill",
+  "tool": "whats_due",
+  "text": "what should I review next"
+ },
+ {
+  "agent": "quill",
+  "tool": "whats_due",
+  "text": "what's due today"
+ },
+ {
+  "agent": "quill",
+  "tool": "whats_due",
+  "text": "any cards due?"
+ },
+ {
+  "agent": "quill",
+  "tool": "whats_due",
+  "text": "what do I study today"
+ },
+ {
+  "agent": "quill",
+  "tool": "whats_due",
+  "text": "how many flashcards are waiting for me?"
+ },
+ {
+  "agent": "quill",
+  "tool": "whats_due",
+  "text": "what's next to review"
+ },
+ {
+  "agent": "quill",
+  "tool": "walk_problem",
+  "text": "walk me through a problem"
+ },
+ {
+  "agent": "quill",
+  "tool": "walk_problem",
+  "text": "help me solve a problem"
+ },
+ {
+  "agent": "quill",
+  "tool": "walk_problem",
+  "text": "walk me through: 3x + 5 = 20"
+ },
+ {
+  "agent": "quill",
+  "tool": "walk_problem",
+  "text": "help me solve this: integral of x squared"
+ },
+ {
+  "agent": "quill",
+  "tool": "walk_problem",
+  "text": "solve with me: a train leaves at 3pm going 60mph"
+ },
+ {
+  "agent": "quill",
+  "tool": "walk_problem",
+  "text": "step by step problem please"
+ },
+ {
+  "agent": "quill",
+  "tool": "walk_problem",
+  "text": "can you work through a physics problem with me"
+ },
+ {
+  "agent": "quill",
+  "tool": "none",
+  "text": "thanks quill"
+ },
+ {
+  "agent": "quill",
+  "tool": "none",
+  "text": "what's the capital of Peru"
+ },
+ {
+  "agent": "quill",
+  "tool": "none",
+  "text": "why is the sky blue"
+ },
+ {
+  "agent": "quill",
+  "tool": "none",
+  "text": "I'm bored"
+ },
+ {
+  "agent": "quill",
+  "tool": "none",
+  "text": "hi"
+ },
+ {
+  "agent": "quill",
+  "tool": "none",
+  "text": "what's your favorite subject"
+ },
+ {
+  "agent": "quill",
+  "tool": "none",
+  "text": "can you recommend a book"
+ },
+ {
+  "agent": "quill",
+  "tool": "none",
+  "text": "explain recursion in one sentence"
+ },
+ {
+  "agent": "quill",
+  "tool": "none",
+  "text": "did I do well?"
+ },
+ {
+  "agent": "quill",
+  "tool": "none",
+  "text": "ok"
+ },
+ {
+  "agent": "arnold",
+  "tool": "start_workout",
+  "text": "start workout"
+ },
+ {
+  "agent": "arnold",
+  "tool": "start_workout",
+  "text": "let's begin my session"
+ },
+ {
+  "agent": "arnold",
+  "tool": "start_workout",
+  "text": "start today's workout"
+ },
+ {
+  "agent": "arnold",
+  "tool": "start_workout",
+  "text": "run my training"
+ },
+ {
+  "agent": "arnold",
+  "tool": "start_workout",
+  "text": "begin the workout now"
+ },
+ {
+  "agent": "arnold",
+  "tool": "start_workout",
+  "text": "I'm ready to train, kick it off"
+ },
+ {
+  "agent": "arnold",
+  "tool": "start_workout",
+  "text": "time to lift, start my session"
+ },
+ {
+  "agent": "arnold",
+  "tool": "start_workout",
+  "text": "go ahead and start the session"
+ },
+ {
+  "agent": "arnold",
+  "tool": "log_workout",
+  "text": "log workout"
+ },
+ {
+  "agent": "arnold",
+  "tool": "log_workout",
+  "text": "log today's session"
+ },
+ {
+  "agent": "arnold",
+  "tool": "log_workout",
+  "text": "log my workout"
+ },
+ {
+  "agent": "arnold",
+  "tool": "log_workout",
+  "text": "track the workout I just did"
+ },
+ {
+  "agent": "arnold",
+  "tool": "log_workout",
+  "text": "record my session"
+ },
+ {
+  "agent": "arnold",
+  "tool": "log_workout",
+  "text": "I finished the workout, log it"
+ },
+ {
+  "agent": "arnold",
+  "tool": "log_workout",
+  "text": "put today's training in the log"
+ },
+ {
+  "agent": "arnold",
+  "tool": "log_workout",
+  "text": "can you log what I did today"
+ },
+ {
+  "agent": "arnold",
+  "tool": "build_plan",
+  "text": "build me a plan"
+ },
+ {
+  "agent": "arnold",
+  "tool": "build_plan",
+  "text": "I want to get fit, 4 days a week"
+ },
+ {
+  "agent": "arnold",
+  "tool": "build_plan",
+  "text": "make me a weekly workout routine"
+ },
+ {
+  "agent": "arnold",
+  "tool": "build_plan",
+  "text": "set up a split for me"
+ },
+ {
+  "agent": "arnold",
+  "tool": "build_plan",
+  "text": "design a program to build muscle"
+ },
+ {
+  "agent": "arnold",
+  "tool": "build_plan",
+  "text": "give me a routine"
+ },
+ {
+  "agent": "arnold",
+  "tool": "build_plan",
+  "text": "help me get stronger, I have three days"
+ },
+ {
+  "agent": "arnold",
+  "tool": "build_plan",
+  "text": "I need a training schedule"
+ },
+ {
+  "agent": "arnold",
+  "tool": "none",
+  "text": "thanks arnold"
+ },
+ {
+  "agent": "arnold",
+  "tool": "none",
+  "text": "how much protein should I eat"
+ },
+ {
+  "agent": "arnold",
+  "tool": "none",
+  "text": "my knee hurts when I squat"
+ },
+ {
+  "agent": "arnold",
+  "tool": "none",
+  "text": "what's a deload"
+ },
+ {
+  "agent": "arnold",
+  "tool": "none",
+  "text": "hi"
+ },
+ {
+  "agent": "arnold",
+  "tool": "none",
+  "text": "how do I do a proper deadlift"
+ },
+ {
+  "agent": "arnold",
+  "tool": "none",
+  "text": "I'm sore today"
+ },
+ {
+  "agent": "arnold",
+  "tool": "none",
+  "text": "is it ok to train twice a day"
+ },
+ {
+  "agent": "arnold",
+  "tool": "none",
+  "text": "what's RPE"
+ },
+ {
+  "agent": "arnold",
+  "tool": "none",
+  "text": "you're a beast"
+ }
+]

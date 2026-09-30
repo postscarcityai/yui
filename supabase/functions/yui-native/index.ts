@@ -86,7 +86,7 @@ async function fromDatabase(body: { agent_id?: string; schedule_id?: string; mes
   if (!UUID.test(id)) return new Response("invalid request", { status: 400 });
   // A Controls request: answered now (the app waits 5 seconds), never a turn.
   if (body.message_id && UUID.test(body.message_id) && await answerControl(store, body.message_id)) return json({ ok: true, control: true });
-  const opts = { provider: openRouter(key), search: { key: env("YUI_FIRECRAWL_KEY") || undefined }, log: (m: string) => console.log(`yui-native ${id.slice(0, 8)}: ${m}`) };
+  const opts = { provider: openRouter(key), search: { key: env("YUI_FIRECRAWL_KEY") || undefined }, jev: env("YUI_JEV_KEY") ? { key: env("YUI_JEV_KEY") } : undefined, log: (m: string) => console.log(`yui-native ${id.slice(0, 8)}: ${m}`) };
   const run: Promise<TurnResult> = body.job_id ? runJob(store, id, opts) : body.schedule_id ? runScheduled(store, id, opts) : runAgent(store, id, opts);
   await later(run.then(async (r) => {
     for (const m of r.replies) await push(m);

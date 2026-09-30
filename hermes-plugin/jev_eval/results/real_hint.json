@@ -1,0 +1,47 @@
+{
+ "n": 39,
+ "shape_match": {
+  "base-r1": 20,
+  "base-r2": 21,
+  "hint-r1": 27
+ },
+ "noise_base_r1_to_r2": {
+  "gained": 1,
+  "lost": 0
+ },
+ "hint_vs_base_r1": {
+  "gained": 8,
+  "lost": 1
+ },
+ "hint_vs_base_r2": {
+  "gained": 8,
+  "lost": 2
+ },
+ "by_label": {
+  "line": {
+   "n": 19,
+   "base": 13,
+   "hint": 18
+  },
+  "card": {
+   "n": 10,
+   "base": 3,
+   "hint": 5
+  },
+  "full": {
+   "n": 3,
+   "base": 2,
+   "hint": 2
+  },
+  "yesno": {
+   "n": 5,
+   "base": 0,
+   "hint": 0
+  },
+  "pages": {
+   "n": 2,
+   "base": 2,
+   "hint": 2
+  }
+ }
+}
