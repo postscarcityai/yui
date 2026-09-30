@@ -5,12 +5,17 @@
 #
 # One upload per 24 h. Exits 3 if the newest build was uploaded less than 24 h
 # ago, unless --hotfix "<reason>" is passed. Hotfix reasons: crash, data loss,
-# sign-in blocker. Nothing else. The reason is printed for the ship card.
+# sign-in blocker, or "Chris asked for a build". Nothing else. The reason is printed for the ship card.
+# --daily is for the 06:00 cron (yui-daily-release): one upload per calendar day
+# (America/New_York), so a build that went up at 12:25 yesterday does not block
+# 06:00 today. The 24 h rule stays for everything else.
 set -euo pipefail
 HOTFIX=""
+DAILY=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --hotfix) HOTFIX="${2:-}"; [ -n "$HOTFIX" ] || { echo "--hotfix needs a reason" >&2; exit 2; }; shift 2 ;;
+    --daily) DAILY=1; shift ;;
     *) echo "unknown arg: $1" >&2; exit 2 ;;
   esac
 done
@@ -23,6 +28,12 @@ AGE=$(python3 scripts/asc.py GET "/v1/builds?filter[app]=6815454240&sort=-upload
 print(int((d.datetime.now(d.timezone.utc)-d.datetime.fromisoformat(b[0]["attributes"]["uploadedDate"])).total_seconds()) if b else 999999999)' 2>/dev/null || echo "")
 if [ -z "$AGE" ]; then
   [ -n "$HOTFIX" ] || { echo "testflight guard: could not read the newest build's uploadedDate from App Store Connect. Refusing. Pass --hotfix \"<reason>\" to override." >&2; exit 4; }
+elif [ "$DAILY" = 1 ] && [ -z "$HOTFIX" ]; then
+  SINCE_MIDNIGHT=$(TZ=America/New_York date +'%H %M %S' | awk '{print $1*3600+$2*60+$3}')
+  if [ "$AGE" -lt "$SINCE_MIDNIGHT" ]; then
+    echo "testflight guard: a build already went up today (${AGE}s ago). One upload per day." >&2
+    exit 3
+  fi
 elif [ "$AGE" -lt 86400 ]; then
   if [ -z "$HOTFIX" ]; then
     echo "testflight guard: newest build was uploaded $((AGE/3600))h$(((AGE%3600)/60))m ago. One upload per 24 h. Wait $(((86400-AGE)/3600))h$((((86400-AGE)%3600)/60))m, or pass --hotfix \"<reason>\" (crash, data loss, sign-in blocker only)." >&2
