@@ -33,6 +33,25 @@ final class ComposerAttachTests: XCTestCase {
         return url.path
     }
 
+    /// t_82dc3a4b: 11 photos offered, 10 kept, the 11th refused with the flash, and + goes off.
+    func testEleventhPhotoIsRefusedWithAFlash() throws {
+        var paths: [String] = []
+        for i in 1...11 {
+            let url = FileManager.default.temporaryDirectory.appending(path: "cap-\(i).jpg")
+            let data = UIGraphicsImageRenderer(size: CGSize(width: 300, height: 300)).jpegData(withCompressionQuality: 0.8) { ctx in
+                UIColor.systemTeal.setFill(); ctx.fill(CGRect(x: 0, y: 0, width: 300, height: 300))
+            }
+            try data.write(to: url); paths.append(url.path)
+        }
+        let app = launch(["-yuiComposerPhoto", paths.joined(separator: "|")])
+        XCTAssertTrue(app.staticTexts["Up to 10 photos in one message."].waitForExistence(timeout: 20), "no flash for the 11th")
+        // each thumbnail exposes its remove button twice, so count distinct frames
+        let removes = app.buttons.matching(identifier: "Remove photo").allElementsBoundByIndex
+        XCTAssertEqual(Set(removes.map { "\($0.frame)" }).count, 10)
+        XCTAssertFalse(app.buttons["attach"].isEnabled, "+ still on with 10 attached")
+        shot("16-eleventh-refused")
+    }
+
     func testPlusMenuOffersPhotos() {
         let app = launch()
         let attach = app.buttons["attach"]
