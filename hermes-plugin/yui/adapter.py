@@ -653,6 +653,7 @@ class YuiAdapter(BasePlatformAdapter):
                     if (await self._stop(aid, row) or await self._key_answer(aid, row) or await self._control(aid, row) or await self._owner_only(aid, row)
                             or await self._board_order(aid, row)
                             or await self._need_answer(aid, row)
+                            or await self._invite_answer(aid, row)
                             or await self._need_open(aid, row)
                             or await self._talk_tap(aid, row)):
                         continue
@@ -744,6 +745,29 @@ class YuiAdapter(BasePlatformAdapter):
             except Exception as e:
                 logger.warning("[yui] needs-you answer %s: %s", row["id"][:8], e)
                 text = "Couldn't reach the board to send that answer. Try again in a minute."
+        await self._confirm(aid, row, text)
+        return True
+
+    async def _invite_answer(self, aid: str, row: dict) -> bool:
+        """Approve or Decline on a war room invite request (YUI-214): runs invite.py, no turn, then the row clears."""
+        ans = needs.invite_answer_of(row)
+        if not ans:
+            return False
+        await self._mark([row["id"]], "delivered_at")
+        if row.get("user_id") != self._user_id:
+            text = "Only the owner can answer invites."
+        else:
+            try:
+                result = await asyncio.to_thread(needs.apply_invite, ans, bool(os.environ.get("YUI_INVITE_DRY")))
+                text = needs.invite_reply(result)
+                if result["ok"]:
+                    self._notes.setdefault(aid, []).append(
+                        f"[yui] Chris {ans['choice']}d invite {ans['invite']} in the war room (already done; no reply needed)")
+                    self._war_refresh()
+                logger.info("[yui] invite %s %s: %s", ans["invite"], ans["choice"], "ok" if result["ok"] else result["out"])
+            except Exception as e:
+                logger.warning("[yui] invite %s: %s", ans["invite"], e)
+                text = "Couldn't reach the invite tool. Try again in a minute."
         await self._confirm(aid, row, text)
         return True
 

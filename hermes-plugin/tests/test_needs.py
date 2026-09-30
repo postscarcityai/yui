@@ -273,6 +273,61 @@ class AdapterPath(RealBoard):
         self.assertFalse(asyncio.run(a._need_answer("a1", plain)))
         self.assertEqual(a.written, [])
 
+    # YUI-214: Approve / Decline on an invite request runs invite.py, no turn, and the row clears.
+    def invite_tap(self, choice, inv="443a7548-1111"):
+        return {"id": "row-7", "kind": "event", "user_id": "owner", "agent_id": "a1",
+                "body": f"[yui] invite-{inv} choose choice={choice}",
+                "meta": {"id": f"invite-{inv}", "preset": "choose", "value": {"choice": choice}}}
+
+    def fake_invite(self, code=0):
+        f = self.ran.with_name("invite.py")
+        f.write_text(f"import sys\nopen({str(self.ran.with_name('invite.log'))!r}, 'a').write(' '.join(sys.argv[1:]) + '\\n')\n"
+                     f"print('ok')\nsys.exit({code})\n")
+        os.environ["YUI_INVITE"] = str(f)
+        self.addCleanup(os.environ.pop, "YUI_INVITE", None)
+        return self.ran.with_name("invite.log")
+
+    def test_invite_parse(self):
+        self.assertEqual(needs.invite_answer_of(self.invite_tap("Decline")), {"invite": "443a7548-1111", "choice": "decline"})
+        self.assertEqual(needs.invite_answer_of(self.invite_tap("Approve"))["choice"], "approve")
+        self.assertIsNone(needs.invite_answer_of(self.invite_tap("Maybe")))
+        self.assertIsNone(needs.answer_of(self.invite_tap("Decline")), "not a Needs you answer")
+
+    def test_decline_tap_runs_decline_and_redraws(self):
+        a = self.make()
+        log = self.fake_invite()
+
+        async def go():
+            took = await a._invite_answer("a1", self.invite_tap("Decline"))
+            await a._war_task
+            return took
+        self.assertTrue(asyncio.run(go()))
+        self.assertEqual(log.read_text().splitlines(), ["decline 443a7548-1111"])
+        self.assertEqual(a.written[0]["body"], "Declined. It's off your list.")
+        self.assertIn("row-7", a._acks)
+        self.assertEqual(self.ran.read_text().splitlines(), ["--refresh"], "the review row is redrawn away")
+
+    def test_approve_tap_runs_approve_dry_run(self):
+        a = self.make()
+        log = self.fake_invite()
+        os.environ["YUI_INVITE_DRY"] = "1"
+        self.addCleanup(os.environ.pop, "YUI_INVITE_DRY", None)
+        self.assertTrue(asyncio.run(a._invite_answer("a1", self.invite_tap("Approve"))))
+        self.assertEqual(log.read_text().splitlines(), ["approve 443a7548-1111 --dry-run"])
+
+    def test_invite_failure_keeps_the_row(self):
+        a = self.make()
+        self.fake_invite(code=1)
+        self.assertTrue(asyncio.run(a._invite_answer("a1", self.invite_tap("Decline"))))
+        self.assertTrue(a.written[0]["body"].startswith("Couldn't decline"))
+        self.assertFalse(getattr(a, "_war_task", None), "no redraw on failure")
+
+    def test_someone_else_cannot_answer_an_invite(self):
+        a = self.make(user_id="someone-else")
+        log = self.fake_invite()
+        self.assertTrue(asyncio.run(a._invite_answer("a1", self.invite_tap("Decline"))))
+        self.assertFalse(log.exists())
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

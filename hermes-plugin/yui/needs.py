@@ -47,12 +47,14 @@ drawer redraws.
 
 import os
 import re
+import subprocess
 import sys
 from pathlib import Path
 from typing import List, Optional
 
 ID = re.compile(r"^need-(t_[0-9a-f]{4,})$")
 ROW = re.compile(r"^(need-t_[0-9a-f]{4,}|invite-[\w-]+)$")
+INVITE = re.compile(r"^invite-([\w-]+)$")
 AUTHOR = "chris (yui-app)"
 YOU_DECIDE = "You decide"
 NOT_YET = "Not yet"
@@ -77,6 +79,39 @@ def answer_of(row: dict) -> Optional[dict]:
         return None
     return {"task": m.group(1), "choice": " ".join(choice.split())[:500],
             "typed": form or bool(v.get("other")), "changed": bool(v.get("changed"))}
+
+
+def invite_answer_of(row: dict) -> Optional[dict]:
+    """{invite, choice} when the row is an Approve or Decline tap on an invite request, else None."""
+    if row.get("kind") != "event":
+        return None
+    meta = row.get("meta") or {}
+    v = meta.get("value") or {}
+    m = INVITE.match(str(meta.get("id") or ""))
+    if not m or meta.get("preset") != "choose" or not isinstance(v, dict):
+        return None
+    choice = str(v.get("choice") or "").strip().rstrip(".").lower()
+    return {"invite": m.group(1), "choice": choice} if choice in ("approve", "decline") else None
+
+
+def invite_script() -> str:
+    return os.environ.get("YUI_INVITE") or str(Path.home() / "dev/yui/supabase/scripts/invite.py")
+
+
+def apply_invite(ans: dict, dry: bool = False) -> dict:
+    """Run invite.py approve|decline for the tapped request. Returns {ok, what, out}."""
+    cmd = [sys.executable, invite_script(), ans["choice"], ans["invite"]]
+    if dry and ans["choice"] == "approve":
+        cmd.append("--dry-run")
+    r = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+    out = (r.stdout or r.stderr).strip()
+    return {"ok": r.returncode == 0, "what": ans["choice"], "invite": ans["invite"], "out": out[-300:]}
+
+
+def invite_reply(r: dict) -> str:
+    if not r["ok"]:
+        return f"Couldn't {r['what']} that invite: {r['out'] or 'invite.py failed'}"
+    return "Approved. The invite is on its way." if r["what"] == "approve" else "Declined. It's off your list."
 
 
 def opened(row: dict) -> Optional[str]:
