@@ -167,6 +167,19 @@ struct AgentDrawer: View {
             }
             .scrollIndicators(.hidden)
             .animation(reduceMotion ? nil : theme.spring, value: tab)
+            // Always in view, not behind the switcher (YUI-229): a stranger finds it in the drawer.
+            if let add {
+                Button { close(); add() } label: {
+                    Label("Add an agent", systemImage: "plus")
+                        .font(theme.font(15, .bold)).foregroundStyle(c.onAccent)
+                        .frame(maxWidth: .infinity).padding(.vertical, 13)
+                        .background(c.accent, in: Capsule())
+                }
+                .buttonStyle(BounceButtonStyle())
+                .padding(.horizontal, theme.spacing.m)
+                .padding(.bottom, theme.spacing.s)
+                .accessibilityIdentifier("drawer-add-agent")
+            }
             // Switching agents lives down here, as it did before the top pill (YUI-194).
             AgentBar(agent: store.agent) { switching = true }
                 .padding(.horizontal, theme.spacing.m)

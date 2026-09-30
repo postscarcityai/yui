@@ -2655,7 +2655,7 @@ private struct FirstRun: View {
                     .font(theme.font(theme.type.body)).foregroundStyle(c.inkSoft)
                 VStack(alignment: .leading, spacing: theme.spacing.s) {
                     row(1, "Add an agent here and get a code")
-                    row(2, "Run three commands on your computer")
+                    row(2, "Run one command on your computer")
                     row(3, "Say hi")
                 }
                 .padding(theme.spacing.l)

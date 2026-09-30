@@ -411,7 +411,7 @@ struct LookPickerRow: View {
     }
 }
 
-/// Add agent: name it, pick a look, get a code, run three commands on the host.
+/// Add agent: name it, pick a look, get a code, run one command on the host.
 /// Opens from the agents list, and straight from the chat on a new account.
 struct AddAgentSheet: View {
     /// Paired, and the person tapped "Say hi": the new agent's id.
@@ -607,9 +607,9 @@ struct CrewPicker: View {
     }
 }
 
-/// The code, the three commands from yuigui.com/start, and a live "connected"
+/// The code, the one command from yuigui.com/start, and a live "connected"
 /// once the host claims it. Stuck or expired: says how to fix it.
-private struct PairingStep: View {
+struct PairingStep: View {
     let agentID: String
     let code: PairingCode
     let newCode: () async throws -> Void
@@ -639,6 +639,8 @@ private struct PairingStep: View {
 
     static let install = "hermes plugins install postscarcityai/yui/hermes-plugin/yui --enable"
     static let restart = "hermes gateway restart"
+    /// Install, pair, restart: one paste (YUI-229). Each step is idempotent, so a re-run is safe.
+    static func command(_ code: String) -> String { "\(install) && hermes yui pair \(code) && \(restart)" }
 
     var body: some View {
         let c = theme.swatch(scheme)
@@ -700,20 +702,17 @@ private struct PairingStep: View {
                 TimelineView(.periodic(from: .now, by: 1)) { ctx in
                     let left = max(0, Int(code.expiresAt.timeIntervalSince(ctx.date)))
                     VStack(alignment: .leading, spacing: theme.spacing.l) {
-                        Text("On the computer \(agent?.name ?? "your agent") runs on, open a terminal and run these three commands.")
+                        Text("On the computer \(agent?.name ?? "your agent") runs on, open a terminal and run this.")
                             .font(theme.font(theme.type.body, .semibold)).foregroundStyle(c.ink)
-                        step(1, "Install the Yui plugin", Self.install, note: "Already installed? Skip to step 2.", c)
-                        step(2, "Pair with this code", "hermes yui pair \(code.code)", note: nil, c)
+                        oneCommand(c)
                         codeCard(left, c)
-                        step(3, "Restart the gateway", Self.restart,
-                             note: "No gateway service yet? Run hermes gateway install first.", c)
-                        Text("Using a named profile? Put -p <profile> right after hermes in each command.")
+                        Text("No gateway service yet? Run hermes gateway install first. Using a named profile? Put -p <profile> right after hermes in each command.")
                             .font(theme.font(theme.type.caption)).foregroundStyle(c.inkSoft)
                         if left == 0 {
-                            fix("That code ran out.", "Tap Get a new code above, then run step 2 again with the new code.", c)
+                            fix("That code ran out.", "Tap Get a new code above, then run the command again with the new code.", c)
                         } else if ctx.date.timeIntervalSince(since) >= Self.stuckAfter {
                             fix("Still waiting?",
-                                "Run hermes yui status on that computer. Not paired: run step 2 again. Paired: run step 3, the gateway only connects after a restart.", c)
+                                "Run hermes yui status on that computer. Not paired: run the command again. Paired: run hermes gateway restart, the gateway only connects after a restart.", c)
                         }
                         HStack(spacing: theme.spacing.s) {
                             ProgressView()
@@ -762,33 +761,24 @@ private struct PairingStep: View {
         .overlay(RoundedRectangle(cornerRadius: theme.radius.card).stroke(c.outline, lineWidth: 1.5))
     }
 
-    /// One numbered step: what it does, the exact command with a copy button.
-    private func step(_ n: Int, _ title: String, _ command: String, note: String?, _ c: Swatch) -> some View {
-        VStack(alignment: .leading, spacing: theme.spacing.s) {
-            HStack(spacing: theme.spacing.s) {
-                Text("\(n)")
-                    .font(theme.font(theme.type.caption, .black)).foregroundStyle(c.onAccent)
-                    .frame(width: 22, height: 22)
-                    .background(c.accent, in: Circle())
-                Text(title).font(theme.font(theme.type.body, .bold)).foregroundStyle(c.ink)
-            }
-            HStack(alignment: .top) {
-                Text(command)
-                    .font(.system(size: 13, weight: .medium, design: .monospaced))
-                    .foregroundStyle(c.ink)
-                    .textSelection(.enabled)
-                    .fixedSize(horizontal: false, vertical: true)
-                Spacer(minLength: 0)
-                Button("Copy step \(n)", systemImage: "doc.on.doc") { UIPasteboard.general.string = command }
-                    .labelStyle(.iconOnly).tint(c.inkSoft)
-            }
-            .padding(theme.spacing.m)
-            .background(c.surface, in: .rect(cornerRadius: theme.radius.bubble))
-            .overlay(RoundedRectangle(cornerRadius: theme.radius.bubble).stroke(c.outline, lineWidth: 1))
-            if let note {
-                Text(note).font(theme.font(theme.type.caption)).foregroundStyle(c.inkSoft)
-            }
+    /// The whole setup as one command with a single Copy button.
+    private func oneCommand(_ c: Swatch) -> some View {
+        let command = Self.command(code.code)
+        return HStack(alignment: .top) {
+            Text(command)
+                .font(.system(size: 13, weight: .medium, design: .monospaced))
+                .foregroundStyle(c.ink)
+                .textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityIdentifier("pair-command")
+            Spacer(minLength: 0)
+            Button("Copy command", systemImage: "doc.on.doc") { UIPasteboard.general.string = command }
+                .labelStyle(.iconOnly).tint(c.inkSoft)
+                .accessibilityIdentifier("pair-copy")
         }
+        .padding(theme.spacing.m)
+        .background(c.surface, in: .rect(cornerRadius: theme.radius.bubble))
+        .overlay(RoundedRectangle(cornerRadius: theme.radius.bubble).stroke(c.outline, lineWidth: 1))
     }
 
     private func fix(_ title: String, _ body: String, _ c: Swatch) -> some View {
