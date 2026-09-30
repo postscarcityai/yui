@@ -45,6 +45,13 @@ final class ReplyFormatTests: XCTestCase {
         XCTAssertFalse(ReplyQuote.line(plain).contains("rows="), "a bubble adds no rows")
     }
 
+    func testAListQuotesItsItems() throws {
+        let m = ChatMessage(text: "", fromUser: false, yl: YLScreen("list Groceries Milk|Eggs|Bread"))
+        let q = try XCTUnwrap(ReplyQuote(m))
+        XCTAssertEqual(q.quote, "Groceries")
+        XCTAssertEqual(q.rows, ["Milk", "Eggs", "Bread"])
+    }
+
     func testBodyIsTheReplyLineThenTheWords() {
         let q = ReplyQuote(msg: Self.row, fromUser: false, quote: "Say \"yes\" or no")
         XCTAssertEqual(ReplyQuote.body("Yes, do it", replyingTo: q),

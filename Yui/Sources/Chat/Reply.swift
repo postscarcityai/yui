@@ -90,6 +90,11 @@ struct ReplyQuote: Equatable, Sendable {
                     out.append(t)
                 }
             }
+            if c.preset == "list" {
+                for t in (c.strings("items") ?? []).map({ $0.trimmingCharacters(in: .whitespacesAndNewlines) }) where !t.isEmpty && !out.contains(t) {
+                    out.append(t)
+                }
+            }
         }
         return out.joined(separator: "\n")
     }
