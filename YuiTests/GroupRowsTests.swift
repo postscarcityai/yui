@@ -130,6 +130,14 @@ final class GroupRowsTests: XCTestCase {
         XCTAssertTrue(GroupRows.working(rows, lead: coach).isEmpty)
     }
 
+    func testAnOfflineAgentWaitsAndDoesNotWork() {
+        let rows = [row("u1", "user", "x", agent: sage, group: ["words": .string("x")]),
+                    row("s1", "agent", "Sage is offline. It gets this when it's back.", agent: sage,
+                        group: ["status": .string("offline"), "about": .string(sage)], at: "2026-10-01T14:00:00.000001+00:00"),
+                    row("u2", "user", "y", agent: coach, group: ["words": .string("y")])]
+        XCTAssertEqual(GroupRows.working(rows, lead: coach).map(\.agent), [coach])
+    }
+
     func testWorkingCarriesTheAgentsOwnWords() {
         var r = row("u1", "user", "x", agent: sage, delivered: Self.at)
         r.doing = .object(["text": .string("Reading your notes"), "step": .number(2), "of": .number(5)])

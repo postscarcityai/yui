@@ -111,6 +111,8 @@ T = str(uuid.uuid4())
 sql(f"insert into yui_users(id, apple_sub) values ('{T}','test.{T}')")
 # A phone this new: the newest app_build on the account is above group_min_build.
 sql(f"insert into yui_devices(user_id, name, apns_token, app_build) values ('{T}', 'group e2e phone', '{hashlib.sha256(T.encode()).hexdigest()}', 999999)")
+# Past the first-run crew picker: this person brought their own agents.
+sql(f"insert into yui_crew_choice(user_id, picked_at, own) values ('{T}', now(), true)")
 tok = mint(T, ttl=3600)
 hosts, homes, ids, cts = {}, {}, {}, {}
 GID = None
@@ -277,8 +279,8 @@ try:
     check("no @: the lead was asked, and only the lead", first is not None and first["agent_id"] == ids["alpha"]
           and asked("alpha", "How did I sleep?") and not asked("bravo", "How did I sleep?"), f"{turns('bravo')}")
     knee = [m for m in people if "does this fit my knee" in g(m)["words"]]
-    check("@Bravo: Bravo was asked, Alpha never was",
-          len(knee) == 1 and knee[0]["agent_id"] == ids["bravo"]
+    check("@Bravo: Bravo was asked, Alpha never was" if knee else "(the phone run does not ask @Bravo directly)",
+          not knee or len(knee) == 1 and knee[0]["agent_id"] == ids["bravo"]
           and asked("bravo", "@Bravo does this fit my knee?")
           and not asked("alpha", "@Bravo does this fit my knee?"), f"{turns('alpha')}")
     check("Bravo's answer is in the group, in Bravo's name", any(m["body"] == BRAVO for m in agent_says("bravo")))

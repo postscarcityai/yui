@@ -144,6 +144,7 @@ struct NewGroupSheet: View {
                 Image(systemName: on ? "checkmark.circle.fill" : "circle")
                     .font(.title3).foregroundStyle(on ? c.accent : c.inkSoft)
             }
+            .contentShape(.rect)
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier("group-pick-\(a.handle)")
@@ -156,8 +157,9 @@ struct NewGroupSheet: View {
                 AgentBadge(agent: a, size: 30)
                 Text(a.name).font(theme.font(theme.type.body)).foregroundStyle(c.ink)
                 Spacer()
-                if (lead ?? picked.first) == a.id { Crown(size: 20).offset(x: 0, y: 0) }
+                if (lead ?? picked.first) == a.id { Crown(size: 20) }
             }
+            .contentShape(.rect)
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier("group-lead-\(a.handle)")

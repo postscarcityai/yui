@@ -32,10 +32,10 @@ struct GroupThreadView: View {
                 Spacer(); ProgressView(); Spacer()
             }
         }
-        .background(c.background)
+        .background(c.background.ignoresSafeArea())
         .environment(\.yuiTheme, appTheme)
-        .task(id: groupID) {
-            guard let info else { return }
+        .task(id: info?.id) {
+            guard let info, thread == nil else { return }
             let t = GroupThread(info: info, client: groups.client(account))
             thread = t
             t.start()
@@ -45,7 +45,7 @@ struct GroupThreadView: View {
         .sheet(isPresented: $settings) {
             if let info { GroupSettings(info: info) { settings = false } }
         }
-        .accessibilityIdentifier("group-thread")
+        .overlay { Color.clear.allowsHitTesting(false).accessibilityIdentifier("group-thread") }
     }
 
     private func members(_ info: GroupInfo) -> [YuiAgent] { info.ordered(agents.agents) { $0.id } }
@@ -226,7 +226,7 @@ private struct Header: View {
                 .tint(c.ink).accessibilityLabel("Group settings").accessibilityIdentifier("group-settings")
         }
         .padding(.horizontal, theme.spacing.l).padding(.vertical, theme.spacing.m)
-        .background(c.surface)
+        .background(c.surface.ignoresSafeArea(edges: .top))
     }
 }
 
@@ -391,7 +391,7 @@ private struct GuardRow: View {
             .overlay(RoundedRectangle(cornerRadius: theme.radius.bubble).stroke(c.accent.opacity(0.6), lineWidth: 1.5))
             Spacer(minLength: 24)
         }
-        .accessibilityIdentifier("group-guard")
+        .background { Color.clear.allowsHitTesting(false).accessibilityIdentifier("group-guard") }
     }
 }
 

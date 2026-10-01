@@ -104,6 +104,7 @@ struct AgentsView: View {
                         GroupRow(group: g, agents: store.agents)
                             .contentShape(.rect)
                             .onTapGesture { groups.openID = g.id; dismiss() }
+                            .listRowBackground(c.surface)
                     }
                     Button { makingGroup = true } label: {
                         Label("New group", systemImage: "person.3.fill")
@@ -117,7 +118,6 @@ struct AgentsView: View {
                         Text("Groups").font(theme.font(theme.type.body, .semibold)).foregroundStyle(c.inkSoft).textCase(nil)
                     }
                 }
-                .accessibilityIdentifier("groups")
             }
             if !store.unshared.isEmpty {
                 Section {

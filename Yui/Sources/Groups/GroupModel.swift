@@ -179,9 +179,12 @@ enum GroupRows {
     /// yet, newest unhandled first. A cancelled handoff is handled. Lead first, then the order they were asked.
     static func working(_ rows: [ThreadRow], lead: String?) -> [GroupWorking] {
         var out: [GroupWorking] = []
+        // An agent that is asleep, offline or not connected has a status line after the ask: it waits, it does not work.
+        let waiting = rows.filter { $0.sender == "agent" && ["asleep", "offline", "pending"].contains($0.meta?["group"]?["status"]?.string ?? "") }
         for row in rows where row.sender == "user" && row.kind != "control" && row.handledAt == nil {
             guard let agent = row.agentID, row.meta?["group"]?["control"] == nil,
                   row.meta?["group"]?["cancelled"]?.bool != true else { continue }
+            if waiting.contains(where: { ($0.meta?["group"]?["about"]?.string ?? $0.agentID) == agent && $0.createdAt >= row.createdAt }) { continue }
             if out.contains(where: { $0.agent == agent }) { continue }
             out.append(GroupWorking(agent: agent, since: YuiTime.date(row.createdAt) ?? .now,
                                     pickedUp: row.deliveredAt.flatMap(YuiTime.date), doing: ChatStore.doing(row.doing)))
