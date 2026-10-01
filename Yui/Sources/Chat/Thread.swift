@@ -17,9 +17,12 @@ struct ThreadRow: Decodable, Sendable {
     /// The person's rows only: what the agent says it is doing on this turn,
     /// {text?, step?, of?}, written by its host mid-turn (YUI-63).
     var doing: YLValue? = nil
+    /// Group rows (YUI-94): the agent the row is to or from. Only a group read asks for it.
+    var agentID: String? = nil
 
     enum CodingKeys: String, CodingKey {
         case id, sender, body, kind, meta, reaction, doing
+        case agentID = "agent_id"
         case createdAt = "created_at", deliveredAt = "delivered_at", handledAt = "handled_at"
     }
 }
@@ -268,13 +271,14 @@ struct ThreadClient {
 }
 
 /// One request to Yui's relay with the session's token. `chats`: a refusal that is one of
-/// the chat errors (`update_needed`, `limit_reached`, `last_chat`) is thrown as that.
+/// the chat errors (`update_needed`, `limit_reached`, `last_chat`) is thrown as that; `groups`: the same for a
+/// group error (`group_archived`, `update_needed`, ...).
 @MainActor
 enum YuiRelay {
     /// Tests swap in a session with a stand-in relay (a URLProtocol); the app uses the shared one.
     static var session: URLSession = .shared
 
-    static func data(_ account: Account, _ r: URLRequest, chats: Bool = false) async throws -> Data {
+    static func data(_ account: Account, _ r: URLRequest, chats: Bool = false, groups: Bool = false) async throws -> Data {
         #if DEBUG
         // `-yuiOfflineFlag <path>`: while that file exists the network is "down" (YUI-28 tests).
         if let flag = UserDefaults.standard.string(forKey: "yuiOfflineFlag"), FileManager.default.fileExists(atPath: flag) {
@@ -287,9 +291,19 @@ enum YuiRelay {
         let (data, response) = try await session.data(for: req)
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
             if chats, let e = refusal(data) { throw e }
+            if groups, let e = groupRefusal(data) { throw e }
             throw AccountError.server("http_\((response as? HTTPURLResponse)?.statusCode ?? 0)")
         }
         return data
+    }
+
+    /// PostgREST's `{"message": "group_archived"}` as a group error, when it is one we know.
+    static func groupRefusal(_ body: Data) -> GroupError? {
+        struct Body: Decodable { let message: String? }
+        guard let m = (try? JSONDecoder().decode(Body.self, from: body))?.message else { return nil }
+        let e = GroupError(message: m)
+        if case .other = e { return nil }
+        return e
     }
 
     /// PostgREST's `{"message": "limit_reached"}` as a chat error, when it is one we know.

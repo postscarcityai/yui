@@ -6,11 +6,15 @@ import SwiftUI
 /// access token. Spec: yuigui/spec/AGENTS.md.
 struct AgentsView: View {
     @Environment(AgentStore.self) private var store
+    @Environment(GroupStore.self) private var groups
+    @Environment(Account.self) private var account
     @Environment(\.dismiss) private var dismiss
     @Environment(\.yuiTheme) private var theme
     @Environment(\.colorScheme) private var scheme
     @State private var adding = ProcessInfo.processInfo.arguments.contains("-yuiAddAgent")
     @State private var editing: YuiAgent?
+    /// The New group sheet (YUI-94).
+    @State private var makingGroup = ProcessInfo.processInfo.arguments.contains("-yuiNewGroup")
 
     var body: some View {
         let c = theme.swatch(scheme)
@@ -47,10 +51,19 @@ struct AgentsView: View {
                 .presentationDetents([.medium, .large])
                 .presentationCornerRadius(theme.radius.card)
         }
+        .sheet(isPresented: $makingGroup) {
+            NewGroupSheet { id in
+                groups.openID = id
+                dismiss()
+            }
+            .presentationDetents([.large])
+            .presentationCornerRadius(theme.radius.card)
+        }
         // Live: agents added from a host or by another agent show up while the sheet is open.
         .task {
             while !Task.isCancelled {
                 await store.refresh()
+                await groups.refresh()
                 try? await Task.sleep(for: .seconds(4))
             }
         }
@@ -85,6 +98,27 @@ struct AgentsView: View {
                         .accessibilityIdentifier("shared-footer")
                 }
             }
+            if canGroup {
+                Section {
+                    ForEach(groups.groups) { g in
+                        GroupRow(group: g, agents: store.agents)
+                            .contentShape(.rect)
+                            .onTapGesture { groups.openID = g.id; dismiss() }
+                    }
+                    Button { makingGroup = true } label: {
+                        Label("New group", systemImage: "person.3.fill")
+                            .font(theme.font(theme.type.body, .bold))
+                            .foregroundStyle(c.accent)
+                    }
+                    .listRowBackground(c.surface)
+                    .accessibilityIdentifier("new-group")
+                } header: {
+                    if !groups.groups.isEmpty {
+                        Text("Groups").font(theme.font(theme.type.body, .semibold)).foregroundStyle(c.inkSoft).textCase(nil)
+                    }
+                }
+                .accessibilityIdentifier("groups")
+            }
             if !store.unshared.isEmpty {
                 Section {
                     ForEach(store.unshared, id: \.self) { name in
@@ -112,6 +146,11 @@ struct AgentsView: View {
             }
         }
         .scrollContentBackground(.hidden)
+    }
+
+    /// Groups need two agents and a real account (the demo account has no server).
+    private var canGroup: Bool {
+        store.agents.count >= 2 && account.session?.userID != "demo" || !groups.groups.isEmpty
     }
 
     /// "Hi Maya. Sam set these up for you." on an account with shared agents.

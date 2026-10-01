@@ -8,6 +8,7 @@ struct YuiApp: App {
     @State private var account: Account
     @State private var agents: AgentStore
     @State private var looks = AppLookStore.shared
+    @State private var groups = GroupStore()
 
     init() {
         let account = Account()
@@ -41,6 +42,7 @@ struct YuiApp: App {
             .environment(account)
             .environment(agents)
             .environment(looks)
+            .modifier(GroupsHooks(groups: groups))
             .onChange(of: account.isSignedIn) {
                 agents.reset()
                 if !account.isSignedIn { looks.clear() }

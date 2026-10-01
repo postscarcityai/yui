@@ -16,6 +16,7 @@ struct ChatView: View {
     @Environment(Account.self) private var account
     @Environment(AgentStore.self) private var agents
     @Environment(PushCenter.self) private var push
+    @Environment(GroupStore.self) private var groups
     @Environment(\.agentStyle) private var agentStyle
     /// Yui's own look (RESTYLE.md): sheets and Settings wear it, not the open agent's.
     @Environment(\.appTheme) private var appTheme
@@ -351,6 +352,9 @@ struct ChatView: View {
                 SelectTextSheet(text: m.words)
                     .presentationDetents([.medium, .large])
                     .presentationCornerRadius(theme.radius.card)
+            }
+            .fullScreenCover(isPresented: Binding(get: { groups.openID != nil }, set: { if !$0 { groups.openID = nil } })) {
+                if let id = groups.openID { GroupThreadView(groupID: id).environment(\.appTheme, appTheme) }
             }
             .sheet(isPresented: $showAgents) {
                 AgentsView()
