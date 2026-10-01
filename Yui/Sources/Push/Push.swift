@@ -33,6 +33,10 @@ final class PushCenter: NSObject {
     var pendingTalk = false
     /// `yui://snap` (YUI-166): hold to snap and say, in the thread on screen. ChatView consumes it.
     var pendingSnap = false
+    /// `yui://snap?agent=basil` (Siri's Log my food, YUI-253): the camera opens in that agent's thread, not the one on screen.
+    var pendingSnapAgent: String?
+    /// `yui://agent/<id>/thread?workout=1` (Siri's Start my workout, YUI-253): the thread opens and sends "Start today's workout".
+    var pendingWorkout = false
     /// Bumped by a silent push that says the agent list changed (a revoke, YUI-97).
     private(set) var listChanged = 0
 
@@ -173,12 +177,18 @@ final class PushCenter: NSObject {
             return true
         }
         if Self.isSnap(url) {
-            pendingSnap = true
+            if let agent = Self.snapAgent(url) {
+                pendingSnapAgent = agent
+                pendingAgentID = agent
+            } else {
+                pendingSnap = true
+            }
             return true
         }
         guard let id = Self.agentTarget(url) else { return false }
         pendingShow = Self.showName(url)
         pendingTalk = Self.talks(url)
+        pendingWorkout = Self.startsWorkout(url)
         pendingAgentID = id
         return true
     }
@@ -200,6 +210,18 @@ final class PushCenter: NSObject {
     /// `?talk=1`: the Talk to Yui control's link.
     nonisolated static func talks(_ url: URL) -> Bool {
         URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.contains { $0.name == "talk" && $0.value == "1" } ?? false
+    }
+
+    /// `?agent=basil` on a snap link: the agent whose thread the camera opens in.
+    nonisolated static func snapAgent(_ url: URL) -> String? {
+        guard isSnap(url) else { return nil }
+        let v = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first { $0.name == "agent" }?.value
+        return v?.isEmpty == false ? v : nil
+    }
+
+    /// `?workout=1`: the Start my workout intent's link.
+    nonisolated static func startsWorkout(_ url: URL) -> Bool {
+        URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.contains { $0.name == "workout" && $0.value == "1" } ?? false
     }
 
     /// A hand-off link jumps the phone when its card lands live; `yui://agent/<id>/thread` does not.

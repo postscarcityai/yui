@@ -2,7 +2,7 @@ import AppIntents
 import Foundation
 import SwiftUI
 
-// Siri, Shortcuts and the Action button (YUI-40 step 2, spec WIDGETS.md section 6): three App Intents, each
+// Siri, Shortcuts and the Action button (YUI-40 step 2, spec WIDGETS.md section 6): App Intents, each
 // with an entity parameter so one intent covers every agent and every saved screen, and three App Shortcuts
 // with the app's name in every phrase. Siri only asks, shows and starts: no intent confirms a purchase,
 // writes to anyone but the person's own agent, or deletes.
@@ -71,8 +71,91 @@ struct StartTimerIntent: LiveActivityIntent {
     }
 }
 
+/// Which agent id a handle ("basil", "arnold") is on this account. The app writes it whenever the agent list
+/// loads, so an intent that runs with no screen can address the agent.
+enum AgentHandles {
+    private static let key = "agentHandles"
+
+    static func save(_ agents: [YuiAgent]) {
+        var map: [String: String] = [:]
+        for a in agents { map[a.handle.lowercased()] = a.id }
+        WidgetGroup.defaults.set(map, forKey: key)
+    }
+
+    static func id(_ handle: String) -> String? {
+        (WidgetGroup.defaults.dictionary(forKey: key) as? [String: String])?[handle.lowercased()]
+    }
+
+    static func clear() { WidgetGroup.defaults.removeObject(forKey: key) }
+}
+
+/// "Log my food" (YUI-253): Basil's camera, straight away. No chat first.
+struct LogFoodIntent: AppIntent {
+    static let title: LocalizedStringResource = "Log my food"
+    static let description = IntentDescription("Open Basil's camera to snap a meal and say what it is.")
+
+    func perform() async throws -> some IntentResult & OpensIntent {
+        .result(opensIntent: OpenURLIntent(Self.link))
+    }
+
+    static var link: URL { URL(string: "yui://snap?agent=basil")! }
+}
+
+/// "Tell Yui I ate a bacon cheeseburger with fries" (YUI-253): the words go to Basil as a meal log, through the
+/// app's own outbox, and Siri says Logged without opening the app. Basil's answer (the meal and today's calories)
+/// is waiting in the thread as a push.
+struct LogMealIntent: AppIntent {
+    static let title: LocalizedStringResource = "Tell Basil what I ate"
+    static let description = IntentDescription("Log a meal by saying it. Basil answers with the meal and today's calories.")
+
+    @Parameter(title: "Meal", requestValueDialog: "What did you eat?") var meal: String
+
+    static var parameterSummary: some ParameterSummary { Summary("Log \(\.$meal)") }
+
+    /// What Basil is sent: the drawer's own "Log a meal" words, then the meal.
+    static func words(_ meal: String) -> String? {
+        let said = meal.trimmingCharacters(in: .whitespacesAndNewlines)
+        return said.isEmpty ? nil : "Log a meal: \(said)"
+    }
+
+    @MainActor
+    func perform() async throws -> some IntentResult & ProvidesDialog {
+        guard let body = Self.words(meal), let account = await WidgetApp.waitForAccount(), let user = account.session?.userID, user != "demo" else {
+            return .result(dialog: "Open Yui and sign in first.")
+        }
+        guard let basil = AgentHandles.id("basil") else { return .result(dialog: "Open Yui once so I can find Basil.") }
+        let item = Outbox.Item(id: UUID().uuidString.lowercased(), userID: user, agentID: basil, body: body,
+                               kind: "text", meta: nil, queuedAt: .now)
+        Outbox.shared.start(account: account)
+        Outbox.shared.add(item)
+        for _ in 0..<16 where Outbox.shared.isPending(item.id) { try? await Task.sleep(for: .milliseconds(250)) }
+        return .result(dialog: Outbox.shared.isPending(item.id) ? "Queued. It goes when you are online." : "Logged")
+    }
+}
+
+/// "Start my workout" (YUI-253): Arnold's thread opens and today's coached session starts (YUI-220).
+struct StartWorkoutIntent: AppIntent {
+    static let title: LocalizedStringResource = "Start my workout"
+    static let description = IntentDescription("Open today's coached workout with Arnold.")
+
+    func perform() async throws -> some IntentResult & OpensIntent {
+        .result(opensIntent: OpenURLIntent(Self.link))
+    }
+
+    static var link: URL { URL(string: "yui://agent/arnold/thread?workout=1")! }
+}
+
 struct YuiShortcuts: AppShortcutsProvider {
     static var appShortcuts: [AppShortcut] {
+        AppShortcut(intent: LogFoodIntent(),
+                    phrases: ["Log my food in \(.applicationName)", "Log a meal in \(.applicationName)", "Snap my food in \(.applicationName)"],
+                    shortTitle: "Log my food", systemImageName: "camera.fill")
+        AppShortcut(intent: LogMealIntent(),
+                    phrases: ["Tell \(.applicationName) what I ate", "Tell \(.applicationName) I ate something", "I ate something in \(.applicationName)"],
+                    shortTitle: "Tell Basil what I ate", systemImageName: "fork.knife")
+        AppShortcut(intent: StartWorkoutIntent(),
+                    phrases: ["Start my workout in \(.applicationName)", "Start my workout with \(.applicationName)"],
+                    shortTitle: "Start my workout", systemImageName: "figure.strengthtraining.traditional")
         AppShortcut(intent: AskAgentIntent(),
                     phrases: ["Ask \(\.$agent) in \(.applicationName)", "Message \(\.$agent) in \(.applicationName)"],
                     shortTitle: "Ask an agent", systemImageName: "bubble.left.fill")

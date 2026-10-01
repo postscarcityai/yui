@@ -335,8 +335,71 @@ final class SiriIntentTests: XCTestCase {
         XCTAssertTrue(FakeRelay.log().isEmpty)
     }
 
-    func testThreeAppShortcutsAndEachPhraseNamesTheApp() {
-        XCTAssertEqual(YuiShortcuts.appShortcuts.count, 3)
+    func testSixAppShortcutsAndEachPhraseNamesTheApp() {
+        XCTAssertEqual(YuiShortcuts.appShortcuts.count, 6)
+    }
+
+    // YUI-253: Siri logs food and starts the workout.
+    func testLogFoodOpensBasilsCameraAndNoChat() {
+        let url = LogFoodIntent.link
+        XCTAssertTrue(PushCenter.isSnap(url))
+        XCTAssertEqual(PushCenter.snapAgent(url), "basil")
+        XCTAssertNil(PushCenter.snapAgent(URL(string: "yui://snap")!))
+        let push = PushCenter.shared
+        XCTAssertTrue(push.open(url))
+        XCTAssertEqual(push.pendingSnapAgent, "basil")
+        XCTAssertEqual(push.pendingAgentID, "basil")
+        XCTAssertFalse(push.pendingSnap, "the camera waits for Basil's thread")
+        push.pendingSnapAgent = nil; push.pendingAgentID = nil
+    }
+
+    func testStartWorkoutOpensArnoldsThreadAndStarts() {
+        let url = StartWorkoutIntent.link
+        XCTAssertEqual(PushCenter.agentTarget(url), "arnold")
+        XCTAssertTrue(PushCenter.startsWorkout(url))
+        XCTAssertFalse(PushCenter.isHandOff(url))
+        let push = PushCenter.shared
+        XCTAssertTrue(push.open(url))
+        XCTAssertTrue(push.pendingWorkout)
+        push.pendingWorkout = false; push.pendingAgentID = nil
+        XCTAssertFalse(PushCenter.startsWorkout(URL(string: "yui://agent/arnold/thread")!))
+    }
+
+    func testSpokenMealGoesToBasilAsALogAndSaysLogged() async throws {
+        WidgetApp.account = Account.signedIn(userID: "u1")
+        WidgetGroup.defaults.set(["basil": "agent-basil"], forKey: "agentHandles")
+        defer { AgentHandles.clear() }
+        var intent = LogMealIntent()
+        intent.meal = "  a bacon cheeseburger with fries "
+        let result = try await intent.perform()
+        XCTAssertTrue(String(describing: result).contains("Logged"), "Siri says Logged")
+        let post = FakeRelay.log().first { $0.method == "POST" && $0.path == "yui_messages" }
+        XCTAssertEqual(post?.body["body"] as? String, "Log a meal: a bacon cheeseburger with fries")
+        XCTAssertEqual(post?.body["agent_id"] as? String, "agent-basil")
+        XCTAssertEqual(post?.body["sender"] as? String, "user")
+    }
+
+    func testSpokenMealNeedsWordsAndASignedInAccount() async throws {
+        XCTAssertNil(LogMealIntent.words("   "))
+        WidgetApp.account = Account.signedIn(userID: "u1")
+        WidgetGroup.defaults.set(["basil": "agent-basil"], forKey: "agentHandles")
+        defer { AgentHandles.clear() }
+        var empty = LogMealIntent()
+        empty.meal = " "
+        _ = try await empty.perform()
+        WidgetApp.account = Account.signedIn(userID: "demo")
+        var demo = LogMealIntent()
+        demo.meal = "toast"
+        _ = try await demo.perform()
+        XCTAssertTrue(FakeRelay.log().isEmpty)
+    }
+
+    func testAgentHandlesComeFromTheLoadedList() {
+        AgentHandles.clear()
+        XCTAssertNil(AgentHandles.id("basil"))
+        AgentHandles.save([YuiAgent(id: "a1", name: "Basil", handle: "Basil", color: "mint", kind: "hermes", status: .connected, isDefault: false, sort: 0)])
+        XCTAssertEqual(AgentHandles.id("basil"), "a1")
+        AgentHandles.clear()
     }
 
     func testKeychainGroupIsInTheInfoPlist() {

@@ -39,6 +39,7 @@ enum WidgetApp {
     static func signOut(_ account: Account) async {
         await WidgetRegistry.forget(account: account)
         WidgetSync.clear()
+        AgentHandles.clear()
     }
 }
 

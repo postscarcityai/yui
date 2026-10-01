@@ -83,6 +83,12 @@ struct YuiApp: App {
             #if DEBUG
             // -yuiDemoPushTap <agent> [-yuiDemoPushTapAfter <s>]: a notification tap for that agent, as
             // the payload the server sends (YUI-199 tests and shots).
+            // -yuiOpenURL "<url>": the app opens that link a moment after launch (Siri's yui:// links, YUI-253).
+            .task {
+                guard let raw = UserDefaults.standard.string(forKey: "yuiOpenURL"), let url = URL(string: raw) else { return }
+                try? await Task.sleep(for: .seconds(2))
+                _ = PushCenter.shared.open(url)
+            }
             .task {
                 let d = UserDefaults.standard
                 guard let agent = d.string(forKey: "yuiDemoPushTap") else { return }

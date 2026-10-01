@@ -30,6 +30,7 @@ struct ChatView: View {
     @State private var showLanding: (agent: String, name: String)?
     /// The Talk to Yui control (YUI-40): this agent's thread opens with hands-free voice on.
     @State private var talkLanding: String?
+    @State private var snapLanding: String?
     @State private var showSettings = ProcessInfo.processInfo.arguments.contains("-yuiSettings")
     /// A section to scroll to when Settings opens from a link (`yui://settings/search`).
     @State private var settingsFocus: String?
@@ -596,7 +597,7 @@ struct ChatView: View {
         // A notification tap or yui://agent/<id>/thread: straight to that thread.
         .onChange(of: push.pendingAgentID, initial: true) { openPushedThread() }
         // ...and on the message that came (YUI-199), once that thread has loaded.
-        .onChange(of: [store.loaded ? store.agent?.id : nil, store.messages.last?.id]) { landPushed(); landFirstPlan(); landShow(); landTalk() }
+        .onChange(of: [store.loaded ? store.agent?.id : nil, store.messages.last?.id]) { landPushed(); landFirstPlan(); landShow(); landTalk(); landSnap() }
         .tint(c.accent)
     }
 
@@ -612,6 +613,14 @@ struct ChatView: View {
         guard let want = talkLanding, store.loaded, store.agent?.id == want else { return }
         talkLanding = nil
         if PushToTalk.allowed, !handsFree.on { handsFreeDo(.tap) }
+    }
+
+    /// Siri's Log my food: the camera, once that thread is up.
+    private func landSnap() {
+        guard let want = snapLanding, store.loaded, store.agent?.id == want else { return }
+        snapLanding = nil
+        settleDrawer(open: false)
+        openSnap()
     }
 
     /// A notification tap or yui://agent/<id>/thread: straight to that thread (and chat).
@@ -633,6 +642,12 @@ struct ChatView: View {
             }
             push.pendingMessageID = nil
             if push.pendingTalk { push.pendingTalk = false; talkLanding = target }
+            if push.pendingSnapAgent != nil { push.pendingSnapAgent = nil; snapLanding = target }
+            // Siri's Start my workout: the same tap as the drawer's "Start a workout" on Arnold.
+            if push.pendingWorkout {
+                push.pendingWorkout = false
+                QuickActionTap.shared.pending = QuickActionTap.Tap(agentID: target, itemID: "workout", say: "Start today's workout", label: "Start a workout")
+            }
             // A push names the chat it came from (YUI-169): that one opens, not the newest.
             if let chat = push.pendingChatID {
                 push.pendingChatID = nil

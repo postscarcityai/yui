@@ -326,6 +326,7 @@ final class AgentStore {
         let gone = agents.filter { old in old.isShared && !new.contains { $0.id == old.id } }
         let wasOpen = gone.contains { $0.id == selected?.id }
         agents = new
+        AgentHandles.save(new)
         guard !gone.isEmpty else { return }
         for a in gone where !unshared.contains(a.name) { unshared.append(a.name) }
         if wasOpen, let a = gone.first(where: { $0.id == selectedID }) ?? gone.first {
