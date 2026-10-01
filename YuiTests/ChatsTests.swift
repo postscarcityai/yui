@@ -26,6 +26,12 @@ final class ChatsTests: XCTestCase {
                        "a blank title is no title")
         XCTAssertEqual(Chats.title(Self.chat("a", at: "2026-09-27T10:00:00+00:00"), agent: "Basil"), "New chat",
                        "any other chat with nothing said yet")
+        let first = Self.chat("a", first: true, at: "2026-09-27T10:00:00+00:00")
+        XCTAssertEqual(Chats.title(first, agent: "Basil", among: 3), "Earlier",
+                       "YUI-254: everything said before chats were many is one chat called Earlier")
+        XCTAssertEqual(Chats.title(Self.chat("a", "Pasta", first: true, at: "2026-09-27T10:00:00+00:00"), agent: "Basil", among: 3), "Pasta",
+                       "a name the person gave it wins")
+        XCTAssertEqual(Chats.filter([first], agent: "Basil", query: "earlier").count, 0, "alone it is Hi Basil, not Earlier")
     }
 
     func testLastLine() {

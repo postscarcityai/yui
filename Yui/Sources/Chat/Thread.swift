@@ -139,6 +139,17 @@ struct ThreadClient {
         return since == nil ? rows.reversed() : rows
     }
 
+    /// The `limit` rows said just before `before`, oldest first: the way back through a long chat (YUI-254).
+    func fetchOlder(before: String, limit: Int = 100) async throws -> [ThreadRow] {
+        var items = Self.fetchItems(agentID: agentID, chatID: chatID, since: nil, limit: limit)
+        items.append(URLQueryItem(name: "created_at", value: "lt.\(before)"))
+        var c = URLComponents(url: YuiBackend.url.appending(path: "rest/v1/yui_messages"), resolvingAgainstBaseURL: false)!
+        c.queryItems = items
+        c.percentEncodedQuery = c.percentEncodedQuery?.replacingOccurrences(of: "+", with: "%2B")
+        let data = try await request(URLRequest(url: c.url!))
+        return try JSONDecoder().decode([ThreadRow].self, from: data).reversed()
+    }
+
     /// The query of a thread read: the agent's rows, or one chat's when `chatID` is set.
     static func fetchItems(agentID: String, chatID: String?, since: String?, limit: Int = 100) -> [URLQueryItem] {
         var items = [

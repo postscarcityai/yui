@@ -108,11 +108,13 @@ enum Chats {
 
     // MARK: Words
 
-    /// The row's title: what it is called, "Hi <agent>" for the first chat with no
-    /// title, "New chat" for any other with nothing said yet.
-    static func title(_ chat: ChatInfo, agent: String) -> String {
+    /// The row's title: what it is called, "Earlier" for the first chat with no title once there
+    /// are other chats (everything said before chats were many, YUI-254), "Hi <agent>" while it is
+    /// the only one, "New chat" for any other with nothing said yet.
+    static func title(_ chat: ChatInfo, agent: String, among: Int = 1) -> String {
         if let t = chat.title?.trimmingCharacters(in: .whitespacesAndNewlines), !t.isEmpty { return t }
-        return chat.isFirst ? "Hi \(agent)" : "New chat"
+        guard chat.isFirst else { return "New chat" }
+        return among > 1 ? "Earlier" : "Hi \(agent)"
     }
 
     /// The last line said, "You: how much protein on rest days". Fences of screens
@@ -201,7 +203,7 @@ enum Chats {
     static func filter(_ chats: [ChatInfo], agent: String, query: String) -> [ChatInfo] {
         let q = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         guard !q.isEmpty else { return chats }
-        return chats.filter { title($0, agent: agent).lowercased().contains(q) || lastLine($0).lowercased().contains(q) }
+        return chats.filter { title($0, agent: agent, among: chats.count).lowercased().contains(q) || lastLine($0).lowercased().contains(q) }
     }
 
     // MARK: Delete

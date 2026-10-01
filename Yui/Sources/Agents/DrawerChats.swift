@@ -67,7 +67,7 @@ struct DrawerChats: View {
         }
         // Delete asks first (spec section 4): a sheet, Delete in red and Keep it. Nothing else in the app asks.
         .sheet(item: $deleting) { chat in
-            let words = Chats.sheet(for: store.deletePlan, title: Chats.title(chat, agent: name), agent: name)
+            let words = Chats.sheet(for: store.deletePlan, title: Chats.title(chat, agent: name, among: store.chats.savedCount), agent: name)
             ChatDeleteSheet(question: words.question, note: words.note, confirm: words.confirm) {
                 deleting = nil
                 Task { await store.deleteChat(chat.id) }
@@ -102,7 +102,7 @@ struct DrawerChats: View {
 
     private func row(_ chat: ChatInfo, _ c: Swatch) -> some View {
         let open = chat.id == store.chats.openID
-        let label = Chats.title(chat, agent: name)
+        let label = Chats.title(chat, agent: name, among: store.chats.savedCount)
         return ScrollView(.horizontal) {
             HStack(spacing: 0) {
                 Group {
@@ -177,7 +177,7 @@ struct DrawerChats: View {
     /// Swiped left: Rename and Delete, behind the row.
     private func actions(_ chat: ChatInfo, _ c: Swatch) -> some View {
         HStack(spacing: 6) {
-            Button { startRename(chat, Chats.title(chat, agent: name)) } label: {
+            Button { startRename(chat, Chats.title(chat, agent: name, among: store.chats.savedCount)) } label: {
                 Image(systemName: "pencil")
                     .font(theme.font(16, .bold)).foregroundStyle(c.ink)
                     .frame(width: 52, height: 52)
@@ -213,7 +213,7 @@ struct DrawerChats: View {
         guard renaming == chat.id else { return }
         renaming = nil
         typing = false
-        if Chats.validTitle(title) != nil, Chats.validTitle(title) != Chats.title(chat, agent: name) {
+        if Chats.validTitle(title) != nil, Chats.validTitle(title) != Chats.title(chat, agent: name, among: store.chats.savedCount) {
             store.renameChat(chat.id, to: title)
         }
     }

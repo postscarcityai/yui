@@ -129,6 +129,7 @@ struct ChatView: View {
     /// on its last screens only; scrolling near the top draws the next batch above,
     /// and the bottom anchor keeps what you are reading where it is.
     @State private var window = Self.windowStep
+    @State private var nearTop = false
     static let windowStep = 60
     /// The page on show (YUI-31): 1 the chat, 2 to 12 the agent's screens. Follows `store.page`.
     @State private var page: Int? = 1
@@ -946,7 +947,17 @@ struct ChatView: View {
             .onScrollGeometryChange(for: Bool.self) { geo in
                 geo.contentOffset.y + geo.contentInsets.top < geo.containerSize.height
             } action: { _, near in
+                nearTop = near
                 if near, store.shown.count > window { window += Self.windowStep }
+            }
+            // Everything held is drawn and the top is near: the next older batch comes from the server (YUI-254).
+            .task(id: "\(nearTop)-\(window)-\(store.shown.count)-\(store.hasOlder)-\(store.chatID ?? "")") {
+                // Rows came in while the top stayed near: the flag never flipped, so draw them here.
+                if nearTop, store.shown.count > window { window += Self.windowStep; return }
+                guard nearTop else { return }
+                if store.shown.count > window { window += Self.windowStep; return }
+                guard store.hasOlder else { return }
+                await store.loadOlder()
             }
             .onScrollPhaseChange { _, phase in settleScroll(phase) }
             .onReceive(NotificationCenter.default.publisher(for: UIApplication.didReceiveMemoryWarningNotification)) { _ in

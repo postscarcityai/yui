@@ -324,10 +324,16 @@ final class ChatStore {
     /// The open chat's title, for the header: "New chat" until it has one.
     var chatTitle: String {
         guard let c = chats.open else { return "New chat" }
-        return Chats.title(c, agent: agent?.name ?? "Yui")
+        return Chats.title(c, agent: agent?.name ?? "Yui", among: chats.savedCount)
     }
     private var poll: Task<Void, Never>?
     private var cursor: String?
+    /// The oldest row read so far, and whether the chat holds older ones (YUI-254).
+    private var oldestAt: String?
+    private(set) var hasOlder = false
+    private var loadingOlder = false
+    /// Where in `messages` the next older row goes while a batch of history is added.
+    private var historyAt: Int?
     private var seen = Set<String>()
     /// When the reply started being owed: the working note counts from here.
     private(set) var waitingSince: Date?
@@ -784,6 +790,10 @@ final class ChatStore {
         turnTimes = []
         timed = []
         cursor = nil
+        oldestAt = nil
+        hasOlder = false
+        loadingOlder = false
+        historyAt = nil
         scopeCursor = nil
         scopePass = 0
         waiting = false
@@ -1111,7 +1121,11 @@ final class ChatStore {
             var landed = false
             for row in rows where add(row) && row.sender == "agent" { landed = true }
             if landed, !first { Perf.shared.span(.arriveDrawn, from: arrived) }
-            if first { resume(rows) }
+            if first {
+                resume(rows)
+                oldestAt = rows.first?.createdAt
+                hasOlder = rows.count >= 100
+            }
             if let jobAt, Date.now.timeIntervalSince(jobAt) > Self.jobWindow { job = nil; self.jobAt = nil }
             if let last = rows.last?.createdAt, last > (cursor ?? "") { cursor = last }
             loaded = true
@@ -1130,6 +1144,21 @@ final class ChatStore {
             if first { Perf.shared.cancel(.threadOpen); Perf.shared.cancel(.threadOpenCold) }
         }
         if first { restorePending() }
+    }
+
+    /// Scrolled to the top of a long chat: the next older batch goes in front (YUI-254).
+    /// Earlier chats' screens stay the shelf's: old rows only draw, they change nothing else.
+    func loadOlder() async {
+        guard hasOlder, !loadingOlder, loaded, let client, let before = oldestAt, let agentID = agent?.id else { return }
+        let chat = chatID
+        loadingOlder = true
+        defer { loadingOlder = false }
+        guard let rows = try? await client.fetchOlder(before: before), agent?.id == agentID, chatID == chat else { return }
+        hasOlder = rows.count >= 100
+        if let first = rows.first?.createdAt { oldestAt = first }
+        historyAt = 0
+        for row in rows { _ = add(row) }
+        historyAt = nil
     }
 
     /// Thread rows, oldest first, the way a poll adds them. Tests and `-yuiThreadRows` use it.
@@ -1227,15 +1256,16 @@ final class ChatStore {
         }
         // Polls overlap: only a row not seen before can end the wait.
         guard seen.insert(id).inserted else { return false }
-        if row.sender == "agent", row.kind == "text", row.createdAt > (newestAgentAt ?? "") { newestAgentAt = row.createdAt }
-        if loaded, row.kind == "text", let chatID { chats.said(in: chatID, sender: row.sender, body: row.body, at: row.createdAt) }
+        let history = historyAt != nil
+        if !history, row.sender == "agent", row.kind == "text", row.createdAt > (newestAgentAt ?? "") { newestAgentAt = row.createdAt }
+        if !history, loaded, row.kind == "text", let chatID { chats.said(in: chatID, sender: row.sender, body: row.body, at: row.createdAt) }
         // An answer to what the person stopped (YUI-190): it never lands.
         if row.sender == "agent", Self.answers(row.meta, rows: stoppedRows, jobs: stoppedJobs) { return false }
-        time(row)
-        if row.sender == "agent", Mentions.from(meta: row.meta) == nil { trackJob(row) }
+        if !history { time(row) }
+        if !history, row.sender == "agent", Mentions.from(meta: row.meta) == nil { trackJob(row) }
         // Another agent's answer copied in (YUI-44) doesn't end this agent's turn.
-        if row.sender == "agent", Mentions.from(meta: row.meta) == nil { waiting = false; pickedUpAt = nil; doing = nil }
-        if row.sender == "agent", let done = TalkAbout.applied(meta: row.meta), done == about?.id {
+        if !history, row.sender == "agent", Mentions.from(meta: row.meta) == nil { waiting = false; pickedUpAt = nil; doing = nil }
+        if !history, row.sender == "agent", let done = TalkAbout.applied(meta: row.meta), done == about?.id {
             withAnimation(spring) { about = nil }  // its proposal was applied (YUI-69)
         }
         var new: [ChatMessage] = []
@@ -1264,7 +1294,7 @@ final class ChatStore {
         } else {
             if let r = row.reaction { reactions[id] = r }
             // Reminders the agent keeps (YUI-185): the phone schedules them as local notifications.
-            if let a = agent { Reminders.shared.take(meta: row.meta, agent: a.id, name: a.name, createdAt: row.createdAt, live: loaded) }
+            if !history, let a = agent { Reminders.shared.take(meta: row.meta, agent: a.id, name: a.name, createdAt: row.createdAt, live: loaded) }
             let hello = row.meta?.object?["native"]?.string == "first"
             let home = row.meta?.object?["native"]?.string == "home"
             for (i, seg) in YuiFence.split(row.body).enumerated() {
@@ -1276,14 +1306,14 @@ final class ChatStore {
                     let at = YuiTime.date(row.createdAt) ?? .now
                     let nodes = YuiLines.parse(y, known: known)
                     for node in nodes {
-                        clearPage(node)
+                        if !history { clearPage(node) }
                         // A patch for something an earlier reply drew (`~choose +lock`
                         // after the booking is confirmed) lands on the newest match.
-                        if node.op == .patch, let t = node.target, !screen.has(t),
+                        if !history, node.op == .patch, let t = node.target, !screen.has(t),
                            let j = messages.lastIndex(where: { $0.yl?.has(t) == true }) {
                             messages[j].yl?.apply(node)
                             if known[t] != nil { shelve(node, at: at) }
-                        } else if node.op == .patch, let t = node.target, !screen.has(t),
+                        } else if !history, node.op == .patch, let t = node.target, !screen.has(t),
                                   let j = scoped.lastIndex(where: { $0.yl?.has(t) == true }) {
                             // A patch for a screen the agent drew in another chat (YUI-169).
                             scoped[j].yl?.apply(node)
@@ -1292,16 +1322,24 @@ final class ChatStore {
                             apply(node, to: &screen)
                         }
                     }
-                    file(screen.shelfOps, at: at)
-                    fileMenu(screen.menuLines, at: at)
-                    if let agentID = agent?.id { for look in screen.looks { onLook?(agentID, look, row.createdAt) } }
+                    if !history {
+                        file(screen.shelfOps, at: at)
+                        fileMenu(screen.menuLines, at: at)
+                    }
+                    if !history, let agentID = agent?.id { for look in screen.looks { onLook?(agentID, look, row.createdAt) } }
                     new.append(ChatMessage(id: "\(id)#\(i)", text: "", fromUser: false, yl: screen, hello: hello, home: home, sentAt: sent))
                     // The home fills its pages quietly: it never brings one forward (YUI-168).
-                    if loaded, !home { live += nodes }
+                    if loaded, !home, !history { live += nodes }
                 }
             }
         }
         guard !new.isEmpty else { return false }
+        if let at = historyAt {
+            // History goes in front, in order, and never takes the stage or moves a page.
+            messages.insert(contentsOf: new, at: at)
+            historyAt = at + new.count
+            return true
+        }
         withAnimation(loaded ? spring : nil) { messages.append(contentsOf: new) }
         // Live replies can take the stage; history loading on open never does.
         if loaded { for m in new where m.yl != nil && !m.home { stageUpdate(m.id, before: nil) } }
