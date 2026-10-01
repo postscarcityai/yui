@@ -17,6 +17,15 @@
 //   "Yui/<build> CFNetwork" user agent every build sends), so hosts can skip
 //   presets that build cannot draw (yui-connect session: app_build).
 //
+//   {action: "register_web", endpoint, keys: {p256dh, auth}, name?}   (YUI-248)
+//       The same for a browser: a Web Push subscription (VAPID, public key in the site's
+//       lib/web/push.mjs). Stored next to the APNs tokens in yui_devices (no apns_token).
+//   {action: "unregister_web", endpoint}
+//       Sign out, or the person turned notifications off in that browser.
+//   presence also takes `endpoint` in place of `token` for a browser. When a device reports it is
+//   reading an agent's thread, the person's other browsers get a quiet "clear" push: the page closes
+//   that agent's notification (no double buzz).
+//
 // Host side, Bearer yui_ct_... connector token:
 //   {action: "notify", message_id, from?, handoff?}
 //       The host just wrote agent message `message_id`. Pushes it to every
@@ -62,7 +71,8 @@ import {
   take,
   verifyAccessToken,
 } from "../_shared/yui.ts";
-import { apnsPayload, widgetPush } from "./payload.ts";
+import { apnsPayload, webPayload, webQuiet, widgetPush } from "./payload.ts";
+import { sendWeb, validEndpoint, validKey } from "./web.ts";
 
 const NOTIFY_WINDOW_MS = 10 * 60_000;
 const PRESENCE_MS = 90_000;
@@ -93,6 +103,8 @@ Deno.serve(withCors(async (req) => {
     switch (body.action) {
       case "register":
       case "unregister":
+      case "register_web":
+      case "unregister_web":
       case "presence": {
         let userId: string;
         try {
@@ -102,6 +114,8 @@ Deno.serve(withCors(async (req) => {
         }
         body.build = appBuild(req, body);
         if (body.action === "presence") return await presence(userId, body);
+        if (body.action === "register_web") return await registerWeb(userId, body);
+        if (body.action === "unregister_web") return await unregisterWeb(userId, body);
         return body.action === "register"
           ? await register(userId, body, topicFor(req, body))
           : await unregister(userId, body);
@@ -159,6 +173,39 @@ async function register(userId: string, b: Body, topic: string | null): Promise<
   return json({ ok: true });
 }
 
+async function registerWeb(userId: string, b: Body): Promise<Response> {
+  if (!validEndpoint(b.endpoint)) return json({ error: "invalid_endpoint" }, 400);
+  if (!validKey(b.keys?.p256dh) || !validKey(b.keys?.auth)) return json({ error: "invalid_keys" }, 400);
+  const { error } = await admin().from("yui_devices").upsert({
+    user_id: userId,
+    apns_token: null,
+    web_endpoint: b.endpoint,
+    web_p256dh: b.keys.p256dh,
+    web_auth: b.keys.auth,
+    environment: "production",
+    topic: null,
+    name: cleanName(b.name),
+    updated_at: new Date().toISOString(),
+    last_error: null,
+  }, { onConflict: "web_endpoint" });
+  if (error) throw error;
+  return json({ ok: true });
+}
+
+async function unregisterWeb(userId: string, b: Body): Promise<Response> {
+  if (!validEndpoint(b.endpoint)) return json({ error: "invalid_endpoint" }, 400);
+  await admin().from("yui_devices").delete().eq("web_endpoint", b.endpoint).eq("user_id", userId);
+  return json({ ok: true });
+}
+
+/** Another device of this person is reading `agentId`: tell their other browsers (quietly) to clear it. */
+async function clearElsewhere(userId: string, agentId: string, exceptDevice: string) {
+  const db = admin();
+  const { data } = await db.from("yui_devices").select("id, web_endpoint, web_p256dh, web_auth")
+    .eq("user_id", userId).not("web_endpoint", "is", null).neq("id", exceptDevice);
+  await Promise.all((data ?? []).map((d: DB) => sendWeb(db, d, webQuiet("clear", agentId), true).catch(() => null)));
+}
+
 async function unregister(userId: string, b: Body): Promise<Response> {
   const token = typeof b.token === "string" ? b.token.toLowerCase() : "";
   if (!TOKEN.test(token)) return json({ error: "invalid_token" }, 400);
@@ -167,8 +214,9 @@ async function unregister(userId: string, b: Body): Promise<Response> {
 }
 
 async function presence(userId: string, b: Body): Promise<Response> {
+  const web = typeof b.endpoint === "string";
   const token = typeof b.token === "string" ? b.token.toLowerCase() : "";
-  if (!TOKEN.test(token)) return json({ error: "invalid_token" }, 400);
+  if (web ? !validEndpoint(b.endpoint) : !TOKEN.test(token)) return json({ error: web ? "invalid_endpoint" : "invalid_token" }, 400);
   if (typeof b.active !== "boolean") return json({ error: "invalid_active" }, 400);
   let agentId: string | null = null;
   if (b.active && b.agent_id != null) {
@@ -178,12 +226,15 @@ async function presence(userId: string, b: Body): Promise<Response> {
       .eq("agent_id", b.agent_id).eq("user_id", userId).is("revoked_at", null).maybeSingle();
     agentId = data?.id ?? g?.agent_id ?? null;
   }
+  const col = web ? "web_endpoint" : "apns_token";
   const { data, error } = await admin().from("yui_devices").update({
     active_at: b.active ? new Date().toISOString() : null,
     active_agent_id: agentId,
-    ...built(b),
-  }).eq("apns_token", token).eq("user_id", userId).select("id");
+    ...(web ? {} : built(b)),
+  }).eq(col, web ? b.endpoint : token).eq("user_id", userId).select("id");
   if (error) throw error;
+  // Read here: the person's other browsers drop that agent's notification, so one reply never sits on two screens.
+  if (agentId && (data ?? []).length) await clearElsewhere(userId, agentId, (data ?? [])[0].id);
   // Not registered (yet): nothing to track. The app registers first.
   return json({ ok: true, tracked: (data ?? []).length > 0 });
 }
@@ -250,12 +301,20 @@ async function notify(req: Request, b: Body): Promise<Response> {
   const watching = (d: DB) =>
     d.active_agent_id === agent.id && d.active_at && Date.now() - new Date(d.active_at).getTime() < PRESENCE_MS;
   const devices = (all ?? []).filter((d: DB) => !watching(d));
-  const results = await Promise.all(devices.map((d: DB) => push(db, d, payload)));
+  const { data: browsers } = await db.from("yui_devices")
+    .select("id, web_endpoint, web_p256dh, web_auth, active_at, active_agent_id")
+    .eq("user_id", msg.user_id).not("web_endpoint", "is", null);
+  const openBrowsers = (browsers ?? []).filter((d: DB) => !watching(d));
+  const wp = webPayload(agent, msg, { from: cleanName(b.from), handoff: !!b.handoff });
+  const results = await Promise.all([
+    ...devices.map((d: DB) => push(db, d, payload)),
+    ...openBrowsers.map((d: DB) => sendWeb(db, d, wp).catch((e) => ({ device: d.id, kind: "web", ok: false, status: 0, reason: String(e?.message ?? e) }))),
+  ]);
   return json({
     ok: true,
     devices: results.length,
     delivered: results.filter((r) => r.ok).length,
-    skipped: (all ?? []).length - devices.length,
+    skipped: (all ?? []).length - devices.length + (browsers ?? []).length - openBrowsers.length,
     results,
   });
 }
@@ -285,7 +344,12 @@ async function revoked(req: Request, b: Body): Promise<Response> {
     .eq("user_id", b.user_id).not("apns_token", "is", null);
   // No alert, no sound: the app wakes, refreshes its list and says one quiet line.
   const payload = { aps: { "content-available": 1 }, kind: "revoked", agent_id: b.agent_id };
-  const results = await Promise.all((all ?? []).map((d: DB) => push(db, d, payload, "background")));
+  const { data: browsers } = await db.from("yui_devices").select("id, web_endpoint, web_p256dh, web_auth")
+    .eq("user_id", b.user_id).not("web_endpoint", "is", null);
+  const results = await Promise.all([
+    ...(all ?? []).map((d: DB) => push(db, d, payload, "background")),
+    ...(browsers ?? []).map((d: DB) => sendWeb(db, d, webQuiet("revoked", b.agent_id), true).catch(() => ({ ok: false }))),
+  ]);
   return json({ ok: true, devices: results.length, delivered: results.filter((r) => r.ok).length, results });
 }
 

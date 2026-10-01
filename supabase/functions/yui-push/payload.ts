@@ -39,3 +39,24 @@ export function widgetPush(topic: string) {
     payload: { aps: { "content-changed": true } },
   };
 }
+
+/** The Web Push message for one agent reply (YUI-248). The service worker shows `title` and `body`,
+ * tags the notification with the agent id (a newer reply replaces the older), and a click opens `url`. */
+export function webPayload(agent: PushAgent, msg: PushMessage, o: PushOptions = {}) {
+  const a = alertFor(agent, msg, o);
+  return {
+    kind: "reply",
+    title: a.title,
+    body: a.body,
+    agent_id: agent.id,
+    message_id: msg.id,
+    ...(msg.chat_id ? { chat: msg.chat_id } : {}),
+    tag: agent.id,
+    url: `/web/agent/${agent.id}${msg.chat_id ? `/chat/${msg.chat_id}` : ""}`,
+  };
+}
+
+/** A quiet message the page acts on with no notification: a revoked agent leaves the list, a reply read elsewhere clears. */
+export function webQuiet(kind: "revoked" | "clear", agentId: string) {
+  return { kind, agent_id: agentId, tag: agentId };
+}
