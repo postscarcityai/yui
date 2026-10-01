@@ -39,10 +39,10 @@ struct YuiApp: App {
                 get: { account.isSignedIn ? agents.pendingConnect : nil },
                 set: { agents.pendingConnect = $0 }
             )) { ConnectApprovalSheet(request: $0) }
+            .modifier(GroupsHooks(groups: groups))
             .environment(account)
             .environment(agents)
             .environment(looks)
-            .modifier(GroupsHooks(groups: groups))
             .onChange(of: account.isSignedIn) {
                 agents.reset()
                 if !account.isSignedIn { looks.clear() }

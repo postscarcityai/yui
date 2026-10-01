@@ -153,7 +153,7 @@ enum GroupRows {
         let words = g?["words"]?.string ?? plain(row.body)
         let to = g?["to"]?.array?.compactMap(\.string) ?? []
         // A tap on an agent's screen goes as its event line: the person sees what they picked, or nothing.
-        if words.hasPrefix("[yui]") {
+        if words.hasPrefix("[yui]") || words.isEmpty {
             guard let echo = row.meta?["echo"]?.string, !echo.isEmpty else { return nil }
             return .you(id: row.id, text: echo, to: to, at: at)
         }
