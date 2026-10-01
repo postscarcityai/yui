@@ -54,6 +54,10 @@ final class Account {
     /// The refresh in flight. Every caller waits on it: spending one refresh
     /// token twice trips yui-auth's reuse check, which ends every session.
     private var refreshing: Task<String, Error>?
+    /// How the app reaches yui-auth; tests swap it to drop a reply.
+    var transport: (URLRequest) async throws -> (Data, URLResponse) = { try await URLSession.shared.data(for: $0) }
+    /// Waits between refresh attempts after a transport error (YUI-239).
+    var refreshRetryDelays: [Duration] = [.seconds(1), .seconds(3)]
     /// Runs before sign out, while the session still works (push unregister).
     var willSignOut: (() async -> Void)?
 
@@ -210,13 +214,22 @@ final class Account {
         if s.accessExpiry.timeIntervalSinceNow > 60 { return s.accessToken }
         if let refreshing { return try await refreshing.value }
         let task = Task { () async throws -> String in
-            do {
-                let reply: TokenReply = try await post("yui-auth", ["grant_type": "refresh", "refresh_token": s.refreshToken])
-                store(reply, appleUserID: s.appleUserID)
-                return reply.access_token
-            } catch AccountError.server("invalid_grant") {
-                clear()
-                throw AccountError.signedOut
+            // A reply that never lands leaves the server one token ahead of the phone.
+            // Retry with the same token (yui-auth takes it back for 2 minutes); only
+            // invalid_grant signs out, a transport error never does.
+            var delays = self.refreshRetryDelays[...]
+            while true {
+                do {
+                    let reply: TokenReply = try await post("yui-auth", ["grant_type": "refresh", "refresh_token": s.refreshToken])
+                    store(reply, appleUserID: s.appleUserID)
+                    return reply.access_token
+                } catch AccountError.server("invalid_grant") {
+                    clear()
+                    throw AccountError.signedOut
+                } catch let error as URLError {
+                    guard let wait = delays.popFirst() else { throw error }
+                    try await Task.sleep(for: wait)
+                }
             }
         }
         refreshing = task
@@ -242,6 +255,11 @@ final class Account {
         let _: DeleteReply = try await post("yui-delete", [String: String](), bearer: token)
         clear()
     }
+
+    #if DEBUG
+    /// Tests seed a signed-in session without Sign in with Apple.
+    func seedSessionForTests(_ s: YuiSession) { Keychain.save(s, key: Self.keychainKey); session = s }
+    #endif
 
     private func clear() {
         Keychain.delete(key: Self.keychainKey)
@@ -283,7 +301,7 @@ final class Account {
         req.setValue(YuiBackend.publishableKey, forHTTPHeaderField: "apikey")
         if let bearer { req.setValue("Bearer \(bearer)", forHTTPHeaderField: "Authorization") }
         req.httpBody = try JSONEncoder().encode(body)
-        let (data, response) = try await URLSession.shared.data(for: req)
+        let (data, response) = try await transport(req)
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
             let code = (try? JSONDecoder().decode(ErrorReply.self, from: data))?.error ?? "error"
             throw AccountError.server(code)

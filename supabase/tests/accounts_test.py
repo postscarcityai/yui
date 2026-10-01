@@ -16,7 +16,7 @@ REF = "txuibjxyfpalzvpneqgp"
 BASE = f"https://{REF}.supabase.co"
 YUI_TABLES = ["yui_users", "yui_apple_tokens", "yui_sessions", "yui_devices",
               "yui_agents", "yui_pairings", "yui_messages", "yui_connectors", "yui_mgmt_tokens"]
-SERVER_ONLY = ["yui_apple_tokens", "yui_sessions", "yui_waitlist", "yui_mgmt_tokens", "yui_pair_attempts", "yui_invites"]
+SERVER_ONLY = ["yui_apple_tokens", "yui_sessions", "yui_mgmt_tokens", "yui_pair_attempts", "yui_invites"]
 
 def access_token():
     t = os.environ.get("SUPABASE_ACCESS_TOKEN")
@@ -185,14 +185,28 @@ check("test user has a photo and an agent picture in yui-media", (s, s2) == (200
       and sql(media_q)[0]["n"] == 2, f"{(s, s2)}")
 
 s, r = fn("yui-auth", {"grant_type": "refresh", "refresh_token": rt})
-check("refresh rotates: new access + refresh token", s == 200 and r.get("refresh_token") not in (None, rt) and r.get("expires_in") == 900, f"{s}")
+check("refresh rotates: new access + refresh token", s == 200 and r.get("refresh_token") not in (None, rt) and r.get("expires_in") == 3600, f"{s}")
 new_access, new_rt = r["access_token"], r["refresh_token"]
 s, r = rest("GET", "yui_messages?select=body", new_access)
 check("refreshed access token reads the user's data", s == 200 and len(r) == 1, f"{s} {r}")
+# YUI-239: the reply that minted new_rt never landed, so the phone comes back
+# with rt. Inside the 120 s grace it stays signed in on a fresh pair.
 s, r = fn("yui-auth", {"grant_type": "refresh", "refresh_token": rt})
-check("reusing the rotated refresh token is refused", s == 401, f"{s}")
+check("a dropped refresh reply: the old token inside 120 s still signs in", s == 200 and r.get("refresh_token") not in (None, rt, new_rt), f"{s}")
+retry_access, retry_rt = r.get("access_token"), r.get("refresh_token")
 live = sql(f"select count(*)::int n from yui_sessions where user_id='{T}' and revoked_at is null")[0]["n"]
-check("reuse revoked every session for the user", live == 0, f"live={live}")
+check("the grace leaves exactly one live session, the one the phone holds", live == 1, f"live={live}")
+s, r = rest("GET", "yui_messages?select=body", retry_access)
+check("the grace-minted access token reads the user's data", s == 200 and len(r) == 1, f"{s} {r}")
+s, r = fn("yui-auth", {"grant_type": "refresh", "refresh_token": retry_rt})
+check("the grace-minted refresh token rotates on", s == 200 and r.get("refresh_token") not in (None, retry_rt), f"{s}")
+s, r = fn("yui-auth", {"grant_type": "refresh", "refresh_token": rt})
+check("the old token inside 120 s can be retried again", s == 200, f"{s}")
+sql(f"update yui_sessions set rotated_at = now() - interval '121 seconds' where user_id='{T}' and rotated_at is not null")
+s, r = fn("yui-auth", {"grant_type": "refresh", "refresh_token": rt})
+check("the rotated refresh token past 121 s is refused", s == 401, f"{s}")
+live = sql(f"select count(*)::int n from yui_sessions where user_id='{T}' and revoked_at is null")[0]["n"]
+check("reuse past the grace revoked every session for the user", live == 0, f"live={live}")
 
 count_q = " union all ".join(f"select '{t}' t, count(*)::int n from {t} where {'id' if t == 'yui_users' else 'user_id'}='{T}'" for t in YUI_TABLES)
 before = {r["t"]: r["n"] for r in sql(count_q)}

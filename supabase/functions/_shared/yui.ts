@@ -4,7 +4,7 @@ import { createClient } from "npm:@supabase/supabase-js@2";
 import { importPKCS8, jwtVerify, SignJWT } from "npm:jose@5";
 
 export const APPLE_ISSUER = "https://appleid.apple.com";
-export const ACCESS_TTL_SECONDS = 15 * 60;
+export const ACCESS_TTL_SECONDS = 60 * 60;
 export const REFRESH_TTL_DAYS = 60;
 const ISSUER = "yui-auth";
 const AUDIENCE = "yui";

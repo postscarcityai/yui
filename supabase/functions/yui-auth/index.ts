@@ -226,14 +226,17 @@ async function review(code?: string): Promise<Response> {
   return json(await issueSession(user.id, user));
 }
 
-async function issueSession(userId: string, user: unknown) {
+async function issueSession(userId: string, user: unknown, parentId?: string) {
   const refreshToken = randomToken();
-  const { error } = await admin().from("yui_sessions").insert({
+  const { data: child, error } = await admin().from("yui_sessions").insert({
     user_id: userId,
     refresh_hash: await sha256Hex(refreshToken),
     expires_at: new Date(Date.now() + REFRESH_TTL_DAYS * 864e5).toISOString(),
-  });
+  }).select("id").single();
   if (error) throw error;
+  if (parentId) {
+    await admin().from("yui_sessions").update({ rotated_to: child.id }).eq("id", parentId);
+  }
   return {
     access_token: await mintAccessToken(userId),
     token_type: "bearer",
@@ -243,15 +246,50 @@ async function issueSession(userId: string, user: unknown) {
   };
 }
 
+// A rotated token that comes back this soon is a refresh whose reply never
+// landed (app suspended, cell drop), not a leak. Past it, reuse ends every session.
+const REUSE_GRACE_MS = 120_000;
+
+// Follows rotated_to from a token that rotated just now to the session that is
+// live at the end of its chain (the one a lost reply minted), or null.
+async function liveTail(db: ReturnType<typeof admin>, id: string): Promise<string | null> {
+  let cur = id;
+  for (let hop = 0; hop < 10; hop++) {
+    const { data: row } = await db.from("yui_sessions")
+      .select("id, revoked_at, rotated_to").eq("id", cur).maybeSingle();
+    if (!row) return null;
+    if (!row.revoked_at) return row.id;
+    if (!row.rotated_to) return null;
+    cur = row.rotated_to;
+  }
+  return null;
+}
+
 async function refresh(token?: string): Promise<Response> {
   if (!token) return json({ error: "invalid_request" }, 400);
   const db = admin();
   const { data: s } = await db
     .from("yui_sessions")
-    .select("id, user_id, expires_at, revoked_at")
+    .select("id, user_id, expires_at, revoked_at, rotated_at")
     .eq("refresh_hash", await sha256Hex(token))
     .maybeSingle();
   if (!s) return json({ error: "invalid_grant" }, 401);
+  if (s.revoked_at && s.rotated_at && Date.now() - new Date(s.rotated_at).getTime() < REUSE_GRACE_MS
+      && new Date(s.expires_at) >= new Date()) {
+    // Rotate the chain's live tail again: the phone never saw the pair it minted.
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const tail = await liveTail(db, s.id);
+      if (!tail) break;
+      await assertActive(db, s.user_id);
+      const { data: taken } = await db.from("yui_sessions")
+        .update({ revoked_at: new Date().toISOString(), rotated_at: new Date().toISOString() })
+        .eq("id", tail).is("revoked_at", null).select("id");
+      if (!taken?.length) continue;
+      const { data: user } = await db.from("yui_users")
+        .select("id, email, created_at").eq("id", s.user_id).single();
+      return json(await issueSession(s.user_id, user, tail));
+    }
+  }
   if (s.revoked_at) {
     // A rotated token came back: assume it leaked, end every session.
     await db.from("yui_sessions").update({ revoked_at: new Date().toISOString() })
@@ -263,13 +301,13 @@ async function refresh(token?: string): Promise<Response> {
   await assertActive(db, s.user_id);
 
   const { data: rotated } = await db.from("yui_sessions")
-    .update({ revoked_at: new Date().toISOString() })
+    .update({ revoked_at: new Date().toISOString(), rotated_at: new Date().toISOString() })
     .eq("id", s.id).is("revoked_at", null).select("id");
   if (!rotated?.length) return json({ error: "invalid_grant" }, 401);
 
   const { data: user } = await db.from("yui_users")
     .select("id, email, created_at").eq("id", s.user_id).single();
-  return json(await issueSession(s.user_id, user));
+  return json(await issueSession(s.user_id, user, s.id));
 }
 
 async function signOut(token?: string): Promise<Response> {
