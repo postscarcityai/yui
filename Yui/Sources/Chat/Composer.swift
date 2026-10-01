@@ -20,8 +20,38 @@ final class ComposerModel {
         didSet {
             let has = draft.contains { !$0.isWhitespace }
             if has != hasWords { hasWords = has }
-            if draft != oldValue { Drafts.save(draft, for: agentID) }
+            if draft != oldValue {
+                Drafts.save(draft, for: agentID, stamp: !adopting)
+                if !adopting { sync?.changed(now: draft.isEmpty) }
+            }
         }
+    }
+    /// The words arriving from the person's other device are kept, not sent back as a new edit (YUI-249).
+    @ObservationIgnored private var adopting = false
+    @ObservationIgnored private var sync: DraftSync?
+    @ObservationIgnored private var account: Account?
+
+    /// Signed in for real (not the demo): this thread's draft follows the person to their other devices.
+    func attach(account: Account) {
+        if self.account === account, sync != nil { return }
+        self.account = account
+        restartSync()
+    }
+
+    private func restartSync() {
+        sync?.stop(); sync = nil
+        guard let account, let id = agentID, account.session?.userID != "demo" else { return }
+        let s = DraftSync(account: account, agentID: id, read: { [weak self] in self?.draft ?? "" },
+                          write: { [weak self] words in
+                              guard let self else { return }
+                              self.adopting = true
+                              self.draft = words
+                              self.adopting = false
+                              self.fieldID += 1
+                          },
+                          changedAt: { Drafts.changedAt(id) })
+        sync = s
+        s.start()
     }
     /// Whose thread the words belong to.
     private(set) var agentID: String?
@@ -33,7 +63,8 @@ final class ComposerModel {
         guard id != agentID else { return }
         agentID = id
         let saved = Drafts.load(id)
-        if saved != draft { draft = saved; fieldID += 1 }
+        if saved != draft { adopting = true; draft = saved; adopting = false; fieldID += 1 }
+        restartSync()
     }
     /// Something to send besides spaces. Set only when it flips, so `SendOrMic` isn't told per key.
     private(set) var hasWords = false
@@ -65,8 +96,14 @@ enum Drafts {
         return UserDefaults.standard.string(forKey: prefix + agent) ?? ""
     }
 
-    static func save(_ words: String, for agent: String?) {
+    /// When the words last changed on this phone, so a newer remote draft can tell it is newer (YUI-249).
+    static func changedAt(_ agent: String) -> Date {
+        Date(timeIntervalSince1970: UserDefaults.standard.double(forKey: prefix + "at." + agent))
+    }
+
+    static func save(_ words: String, for agent: String?, stamp: Bool = true) {
         guard let agent else { return }
+        if stamp { UserDefaults.standard.set(Date().timeIntervalSince1970, forKey: prefix + "at." + agent) }
         // A key pasted into the composer is never kept on disk (YUI-34).
         if words.isEmpty || KeyShape.find(in: words) != nil {
             UserDefaults.standard.removeObject(forKey: prefix + agent)

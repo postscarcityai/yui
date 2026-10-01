@@ -584,7 +584,8 @@ struct ChatView: View {
             push.visibleAgentID = store.agent?.id
             firstPlanLanded = nil
             window = Self.windowStep
-            // Each thread keeps its own unsent words (feedback AK-9fNEZU).
+            // Each thread keeps its own unsent words (feedback AK-9fNEZU), on every device the person signs in on (YUI-249).
+            composer.attach(account: account)
             composer.show(agent: store.agent?.id)
         }
         // yui://settings/search (the invite to add a Firecrawl key, YUI-142): Settings, at that section.
