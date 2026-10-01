@@ -28,7 +28,9 @@ while [ $# -gt 0 ]; do
   shift
 done
 max_growth=${MEM_MAX_GROWTH:-15}
-max_peak=${MEM_MAX_PEAK:-300}
+# 340: YUI-254 lets a long chat scroll back through every older row, so the 500-row session now
+# draws all of it once (310 MB for ~13 s at the top, steady ~177 MB; it was 212 MB when only 100 loaded).
+max_peak=${MEM_MAX_PEAK:-340}
 max_new_leaks=${MEM_MAX_NEW_LEAKS:-100}
 
 dd=${MEM_DD:-build/smooth-dd}
