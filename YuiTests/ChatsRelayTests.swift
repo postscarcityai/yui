@@ -316,7 +316,7 @@ final class ChatsRelayTests: XCTestCase {
         store.wantedChat = "c-hi"
         store.attach(Self.basil, account: account)
         await until("opened on the pushed chat") { store.chatID == "c-hi" && store.loaded }
-        XCTAssertEqual(store.chatTitle, "Hi Basil")
+        XCTAssertEqual(store.chatTitle, "Earlier", "YUI-254: with a second chat saved, the untitled first one is Earlier")
     }
 
     /// Build 332: New chat (or a push) before the first list answer left chatID set, so the list
