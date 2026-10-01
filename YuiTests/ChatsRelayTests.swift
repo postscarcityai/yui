@@ -316,6 +316,7 @@ final class ChatsRelayTests: XCTestCase {
         store.wantedChat = "c-hi"
         store.attach(Self.basil, account: account)
         await until("opened on the pushed chat") { store.chatID == "c-hi" && store.loaded }
+        await until("the chat list arrived") { store.chats.savedCount > 1 }  // the title reads the list, which lands after the chat opens
         XCTAssertEqual(store.chatTitle, "Earlier", "YUI-254: with a second chat saved, the untitled first one is Earlier")
     }
 
