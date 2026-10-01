@@ -39,6 +39,8 @@ struct Vector: Sendable, CustomTestStringConvertible {
     let route: YLValue?
     /// A flow variant (FLOWS.md section 9): the base flow as YL lines, the graph after the changes, a route on it.
     let variant: YLValue?
+    /// Agent tables after the input (TABLES.md): {today, now, failed?, results}.
+    let tables: YLValue?
     let style: [String: String]
     /// Ids that last from earlier replies, id -> preset (spec section 5).
     let known: [String: String]
@@ -75,6 +77,7 @@ enum Vectors {
                 visual: v["visual"],
                 route: v["route"],
                 variant: v["variant"],
+                tables: v["tables"],
                 style: v["style"]?.object?.compactMapValues { $0.string } ?? [:],
                 known: v["known"]?.object?.compactMapValues { $0.string } ?? [:]
             )
@@ -90,7 +93,9 @@ func comparable(_ n: YLNode) -> YLValue {
     if let v = n.target { o["target"] = .string(v) }
     if let v = n.name { o["name"] = .string(v) }
     if let v = n.inGroup { o["in"] = .string(v) }
-    if let v = n.props { o["props"] = .object(v) }
+    // A table or put spells its fields at the top, like the JS parser's ops.
+    if n.op == .table || n.op == .put, let p = n.props { o.merge(p) { $1 } }
+    else if let v = n.props { o["props"] = .object(v) }
     return .object(o)
 }
 
@@ -220,6 +225,8 @@ func conformance(_ v: Vector) {
         #expect(got == want, "rows: \(json(got))")
     }
 
+    if let want = v.tables { checkTables(want, v) }
+
     if let want = v.route {
         checkRoute(want, on: firstFlowGraph(v.input, known: v.known), "route")
     }
@@ -236,6 +243,33 @@ func conformance(_ v: Vector) {
     }
 
     #expect(v.expected.contains { $0["op"] == "error" } == v.error, "`error` flag does not match expected")
+}
+
+/// The store after the input's `table create` and `put` lines, and each query's rows against it.
+func checkTables(_ want: YLValue, _ v: Vector) {
+    let ctx = YLTableContext(today: want["today"]?.string ?? "", now: want["now"]?.string ?? "")
+    let nodes = YuiLines.parse(v.input, known: v.known)
+    var store = YLTables()
+    let refused = store.replay(nodes, ctx).map(\.line)
+    #expect(refused == (want["failed"]?.array?.compactMap(\.string) ?? []), "tables failed: \(refused)")
+    let queries = nodes.filter { $0.op == .add && $0.preset == "query" }
+    let results = want["results"]?.array ?? []
+    #expect(queries.count == results.count, "tables: \(queries.count) queries, \(results.count) results")
+    for (q, w) in zip(queries, results) {
+        let got = store.query(q.props ?? [:], ctx)
+        switch got {
+        case .missing(let name): #expect(w["missing"]?.string == name, "tables: missing \(name)")
+        case .error(let m): #expect(w["error"]?.bool == true, "tables: error \(m) for \(q.line)")
+        case .rows(let r):
+            let g = YLValue.object([
+                "cols": .array(r.cols.map(\.value)),
+                "rows": .array(r.rows.map { .array($0) }),
+                "keys": .array(r.keys.map { $0.map(YLValue.string) ?? .null }),
+                "count": .number(Double(r.count)),
+            ])
+            #expect(g == w, "tables: \(json(g)) != \(json(w)) for \(q.line)")
+        }
+    }
 }
 
 /// The graph of the first flow patch the input gives.
@@ -298,7 +332,7 @@ func checkRoute(_ want: YLValue, on g: YLFlowGraph, _ label: String) {
 
 /// Hub areas this parser has not taken on yet. Keep in step with
 /// `scripts/sync-vectors.sh`; drop a name here once the parser passes that file.
-let notYetInApp: Set<String> = ["30-tables.json"]  // YUI-89 (app half)
+let notYetInApp: Set<String> = []
 
 /// When the hub repo sits next to this one, the copied vectors must match it.
 @Test(.enabled(if: FileManager.default.fileExists(atPath: hubVectors.path)))

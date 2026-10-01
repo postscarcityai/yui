@@ -51,6 +51,7 @@ let presets: Set<String> = [
     "map", "area", "pin", "route",
     "game", "flow",
     "loop", "drums", "keys", "chords", "tuner", "metronome",
+    "query",
 ]
 
 /// Groups (spec section 6): a head collects the member lines that follow it on
@@ -129,6 +130,7 @@ private let listProps: [String: [String]] = [
     "compare": ["notes", "labels"],
     "chart": ["names", "color"],
     "table": ["units"],
+    "query": ["where", "sort", "cols", "y", "sum", "avg", "min", "max", "names", "color"],
     "page": ["points"],
     "project": ["facts", "next"],
     "pick": ["answer"],
@@ -385,6 +387,30 @@ private func positional(_ preset: String, _ pos: [Token]) -> Props {
         }
         if let cols { o["cols"] = strings(cols) }
         o["rows"] = .array(rows)
+
+    case "query":
+        // query <table> [as table|list|chart|stat|send] [chart type] [title...]:
+        // the first bare word is the table, `as` picks the view (spec/TABLES.md).
+        var rest: [Token] = []
+        func bare(_ t: Token?) -> Bool { t.map { !$0.quoted && $0.parts == nil } ?? false }
+        var i = 0
+        while i < pos.count {
+            let t = pos[i]
+            if o["table"] == nil, bare(t) { o["table"] = .string(t.text); i += 1; continue }
+            if bare(t), t.text == "as", i + 1 < pos.count, bare(pos[i + 1]), queryViews.contains(pos[i + 1].text) {
+                i += 1
+                o["as"] = .string(pos[i].text)
+                if pos[i].text == "chart", i + 1 < pos.count, bare(pos[i + 1]), chartTypes.contains(pos[i + 1].text) {
+                    i += 1
+                    o["type"] = .string(pos[i].text)
+                }
+                i += 1
+                continue
+            }
+            rest.append(t)
+            i += 1
+        }
+        if !rest.isEmpty { o["title"] = .string(joinText(rest)) }
 
     case "card":
         if let first = pos.first { o["title"] = .string(first.text) }

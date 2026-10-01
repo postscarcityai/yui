@@ -146,7 +146,7 @@ public struct YLParser: Sendable {
         // A theme line restyles the app, a menu line fills the drawer, a doing
         // line sits in the working row and a visual behind the stage, not on the
         // screen: they leave groups alone.
-        guard var node, node.op != .error, node.op != .theme, node.op != .menu, node.op != .doing, node.op != .visual else { return node }
+        guard var node, node.op != .error, node.op != .theme, node.op != .menu, node.op != .table, node.op != .put, node.op != .doing, node.op != .visual else { return node }
         // Closing the stage ends whatever group was open on it, like `>2` would.
         if node.op == .close { open = []; return node }
         if node.op == .end {
@@ -251,6 +251,12 @@ public struct YLParser: Sendable {
         if head == "menu" { return YuiLines.menuLine(screen: screen, tokens: tokens, line: line) }
         if head == "doing" { return YuiLines.doingLine(screen: screen, tokens: tokens, line: line) }
         if head == "visual" { return YuiLines.visualLine(screen: screen, tokens: tokens, line: line) }
+        // Agent tables (spec/TABLES.md): `table create` and `put` write to the phone.
+        if head == "put" { return YuiLines.putLine(screen: screen, tokens: tokens, line: line) }
+        if head == "table" || head.hasPrefix("table@"), let t0 = tokens.first, !t0.quoted, t0.key == nil, t0.raw == "create" {
+            if head != "table" { return YLNode(op: .error, screen: screen, message: "table create: takes no @id", line: line) }
+            return YuiLines.tableCreateLine(screen: screen, tokens: Array(tokens.dropFirst()), line: line)
+        }
         if head == "clear" { return YLNode(op: .clear, screen: screen, line: line) }
         if head == "end" { return YLNode(op: .end, screen: screen, line: line) }
         if head == "close" {

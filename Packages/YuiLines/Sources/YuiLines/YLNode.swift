@@ -34,6 +34,11 @@ public struct YLNode: Codable, Equatable, Sendable {
         /// `visual aurora tone=mint react=voice`: a live shader behind the stage, not a screen.
         /// `props` {look?, tone?, react?}; `visual off` gives props {off: true}.
         case visual
+        /// `table create meals Day:date Cal:number:kcal`: an agent table (spec/TABLES.md). `name`
+        /// is the table, `props.cols` [{name, type, unit?}]. Writes to the phone, draws nothing.
+        case table
+        /// `put meals x Cal=300`: one row of an agent table. `props` {table, key?, values, delete?}.
+        case put
         /// The line was rejected: `message`. Every other line still renders.
         case error
     }
