@@ -364,6 +364,7 @@ private struct DrawerHome: View {
     let newChat: () -> Void
     let openChat: (String) -> Void
     let review: () -> Void
+    @State private var showFlows = false
     @Environment(\.openURL) private var openURL
     @Environment(\.yuiTheme) private var theme
     @Environment(\.colorScheme) private var scheme
@@ -373,6 +374,12 @@ private struct DrawerHome: View {
         let name = store.agent?.name ?? "Yui"
         VStack(alignment: .leading, spacing: theme.spacing.s) {
             DrawerChats(store: store, newChat: newChat, openChat: openChat)
+
+            // My flows (YUI-238): the saved flows, run from here.
+            DrawerHeading(text: "Flows")
+            DrawerRow(icon: "point.topleft.down.to.point.bottomright.curvepath.fill", title: "My flows",
+                      sub: "Run, see and remove your saved flows", tint: c.mint) { showFlows = true }
+                .accessibilityIdentifier("drawer-my-flows")
 
             let count = waiting.count + store.menu.review.count
             if let next = waiting.first.map({ ($0.title, $0.kicker) })
@@ -480,6 +487,15 @@ private struct DrawerHome: View {
                     }
                 }
             }
+        }
+        .sheet(isPresented: $showFlows) {
+            MyFlowsView(run: { r in
+                showFlows = false
+                close()
+                // The flow runs on the stage the way an agent's `flow <name>` does (YUI-115).
+                store.stream("flow \(r.name)")
+            }, dismiss: { showFlows = false })
+            .presentationDetents([.large])
         }
     }
 }

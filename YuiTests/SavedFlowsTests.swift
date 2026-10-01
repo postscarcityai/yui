@@ -95,3 +95,91 @@ final class SavedFlowsTests: XCTestCase {
         XCTAssertEqual(e.flow["time"], .string("Skip"), "Skip comes back as exactly that word")
     }
 }
+
+/// My flows, the list model (YUI-238): variants nested under their base, what a Remove takes.
+@MainActor
+final class MyFlowsTests: XCTestCase {
+    private func defaults() -> UserDefaults {
+        let name = "yui-my-flows-\(UUID().uuidString)"
+        let d = UserDefaults(suiteName: name)!
+        d.removePersistentDomain(forName: name)
+        return d
+    }
+
+    private func keep(_ name: String, base: String, in d: UserDefaults) {
+        let changes = YuiLines.parse("flow \(base) as=\(name)\ndrop pages\nend").first { $0.op == .patch }?.props?["changes"]?.array ?? []
+        SavedFlows.keep(KeptVariant(name: name, title: SavedFlows.title(ofName: name), base: base, changes: changes), in: d)
+    }
+
+    func testEveryStarterIsListedWithItsStepCount() {
+        let rows = MyFlows.rows(in: defaults())
+        for f in StarterFlows.all {
+            let r = rows.first { $0.name == f.name }
+            XCTAssertEqual(r?.starter, true, f.name)
+            XCTAssertEqual(r?.depth, 0)
+            XCTAssertEqual(r?.steps, SavedFlows.starter(f).nodes.filter { $0.preset != nil }.count, f.name)
+            XCTAssertGreaterThan(r?.steps ?? 0, 0)
+        }
+    }
+
+    func testVariantsSitUnderTheirBase() {
+        let d = defaults()
+        keep("cafe-intake", base: "website-intake", in: d)
+        keep("tiny-cafe", base: "cafe-intake", in: d)
+        let rows = MyFlows.rows(in: d)
+        let at = rows.firstIndex { $0.name == "website-intake" }!
+        // The base, then its variants, each with its own under it.
+        XCTAssertEqual(rows.dropFirst(at + 1).prefix(3).map(\.name), ["restaurant-intake", "cafe-intake", "tiny-cafe"])
+        XCTAssertEqual(rows.dropFirst(at + 1).prefix(3).map(\.depth), [1, 1, 2])
+        XCTAssertEqual(rows.first { $0.name == "tiny-cafe" }?.from, "Cafe intake")
+        XCTAssertEqual(rows[at].variants, 3)
+        XCTAssertGreaterThan(rows.first { $0.name == "cafe-intake" }!.steps, 0)
+    }
+
+    func testAStarterCannotBeRemoved() {
+        let d = defaults()
+        XCTAssertTrue(MyFlows.removal(of: "website-intake", in: d).isEmpty)
+        XCTAssertTrue(MyFlows.remove("first-plan", in: d).isEmpty)
+        XCTAssertNotNil(SavedFlows.resolve("first-plan", in: d))
+        XCTAssertNotNil(SavedFlows.resolve("website-intake", in: d))
+    }
+
+    func testAVariantGoesAlone() {
+        let d = defaults()
+        keep("cafe-intake", base: "website-intake", in: d)
+        XCTAssertEqual(MyFlows.remove("cafe-intake", in: d), ["cafe-intake"])
+        XCTAssertNil(SavedFlows.resolve("cafe-intake", in: d))
+        XCTAssertNotNil(SavedFlows.resolve("restaurant-intake", in: d), "its sibling stays")
+        XCTAssertNotNil(SavedFlows.resolve("website-intake", in: d), "the base stays")
+    }
+
+    func testTheHubsOwnVariantCanBeRemovedAndComesBackWhenSentAgain() {
+        let d = defaults()
+        XCTAssertEqual(MyFlows.remove("restaurant-intake", in: d), ["restaurant-intake"])
+        XCTAssertNil(SavedFlows.resolve("restaurant-intake", in: d))
+        XCTAssertFalse(MyFlows.rows(in: d).contains { $0.name == "restaurant-intake" })
+        keep("restaurant-intake", base: "website-intake", in: d)
+        XCTAssertNotNil(SavedFlows.resolve("restaurant-intake", in: d))
+        XCTAssertTrue(MyFlows.rows(in: d).contains { $0.name == "restaurant-intake" })
+    }
+
+    func testRemovingAVariantWithVariantsTakesThemAlong() {
+        let d = defaults()
+        keep("cafe-intake", base: "website-intake", in: d)
+        keep("tiny-cafe", base: "cafe-intake", in: d)
+        keep("cafe-two", base: "cafe-intake", in: d)
+        XCTAssertEqual(MyFlows.rows(in: d).first { $0.name == "cafe-intake" }?.variants, 2)
+        XCTAssertEqual(Set(MyFlows.removal(of: "cafe-intake", in: d)), ["cafe-intake", "tiny-cafe", "cafe-two"])
+        MyFlows.remove("cafe-intake", in: d)
+        XCTAssertTrue(SavedFlows.kept(in: d).isEmpty)
+        XCTAssertNotNil(SavedFlows.resolve("restaurant-intake", in: d))
+    }
+
+    func testAVariantWhoseBaseIsGoneIsListedButCannotRun() {
+        let d = defaults()
+        keep("lost", base: "no-such-flow", in: d)
+        let r = MyFlows.rows(in: d).first { $0.name == "lost" }
+        XCTAssertEqual(r?.steps, 0)
+        XCTAssertEqual(MyFlows.remove("lost", in: d), ["lost"])
+    }
+}

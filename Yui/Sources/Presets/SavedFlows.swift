@@ -29,6 +29,8 @@ struct KeptVariant: Codable, Equatable {
 @MainActor
 enum SavedFlows {
     static let variantsKey = "yui.flows.variants"
+    /// Names of the hub's own variants the person removed from My flows (they ship in the app, so removing hides them).
+    static let removedKey = "yui.flows.removed"
     /// A variant follows its base at most this deep; a loop or a missing base is "no saved flow".
     static let maxDepth = 5
 
@@ -51,8 +53,35 @@ enum SavedFlows {
     /// Keeps a variant under its name. Sending the same name again replaces it: that is how an agent edits its own.
     static func keep(_ v: KeptVariant, in d: UserDefaults = .standard) {
         var all = kept(in: d).filter { $0.name != v.name }
+        // Sent again after a Remove: it is back.
+        setRemoved(removed(in: d).filter { $0 != v.name }, in: d)
         all.append(v)
         if let data = try? JSONEncoder().encode(all) { d.set(data, forKey: variantsKey) }
+    }
+
+    static func removed(in d: UserDefaults = .standard) -> [String] { d.stringArray(forKey: removedKey) ?? [] }
+
+    static func setRemoved(_ names: [String], in d: UserDefaults = .standard) { d.set(names, forKey: removedKey) }
+
+    /// Forgets a kept variant, or hides one of the hub's own. A starter stays.
+    static func forget(_ name: String, in d: UserDefaults = .standard) {
+        let key = YuiLines.flowKey(name)
+        if let data = try? JSONEncoder().encode(kept(in: d).filter { YuiLines.flowKey($0.name) != key }) { d.set(data, forKey: variantsKey) }
+        if let v = StarterFlows.variants.first(where: { YuiLines.flowKey($0.name) == key }), !removed(in: d).contains(v.name) {
+            setRemoved(removed(in: d) + [v.name], in: d)
+        }
+    }
+
+    private static var wasReset = false
+
+    /// `-yuiFlowsReset` (UI tests): no kept variants and none removed, once per launch.
+    static func resetForTests(in d: UserDefaults = .standard) {
+        #if DEBUG
+        guard !wasReset, ProcessInfo.processInfo.arguments.contains("-yuiFlowsReset") else { return }
+        wasReset = true
+        d.removeObject(forKey: variantsKey)
+        d.removeObject(forKey: removedKey)
+        #endif
     }
 
     static func starters() -> [StarterFlow] { StarterFlows.all }
@@ -69,7 +98,7 @@ enum SavedFlows {
         if let v = kept(in: d).first(where: { YuiLines.flowKey($0.name) == key }) {
             return variant(base: v.base, changes: v.changes, as: v.name, title: v.title, in: d, depth: depth)
         }
-        if let v = StarterFlows.variants.first(where: { YuiLines.flowKey($0.name) == key }) {
+        if let v = StarterFlows.variants.first(where: { YuiLines.flowKey($0.name) == key && !removed(in: d).contains($0.name) }) {
             let text = "flow@v \(v.base) as=\(v.name)\n\(v.lines)\nend"
             let changes = YuiLines.parse(text).first { $0.op == .patch }?.props?["changes"]?.array ?? []
             return variant(base: v.base, changes: changes, as: v.name, title: title(ofName: v.name), in: d, depth: depth)
