@@ -196,7 +196,7 @@ private struct QueryChart: View {
     @Environment(\.yuiTheme) private var theme
 
     var body: some View {
-        let alias = "query-\(c.ylID)"
+        let alias = c.string("table") ?? "query"
         let t = YLComponent(serial: -2, ylID: alias, preset: "table", screen: c.screen, props: [
             "name": .string(alias),
             "cols": .array(r.cols.map { .string($0.name) }),

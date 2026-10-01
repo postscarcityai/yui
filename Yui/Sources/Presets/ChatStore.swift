@@ -278,7 +278,7 @@ final class ChatStore {
     func talks(on n: Int) -> Bool { n == 1 || talking.contains(n) }
 
     /// The agent this thread talks to, when there is one.
-    private(set) var agent: YuiAgent?
+    private(set) var agent: YuiAgent? { didSet { if agent != nil { flushTables() } } }
     /// The agent owes a reply: shows the typing dots.
     private(set) var waiting = false
     private(set) var loaded = false
@@ -627,8 +627,18 @@ final class ChatStore {
     /// (a thread that loads twice writes nothing the second time). A refused write is told to the agent
     /// once, after the reply: `{op: row, table, key?, error, line}` (section 3, event 1). History
     /// loading writes what it has not written before but tells nobody.
+    @ObservationIgnored private var pendingTables: [(nodes: [YLNode], reply: String, live: Bool)] = []
+
+    private func flushTables() {
+        let waiting = pendingTables
+        pendingTables = []
+        for w in waiting { fileTables(w.nodes, reply: w.reply, live: w.live) }
+    }
+
     private func fileTables(_ nodes: [YLNode], reply: String, live: Bool) {
-        guard let agentID = agent?.id, nodes.contains(where: { $0.op == .table || $0.op == .put }) else { return }
+        guard nodes.contains(where: { $0.op == .table || $0.op == .put }) else { return }
+        // Rows can load before the thread knows its agent: they wait for it.
+        guard let agentID = agent?.id else { pendingTables.append((nodes, reply, live)); return }
         let refused = AgentTables.shared.store(agentID).apply(nodes, reply: reply)
         guard live else { return }
         for r in refused {
@@ -1505,6 +1515,9 @@ final class ChatStore {
         for (_, n) in earlier where known[n.target ?? ""] != nil { shelve(n, at: .now) }
         file(Array(yl.shelfOps.dropFirst(before.shelfOps.count)), at: .now)
         fileMenu(nodes.filter { $0.op == .menu }, at: .now)
+        // A streamed reply (paste box, demo) lands in batches: a batch's lines are its own key, so a relaunch
+        // that streams the same reply again with stable ids writes it once.
+        fileTables(nodes, reply: "\(id)/" + nodes.map(\.line).joined(separator: "\n"), live: true)
         pageUpdate(nodes)
         stageUpdate(id, before: before)
         // Demo streams restyle live too, stamped now.
