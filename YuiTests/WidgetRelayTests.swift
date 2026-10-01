@@ -335,8 +335,8 @@ final class SiriIntentTests: XCTestCase {
         XCTAssertTrue(FakeRelay.log().isEmpty)
     }
 
-    func testSixAppShortcutsAndEachPhraseNamesTheApp() {
-        XCTAssertEqual(YuiShortcuts.appShortcuts.count, 6)
+    func testEightAppShortcutsUnderTheCapOfTen() {
+        XCTAssertEqual(YuiShortcuts.appShortcuts.count, 8)
     }
 
     // YUI-253: Siri logs food and starts the workout.
