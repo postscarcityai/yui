@@ -10,7 +10,7 @@ import { LocalStore } from "../src/store.ts";
 import { clock, fromSeeds } from "../src/tables.ts";
 import { homeLines } from "../src/home.ts";
 import { crew } from "../src/profiles.ts";
-import { LESSON_PROMPT, PROBLEM_PROMPT, RATE_OPTS, dueCards, parseLesson, parseProblem, progressScreen, reviewScreen, schedule, studyAsks,
+import { FIRST_MINUTES, FIRST_QUIZ, LESSON_PROMPT, PROBLEM_PROMPT, RATE_OPTS, applyFirst, buildStudyPlan, firstLines, dueCards, parseLesson, parseProblem, progressScreen, reviewScreen, schedule, studyAsks,
          studyingScreen } from "../src/study.ts";
 import { fakeModel, freshYui, provider, system } from "./helpers.ts";
 // @ts-ignore: the parser the app and the site share, as the MCP server ships it
@@ -346,4 +346,80 @@ test("a model turn that writes a card patches his pages", async () => {
   assert.equal(m.calls.length, 1);
   const r = lastReply(store, quill.id);
   assert.match(fence(r.body), /^~due 9 "Cards due today"/m);
+});
+
+// ---------- YUI-224: Quill's first study plan ----------
+
+const FIRSTS = { topic: "A language", minutes: "20 minutes", quiz: "Flash cards" };
+
+test("first.yui carries the intake: one plan, three questions, Not sure and Skip on each; matches firstLines", async () => {
+  const { readFileSync } = await import("node:fs");
+  const first = readFileSync(new URL("../profiles/quill/first.yui", import.meta.url), "utf8");
+  assert.equal(fence(first), firstLines().join("\n"), "first.yui and firstLines drifted");
+  const qs = parse(fence(first), {}).filter((o: any) => o.op === "add" && o.in === "first");
+  assert.deepEqual(qs.map((o: any) => o.id), ["topic", "minutes", "quiz"]);
+  for (const o of qs) assert.ok(o.props.options.includes("Not sure") && o.props.options.includes("Skip"), `${o.id} has Not sure and Skip`);
+});
+
+test("a session never runs longer than the minutes picked, whatever the quiz style", () => {
+  for (const m of FIRST_MINUTES) for (const quiz of FIRST_QUIZ) {
+    const p = buildStudyPlan({ topic: "Spanish", minutes: m, quiz }, clk);
+    const minutes = m === "An hour" ? 60 : parseInt(m, 10);
+    assert.equal(p.minutes, minutes);
+    assert.equal(p.sessions.length, 7);
+    for (const s of p.sessions) {
+      assert.ok(s.lesson + s.quiz <= minutes, `${m} ${quiz}: ${s.lesson}+${s.quiz}`);
+      assert.ok(s.lesson > 0 && s.items >= 1);
+    }
+  }
+});
+
+test("the quiz style and the subject match the pick", () => {
+  for (const quiz of FIRST_QUIZ) assert.equal(buildStudyPlan({ topic: "A language", minutes: "10 minutes", quiz }, clk).style, quiz);
+  const r = applyFirst(fromSeeds(crew().quill.tables), FIRSTS, clk);
+  const rows = Object.values(r.store.tables.studyplan.rows) as any[];
+  assert.equal(rows.length, 7);
+  assert.ok(rows.every((x) => x.Subject === "A language" && x.Style === "Flash cards" && x.Lesson + x.Quiz <= 20));
+  assert.equal(r.store.tables.studyplan.rows["day-2026-09-28"].Day, "2026-09-28", "today's session");
+  // Something typed in instead of a choice is the subject.
+  assert.equal(buildStudyPlan({ ...FIRSTS, topic: "Organic chemistry" }, clk).subject, "Organic chemistry");
+});
+
+test("Skip on everything, Not sure on everything, and nothing at all still build a plan: general topic, 10 minutes, multiple choice", async () => {
+  for (const a of [{ topic: "Skip", minutes: "Skip", quiz: "Skip" }, { topic: "Not sure", minutes: "Not sure", quiz: "Not sure" }, {}]) {
+    const { store, quill } = await quillYui();
+    tap(store, quill.id, "first", "plan", { plan: a });
+    const r = await run(store, quill.id);
+    const t = (await store.tables(quill.id)).tables.studyplan;
+    const day = t.rows["day-2026-09-28"];
+    assert.equal(day.Subject, "A general topic");
+    assert.equal(day.Lesson + day.Quiz, 10);
+    assert.equal(day.Style, "Multiple choice");
+    assert.match(r.body, /^Your plan is set\. A general topic, 10 minutes a day, quizzed with multiple choice\./);
+  }
+});
+
+test("the first Send answers with the plan and ends on a card to tap; no model turn; today's lesson is on What you're studying; all parses", async () => {
+  const { store, quill } = await quillYui();
+  tap(store, quill.id, "first", "plan", { plan: FIRSTS });
+  const r = await run(store, quill.id);
+  assert.match(r.body, /^Your plan is set\. A language, 20 minutes a day, quizzed with flash cards\. Today: the basics: a 12 minute lesson, then 16 flash cards\./);
+  assert.ok(!/\?/.test(words(r.body)), "no question on top");
+  const ops = lines(r.body);
+  assert.ok(ops.some((o: any) => o.preset === "card" && o.id === "first-start" && o.props.cta === "Start today's lesson"), "a card to tap");
+  assert.ok(ops.some((o: any) => o.op === "patch" && o.target === "studying" && /A language/.test(JSON.stringify(o))), "What you're studying shows today's lesson");
+  // Saved: the next open still has it, and the tap opens the lesson plan on the subject.
+  assert.equal(Object.keys((await store.tables(quill.id)).tables.studyplan.rows).length, 7);
+  tap(store, quill.id, "first-start", "card", { cta: "Start today's lesson" });
+  const l = await run(store, quill.id);
+  assert.match(l.body, /^Let's learn A language\./);
+  assert.equal((l.meta as any).native.topic, "A language");
+});
+
+test("the {flow} event of the saved first-study flow builds a plan too", async () => {
+  const { store, quill } = await quillYui();
+  const id = store.say(quill.id, "[yui] firststudy flow", "event");
+  store.data.rows.find((r: any) => r.id === id)!.meta = { id: "firststudy", preset: "flow", value: { flow: { topic: "A skill for work", time: "A month", quiz: "Out loud" }, path: ["topic", "time", "quiz"] } };
+  const r = await run(store, quill.id);
+  assert.match(r.body, /^Your plan is set\. A skill for work, 10 minutes a day, quizzed with out loud\./);
 });

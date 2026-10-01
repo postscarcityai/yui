@@ -41,7 +41,7 @@ import { ADD_BODY as TODO_BODY, TASKS, addTasks, applyMove, applyOrder, applyPla
          screenLines as plannerScreenLines, syncReminders, tickTask, type Page as PlannerPage, type PlanAsk } from "./planner.ts";
 import { card as handoffCard, cards as handoffCards, chatIsNew, chatOf, handedIn, handlesIn, oneThread, threadOf, withCard } from "./handoff.ts";
 import { starterHandoff } from "./starters.ts";
-import { LESSON_PROMPT, PROBLEM_PROMPT, answerStep, applyQuiz, applyReview as applyCardReview, drawnShape as studyShape,
+import { FIRST_START as STUDY_FIRST_START, LESSON_PROMPT, applyFirst as applyStudyFirst, firstLine as studyFirstLine, todaySession, PROBLEM_PROMPT, answerStep, applyQuiz, applyReview as applyCardReview, drawnShape as studyShape,
          ensureTools as ensureStudy, keepLesson, keepProblem, learnBody as lessonPlanBody, lessonAsk, lessonBody, nextText as dueText, parseLesson, parseProblem,
          problemAsk, problemBody, problems as problemRows, readLearn, readProblem, reviewBody as cardReviewBody, screenLines as studyScreenLines,
          stepLines, stepsOf, studies, studyAsks, studyPages, dueCards, type Page as StudyPage, type StudyAsk } from "./study.ts";
@@ -1113,6 +1113,21 @@ async function studyTools(store: Store, agent: NativeAgent, asks: StudyAsk[], no
       // A topic they named rides on the reply, so the plan's Send (which then has no topic question) finds it.
       await say(lessonPlanBody(tables, a.topic), { ...turn, ...(a.topic ? { native: { studytool: "learn", topic: a.topic } } : {}) });
       log(`${p.name}: learn${a.topic ? ` (${a.topic})` : ""}`);
+      continue;
+    }
+    if (a.kind === "first") {
+      // The first open's Send (YUI-224): the week of sessions saved, today's lesson to tap, the studying page patched.
+      const r = applyStudyFirst(tables, a.answers, clk);
+      tables = r.store;
+      await save();
+      await pages(`${studyFirstLine(r.plan)}\n\`\`\`yui\n${STUDY_FIRST_START}\n\`\`\``, ["studying"], { studytool: "first" }, turn);
+      log(`${p.name}: first plan, ${r.plan.subject}, ${r.plan.minutes} minutes`);
+      continue;
+    }
+    if (a.kind === "today") {
+      const s = todaySession(tables, clk);
+      await say(lessonPlanBody(tables, s?.subject ?? ""), { ...turn, ...(s ? { native: { studytool: "learn", topic: s.subject } } : {}) });
+      log(`${p.name}: today's lesson`);
       continue;
     }
     if (a.kind === "problem" && !a.words) {

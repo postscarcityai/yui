@@ -1,4 +1,8 @@
-Quill here. Pick a topic and I'll teach it in five minutes, then quiz you.
+Quill here. Three taps and you have a study plan. Not sure and Skip are always there.
 ```yui
-choose@learn-subject "What are we learning?" Math|Science|History|Languages|"Something else" +other
+plan@first "Your first study plan" submit="Build my plan"
+choose@topic "What are you learning?" "A language"|"A school subject"|"A skill for work"|"Something for fun"|"Not sure"|"Skip" +other
+choose@minutes "How many minutes a day?" "10 minutes"|"20 minutes"|"30 minutes"|"An hour"|"Not sure"|"Skip"
+choose@quiz "How do you like to be quizzed?" "Flash cards"|"Multiple choice"|"Write it out"|"Out loud"|"Not sure"|"Skip"
+end
 ```

@@ -219,6 +219,105 @@ export function readLearn(a: Record<string, unknown>, said = ""): { topic: strin
   return { topic, time, know };
 }
 
+// ---------- the first study plan (YUI-224, PROP-4) ----------
+
+export const NOT_SURE = "Not sure";
+export const SKIP = "Skip";
+export const PLAN = "studyplan";
+export const FIRST_ID = "first";
+export const FIRST_TOPICS = ["A language", "A school subject", "A skill for work", "Something for fun"];
+export const FIRST_MINUTES = ["10 minutes", "20 minutes", "30 minutes", "An hour"];
+export const FIRST_QUIZ = ["Flash cards", "Multiple choice", "Write it out", "Out loud"];
+const softer = (xs: string[]) => opts([...xs, NOT_SURE, SKIP]);
+const realOf = (xs: string[]) => xs.map((x) => String(x ?? "").trim()).filter((x) => x && !/^(?:not sure|skip)$/i.test(x));
+
+/** The intake, as first.yui and its test send it: three questions, Not sure and Skip on each, one Send. The topic and quiz
+ *  ids are the saved `first-study` flow's, so its {flow} event and this plan's answers read the same. */
+export function firstLines(): string[] {
+  return [
+    `plan@${FIRST_ID} "Your first study plan" submit="Build my plan"`,
+    `choose@topic "What are you learning?" ${softer(FIRST_TOPICS)} +other`,
+    `choose@minutes "How many minutes a day?" ${softer(FIRST_MINUTES)}`,
+    `choose@quiz "How do you like to be quizzed?" ${softer(FIRST_QUIZ)}`,
+    `end`,
+  ];
+}
+
+export interface StudySession { day: string; focus: string; lesson: number; quiz: number; items: number }
+export interface StudyPlan { subject: string; minutes: number; style: string; sessions: StudySession[] }
+const FOCUS = ["The basics", "Key ideas", "Worked examples", "Practice", "Common mistakes", "Putting it together", "Review the week"];
+/** Minutes one quiz item takes, by style. */
+const ITEM_MIN: Record<string, number> = { "Flash cards": 0.5, "Multiple choice": 1, "Write it out": 2, "Out loud": 1.5 };
+const ITEM_NOUN: Record<string, string> = { "Flash cards": "flash cards", "Multiple choice": "multiple choice questions", "Write it out": "write-it-out prompts", "Out loud": "say-it-out-loud prompts" };
+const DEFAULT_TOPIC = "A general topic";
+
+/** The first answers as a week of daily sessions. Not sure and Skip (or no answer) take the defaults: a general topic,
+ *  10 minutes a day, multiple choice. A session is a lesson then a quiz, and never longer than the minutes picked. */
+export function buildStudyPlan(a: Record<string, unknown>, clk: Clock): StudyPlan {
+  const topic = a.topic && typeof a.topic === "object" ? Object.values(a.topic as Record<string, unknown>).join(" ") : a.topic;
+  const subject = plain(realOf([String(topic ?? "")])[0] ?? "", 60) || DEFAULT_TOPIC;
+  const m = realOf([String(a.minutes ?? "")])[0] ?? "";
+  const minutes = FIRST_MINUTES.includes(m) ? (m === "An hour" ? 60 : parseInt(m, 10)) : 10;
+  const qz = realOf([String(a.quiz ?? "")])[0] ?? "";
+  const style = FIRST_QUIZ.find((x) => x.toLowerCase() === qz.toLowerCase()) ?? "Multiple choice";
+  const lesson = Math.round(minutes * 0.6);
+  const quiz = minutes - lesson;
+  const items = Math.max(1, Math.floor(quiz / ITEM_MIN[style]));
+  const sessions = FOCUS.map((focus, i) => ({ day: shift(clk.today, i), focus, lesson, quiz, items }));
+  return { subject, minutes, style, sessions };
+}
+
+export interface PlannedSession extends StudySession { key: string; subject: string; style: string }
+
+/** The saved plan's sessions, in day order. */
+export function planned(store: TableStore): PlannedSession[] {
+  return rowsOf(store, PLAN).filter(({ row }) => row?.Day).map(({ key, row }) => ({
+    key, day: String(row.Day).slice(0, 10), focus: String(row.Focus ?? ""), lesson: num(row.Lesson), quiz: num(row.Quiz), items: num(row.Items),
+    subject: String(row.Subject ?? ""), style: String(row.Style ?? ""),
+  })).sort((x, y) => x.day.localeCompare(y.day));
+}
+
+/** Today's session in the saved plan, unless today's quiz is already done. */
+export function todaySession(store: TableStore, clk: Clock): PlannedSession | undefined {
+  const s = planned(store).find((x) => x.day === clk.today);
+  if (!s) return undefined;
+  return rowsOf(store, SESSIONS).some(({ row }) => row?.Kind === "Quiz" && String(row.Day).slice(0, 10) === clk.today) ? undefined : s;
+}
+
+/** The first Send: a week of sessions saved, one row a day, the subject, minutes and style on each. */
+export function applyFirst(store: TableStore, answers: Record<string, unknown>, clk: Clock): { store: TableStore; plan: StudyPlan } {
+  const plan = buildStudyPlan(answers, clk);
+  let out = store;
+  if (!out.tables[PLAN]) {
+    const t = write(out, { op: "table", name: PLAN, cols: [{ name: "Day", type: "date" }, { name: "Subject", type: "text" }, { name: "Focus", type: "text" }, { name: "Lesson", type: "number" },
+                                                          { name: "Quiz", type: "number" }, { name: "Items", type: "number" }, { name: "Style", type: "text" }] });
+    if (!t.error) out = t.store;
+  }
+  // A plan built again replaces the last one.
+  for (const { key } of rowsOf(out, PLAN)) {
+    const w = write(out, { op: "put", table: PLAN, key, delete: true } as any, clk);
+    if (!w.error) out = w.store;
+  }
+  for (const s of plan.sessions) {
+    out = put(out, PLAN, `day-${s.day}`, { Day: s.day, Subject: plan.subject, Focus: s.focus, Lesson: s.lesson, Quiz: s.quiz, Items: s.items, Style: plan.style }, clk);
+  }
+  return { store: out, plan };
+}
+
+/** One session in a sentence: the lesson, then the quiz in the style chosen. */
+export function sessionText(s: { focus: string; lesson: number; quiz: number; items: number; style: string }): string {
+  return `${s.focus}: a ${s.lesson} minute lesson, then ${s.items} ${ITEM_NOUN[s.style] ?? "questions"}.`;
+}
+
+/** What Quill says on top of the plan: the subject, the minutes, today's session. No question; the card under it is the tap. */
+export function firstLine(p: StudyPlan): string {
+  const today = p.sessions[0];
+  return `Your plan is set. ${p.subject}, ${p.minutes} minutes a day, quizzed with ${p.style.toLowerCase()}. Today: ${sessionText({ ...today, style: p.style }).replace(/^./, (c) => c.toLowerCase())}`;
+}
+
+/** The tap under the plan: today's lesson. */
+export const FIRST_START = `card@first-start "Start today's lesson" "Today's lesson, then your quiz." cta="Start today's lesson"`;
+
 /** Review: the cards due today, each its front then its answer with a rating, one Send. */
 export function reviewBody(store: TableStore, clk: Clock): string {
   const due = dueCards(store, clk);
@@ -477,7 +576,10 @@ export function studyingScreen(store: TableStore, clk: Clock): string[] {
   const due = dueCards(store, clk);
   const ds = decks(store);
   const dueIn = d ? due.filter((c) => c.deck === d.deck).length : 0;
-  const card = d
+  const t = todaySession(store, clk);
+  const card = t && (!d || d.last !== clk.today)
+    ? `card@studying ${q(`Today: ${t.subject}`)} ${q(sessionText(t))} sub=${q(`${t.lesson + t.quiz} minutes`)} cta="Start today's lesson"`
+    : d
     ? `card@studying ${q(d.deck)} ${q(`${plural(d.cards, "card")}. ${dueIn ? `${dueIn} due today.` : "None due today."}${d.score ? ` Last quiz: ${d.score}.` : ""}`)} sub=${q(d.subject || "What you're studying")} cta=${q(dueIn ? "Review now" : "Learn more")}`
     : `card@studying "Nothing yet" "Pick a topic and I'll teach it in five minutes." sub="What you're studying" cta="Learn something new"`;
   const items = ds.length ? ds.slice(-8).reverse().map((x) => `${x.deck}, ${plural(x.cards, "card")}`) : ["No decks yet"];
@@ -571,6 +673,8 @@ export function studyPages(ch: { rows: { table: string }[]; dropRows: { table: s
 
 export type StudyAsk =
   | { kind: "learn"; row: Row; topic: string }
+  | { kind: "first"; row: Row; answers: Record<string, unknown> }
+  | { kind: "today"; row: Row }
   | { kind: "learned"; row: Row; answers: Record<string, unknown> }
   | { kind: "review"; row: Row }
   | { kind: "next"; row: Row }
@@ -611,6 +715,8 @@ export function studyAsks(rows: Row[]): { asks: StudyAsk[]; rest: Row[] } {
       const plan = v.plan && typeof v.plan === "object" ? (v.plan as Record<string, unknown>) : null;
       const step = e.id.match(/^step-(.+)-(\d+)$/);
       if (e.preset === "plan" && e.id === "learn" && plan) a = { kind: "learned", row: r, answers: plan };
+      else if (e.preset === "plan" && e.id === FIRST_ID && plan) a = { kind: "first", row: r, answers: plan };
+      else if (e.preset === "flow" && e.id === "firststudy" && v.flow && typeof v.flow === "object") a = { kind: "first", row: r, answers: v.flow as Record<string, unknown> };
       else if (e.preset === "plan" && e.id === "review" && plan) a = { kind: "reviewed", row: r, answers: plan };
       else if (e.preset === "plan" && e.id === "problem" && plan) a = { kind: "posed", row: r, answers: plan };
       else if (e.preset === "choose" && step && v.choice != null) a = { kind: "step", row: r, problem: step[1], n: Number(step[2]), choice: String(v.choice) };
@@ -622,7 +728,8 @@ export function studyAsks(rows: Row[]): { asks: StudyAsk[]; rest: Row[] } {
         a = { kind: "learn", row: r, topic: v.other ? plain(v.choice, 80) : /something else/i.test(String(v.choice)) ? "" : plain(v.choice, 80) };
       } else if (e.preset === "card" && v.cta != null) {
         const cta = String(v.cta);
-        if (/start review|review now/i.test(cta)) a = { kind: "review", row: r };
+        if (/today'?s lesson/i.test(cta)) a = { kind: "today", row: r };
+        else if (/start review|review now/i.test(cta)) a = { kind: "review", row: r };
         else if (/walk me through/i.test(cta)) a = { kind: "problem", row: r, words: "" };
         else if (/learn/i.test(cta)) a = { kind: "learn", row: r, topic: "" };
       }
