@@ -1086,6 +1086,10 @@ struct StageFirstView: View {
                                attachDisabled: sending || photos.count >= Attachments.maxPhotos,
                                reduceMotion: reduceMotion, actions: barActions, look: look, voice: voice)
                 }
+                // Held to talk: the trash flush left, as far from the left edge as the mic is from the right.
+                .overlay(alignment: .leading) {
+                    if mic.held { BarTrash(prefix: "stage", armed: mic.armed, reduceMotion: reduceMotion) }
+                }
             }
         }
         .padding(.horizontal, theme.spacing.l)

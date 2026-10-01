@@ -161,23 +161,11 @@ struct BarButtons: View {
         .accessibilityIdentifier(lockArmed ? "\(prefix)-lock-armed" : "\(prefix)-lock")
     }
 
-    /// How far left the finger goes to arm the trash (the same 110 the chat mic uses).
-    static let trashReach: CGFloat = 110
-
-    private func trash(_ c: Swatch) -> some View {
-        Image(systemName: armed ? "trash.fill" : "trash")
-            .font(.system(size: 17, weight: .bold))
-            .foregroundStyle(armed ? c.onAccent : c.ink)
-            .frame(width: Self.small, height: Self.small)
-            .background(armed ? c.accent : c.surface, in: Circle())
-            .overlay(Circle().stroke(armed ? .clear : c.outline, lineWidth: 1.5))
-            .scaleEffect(armed && !reduceMotion ? 1.2 : 1)
-            .animation(reduceMotion ? nil : theme.spring, value: armed)
-            .allowsHitTesting(false)
-            .transition(.opacity)
-            .accessibilityElement()
-            .accessibilityLabel(armed ? "Let go to cancel" : "Slide left to cancel")
-            .accessibilityIdentifier(armed ? "\(prefix)-trash-armed" : "\(prefix)-trash")
+    /// How far left the finger goes to arm the trash (YUI-251): the trash sits flush left,
+    /// mirroring the mic's inset on the right, so the reach is the bar's width minus both
+    /// insets and a mic, less a thumb of slack. Never under the old 110.
+    static func trashReach(width: CGFloat, inset: CGFloat) -> CGFloat {
+        max(110, width - 2 * inset - micSize - 40)
     }
 
     /// A tap talks hands-free; a hold talks until the finger lets go. The drag runs in
@@ -210,9 +198,7 @@ struct BarButtons: View {
             .sensoryFeedback(.impact(weight: .medium), trigger: lockArmed)
             // The lock: a spot just above the mic. Slide up onto it and let go to keep recording.
             .overlay(alignment: .top) { if held, !armed { lock(c).offset(y: -(Self.micSize + 26)) } }
-            // The trash: its own target to the left, like the lock. The mic stays a mic.
-            // Let go over it cancels; let go anywhere else does not.
-            .overlay(alignment: .leading) { if held { trash(c).offset(x: -Self.trashReach - Self.small / 2) } }
+            // The trash is its own target, flush left of the bar (BarTrash); the mic stays a mic.
             .accessibilityElement()
             .accessibilityAddTraits(.isButton)
             .accessibilityLabel(micOn ? "Stop talking" : "Talk")
@@ -269,5 +255,32 @@ struct AttachMenu<Label: View>: View {
         } label: {
             label()
         }
+    }
+}
+
+/// The trash (YUI-251): flush left of the bar, the mic's size and inset mirrored. It sits
+/// over the bar's left edge while the mic is held; let go over it cancels, anywhere else does not.
+struct BarTrash: View {
+    let prefix: String
+    let armed: Bool
+    let reduceMotion: Bool
+    @Environment(\.yuiTheme) private var theme
+    @Environment(\.colorScheme) private var scheme
+
+    var body: some View {
+        let c = theme.swatch(scheme)
+        Image(systemName: armed ? "trash.fill" : "trash")
+            .font(.system(size: BarButtons.micSize * 0.34, weight: .bold))
+            .foregroundStyle(armed ? c.onAccent : c.ink)
+            .frame(width: BarButtons.micSize, height: BarButtons.micSize)
+            .background(armed ? c.accent : c.surface, in: Circle())
+            .overlay(Circle().stroke(armed ? .clear : c.outline, lineWidth: 1.5))
+            .scaleEffect(armed && !reduceMotion ? 1.1 : 1)
+            .animation(reduceMotion ? nil : theme.spring, value: armed)
+            .allowsHitTesting(false)
+            .transition(.opacity)
+            .accessibilityElement()
+            .accessibilityLabel(armed ? "Let go to cancel" : "Slide left to cancel")
+            .accessibilityIdentifier(armed ? "\(prefix)-trash-armed" : "\(prefix)-trash")
     }
 }

@@ -82,7 +82,9 @@ struct ChatView: View {
     @State private var micTapOnly = false
     /// How far up the finger is, 0 or more. Past `lockDistance` (and not on the trash) the lock is armed.
     @State private var micLift: CGFloat = 0
-    private static let cancelDistance: CGFloat = 110
+    private static var cancelDistance: CGFloat {
+        BarButtons.trashReach(width: UIScreen.main.bounds.width, inset: 16)
+    }
     private static let lockDistance: CGFloat = 80
     private var cancelArmed: Bool { talk.listening && micDragX <= -Self.cancelDistance }
     private var lockArmed: Bool { talk.listening && !handsFree.on && !cancelArmed && micLift >= Self.lockDistance }

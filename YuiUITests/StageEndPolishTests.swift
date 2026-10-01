@@ -78,7 +78,7 @@ final class StageEndPolishTests: XCTestCase {
         XCTAssertTrue(mic.waitForExistence(timeout: 15), "no mic")
         let from = mic.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
         // Held over the trash: it is a separate target and the mic is still a mic.
-        from.press(forDuration: 1.0, thenDragTo: from.withOffset(CGVector(dx: -140, dy: 0)), withVelocity: .slow, thenHoldForDuration: 1.5)
+        from.press(forDuration: 1.0, thenDragTo: from.withOffset(CGVector(dx: -320, dy: 0)), withVelocity: .slow, thenHoldForDuration: 1.5)
         sleep(1)
         XCTAssertFalse(app.staticTexts["Cancel this one"].exists, "a recording let go over the trash was sent")
     }
@@ -89,6 +89,23 @@ final class StageEndPolishTests: XCTestCase {
         XCTAssertTrue(app.buttons["stage-mic"].waitForExistence(timeout: 15), "no mic")
         sleep(2)
         shot("5-trash-armed", "dark")
+    }
+
+    /// YUI-251: the trash sits flush left, as far from the left edge as the mic is from the right.
+    func testTrashSitsFlushLeftMirroringTheMic() throws {
+        for scheme in ["light", "dark"] {
+            let app = launch(scheme, extra: ["-yuiPTTDemo", "Book me a haircut Friday at four"])
+            let mic = app.buttons["stage-mic"]
+            XCTAssertTrue(mic.waitForExistence(timeout: 15), "no mic")
+            let trash = app.descendants(matching: .any)["stage-trash"]
+            XCTAssertTrue(trash.waitForExistence(timeout: 15), "no trash while held")
+            let rightInset = app.frame.maxX - mic.frame.maxX
+            let leftInset = trash.frame.minX - app.frame.minX
+            XCTAssertEqual(leftInset, rightInset, accuracy: 6, "trash is not mirroring the mic's inset (\(scheme))")
+            XCTAssertEqual(trash.frame.width, mic.frame.width, accuracy: 4, "trash is not the mic's size (\(scheme))")
+            shot("6-trash-flush-left", scheme)
+            app.terminate()
+        }
     }
 
     /// Read through to the questions, the last page.
