@@ -155,7 +155,16 @@ final class AgentHomeTests: XCTestCase {
     /// guitar tuner should always live at the end of the Gouda screen list."): Tune up opens the
     /// tuner, the last screen, and sends no message.
     func testGoudaTuneUpOpensTheTunerWithNoTurn() throws {
-        let app = launch("gouda", "dark")
+        try tuneUpOpensTheTuner("dark")
+    }
+
+    /// YUI-252: the same, in light.
+    func testGoudaTuneUpOpensTheTunerWithNoTurnLight() throws {
+        try tuneUpOpensTheTuner("light")
+    }
+
+    private func tuneUpOpensTheTuner(_ look: String) throws {
+        let app = launch("gouda", look)
         let tune = app.buttons["home-chip-tune"]
         XCTAssertTrue(tune.waitForExistence(timeout: 15), "no Tune up chip")
         XCTAssertEqual(app.pagePosition.value as? String, "1 of 6", "the tuner is not the sixth and last screen")
@@ -166,8 +175,10 @@ final class AgentHomeTests: XCTestCase {
         XCTAssertFalse(app.descendants(matching: .any)["stage-working"].exists, "Tune up started a turn")
         XCTAssertFalse(app.staticTexts["Tune my guitar"].exists, "Tune up sent its words as a message")
         XCTAssertFalse(app.staticTexts["You: Tune my guitar"].exists, "Tune up sent its words as a message")
-        sleep(1)
-        shot("gouda-dark-tuner-no-turn")
+        // YUI-206 recheck: the tuner listens on this page and the app stays up.
+        sleep(3)
+        XCTAssertTrue(app.descendants(matching: .any)["stage-screen-6"].exists, "the app lost the tuner page")
+        shot("gouda-\(look)-tuner-no-turn")
         app.goToScreen(1)
         XCTAssertTrue(tune.waitForExistence(timeout: 5), "could not page back home")
     }
