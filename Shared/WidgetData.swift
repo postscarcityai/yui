@@ -156,6 +156,31 @@ struct AgentEntity: AppEntity, IndexedEntity {
     var displayRepresentation: DisplayRepresentation { DisplayRepresentation(title: "\(name)") }
 }
 
+/// Every agent on the account, written by the app whenever the list loads (YUI-40 step 5): Shortcuts, Spotlight
+/// and the Action button know agents that have no saved screen yet. Names and ids only.
+enum AgentRoster {
+    struct Entry: Codable, Equatable { var id: String; var name: String; var isDefault: Bool }
+    private static let key = "agentRoster"
+
+    static func save(_ entries: [Entry]) {
+        WidgetGroup.defaults.set(try? JSONEncoder().encode(entries), forKey: key)
+    }
+    static func read() -> [Entry] {
+        WidgetGroup.defaults.data(forKey: key).flatMap { try? JSONDecoder().decode([Entry].self, from: $0) } ?? []
+    }
+    static func clear() { WidgetGroup.defaults.removeObject(forKey: key) }
+
+    /// Roster first (list order), then any agent only known from a saved screen.
+    static func agents(screens: [WidgetScreen]) -> [AgentEntity] {
+        var seen = Set<String>()
+        let fromList = read().compactMap { seen.insert($0.id).inserted ? AgentEntity(id: $0.id, name: $0.name) : nil }
+        let fromScreens = screens.compactMap { seen.insert($0.agentID).inserted ? AgentEntity(id: $0.agentID, name: $0.agentName) : nil }
+        return fromList + fromScreens
+    }
+    /// The agent the Action button talks to when none is picked: the one marked default, else Yui's own thread.
+    static var defaultID: String { read().first(where: \.isDefault)?.id ?? "yui" }
+}
+
 struct AgentQuery: EntityQuery, EntityStringQuery {
     func entities(for identifiers: [String]) async throws -> [AgentEntity] {
         all().filter { identifiers.contains($0.id) }
@@ -164,12 +189,7 @@ struct AgentQuery: EntityQuery, EntityStringQuery {
     func entities(matching string: String) async throws -> [AgentEntity] {
         all().filter { $0.name.localizedCaseInsensitiveContains(string) }
     }
-    private func all() -> [AgentEntity] {
-        var seen = Set<String>()
-        return WidgetStore.read().screens.compactMap { s in
-            seen.insert(s.agentID).inserted ? AgentEntity(id: s.agentID, name: s.agentName) : nil
-        }
-    }
+    private func all() -> [AgentEntity] { AgentRoster.agents(screens: WidgetStore.read().screens) }
 }
 
 struct ScreenEntity: AppEntity, IndexedEntity {

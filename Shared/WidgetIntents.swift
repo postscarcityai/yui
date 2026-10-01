@@ -101,7 +101,7 @@ struct WidgetTimerStartIntent: LiveActivityIntent {
 }
 
 /// "Talk to Yui": the Action button, Control Center and the lock screen open that agent's thread with
-/// hands-free voice on (YUI-14). No agent picked means Yui's own thread.
+/// hands-free voice on (YUI-14). No agent picked means the default agent (Yui's own thread when none is marked).
 struct TalkToAgentIntent: AppIntent {
     static let title: LocalizedStringResource = "Talk to Yui"
     static let isDiscoverable = false
@@ -112,7 +112,7 @@ struct TalkToAgentIntent: AppIntent {
     init(agent: AgentEntity?) { self.agent = agent }
 
     static func link(agent id: String?) -> URL {
-        URL(string: "yui://agent/\(id ?? "yui")/thread?talk=1")!
+        URL(string: "yui://agent/\(id ?? AgentRoster.defaultID)/thread?talk=1")!
     }
 
     func perform() async throws -> some IntentResult & OpensIntent {

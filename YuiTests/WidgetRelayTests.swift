@@ -402,6 +402,27 @@ final class SiriIntentTests: XCTestCase {
         AgentHandles.clear()
     }
 
+    func testRosterKnowsAgentsWithNoSavedScreen() {
+        AgentRoster.clear()
+        defer { AgentRoster.clear() }
+        AgentHandles.save([
+            YuiAgent(id: "a1", name: "Basil", handle: "basil", color: "mint", kind: "hermes", status: .connected, isDefault: false, sort: 0),
+            YuiAgent(id: "a2", name: "Arnold", handle: "arnold", color: "mint", kind: "hermes", status: .connected, isDefault: true, sort: 1)])
+        let found = AgentRoster.agents(screens: [])
+        XCTAssertEqual(found.map(\.name), ["Basil", "Arnold"])
+        XCTAssertEqual(AgentRoster.defaultID, "a2")
+    }
+
+    func testTalkGoesToTheDefaultAgentWhenNonePicked() {
+        AgentRoster.clear()
+        defer { AgentRoster.clear() }
+        XCTAssertEqual(TalkIntent.link(agent: nil).absoluteString, "yui://agent/yui/thread?talk=1")
+        AgentRoster.save([.init(id: "a2", name: "Arnold", isDefault: true)])
+        XCTAssertEqual(TalkIntent.link(agent: nil).absoluteString, "yui://agent/a2/thread?talk=1")
+        XCTAssertEqual(TalkIntent.link(agent: "a1").absoluteString, "yui://agent/a1/thread?talk=1")
+        XCTAssertEqual(OpenAgentIntent.link(agent: "a1").absoluteString, "yui://agent/a1/thread")
+    }
+
     func testKeychainGroupIsInTheInfoPlist() {
         XCTAssertNotNil(WidgetSecrets.group)
     }

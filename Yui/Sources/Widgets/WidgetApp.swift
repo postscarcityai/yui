@@ -117,15 +117,15 @@ enum WidgetRegistry {
     }
 }
 
-/// Spotlight: agent names and saved screen names, nothing else (spec section 7).
+/// Spotlight: every agent's name and saved screen names, nothing else (spec section 7).
 enum WidgetIndex {
     static func reindex(_ snap: WidgetSnapshot) async {
         let index = CSSearchableIndex.default()
-        let agents = Dictionary(snap.screens.map { ($0.agentID, AgentEntity(id: $0.agentID, name: $0.agentName)) }) { a, _ in a }
+        let agents = AgentRoster.agents(screens: snap.screens)
         let screens = snap.screens.map { ScreenEntity(id: $0.id, agentID: $0.agentID, agentName: $0.agentName, name: $0.name) }
         try? await index.deleteAppEntities(ofType: AgentEntity.self)
         try? await index.deleteAppEntities(ofType: ScreenEntity.self)
-        try? await index.indexAppEntities(Array(agents.values))
+        try? await index.indexAppEntities(agents)
         try? await index.indexAppEntities(screens)
     }
 }
