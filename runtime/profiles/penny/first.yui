@@ -1,4 +1,8 @@
-Penny here. Let's get this week out of your head. What's on it?
+Penny here. Three taps and you have a planning routine. Not sure and Skip are always there.
 ```yui
-form "This week" must:voice maybe:voice
+plan@first "Your first routine" submit="Set my routine"
+pick@busy "Which days are packed?" "Mon"|"Tue"|"Wed"|"Thu"|"Fri"|"Sat"|"Sun"|"None"|"Not sure"|"Skip"
+choose@plan "When do you plan?" "Sunday night"|"Monday morning"|"Each morning"|"Each night"|"Not sure"|"Skip"
+choose@remind "How do you want reminders?" "At the time"|"10 minutes before"|"The night before"|"None"|"Not sure"|"Skip"
+end
 ```

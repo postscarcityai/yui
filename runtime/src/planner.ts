@@ -266,12 +266,14 @@ export function readPrefs(a: Record<string, unknown>, clk: Clock): Prefs {
                     remind: remind == null ? REMIND_OPTS[2] : remind === 0 ? REMIND_OPTS[1] : `${remind} minutes before` } };
 }
 
-/** How early a reminder goes, from the last plan's answer: 10 minutes when they never said, null for none. */
-export function remindLead(store: TableStore): number | null {
+/** How a reminder goes, from the last plan's answer: minutes before, 10 when they never said, null for none, or one
+ *  of the first week's styles: the evening before, or a nudge that morning. */
+export type Lead = number | "night" | "morning" | null;
+export function remindLead(store: TableStore): Lead {
   const r = store.tables[PREFS]?.rows.last?.Remind;
   if (r == null) return 10;
   const s = String(r);
-  return /no reminder/i.test(s) ? null : /at the time/i.test(s) ? 0 : parseInt(s, 10) || 10;
+  return /no reminder/i.test(s) ? null : /night before/i.test(s) ? "night" : /morning nudge/i.test(s) ? "morning" : /at the time/i.test(s) ? 0 : parseInt(s, 10) || 10;
 }
 
 /** The brain dump from the plan's answer: a mic's words, a form's text box, or plain words. */
@@ -315,6 +317,8 @@ function lightest(load: Map<string, number>, days: string[], p: Prefs, clk: Cloc
  */
 export function applyPlan(store: TableStore, answers: Record<string, unknown>, clk: Clock): { store: TableStore; added: Task[]; carried: number; prefs: Prefs } {
   const prefs = readPrefs(answers, clk);
+  // The busy days the first routine kept stay light on every plan after.
+  prefs.busy = [...new Set([...prefs.busy, ...routineBusy(store, clk)])];
   const days = weekDays(clk);
   let out = store;
   // Her starter to-do was "tell Penny what's on your mind": a plan does that.
@@ -484,9 +488,9 @@ export function syncReminders(store: TableStore, clk: Clock): TableStore {
   if (lead != null) {
     for (const t of tasks(out)) {
       if (!open(t) || !t.due || !t.time) continue;
-      const at = atMinus(t.due, t.time, lead);
+      const at = reminderAt(t.due, t.time, lead);
       if (at <= clk.now) continue;
-      want.set(t.key, { Task: t.task, Day: t.due, Time: t.time, At: at, Lead: lead });
+      want.set(t.key, { Task: t.task, Day: t.due, Time: t.time, At: at, Lead: typeof lead === "number" ? lead : lead === "night" ? 1440 : 0 });
     }
   }
   for (const { key } of rowsOf(out, REMINDERS)) if (!want.has(key)) out = write(out, { op: "put", table: REMINDERS, key, delete: true }).store;
@@ -497,6 +501,14 @@ export function syncReminders(store: TableStore, clk: Clock): TableStore {
     if (!w.error) out = w.store;
   }
   return out;
+}
+
+/** When a timed task's reminder goes: a style of the first week, or minutes before. A style that would fall after the task
+ *  (a nudge for a 7 am task, the evening before a task at night) gives 10 minutes before instead. */
+function reminderAt(day: string, hhmm: string, lead: number | "night" | "morning"): string {
+  if (lead === "night" && minutesOf(hhmm) <= 20 * 60) return `${shift(day, -1)}T20:00`;
+  if (lead === "morning" && minutesOf(hhmm) > 8 * 60 + 30) return `${day}T08:00`;
+  return atMinus(day, hhmm, typeof lead === "number" ? lead : 10);
 }
 
 /** "2026-09-29" "09:00" less 10 minutes, as a local "2026-09-29T08:50". */
@@ -517,6 +529,102 @@ export function reminders(store: TableStore): Reminder[] {
 }
 
 // ---------- the flows ----------
+
+// ---------- the first routine (YUI-223, PROP-4) ----------
+
+export const NOT_SURE = "Not sure";
+export const SKIP = "Skip";
+export const ROUTINE = "routine";
+export const FIRST_ID = "first";
+const SHORT_DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+export const FIRST_WHEN = ["Sunday night", "Monday morning", "Each morning", "Each night"];
+export const FIRST_REMIND = ["At the time", "10 minutes before", "The night before", "None"];
+const softer = (xs: string[]) => opts([...xs, NOT_SURE, SKIP]);
+const realOf = (xs: string[]) => xs.map((x) => x.trim()).filter((x) => x && !/^(?:not sure|skip)$/i.test(x));
+
+/** The intake, as first.yui and its test send it: three questions, Not sure and Skip on each, one Send. The ids are the
+ *  saved `first-week` flow's, so its {flow} event and this plan's answers read the same. */
+export function firstLines(): string[] {
+  return [
+    `plan@${FIRST_ID} "Your first routine" submit="Set my routine"`,
+    `pick@busy "Which days are packed?" ${softer([...SHORT_DAYS, "None"])}`,
+    `choose@plan "When do you plan?" ${softer(FIRST_WHEN)}`,
+    `choose@remind "How do you want reminders?" ${softer(FIRST_REMIND)}`,
+    `end`,
+  ];
+}
+
+export interface RoutineItem { key: string; task: string; day: string; time: string }
+export interface Routine { when: string; time: string; weekly: boolean; busy: string[]; remind: string; items: RoutineItem[]; starter: boolean }
+
+/** The first answers as a routine. Not sure and Skip (or no answer) take the defaults: Sunday evening planning, no busy
+ *  days, one nudge in the morning. */
+export function buildRoutine(a: Record<string, unknown>, clk: Clock): Routine {
+  const said = realOf(list(a.busy)).map((x) => x.toLowerCase());
+  const busy = weekDays(clk).filter((d) => said.some((x) => weekday(d).toLowerCase().startsWith(x.slice(0, 3)) && x !== "none"));
+  const picked = realOf([String(a.plan ?? "")])[0] ?? "";
+  const when = FIRST_WHEN.find((w) => w.toLowerCase() === picked.toLowerCase()) ?? FIRST_WHEN[0];
+  const r = realOf([String(a.remind ?? "")])[0] ?? "";
+  const remind = FIRST_REMIND.find((w) => w.toLowerCase() === r.toLowerCase());
+  const weekly = when === "Sunday night" || when === "Monday morning";
+  const time = when === "Sunday night" ? "19:00" : when === "Each night" ? "20:00" : "08:00";
+  const items: RoutineItem[] = [];
+  const passed = (day: string) => day === clk.today && minutesOf(time) <= nowMinutes(clk);
+  if (weekly) {
+    // The next one: today when the time is still ahead, else a week on.
+    const day = dayOf(when === "Sunday night" ? "sunday" : "monday", clk)!;
+    items.push({ key: "routine-plan-week", task: "Plan your week", day: passed(day) ? shift(day, 7) : day, time });
+  } else {
+    for (const day of weekDays(clk)) if (!passed(day)) items.push({ key: `routine-plan-${day}`, task: "Plan your day", day, time });
+  }
+  return { when, time, weekly, busy, remind: remind ?? "A morning nudge", items,
+           starter: !items.some((i) => i.day === clk.today) };
+}
+
+/** The busy days the first routine saved, as dates in the week ahead. */
+export function routineBusy(store: TableStore, clk: Clock): string[] {
+  const saved = list(store.tables[ROUTINE]?.rows.week?.Busy).flatMap((x) => x.split(",")).map((x) => x.trim().toLowerCase()).filter(Boolean);
+  return weekDays(clk).filter((d) => saved.some((x) => weekday(d).toLowerCase().startsWith(x.slice(0, 3))));
+}
+
+/**
+ * The first Send: the planning slot placed on the day and time picked (a daily one on every day still ahead), a first
+ * must-do prompt on today when nothing else is, the busy days and reminder style kept for every plan after. Nothing
+ * but the slot goes on a busy day, and a later plan keeps them light.
+ */
+export function applyFirst(store: TableStore, answers: Record<string, unknown>, clk: Clock): { store: TableStore; routine: Routine } {
+  const routine = buildRoutine(answers, clk);
+  let out = store;
+  const starter = out.tables[TASKS]?.rows.t1;
+  if (starter && /tell penny what'?s on your mind/i.test(String(starter.Task)) && starter.Done !== true) out = putTask(out, "t1", { Done: true, Status: "Done" }, clk);
+  for (const i of routine.items) out = putTask(out, i.key, { Task: i.task, Due: i.day, Time: i.time, Done: false, Status: "Open", Order: 1 }, clk);
+  if (routine.starter) out = putTask(out, "routine-today", { Task: "Pick your one must-do for today", Due: clk.today, Done: false, Status: "Open", Order: 1 }, clk);
+  if (!out.tables[ROUTINE]) {
+    const t = write(out, { op: "table", name: ROUTINE, cols: [{ name: "Setting", type: "text" }, { name: "Busy", type: "text" }, { name: "When", type: "text" },
+                                                                { name: "Time", type: "text" }, { name: "Remind", type: "text" }, { name: "Set", type: "text" }] });
+    if (!t.error) out = t.store;
+  }
+  const names = routine.busy.map((d) => weekday(d));
+  let w = write(out, { op: "put", table: ROUTINE, key: "week", values: { Setting: "Weekly routine", Busy: names.join(", ") || "None", When: routine.when, Time: routine.time,
+                                                                          Remind: routine.remind, Set: clk.today } }, clk);
+  if (!w.error) out = w.store;
+  w = write(out, { op: "put", table: PREFS, key: "last", values: { Busy: names.join(", ") || "None", Pace: "3 to 5", Carry: CARRY_OPTS[0], Remind: routine.remind === "None" ? REMIND_OPTS[2] : routine.remind, Planned: clk.today } }, clk);
+  if (!w.error) out = w.store;
+  return { store: syncReminders(renumber(out, clk), clk), routine };
+}
+
+/** What Penny says on top of the routine: the slot, the light days, the reminders. No question; the card under it is the tap. */
+export function firstLine(r: Routine, clk: Clock): string {
+  const slot = r.items[0];
+  const plan = r.weekly ? `Planning is ${slot ? `${weekday(slot.day)} at ${clockText(r.time)}` : `${r.when.toLowerCase()}`}` : `Planning is every ${r.when === "Each night" ? "night" : "morning"} at ${clockText(r.time)}`;
+  const busy = r.busy.length ? ` ${joinWords(r.busy.map((d) => weekday(d).slice(0, 3)))} stay${r.busy.length === 1 ? "s" : ""} light.` : "";
+  const how: Record<string, string> = { "At the time": "at the time", "10 minutes before": "10 minutes before", "The night before": "the night before", "A morning nudge": "a nudge that morning" };
+  const remind = r.remind === "None" ? " No reminders." : ` Reminders go ${how[r.remind]}.`;
+  return `Your routine is set. ${plan}.${busy}${remind}`;
+}
+
+/** The tap under the routine: start this week with the first must-do. */
+export const FIRST_START = `card@first-start "Start this week" "Add your first must-do. It lands on Today and your week." cta="Add a to-do"`;
 
 /** Plan my week: how it works and what's on the week first, the brain dump, the questions last, one Send. */
 export function planBody(store: TableStore, clk: Clock): string {
@@ -681,6 +789,7 @@ export function screenLines(store: TableStore, clk: Clock, was: string | undefin
 export type PlanAsk =
   | { kind: "plan"; row: Row }
   | { kind: "planned"; row: Row; answers: Record<string, unknown> }
+  | { kind: "first"; row: Row; answers: Record<string, unknown> }
   | { kind: "next"; row: Row }
   | { kind: "add"; row: Row }
   | { kind: "added"; row: Row; words: string }
@@ -718,6 +827,8 @@ export function planAsks(rows: Row[]): { asks: PlanAsk[]; rest: Row[] } {
       const v = e.value;
       const plan = v.plan && typeof v.plan === "object" ? (v.plan as Record<string, unknown>) : null;
       if (e.preset === "plan" && e.id === "weekplan" && plan) a = { kind: "planned", row: r, answers: plan };
+      else if (e.preset === "plan" && e.id === FIRST_ID && plan) a = { kind: "first", row: r, answers: plan };
+      else if (e.preset === "flow" && e.id === "firstweek" && v.flow && typeof v.flow === "object") a = { kind: "first", row: r, answers: v.flow as Record<string, unknown> };
       else if (e.preset === "plan" && e.id === "review" && plan) a = { kind: "reviewed", row: r, answers: plan };
       else if (e.preset === "plan" && e.id === "move" && plan) a = { kind: "moved", row: r, answers: plan };
       else if (e.preset === "timeline" && e.id === "week" && Array.isArray(v.order)) a = { kind: "order", row: r, order: v.order.map(String) };

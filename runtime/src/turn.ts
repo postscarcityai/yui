@@ -36,7 +36,7 @@ import { applyBar, applyLearn, applyOpen, applyPracticed, applySave, applyScale,
          keepDraft, learnBody, logPractice, applyPracticeFirst, firstLine as musicFirstLine, practiceRedraw, musicAsks, musicPages, pasteBody, playBpm, lesson, playsMusic, practiceBody, readTake, saveBody,
          screenLines as musicScreenLines, streak, type MusicAsk, type Page as MusicPage } from "./music.ts";
 import { ADD_BODY as TODO_BODY, TASKS, addTasks, applyMove, applyOrder, applyPlan as applyWeekPlan, applyReview, clockText, dayWord, drawnShape as plannerShape,
-         ensureTools as ensurePlanner, moveBody, nextText, nextTask, planAsks, planBody as weekPlanBody, plansWeeks, remindLead, reminderMeta, reviewBody,
+         ensureTools as ensurePlanner, applyFirst as applyWeekFirst, firstLine as weekFirstLine, FIRST_START, moveBody, nextText, nextTask, planAsks, planBody as weekPlanBody, plansWeeks, remindLead, reminderMeta, reviewBody,
          screenLines as plannerScreenLines, syncReminders, tickTask, type Page as PlannerPage, type PlanAsk } from "./planner.ts";
 import { card as handoffCard, cards as handoffCards, chatIsNew, chatOf, handedIn, handlesIn, oneThread, threadOf, withCard } from "./handoff.ts";
 import { starterHandoff } from "./starters.ts";
@@ -943,6 +943,7 @@ async function plannerTools(store: Store, agent: NativeAgent, asks: PlanAsk[], n
     const before = JSON.stringify(reminderMeta(tables));
     let text = "";
     let only: PlannerPage[] = ["today", "week"];
+    let lead: string[] = [];
     if (a.kind === "planned") {
       const r = applyWeekPlan(tables, a.answers, clk);
       tables = r.store;
@@ -957,6 +958,12 @@ async function plannerTools(store: Store, agent: NativeAgent, asks: PlanAsk[], n
         + `${timed && r.prefs.remind != null ? ` ${timed === 1 ? "The timed one gets" : `The ${timed} timed ones get`} a reminder.` : ""}`;
       const n = nextTask(tables, clk);
       if (n) text += ` First up: ${n.task.toLowerCase()}.`;
+    } else if (a.kind === "first") {
+      // The first open's Send (YUI-223): the routine saved, the pages follow, and a card to start the week.
+      const r = applyWeekFirst(tables, a.answers, clk);
+      tables = r.store;
+      text = weekFirstLine(r.routine, clk);
+      lead = [FIRST_START];
     } else if (a.kind === "next") {
       text = nextText(tables, clk);
       only = ["today"];
@@ -1009,7 +1016,8 @@ async function plannerTools(store: Store, agent: NativeAgent, asks: PlanAsk[], n
     const sl = plannerScreenLines(tables, clk, plannerShape(agent.profile), only, a.kind === "moved" || a.kind === "order");
     const after = reminderMeta(tables);
     const native: Record<string, unknown> = { plannertool: a.kind, ...(JSON.stringify(after) !== before ? { reminders: after } : {}) };
-    await say(text ? `${text}\n\`\`\`yui\n${sl.lines.join("\n")}\n\`\`\`` : `\`\`\`yui\n${sl.lines.join("\n")}\n\`\`\``, { ...turn, native });
+    const all = [...lead, ...sl.lines].join("\n");
+    await say(text ? `${text}\n\`\`\`yui\n${all}\n\`\`\`` : `\`\`\`yui\n${all}\n\`\`\``, { ...turn, native });
     agent.profile = { ...agent.profile, plannerScreens: sl.shape };
     await store.updateAgent(agent.id, agent.profile);
     log(`${p.name}: ${a.kind}, ${sl.lines.some((l) => /^>\d clear$/.test(l)) ? "a page drawn again" : "pages patched"}`);

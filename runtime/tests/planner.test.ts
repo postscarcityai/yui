@@ -9,7 +9,7 @@ import { LocalStore } from "../src/store.ts";
 import { clock, fromSeeds } from "../src/tables.ts";
 import { homeLines } from "../src/home.ts";
 import { crew } from "../src/profiles.ts";
-import { PACE_OPTS, REMIND_OPTS, planAsks, readDump, readTask, todayScreen, weekScreen } from "../src/planner.ts";
+import { PACE_OPTS, REMIND_OPTS, applyFirst, firstLines, planAsks, readDump, readTask, todayScreen, weekScreen } from "../src/planner.ts";
 import { fakeModel, freshYui, provider } from "./helpers.ts";
 // @ts-ignore: the parser the app and the site share, as the MCP server ships it
 import { parse } from "../../supabase/functions/yui-mcp/yl.mjs";
@@ -23,6 +23,7 @@ const noModel = () => fakeModel(() => {
 const agentRows = (store: any, id: string) => store.data.rows.filter((r: any) => r.agent_id === id && r.sender === "agent");
 const lastReply = (store: any, id: string) => agentRows(store, id).at(-1);
 const fence = (body: string) => body.match(/```yui\n([\s\S]*?)\n```/)![1];
+const turnsUsed = (store: any) => Object.values(store.data.users?.u1?.turns ?? {}).reduce((a: number, b: any) => a + b, 0);
 const words = (body: string) => body.replace(/```yui[\s\S]*$/, "").trim();
 
 /** The ids a home leaves on its pages, as the app hands them to the parser. */
@@ -343,4 +344,98 @@ test("a model turn that writes a task with a time gets its reminder and patches 
   assert.deepEqual(r.meta.native.reminders, [{ key: "call-vet", text: "Call the vet, 10:30 am", at: "2026-09-29T10:20" }]);
   assert.match(r.body, /timeline@week|~wk-/, "This week follows");
   assert.equal((await store.tables(penny.id)).tables.reminders.rows["call-vet"].At, "2026-09-29T10:20");
+});
+
+// ---------- YUI-223: Penny's first routine ----------
+
+const FIRSTW = { busy: ["Wed", "Fri"], plan: "Monday morning", remind: "The night before" };
+const dueOf = (rows: any[], day: string) => rows.filter((r) => r.Due === day && r.Status !== "Done");
+
+test("first.yui carries the intake: one plan, three questions, Not sure and Skip on each; matches firstLines", async () => {
+  const { readFileSync } = await import("node:fs");
+  const first = readFileSync(new URL("../profiles/penny/first.yui", import.meta.url), "utf8");
+  assert.equal(fence(first), firstLines().join("\n"), "first.yui and firstLines drifted");
+  const qs = parse(fence(first), {}).filter((o: any) => o.op === "add" && o.in === "first");
+  assert.deepEqual(qs.map((o: any) => o.id), ["busy", "plan", "remind"], "the saved first-week flow's ids");
+  for (const o of qs) assert.ok(o.props.options.includes("Not sure") && o.props.options.includes("Skip"), `${o.id} has Not sure and Skip`);
+});
+
+test("the planning slot lands on the day and time picked", () => {
+  const cases: [string, string, string, string][] = [
+    ["Sunday night", "routine-plan-week", "2026-10-04", "19:00"],
+    ["Monday morning", "routine-plan-week", "2026-10-05", "08:00"], // Monday noon: this morning has gone, so next Monday
+  ];
+  for (const [plan, key, day, time] of cases) {
+    const r = applyFirst(fromSeeds(crew().penny.tables), { busy: ["None"], plan, remind: "At the time" }, clk);
+    const row = r.store.tables.tasks.rows[key];
+    assert.equal(row.Due, day, plan);
+    assert.equal(row.Time, time, plan);
+    assert.equal(row.Task, "Plan your week");
+  }
+  const night = applyFirst(fromSeeds(crew().penny.tables), { plan: "Each night" }, clk);
+  const days = Object.entries(night.store.tables.tasks.rows).filter(([k]) => k.startsWith("routine-plan-")).map(([, r]: any) => r.Due);
+  assert.deepEqual(days, weekDaysOf(clk), "a daily slot on each of the next seven days");
+});
+const weekDaysOf = (c: typeof clk) => Array.from({ length: 7 }, (_, i) => shiftDay(c.today, i));
+const shiftDay = (d: string, n: number) => new Date(Date.parse(`${d}T00:00:00Z`) + n * 86400000).toISOString().slice(0, 10);
+
+test("a busy day never gets more than one item placed on it, then or on a plan after", async () => {
+  const { store, penny } = await pennyYui();
+  tap(store, penny.id, "first", "plan", { plan: { busy: ["Tue", "Wed", "Thu"], plan: "Each morning", remind: "None" } });
+  await run(store, penny.id);
+  let rows = await taskRows(store, penny.id);
+  for (const day of ["2026-09-29", "2026-09-30", "2026-10-01"]) assert.ok(dueOf(rows, day).length <= 1, `${day} holds ${dueOf(rows, day).length}`);
+  // A brain dump with no days in it: the busy days the routine kept stay light.
+  tap(store, penny.id, "weekplan", "plan", { plan: { dump: "Groceries. Call the bank. Fix the fence. Email the landlord. Book the dentist. Wash the car. Clean the garage", pace: "As many as fit", remind: "At the time" } });
+  await run(store, penny.id);
+  rows = await taskRows(store, penny.id);
+  for (const day of ["2026-09-29", "2026-09-30", "2026-10-01"]) assert.ok(dueOf(rows, day).length <= 1, `${day} holds ${dueOf(rows, day).length} after a dump`);
+  assert.equal(rows.filter((r: any) => !r.key.startsWith("routine-") && r.Due).length, 7, "the dump still got placed");
+});
+
+test("Skip on everything, and nothing at all, still build a routine: Sunday evening, no busy days, a morning nudge", async () => {
+  for (const a of [{ busy: ["Skip"], plan: "Skip", remind: "Skip" }, { busy: ["Not sure"], plan: "Not sure", remind: "Not sure" }, {}]) {
+    const { store, penny } = await pennyYui();
+    tap(store, penny.id, "first", "plan", { plan: a });
+    const r = await run(store, penny.id);
+    const t = await store.tables(penny.id);
+    const slot = t.tables.tasks.rows["routine-plan-week"];
+    assert.equal(slot.Due, "2026-10-04");
+    assert.equal(slot.Time, "19:00");
+    assert.equal(t.tables.routine.rows.week.Busy, "None");
+    assert.equal(t.tables.week_prefs.rows.last.Remind, "A morning nudge");
+    const rem = Object.values(t.tables.reminders.rows) as any[];
+    assert.ok(rem.length >= 1 && rem.every((x) => x.At.endsWith("T08:00") || x.At > "2026-09-28"), "a reminder is set");
+    assert.equal(rem.find((x) => x.Task === "Plan your week").At, "2026-10-04T08:00", "one nudge that morning");
+    assert.match(r.body, /^Your routine is set\. Planning is Sunday at 7:00 pm\./);
+  }
+});
+
+test("the first Send answers with the routine and ends on a card to tap; no model turn, no turn used; all parses", async () => {
+  const { store, penny } = await pennyYui();
+  tap(store, penny.id, "first", "plan", { plan: FIRSTW });
+  const r = await run(store, penny.id);
+  assert.match(r.body, /^Your routine is set\. Planning is Monday at 8:00 am\. Wed and Fri stay light\. Reminders go the night before\./);
+  assert.ok(!/\?/.test(r.body.split("\n```yui")[0]), "no question on top");
+  const ops = lines(r.body);
+  assert.ok(ops.some((o: any) => o.preset === "card" && o.id === "first-start" && o.props.cta === "Add a to-do"), "a card to tap");
+  assert.equal(turnsUsed(store), 0);
+  const t = await store.tables(penny.id);
+  assert.equal(t.tables.routine.rows.week.Busy, "Wednesday, Friday");
+  assert.equal(t.tables.tasks.rows["routine-plan-week"].Due, "2026-10-05");
+  // The reminder for the plan slot goes the evening before, and the app is told.
+  assert.equal(t.tables.reminders.rows["routine-plan-week"].At, "2026-10-04T20:00");
+  assert.ok((r.meta as any).native.reminders.some((x: any) => x.key === "routine-plan-week"));
+  // The tap on the card opens the add form.
+  tap(store, penny.id, "first-start", "card", { cta: "Add a to-do" });
+  assert.match((await run(store, penny.id)).body, /form@todo-add/);
+});
+
+test("the {flow} event of the saved first-week flow builds the same routine", async () => {
+  const { store, penny } = await pennyYui();
+  const id = store.say(penny.id, "[yui] firstweek flow", "event");
+  store.data.rows.find((r: any) => r.id === id)!.meta = { id: "firstweek", preset: "flow", value: { flow: FIRSTW, path: ["busy", "plan", "remind"] } };
+  const r = await run(store, penny.id);
+  assert.match(r.body, /^Your routine is set\. Planning is Monday at 8:00 am/);
+  assert.equal((await store.tables(penny.id)).tables.routine.rows.week.When, "Monday morning");
 });
