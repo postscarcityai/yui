@@ -76,3 +76,11 @@ test("crewHello names only the crew that joined, and matches the full hello when
   assert.doesNotMatch(two, /Arnold|Gouda|Quill/);
   assert.match(crewHello(["yui"]), /just us for now/);
 });
+
+test("Start blank (YUI-138) offers the blank profile, which crew_add still refuses", async () => {
+  const { blankStarter } = await import("../src/starters.ts");
+  const b = blankStarter();
+  assert.equal(b.blank, true);
+  assert.match(b.first, /plan@setup/);
+  assert.equal(starter("blank"), null);
+});

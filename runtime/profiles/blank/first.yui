@@ -1,4 +1,10 @@
-I'm new here and I can be anything. Let's make me yours.
+I'm new here and I can be anything. Five taps and I'm yours. Not sure and Skip are always there.
 ```yui
-choose "What should I help with?" Cooking|Money|"A language"|Writing|"A hobby" +other
+plan@setup "Make me yours" submit="Make me"
+choose@name "What should I be called?" "Nova"|"Sage"|"Pip"|"Kit"|"Not sure"|"Skip" +other
+choose@voice "How should I talk?" "Warm"|"Short"|"Playful"|"Calm"|"Blunt"|"Not sure"|"Skip" +other
+choose@look "What should I look like?" "Lavender"|"Mint"|"Butter"|"Not sure"|"Skip"
+pick@screens "Which screens should I reach for?" "Buttons"|"Lists"|"Cards"|"Timers"|"Forms"|"Charts"|"Decks"|"Not sure"|"Skip"
+choose@model "Which model should I run on?" "Yui's pick"|"GLM 5.2"|"GLM-5V-Turbo"|"Not sure"|"Skip"
+end
 ```

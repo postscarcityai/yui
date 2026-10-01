@@ -7,7 +7,7 @@
 //     codes. It is not a PostgREST JWT, so it can never read messages, and it
 //     cannot manage tokens, revoke hosts or delete the account.
 //
-// Actions: list, create, update, delete, reorder, pair_code, crew_add, crew_add_all, crew_choose,
+// Actions: list, create, update, delete, reorder, pair_code, crew_add, crew_add_all, crew_choose, blank_add,
 //          token_create, token_list, token_revoke, connector_revoke (app only).
 import { withCors } from "../_shared/cors.ts";
 import {
@@ -33,7 +33,7 @@ import {
 } from "../_shared/yui.ts";
 import { starters } from "../_native/profiles.ts";
 import { HOME_META, type HomeRow, homesToWrite } from "../_native/home.ts";
-import { type CrewOffer, crewHello, crewOffer, crewRefusal, type DescribedRow, describeAgents, readdSort, starter, visualAgents, type VisualRow } from "../_native/starters.ts";
+import { type CrewOffer, blankStarter, crewHello, crewOffer, crewRefusal, type DescribedRow, describeAgents, readdSort, starter, visualAgents, type VisualRow } from "../_native/starters.ts";
 
 const PAIR_TTL_MINUTES = 10;
 
@@ -297,6 +297,29 @@ const ACTIONS: Record<string, Action> = {
       const why = crewRefusal(offer, prof.base, (listed ?? []).filter((a: { kind: string }) => a.kind === "hosted").length);
       if (why) throw new HttpError(why === "invalid_base" ? 400 : 409, why);
       const { data, error: e2 } = await db.rpc("yui_native_add_agent", { uid: userId, prof, at_sort: readdSort(listed ?? []) });
+      if (e2) throw e2;
+      const id = Array.isArray(data) ? data[0]?.agent_id : data?.agent_id;
+      if (!id) throw new Error("yui_native_add_agent returned no agent");
+      return { agent: await agentView(db, userId, id), added: true };
+    },
+  },
+
+  // Start blank (YUI-138). A new empty agent whose first screen is its setup flow. One that has not been
+  // set up yet is opened instead of making a second (added false); a tap only ever adds. Same cap as the crew.
+  blank_add: {
+    async run(userId) {
+      const db = admin();
+      const offer = await crewFor(db, userId);
+      if (!offer) throw new HttpError(409, "native_off");
+      const { data: mine, error: e0 } = await db.from("yui_native_profiles").select("agent_id, profile").eq("user_id", userId);
+      if (e0) throw e0;
+      const waiting = (mine ?? []).find((r: { profile: { blank?: boolean } }) => r.profile?.blank === true);
+      if (waiting) return { agent: await agentView(db, userId, waiting.agent_id), added: false };
+      const { data: listed, error } = await db.from("yui_agents").select("kind, sort").eq("user_id", userId);
+      if (error) throw error;
+      const why = crewRefusal(offer, offer[0].base, (listed ?? []).filter((a: { kind: string }) => a.kind === "hosted").length);
+      if (why) throw new HttpError(why === "invalid_base" ? 400 : 409, why);
+      const { data, error: e2 } = await db.rpc("yui_native_add_agent", { uid: userId, prof: blankStarter(), at_sort: readdSort(listed ?? []) });
       if (e2) throw e2;
       const id = Array.isArray(data) ? data[0]?.agent_id : data?.agent_id;
       if (!id) throw new Error("yui_native_add_agent returned no agent");

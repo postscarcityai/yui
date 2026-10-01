@@ -21,6 +21,7 @@ import { Firecrawl, LookupError, searchInvite, searchOnYui, sourceCards, type So
 import type { Store } from "./store.ts";
 import { Stopped, guard } from "./stop.ts";
 import { crew } from "./profiles.ts";
+import { applySetup, isBlank, setupAsks } from "./setup.ts";
 import { jevLine, jevRoute } from "./jev.ts";
 import { gate as oneLineGate, onelineNote, type OneLineMode } from "./oneline.ts";
 import { keyModel, providerLabel, PROVIDERS } from "./models.ts";
@@ -316,6 +317,22 @@ async function oneTurn(store: Store, agent: NativeAgent, rows: Row[], opts: Turn
       await workoutTools(store, agent, asks, rows[0].created_at, now, say, log);
       const done = asks.map((a) => a.row.id).filter((id) => !id.startsWith(SYNTHETIC));
       if (done.length) await store.markHandled(done);
+      if (!rest.length) return { handled: true };
+      return oneTurn(store, agent, rest, opts, log, result, depth);
+    }
+  }
+
+  // Start blank (YUI-138): the setup flow's answers write the agent's profile here, with no model turn, and it greets in its new voice.
+  if (isBlank(agent)) {
+    const { asks, rest } = setupAsks(rows);
+    if (asks.length) {
+      const made = applySetup(agent.profile, asks[asks.length - 1].answers);
+      await store.updateAgent(agent.id, made.profile);
+      agent.profile = made.profile;
+      await say(made.hello, { turn: asks.map((a) => a.row.id).filter((id) => !id.startsWith(SYNTHETIC)), native: { setup: true } });
+      const done = asks.map((a) => a.row.id).filter((id) => !id.startsWith(SYNTHETIC));
+      if (done.length) await store.markHandled(done);
+      log(`${made.profile.name}: set up from the flow`);
       if (!rest.length) return { handled: true };
       return oneTurn(store, agent, rest, opts, log, result, depth);
     }

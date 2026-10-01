@@ -384,6 +384,25 @@ final class AgentStore {
         return r.agent.id
     }
 
+    /// Start blank (YUI-138): a new empty agent whose first screen is its setup flow. One that is not set up
+    /// yet comes back as is, so a second tap opens it instead of making another. Returns its id, to open its thread.
+    func startBlank() async throws -> String {
+        #if DEBUG
+        if isDemo {
+            if let waiting = agents.first(where: { $0.id == Self.demoBlank.id }) { return waiting.id }
+            var a = Self.demoBlank
+            let hosted = agents.filter { $0.kind == "hosted" }.map(\.sort)
+            a.sort = (hosted.max() ?? -1) + 1
+            let at = agents.firstIndex { $0.kind != "hosted" } ?? agents.endIndex
+            agents.insert(a, at: at)
+            return a.id
+        }
+        #endif
+        let r: AgentReply = try await call(["action": "blank_add"])
+        await refresh()
+        return r.agent.id
+    }
+
     /// The first-run picker's answer (YUI-216): who joins after Yui, saved on the account so the
     /// picker never returns. `own`: they chose to bring their own agent too.
     func chooseCrew(_ bases: [String], own: Bool = false) async throws {
@@ -663,6 +682,11 @@ final class AgentStore {
                  isDefault: s.0 == "yui", sort: i - 7, presence: "online", controls: demoNativeReport,
                  tagline: demoSaid[s.0]?.tagline, about: demoSaid[s.0]?.about, can: demoSaid[s.0]?.can)
     }
+    /// Start blank, on the demo account: the empty agent as yui_native_add_agent makes it (runtime/profiles/blank).
+    static let demoBlank = YuiAgent(id: "demo-new", name: "New agent", handle: "new", color: "mint", kind: "hosted",
+                                    connectorName: "Yui", remoteRef: "new", status: .connected, lastSeenAt: .now,
+                                    isDefault: false, sort: 0, presence: "online", controls: demoNativeReport,
+                                    tagline: "Anything you want it to be")
     /// What each starter says it does, verbatim from runtime/profiles/<name>/profile.json
     /// (FirstLaunchDemoTests checks they still match).
     static let demoSaid: [String: (tagline: String, about: String, can: [String])] = [
@@ -698,6 +722,8 @@ final class AgentStore {
     /// Each starter's first message, verbatim from runtime/profiles/<name>/first.yui
     /// (FirstLaunchDemoTests checks they still match).
     static let demoFirst: [String: String] = [
+        // Start blank (YUI-138): not in the crew, so FirstLaunchDemoTests checks it on its own.
+        "new": "I'm new here and I can be anything. Five taps and I'm yours. Not sure and Skip are always there.\n```yui\nplan@setup \"Make me yours\" submit=\"Make me\"\nchoose@name \"What should I be called?\" \"Nova\"|\"Sage\"|\"Pip\"|\"Kit\"|\"Not sure\"|\"Skip\" +other\nchoose@voice \"How should I talk?\" \"Warm\"|\"Short\"|\"Playful\"|\"Calm\"|\"Blunt\"|\"Not sure\"|\"Skip\" +other\nchoose@look \"What should I look like?\" \"Lavender\"|\"Mint\"|\"Butter\"|\"Not sure\"|\"Skip\"\npick@screens \"Which screens should I reach for?\" \"Buttons\"|\"Lists\"|\"Cards\"|\"Timers\"|\"Forms\"|\"Charts\"|\"Decks\"|\"Not sure\"|\"Skip\"\nchoose@model \"Which model should I run on?\" \"Yui's pick\"|\"GLM 5.2\"|\"GLM-5V-Turbo\"|\"Not sure\"|\"Skip\"\nend\n```",
         "yui": "Hi, I'm Yui. Your crew is here: Arnold trains, Basil feeds you, Gouda makes music, Penny keeps your lists and Quill helps you study. Or ask me anything.\n```yui\nchoose \"Where do you want to start?\" \"Get fit\"|\"Eat better\"|\"Make music\"|\"Plan my week\"|\"Learn something\" +other\n```",
         "arnold": "Arnold here. Five taps and you have a week you'll actually do. Anything hurting or any health condition I should plan around? Check with your doctor before starting if so.\n```yui\nplan@first \"Your first plan\" submit=\"Build my week\"\nchoose@goal \"What are we training for?\" \"Lift heavy\"|\"Lift and cardio\"|\"Mostly cardio\"|\"Just move more\"|\"Not sure\"\nchoose@days \"How many days a week?\" 2|3|4|5|6|\"Not sure\"\nchoose@time \"How long per session?\" \"30 min\"|\"45 min\"|\"60 min\"|\"Not sure\"\npick@gear \"What do you have?\" \"Just me\"|Bands|Dumbbells|Barbell|\"A gym\"\nchoose@level \"How much have you lifted?\" \"New to lifting\"|\"Some experience\"|\"Lifted for years\"|\"Not sure\" body=\"Heavy lifters finish the last set of each lift at failure with a safe stop. New lifters stop well short.\"\nend\ncard@first-skip \"Not now\" \"Keep the starter week. Build yours any time from This week.\" cta=\"Skip for now\"\n```",
         "basil": "I'm Basil. Five taps and you have a week of meals. Not sure and Skip are always there. On medication or managing a condition? Check with your doctor before big changes.\n```yui\nplan@first \"Your first meal plan\" submit=\"Plan my week\"\nchoose@goal \"What's the goal?\" \"Eat better\"|\"Lose weight\"|\"Build muscle\"|\"Save time\"|\"Not sure\"|\"Skip\"\npick@days \"Which days should I plan?\" \"Mon\"|\"Tue\"|\"Wed\"|\"Thu\"|\"Fri\"|\"Sat\"|\"Sun\"|\"Not sure\"|\"Skip\"\nchoose@meals \"How many meals a day?\" \"2\"|\"3\"|\"3 and a snack\"|\"4 or more\"|\"Not sure\"|\"Skip\"\npick@avoid \"What should I leave out? Allergies and conditions count.\" \"Meat\"|\"Fish\"|\"Dairy\"|\"Gluten\"|\"Nuts\"|\"Eggs\"|\"Nothing\"|\"Not sure\"|\"Skip\" +other\nchoose@cook \"How long can you cook?\" \"15 minutes\"|\"30 minutes\"|\"An hour\"|\"I like a project\"|\"Not sure\"|\"Skip\"\nend\n```",

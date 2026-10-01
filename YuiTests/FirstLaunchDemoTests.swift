@@ -23,6 +23,18 @@ import XCTest
         }
     }
 
+    /// Start blank (YUI-138): the demo's empty agent opens on runtime/profiles/blank's setup flow, word for word.
+    func testStartBlankMatchesTheProfile() throws {
+        let dir = profiles.appending(path: "blank")
+        let first = try String(contentsOf: dir.appending(path: "first.yui"), encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
+        XCTAssertEqual(AgentStore.demoFirst["new"], first, "blank/first.yui changed, copy it into AgentStore.demoFirst")
+        XCTAssertTrue(first.contains("plan@setup"))
+        let meta = try JSONSerialization.jsonObject(with: Data(contentsOf: dir.appending(path: "profile.json"))) as? [String: Any]
+        XCTAssertEqual(meta?["name"] as? String, AgentStore.demoBlank.name)
+        XCTAssertEqual(meta?["color"] as? String, AgentStore.demoBlank.color)
+        XCTAssertEqual(meta?["tagline"] as? String, AgentStore.demoBlank.tagline)
+    }
+
     func testCrewOfferMarksWhoIsInTheList() {
         let without = AgentStore.demoStarters.filter { $0.handle != "basil" }
         let offer = AgentStore.crewOffer(without)

@@ -597,7 +597,7 @@ struct ChatView: View {
         // A notification tap or yui://agent/<id>/thread: straight to that thread.
         .onChange(of: push.pendingAgentID, initial: true) { openPushedThread() }
         // ...and on the message that came (YUI-199), once that thread has loaded.
-        .onChange(of: [store.loaded ? store.agent?.id : nil, store.messages.last?.id]) { landPushed(); landFirstPlan(); landShow(); landTalk(); landSnap() }
+        .onChange(of: [store.loaded ? store.agent?.id : nil, store.messages.last?.id]) { landPushed(); landFirstPlan(); landShow(); landTalk(); landSnap(); landSetup() }
         .tint(c.accent)
     }
 
@@ -613,6 +613,14 @@ struct ChatView: View {
         guard let want = talkLanding, store.loaded, store.agent?.id == want else { return }
         talkLanding = nil
         if PushToTalk.allowed, !handsFree.on { handsFreeDo(.tap) }
+    }
+
+    /// Start blank (YUI-138): the setup flow's greeting is the agent's name, look and model arriving. Ask for the list
+    /// at once, so the header and the drawer say who it is now, not on the next 30 s tick.
+    private func landSetup() {
+        guard let a = agents.selected, a.kind == "hosted", a.handle.hasPrefix("new"), a.name == "New agent",
+              let last = store.messages.last, !last.fromUser, !last.hello, !last.home else { return }
+        Task { await agents.refresh() }
     }
 
     /// Siri's Log my food: the camera, once that thread is up.

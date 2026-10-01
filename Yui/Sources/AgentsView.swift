@@ -545,9 +545,22 @@ struct CrewPicker: View {
                 .disabled(adding != nil)
                 .accessibilityIdentifier("crew-all")
             }
+            StartBlankRow(working: adding == "blank") { Task { await startBlank() } }
+                .disabled(adding != nil)
             if let error {
                 Text(error).font(theme.font(theme.type.caption, .semibold)).foregroundStyle(.red)
             }
+        }
+    }
+
+    /// Start blank (YUI-138): the empty agent, opened on its setup flow.
+    private func startBlank() async {
+        adding = "blank"
+        defer { adding = nil }
+        do {
+            open(try await store.startBlank())
+        } catch {
+            self.error = "Couldn't start a blank agent just now. Check your connection and tap again."
         }
     }
 

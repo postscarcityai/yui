@@ -83,6 +83,11 @@ export function starter(base: unknown): Profile | null {
   return typeof base === "string" ? starters().find((p) => p.base === base) ?? null : null;
 }
 
+/** Start blank (YUI-138): the empty agent that sets itself up from the flow on its first screen. Not a starter, so crew_add still refuses it. */
+export function blankStarter(): Profile {
+  return crew().blank;
+}
+
 /** An agent in the person's list: its kind and place. */
 export interface ListedAgent {
   kind: string;

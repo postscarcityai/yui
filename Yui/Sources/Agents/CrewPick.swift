@@ -43,6 +43,7 @@ struct CrewPickView: View {
                         .font(theme.font(theme.type.caption)).foregroundStyle(c.inkSoft)
                     if let yui { yuiRow(yui, c) }
                     ForEach(others) { row($0, c) }
+                    blankRow
                     ownRow(c)
                     if let error {
                         Text(error).font(theme.font(theme.type.caption, .semibold)).foregroundStyle(.red)
@@ -138,6 +139,23 @@ struct CrewPickView: View {
         .overlay(RoundedRectangle(cornerRadius: theme.radius.bubble).stroke(on ? c.accent : c.outline, lineWidth: on ? 2 : 1))
     }
 
+    /// Start blank (YUI-138): saves the pick so far, makes the empty agent and opens its setup flow.
+    private var blankRow: some View {
+        StartBlankRow(working: working) { Task { await startBlank() } }
+    }
+
+    private func startBlank() async {
+        guard !working else { return }
+        working = true
+        defer { working = false }
+        do {
+            try await store.chooseCrew(others.map(\.base).filter { picked.contains($0) })
+            finish(try await store.startBlank())
+        } catch {
+            self.error = "Couldn't start a blank agent just now. Check your connection and tap again."
+        }
+    }
+
     /// The branch into pairing: same list, same weight as a starter.
     private func ownRow(_ c: Swatch) -> some View {
         Button { Task { await bringOwn() } } label: {
@@ -189,6 +207,43 @@ struct CrewPickView: View {
         } catch {
             self.error = "Couldn't save your crew just now. Check your connection and tap again."
         }
+    }
+}
+
+/// "Start blank" (YUI-138): the dashed row under the crew, in the first-run picker and in Add agent.
+/// A new empty agent whose first screen is a setup flow (name, how it talks, look, screens, model).
+struct StartBlankRow: View {
+    var working = false
+    let action: () -> Void
+    @Environment(\.yuiTheme) private var theme
+    @Environment(\.colorScheme) private var scheme
+
+    var body: some View {
+        let c = theme.swatch(scheme)
+        Button(action: action) {
+            HStack(spacing: theme.spacing.s) {
+                Image(systemName: "sparkles")
+                    .font(.system(size: 20, weight: .bold)).foregroundStyle(c.accent)
+                    .frame(width: 44, height: 44)
+                    .background(c.accent.opacity(0.15), in: .circle)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("Start blank").font(theme.font(theme.type.body, .bold)).foregroundStyle(c.ink)
+                    Text("Make your own. Five taps and it's yours.")
+                        .font(theme.font(theme.type.caption)).foregroundStyle(c.inkSoft)
+                        .multilineTextAlignment(.leading).lineLimit(2)
+                }
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 14, weight: .bold)).foregroundStyle(c.inkSoft)
+            }
+            .padding(theme.spacing.s)
+            .overlay(RoundedRectangle(cornerRadius: theme.radius.bubble)
+                .stroke(c.outline, style: StrokeStyle(lineWidth: 1.5, dash: [5, 4])))
+            .contentShape(.rect)
+        }
+        .buttonStyle(BounceButtonStyle())
+        .disabled(working)
+        .accessibilityIdentifier("crew-blank")
     }
 }
 
