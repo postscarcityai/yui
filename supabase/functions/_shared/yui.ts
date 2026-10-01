@@ -102,7 +102,15 @@ export function appleClientId(): string {
 // Test builds by link install as Yui Dev, bundle "<app>.dev" (YUI-91). Its
 // Sign in with Apple tokens carry that bundle as their audience.
 export function appleClientIds(): string[] {
-  return [appleClientId(), `${appleClientId()}.dev`];
+  const web = appleWebClientId();
+  return [appleClientId(), `${appleClientId()}.dev`, ...(web ? [web] : [])];
+}
+
+// The Services ID the web client signs in with (YUI-241, e.g. com.yuigui.web),
+// grouped with the app's primary App ID so one Apple user is one Apple sub.
+// Unset = the web audience is off.
+export function appleWebClientId(): string | null {
+  return Deno.env.get("YUI_SIWA_WEB_CLIENT_ID") || null;
 }
 
 // Opaque bearer secrets that are not JWTs. Only their SHA-256 is stored.

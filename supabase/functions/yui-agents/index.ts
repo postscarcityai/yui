@@ -9,6 +9,7 @@
 //
 // Actions: list, create, update, delete, reorder, pair_code, crew_add, crew_add_all, crew_choose,
 //          token_create, token_list, token_revoke, connector_revoke (app only).
+import { withCors } from "../_shared/cors.ts";
 import {
   admin,
   AGENT_COLORS,
@@ -46,7 +47,7 @@ class HttpError extends Error {
   }
 }
 
-Deno.serve(async (req) => {
+Deno.serve(withCors(async (req) => {
   if (req.method !== "POST") return json({ error: "method_not_allowed" }, 405);
   let caller: Caller;
   try {
@@ -73,7 +74,7 @@ Deno.serve(async (req) => {
     if (e instanceof HttpError) return json({ error: e.code }, e.status);
     return failure(`yui-agents ${body.action}`, e);
   }
-});
+}));
 
 async function authenticate(req: Request): Promise<Caller> {
   const token = bearer(req);

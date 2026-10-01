@@ -7,6 +7,7 @@
 // carries the account's email goes too. Media in the yui-media bucket has no foreign key, so it goes
 // first, through the Storage API; anything left behind is an orphan the
 // media sweep removes (supabase/scripts/media_sweep.py).
+import { withCors } from "../_shared/cors.ts";
 import {
   admin,
   APPLE_ISSUER,
@@ -17,7 +18,7 @@ import {
   verifyAccessToken,
 } from "../_shared/yui.ts";
 
-Deno.serve(async (req) => {
+Deno.serve(withCors(async (req) => {
   if (req.method !== "POST") return json({ error: "method_not_allowed" }, 405);
   let userId: string;
   try {
@@ -75,4 +76,4 @@ Deno.serve(async (req) => {
   } catch (e) {
     return failure("yui-delete", e);
   }
-});
+}));

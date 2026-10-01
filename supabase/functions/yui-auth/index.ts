@@ -5,10 +5,12 @@
 //   {grant_type: "refresh", refresh_token}
 //   {grant_type: "sign_out", refresh_token}
 //   {grant_type: "review", code}   App Review only, see review() below
+//   {grant_type: "review", code, client: "web"}   the same demo account, for the site
 //
 // Returns {access_token, expires_in, refresh_token, user}; an Apple sign-in
 // also returns `invite` when it claimed one (YUI-56, see claimInvite below).
 // Yui users never enter Supabase Auth (yuigui keeps signups disabled).
+import { withCors } from "../_shared/cors.ts";
 import { createRemoteJWKSet, jwtVerify } from "npm:jose@5";
 import {
   ACCESS_TTL_SECONDS,
@@ -17,6 +19,7 @@ import {
   appleClientId,
   appleClientIds,
   appleClientSecret,
+  appleWebClientId,
   assertActive,
   failure,
   json,
@@ -39,9 +42,10 @@ type Body = {
   refresh_token?: string;
   code?: string;
   invite_code?: string;
+  client?: string;
 };
 
-Deno.serve(async (req) => {
+Deno.serve(withCors(async (req) => {
   if (req.method !== "POST") return json({ error: "method_not_allowed" }, 405);
   let body: Body;
   try {
@@ -58,7 +62,7 @@ Deno.serve(async (req) => {
       case "sign_out":
         return await signOut(body.refresh_token);
       case "review":
-        return await review(body.code);
+        return await review(body.code, body.client === "web" ? "web" : "app");
       case "invite":
         return await claimLater(req, body.code);
       default:
@@ -67,7 +71,7 @@ Deno.serve(async (req) => {
   } catch (e) {
     return failure("yui-auth", e);
   }
-});
+}));
 
 async function signInWithApple(body: Body): Promise<Response> {
   if (!body.identity_token || !body.nonce) return json({ error: "invalid_request" }, 400);
@@ -107,6 +111,8 @@ async function signInWithApple(body: Body): Promise<Response> {
   // Keep Apple's refresh token so account deletion can revoke it. The code
   // is redeemed as the app it came from (Yui or Yui Dev, the token's aud).
   const clientId = appleClientIds().includes(claims.aud as string) ? claims.aud as string : appleClientId();
+  // A token minted for the web Services ID makes a web session (YUI-241).
+  const client: Client = clientId === appleWebClientId() ? "web" : "app";
   if (body.authorization_code) {
     const res = await fetch(`${APPLE_ISSUER}/auth/token`, {
       method: "POST",
@@ -135,7 +141,7 @@ async function signInWithApple(body: Body): Promise<Response> {
   // Apple verified this address and it is the real one, not a relay.
   const verified = claims.email_verified === true || claims.email_verified === "true";
   const invite = await claimInvite(db, user.id, body.invite_code, verified && !relay ? email : null);
-  return json({ ...(await issueSession(user.id, user)), ...invite });
+  return json({ ...(await issueSession(user.id, user, undefined, client)), ...invite });
 }
 
 // Invites (YUI-56, migration 20260924110000_yui_invites.sql). The code from
@@ -207,7 +213,7 @@ async function claimLater(req: Request, code?: string): Promise<Response> {
 // secrets are set. The code is long and random, so no throttle. If the
 // reviewer deletes that account, the next review sign-in recreates it empty
 // and the demo agent pairs itself again.
-async function review(code?: string): Promise<Response> {
+async function review(code?: string, client: Client = "app"): Promise<Response> {
   const want = Deno.env.get("YUI_REVIEW_CODE");
   const userId = Deno.env.get("YUI_REVIEW_USER");
   if (!want || !userId || !code) return json({ error: "invalid_grant" }, 401);
@@ -223,15 +229,19 @@ async function review(code?: string): Promise<Response> {
     .single();
   if (error) throw error;
   await assertActive(db, user.id);
-  return json(await issueSession(user.id, user));
+  return json(await issueSession(user.id, user, undefined, client));
 }
 
-async function issueSession(userId: string, user: unknown, parentId?: string) {
+// Which client holds a session: the iPhone app or the website (YUI-241).
+type Client = "app" | "web";
+
+async function issueSession(userId: string, user: unknown, parentId?: string, client: Client = "app") {
   const refreshToken = randomToken();
   const { data: child, error } = await admin().from("yui_sessions").insert({
     user_id: userId,
     refresh_hash: await sha256Hex(refreshToken),
     expires_at: new Date(Date.now() + REFRESH_TTL_DAYS * 864e5).toISOString(),
+    client,
   }).select("id").single();
   if (error) throw error;
   if (parentId) {
@@ -270,7 +280,7 @@ async function refresh(token?: string): Promise<Response> {
   const db = admin();
   const { data: s } = await db
     .from("yui_sessions")
-    .select("id, user_id, expires_at, revoked_at, rotated_at")
+    .select("id, user_id, client, expires_at, revoked_at, rotated_at")
     .eq("refresh_hash", await sha256Hex(token))
     .maybeSingle();
   if (!s) return json({ error: "invalid_grant" }, 401);
@@ -287,7 +297,7 @@ async function refresh(token?: string): Promise<Response> {
       if (!taken?.length) continue;
       const { data: user } = await db.from("yui_users")
         .select("id, email, created_at").eq("id", s.user_id).single();
-      return json(await issueSession(s.user_id, user, tail));
+      return json(await issueSession(s.user_id, user, tail, s.client));
     }
   }
   if (s.revoked_at) {
@@ -307,7 +317,7 @@ async function refresh(token?: string): Promise<Response> {
 
   const { data: user } = await db.from("yui_users")
     .select("id, email, created_at").eq("id", s.user_id).single();
-  return json(await issueSession(s.user_id, user, s.id));
+  return json(await issueSession(s.user_id, user, s.id, s.client));
 }
 
 async function signOut(token?: string): Promise<Response> {

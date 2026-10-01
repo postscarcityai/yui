@@ -39,6 +39,7 @@
 // YUI_OPENROUTER_KEY (Yui's own key, with a spend ceiling on OpenRouter),
 // YUI_FIRECRAWL_KEY (Yui's own Firecrawl key for web search; free lookups a month per person in yui_limits).
 // The runtime lives in runtime/ and is copied to ../_native by runtime/scripts/build.mjs.
+import { withCors } from "../_shared/cors.ts";
 import { openRouter, runAgent, runJob, runScheduled, type TurnResult } from "../_native/turn.ts";
 import { SupabaseStore } from "../_native/supabase.ts";
 import { MODELS, PROVIDERS } from "../_native/models.ts";
@@ -284,7 +285,7 @@ async function fromApp(req: Request, b: Body): Promise<Response> {
   }
 }
 
-Deno.serve(async (req) => {
+Deno.serve(withCors(async (req) => {
   if (req.method !== "POST") return json({ error: "method_not_allowed" }, 405);
   let body: Body;
   try {
@@ -302,4 +303,4 @@ Deno.serve(async (req) => {
   } catch (e) {
     return failure(`yui-native ${body.action ?? "wake"}`, e);
   }
-});
+}));

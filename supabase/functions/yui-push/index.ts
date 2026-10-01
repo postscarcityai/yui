@@ -49,6 +49,7 @@
 // APNs: token auth (ES256, the APNs key), HTTP/2 straight to Apple. Secrets:
 // YUI_APNS_P8, YUI_APNS_KEY_ID, YUI_APPLE_TEAM_ID, YUI_APNS_TOPIC. Yui Dev
 // phones push to YUI_APNS_TOPIC + ".dev" with the same key (yui_devices.topic).
+import { withCors } from "../_shared/cors.ts";
 import { importPKCS8, SignJWT } from "npm:jose@5";
 import {
   admin,
@@ -80,7 +81,7 @@ function env(name: string): string {
   return v;
 }
 
-Deno.serve(async (req) => {
+Deno.serve(withCors(async (req) => {
   if (req.method !== "POST") return json({ error: "method_not_allowed" }, 405);
   let body: Body;
   try {
@@ -117,7 +118,7 @@ Deno.serve(async (req) => {
   } catch (e) {
     return failure(`yui-push ${body.action}`, e);
   }
-});
+}));
 
 /** The phone's app build: `build` in the body, else URLSession's "Yui/112 CFNetwork/..." (devbuilds say 112.1). */
 function appBuild(req: Request, b: Body): number | null {

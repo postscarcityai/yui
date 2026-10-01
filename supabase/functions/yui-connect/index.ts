@@ -57,6 +57,7 @@
 // Wrong codes are throttled per client address (10 per 10 minutes). Every
 // call with a connector token takes from that host's rate bucket, and a
 // suspended host or account gets 403 suspended (YUI-26).
+import { withCors } from "../_shared/cors.ts";
 import { tablesCall, TablesRefused } from "../_shared/tables.ts";
 import {
   admin,
@@ -88,7 +89,7 @@ type Body = Record<string, any>;
 // deno-lint-ignore no-explicit-any
 type DB = any;
 
-Deno.serve(async (req) => {
+Deno.serve(withCors(async (req) => {
   if (req.method !== "POST") return json({ error: "method_not_allowed" }, 405);
   let body: Body;
   try {
@@ -123,7 +124,7 @@ Deno.serve(async (req) => {
   } catch (e) {
     return failure(`yui-connect ${body.action}`, e);
   }
-});
+}));
 
 async function connectorFor(db: DB, req: Request) {
   const token = bearer(req);

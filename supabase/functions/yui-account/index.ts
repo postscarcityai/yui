@@ -20,6 +20,7 @@
 // It is cleaned strictly, unlike an agent's theme: an unknown key or a bad
 // value is a 400 `bad_look` naming the key, and nothing is stored. The server
 // sets `at` and `by: "user"`; whatever the app sent for them is ignored.
+import { withCors } from "../_shared/cors.ts";
 import { admin, assertActive, failure, json, take, verifyAccessToken } from "../_shared/yui.ts";
 
 // Named sets, same names as AgentLook.sets (app) and SETS (site/lib/yl/look.mjs).
@@ -141,7 +142,7 @@ export function cleanAppLook(v: unknown, now = new Date()): Obj {
   return out;
 }
 
-Deno.serve(async (req) => {
+Deno.serve(withCors(async (req) => {
   if (req.method !== "POST") return json({ error: "method_not_allowed" }, 405);
   let userId: string;
   try {
@@ -202,4 +203,4 @@ Deno.serve(async (req) => {
   } catch (e) {
     return failure("yui-account", e);
   }
-});
+}));
