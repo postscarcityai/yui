@@ -335,11 +335,17 @@ struct TablePreset: View {
     let c: YLComponent
     @State private var sort: (col: Int, asc: Bool)?
     @Environment(\.ylEmit) private var emit
+    @Environment(\.ylAgent) private var agent
     @Environment(\.yuiTheme) private var theme
     @Environment(\.colorScheme) private var scheme
 
     var body: some View {
         let s = theme.swatch(scheme)
+        // `table meals` with no columns draws the agent's own table of that name (TABLES.md, YUI-89).
+        let c = c.props["cols"] == nil ? c.string("name").flatMap { AgentTables.shared.bound($0, agent: agent) }.map { b in
+            YLComponent(serial: self.c.serial, ylID: self.c.ylID, preset: "table", screen: self.c.screen, props: b.props,
+                        line: self.c.line, inGroup: self.c.inGroup, saved: self.c.saved)
+        } ?? self.c : self.c
         let cols = c.strings("cols") ?? []
         let rows = (c.props["rows"]?.array ?? []).map { $0.array ?? [] }
         let units = c.strings("units") ?? []
@@ -495,6 +501,7 @@ struct ChartPreset: View {
     @State private var hot: ChartPoint?
     @State private var angle: Double?
     @Environment(\.ylComponents) private var all
+    @Environment(\.ylAgent) private var agent
     @Environment(\.ylEmit) private var emit
     @Environment(\.yuiTheme) private var theme
     @Environment(\.colorScheme) private var scheme
@@ -503,7 +510,9 @@ struct ChartPreset: View {
 
     var body: some View {
         let s = theme.swatch(scheme)
-        let d = ChartData(c, all)
+        // `chart data=meals` over an agent's own table (TABLES.md, YUI-89) when no table on screen has that name.
+        let bound = c.string("data").flatMap { all.table($0) == nil ? AgentTables.shared.bound($0, agent: agent) : nil }
+        let d = ChartData(c, bound.map { all + [$0] } ?? all)
         PresetCard {
             HStack(alignment: .firstTextBaseline) {
                 VStack(alignment: .leading, spacing: 2) {

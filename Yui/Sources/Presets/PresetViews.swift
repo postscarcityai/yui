@@ -108,6 +108,7 @@ struct PresetView: View {
         case "chords": ChordsPreset(c: component)
         case "tuner": TunerPreset(c: component)
         case "metronome": MetronomePreset(c: component)
+        case "query": QueryPreset(c: component)
         default: LaterPreset(c: component)
         }
     }

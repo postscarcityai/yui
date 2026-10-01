@@ -478,6 +478,7 @@ final class AgentStore {
     /// Removes the agent and, on the server, its whole conversation.
     func remove(_ agent: YuiAgent) async {
         agents.removeAll { $0.id == agent.id }
+        AgentTables.shared.remove(agent.id)  // its tables go with it (TABLES.md section 4)
         if isDemo {
             if agent.isDefault, !agents.isEmpty { agents[0].isDefault = true }
             return

@@ -621,6 +621,24 @@ final class ChatStore {
         if let agentID = agent?.id { shelf.store(agentID: agentID); publishWidgets() }
     }
 
+    // MARK: Agent tables (YUI-89, spec TABLES.md)
+
+    /// A reply's `table create` and `put` lines go to this agent's tables on the phone, once per reply
+    /// (a thread that loads twice writes nothing the second time). A refused write is told to the agent
+    /// once, after the reply: `{op: row, table, key?, error, line}` (section 3, event 1). History
+    /// loading writes what it has not written before but tells nobody.
+    private func fileTables(_ nodes: [YLNode], reply: String, live: Bool) {
+        guard let agentID = agent?.id, nodes.contains(where: { $0.op == .table || $0.op == .put }) else { return }
+        let refused = AgentTables.shared.store(agentID).apply(nodes, reply: reply)
+        guard live else { return }
+        for r in refused {
+            var v: [String: YLValue] = ["op": .string("row"), "table": .string(r.table), "error": .string(r.message), "line": .string(r.line)]
+            if let k = r.key { v["key"] = .string(k) }
+            let e = YLEvent(id: "tables", preset: "query", value: v, echo: nil)
+            post(body: e.line, kind: "event", meta: e.meta, answers: false)
+        }
+    }
+
     // MARK: The drawer's lists (YUI-86, spec YL.md section 5, The drawer)
 
     /// What the open agent put in its drawer with `menu` lines: review, backlog,
@@ -1326,6 +1344,7 @@ final class ChatStore {
                         file(screen.shelfOps, at: at)
                         fileMenu(screen.menuLines, at: at)
                     }
+                    fileTables(nodes, reply: "\(id)#\(i)", live: !history)
                     if !history, let agentID = agent?.id { for look in screen.looks { onLook?(agentID, look, row.createdAt) } }
                     new.append(ChatMessage(id: "\(id)#\(i)", text: "", fromUser: false, yl: screen, hello: hello, home: home, sentAt: sent))
                     // The home fills its pages quietly: it never brings one forward (YUI-168).
@@ -1744,6 +1763,7 @@ extension ChatStore {
             }
             file(screen.shelfOps, at: at)
             fileMenu(screen.menuLines, at: at)
+            fileTables(screen.tableLines, reply: "\(id)#\(i)", live: true)
             new.append(ChatMessage(id: "\(id)#\(i)", text: "", fromUser: false, yl: screen, sentAt: at))
         }
         guard !new.isEmpty else { return }

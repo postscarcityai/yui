@@ -249,10 +249,11 @@ final class Account {
     /// Yui's Sign in with Apple token. App Store Review Guideline 5.1.1(v).
     func deleteAccount() async throws {
         #if DEBUG
-        if session?.userID == "demo" { clear(); return }
+        if session?.userID == "demo" { AgentTables.shared.removeAll(); clear(); return }
         #endif
         let token = try await validAccessToken()
         let _: DeleteReply = try await post("yui-delete", [String: String](), bearer: token)
+        AgentTables.shared.removeAll()  // every agent's tables go with the account (TABLES.md section 4)
         clear()
     }
 

@@ -958,6 +958,36 @@ struct EditAgentSheet: View {
         }
     }
 
+    /// The tables this agent keeps on the phone, with their row counts (YUI-89, TABLES.md section 4).
+    /// Read only. They stay on this phone and go when the agent is removed.
+    @ViewBuilder
+    private func dataRow(_ c: Swatch) -> some View {
+        let tables = AgentTables.shared.store(agent.id).summary
+        if !tables.isEmpty {
+            VStack(alignment: .leading, spacing: theme.spacing.s) {
+                Text("Data").font(theme.font(theme.type.body, .bold)).foregroundStyle(c.ink)
+                ForEach(tables, id: \.name) { t in
+                    HStack {
+                        Label(t.name, systemImage: "tablecells").font(theme.font(theme.type.body, .medium)).foregroundStyle(c.ink)
+                        Spacer()
+                        Text("\(t.rows) row\(t.rows == 1 ? "" : "s")").font(theme.font(theme.type.caption, .semibold).monospacedDigit())
+                            .foregroundStyle(c.inkSoft)
+                    }
+                    .accessibilityElement(children: .combine)
+                    .accessibilityIdentifier("data-table-\(t.name)")
+                }
+                Text("\(agent.name) keeps these on this phone only. Removing \(agent.name) deletes them.")
+                    .font(theme.font(theme.type.caption)).foregroundStyle(c.inkSoft)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(theme.spacing.l)
+            .background(c.surface, in: .rect(cornerRadius: theme.radius.card))
+            .overlay(RoundedRectangle(cornerRadius: theme.radius.card).stroke(c.outline, lineWidth: 1.5))
+            .accessibilityIdentifier("agent-data")
+        }
+    }
+
     /// Start talking (hands-free opens with the thread) or typing.
     private func talkOrType(_ c: Swatch) -> some View {
         VStack(alignment: .leading, spacing: theme.spacing.s) {
@@ -1042,6 +1072,7 @@ struct EditAgentSheet: View {
             notifications(c)
             visualizerRow(c)
             talkOrType(c)
+            dataRow(c)
             VStack(spacing: 0) {
                 if !agent.isDefault {
                     row("Make default", "star.fill", c.ink) {

@@ -117,7 +117,7 @@ public struct YLTableCol: Sendable, Equatable, Hashable {
     public var type: String
     public var unit: String?
     public init(name: String, type: String, unit: String? = nil) { self.name = name; self.type = type; self.unit = unit }
-    var value: YLValue {
+    public var value: YLValue {
         var o: [String: YLValue] = ["name": .string(name), "type": .string(type)]
         if let unit { o["unit"] = .string(unit) }
         return .object(o)
