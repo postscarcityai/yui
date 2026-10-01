@@ -10,7 +10,7 @@ import { clock, fromSeeds } from "../src/tables.ts";
 import { homeLines } from "../src/home.ts";
 import { crew } from "../src/profiles.ts";
 import { KEY_OPTS, SPEED_OPTS, chordsScreen, guessKey, keyShift, keysScreen, lessonChords, looperScreen, musicAsks, drawnShape, practiceScreen, readChords, screenLines, tunerLines,
-         readKey, streak, transpose } from "../src/music.ts";
+         readKey, streak, transpose, DRILLS, buildFirstPlan, firstLines, split, todaysSession } from "../src/music.ts";
 import { fakeModel, freshYui, provider } from "./helpers.ts";
 // @ts-ignore: the parser the app and the site share, as the MCP server ships it
 import { parse } from "../../supabase/functions/yui-mcp/yl.mjs";
@@ -344,4 +344,116 @@ test("pieces: chords read from a chart, transposed, keys guessed and moved, bars
   s.tables.practice.rows = { a: { Day: "2026-09-27", Minutes: 10 }, b: { Day: "2026-09-26", Minutes: 5 }, c: { Day: "2026-09-24", Minutes: 5 } } as any;
   s.tables.practice.order = ["a", "b", "c"];
   assert.equal(streak(s, clock(MON, "UTC")), 2, "up to yesterday when today has none yet");
+});
+
+// ---------- YUI-222: Gouda's first plan ----------
+
+const FIRST = { instrument: "Piano", level: "Getting there", minutes: "20", want: ["Scales", "Play by ear"] };
+const sum = (xs: { minutes: number }[]) => xs.reduce((a, b) => a + b.minutes, 0);
+
+test("first.yui carries the intake: one plan, four questions, Not sure and Skip on each; matches firstLines", async () => {
+  const { readFileSync } = await import("node:fs");
+  const first = readFileSync(new URL("../profiles/gouda/first.yui", import.meta.url), "utf8");
+  assert.equal(fence(first), firstLines().join("\n"), "first.yui and firstLines drifted");
+  const ops = lines(first, {});
+  const qs = ops.filter((o: any) => o.op === "add" && o.in === "first");
+  assert.deepEqual(qs.map((o: any) => o.id), ["instrument", "level", "minutes", "want"]);
+  for (const o of qs) assert.ok(o.props.options.includes("Not sure") && o.props.options.includes("Skip"), `${o.id} has Not sure and Skip`);
+});
+
+test("level beginner never gets an advanced or intermediate drill, on any instrument or goal", () => {
+  const kinds = ["Songs", "Scales", "Chords", "Make my own", "Play by ear"];
+  for (const level of ["Brand new", "Know a few things", "Not sure", "Skip", undefined]) {
+    for (const instrument of ["Guitar", "Piano", "Drums", "Bass", "Voice", "Not yet", "Skip"]) {
+      for (const k of kinds) {
+        const plan = buildFirstPlan({ instrument, level, minutes: "An hour", want: [k] });
+        const texts = new Set(plan.days.flatMap((d) => d.steps.map((s) => s.text)));
+        for (const d of DRILLS.filter((d) => d.tier > 0)) assert.ok(!texts.has(d.text), `${level} ${instrument} ${k} got "${d.text}"`);
+      }
+    }
+  }
+  // A pretty good player does get the advanced ones.
+  const adv = buildFirstPlan({ ...FIRST, level: "Pretty good", want: ["Songs", "Chords"] });
+  assert.ok(adv.days.some((d) => d.steps.some((s) => DRILLS.some((x) => x.tier === 2 && x.text === s.text))));
+});
+
+test("10 minutes never builds a longer session; every session adds up to the minutes picked", () => {
+  for (const [pick, want] of [["10", 10], ["20", 20], ["30", 30], ["An hour", 60], ["Skip", 15], ["Not sure", 15]] as const) {
+    const plan = buildFirstPlan({ ...FIRST, minutes: pick });
+    assert.equal(plan.minutes, want);
+    assert.equal(plan.days.length, 7);
+    for (const d of plan.days) {
+      assert.equal(sum(d.steps), want, `${pick} on ${d.day}`);
+      assert.equal(d.minutes, want);
+      assert.ok(d.steps.every((s) => s.minutes >= 1));
+    }
+  }
+  for (let m = 1; m <= 90; m++) assert.equal(split(m).reduce((a, b) => a + b, 0), m, `split(${m})`);
+});
+
+test("Skip and Not sure on everything still build a plan: your instrument, beginner, 15 minutes", () => {
+  for (const a of [{}, { instrument: "Skip", level: "Skip", minutes: "Skip", want: ["Skip"] }, { instrument: "Not sure", level: "Not sure", minutes: "Not sure", want: ["Not sure"] }]) {
+    const p = buildFirstPlan(a);
+    assert.equal(p.instrument, "");
+    assert.equal(p.level, "beginner");
+    assert.equal(p.minutes, 15);
+    assert.equal(p.days.length, 7);
+    assert.ok(p.days.every((d) => sum(d.steps) === 15 && d.steps.length >= 2));
+    assert.deepEqual([...new Set(p.days.slice(0, 6).map((d) => d.focus))].sort(), ["A song", "Chords", "Ear training", "Scales"]);
+  }
+});
+
+test("the first Send saves the week and answers; no model turn, no turn used", async () => {
+  const { store, gouda } = await goudaYui();
+  tap(store, gouda.id, "first", "plan", { plan: FIRST });
+  const r = await run(store, gouda.id);
+  const t = await store.tables(gouda.id);
+  assert.equal(Object.keys(t.tables.practice_plan.rows).length, 7);
+  assert.equal(t.tables.practice_plan.rows.mon.Focus, "Scales");
+  assert.equal(t.tables.practice_plan.rows.mon.Minutes, 20);
+  assert.equal(t.tables.first_practice.rows.instrument.Answer, "Piano");
+  assert.equal(t.tables.first_practice.rows.want.Answer, "Scales, Play by ear");
+  assert.match(r.body, /^Your practice plan is set: 20 minutes a day on piano, intermediate level\./);
+  assert.ok(!/\?/.test(r.body.split("\n```yui")[0]), "no question on top");
+  assert.equal(turnsUsed(store), 0);
+});
+
+test("the plan reply redraws Practice with today's session and ends on a timer to tap; all parses", async () => {
+  const { store, gouda } = await goudaYui();
+  tap(store, gouda.id, "first", "plan", { plan: FIRST });
+  const r = await run(store, gouda.id);
+  const l = fence(r.body).split("\n");
+  const at = l.lastIndexOf(">5");
+  assert.ok(at > 0 && l[at - 1] === ">5 clear", "Practice is drawn again");
+  const page = l.slice(at + 1, l.indexOf("save practice", at));
+  assert.match(page.find((x) => x.startsWith("card@next-up"))!, /Today: Scales/);
+  assert.match(page.at(-1)!, /^timer@session 20m "Today's practice"/, "the page ends on the timer");
+  assert.equal(l.at(-1), "save practice");
+  const ops = lines(r.body);
+  assert.ok(ops.some((o: any) => o.preset === "timer"));
+  // The next open: today's practice is there with no reply at all.
+  const t = await store.tables(gouda.id);
+  const today = todaysSession(t, clock(MON, "America/New_York"))!;
+  assert.equal(today.focus, "Scales");
+  assert.equal(sum(today.steps), 20);
+  assert.match(practiceScreen(t, clock(MON, "America/New_York")).join("\n"), /Today: Scales/);
+});
+
+test("logging practice after the plan patches Practice and never re-adds the timer", async () => {
+  const { store, gouda } = await goudaYui();
+  tap(store, gouda.id, "first", "plan", { plan: FIRST });
+  await run(store, gouda.id);
+  tap(store, gouda.id, "practiced", "plan", { plan: { minutes: "20 min", what: ["Scales"], feel: "Nailed it" } });
+  const r = await run(store, gouda.id);
+  assert.ok(!/timer/.test(fence(r.body)), "patches carry no timer");
+  lines(r.body);
+});
+
+test("the {flow} event of the saved first-practice flow builds the same plan", async () => {
+  const { store, gouda } = await goudaYui();
+  const id = store.say(gouda.id, "[yui] firstpractice flow", "event");
+  store.data.rows.find((r: any) => r.id === id)!.meta = { id: "firstpractice", preset: "flow", value: { flow: FIRST, path: ["instrument", "level", "minutes", "want"] } };
+  const r = await run(store, gouda.id);
+  assert.match(r.body, /^Your practice plan is set: 20 minutes a day on piano/);
+  assert.equal((await store.tables(gouda.id)).tables.practice_plan.rows.sun.Focus, "Play for fun");
 });

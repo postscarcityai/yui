@@ -113,5 +113,5 @@ test("the checks turn down a long tagline, a long about and the wrong number of 
 });
 
 test("Gouda's first beat sits on the backbone: kick on 1 and 3, snare on 2 and 4", () => {
-  assert.match(crew().gouda.first, /loop 92 "Lazy Sunday" p=x\.\.\.x\.\.\.\|\.\.x\.\.\.x\.\|/);
+  assert.match(crew().gouda.home!, /loop@looper 92 "Lazy Sunday" p=x\.\.\.x\.\.\.\|\.\.x\.\.\.x\.\|/);
 });

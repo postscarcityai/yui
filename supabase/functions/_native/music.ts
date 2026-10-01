@@ -40,6 +40,9 @@ export const PRACTICE = "practice";
 export const SESSIONS = "sessions";
 export const STUDIO = "studio";
 export const TOOL_TABLES = [PRACTICE, SESSIONS, STUDIO];
+export const PRACTICE_PLAN = "practice_plan";
+export const FIRST_PRACTICE = "first_practice";
+export const PRACTICE_FIRST_ID = "first";
 
 /** The plan's questions: the options each shows. */
 export const OWN = "My own chords";
@@ -367,9 +370,161 @@ export function nextUp(store: TableStore, clk: Clock): { title: string; body: st
   const today = practice(store).filter((p) => p.day === clk.today).reduce((a, p) => a + p.minutes, 0);
   if (l?.bar) return { title: `Next: bar ${l.bar} of ${l.song}`, body: `Loop it at ${playBpm(l)} until it feels easy, then play the whole song.` };
   if (l && l.speed < 100) return { title: `Next: ${l.song} at ${playBpm(l)}`, body: `Play it through twice. Nail it and I'll speed it up to ${Math.min(l.bpm, Math.round((l.bpm * (l.speed + 10)) / 100))}.` };
+  const day = todaysSession(store, clk);
+  if (day && !l) return { title: `Today: ${day.focus}`, body: sessionBody(day) };
   if (l) return { title: `Next: ${l.song} at full speed`, body: `Play it through at ${l.bpm} without stopping, then learn another.` };
   if (today) return { title: "Next: learn a song", body: `${today} minutes today already. Pick a song on Chords and play along with the click.` };
   return { title: "Next: ten minutes", body: "Pick a song on Chords and play along with the click. It all counts toward your streak." };
+}
+
+// ---------- the first plan (YUI-222, PROP-4) ----------
+
+export const NOT_SURE = "Not sure";
+export const SKIP = "Skip";
+const FIRST_INSTRUMENTS = ["Guitar", "Piano", "Drums", "Bass", "Voice", "Not yet"];
+export const FIRST_LEVELS = ["Brand new", "Know a few things", "Getting there", "Pretty good"];
+const FIRST_MINUTES = ["10", "20", "30", "An hour"];
+const FIRST_WANTS = ["Songs", "Scales", "Chords", "Make my own", "Play by ear"];
+const softer = (xs: string[]) => opts([...xs, NOT_SURE, SKIP]);
+
+/** The intake, as first.yui and its test send it: four questions, Not sure and Skip on each, one Send. */
+export function firstLines(): string[] {
+  return [
+    `plan@${PRACTICE_FIRST_ID} "Your first practice plan" submit="Build my practice"`,
+    `choose@instrument "What do you play?" ${softer(FIRST_INSTRUMENTS)}`,
+    `choose@level "How would you rate yourself?" ${softer(FIRST_LEVELS)}`,
+    `choose@minutes "Minutes a day?" ${softer(FIRST_MINUTES)}`,
+    `pick@want "What do you want to play?" ${softer(FIRST_WANTS)}`,
+    `end`,
+  ];
+}
+
+const realOf = (xs: string[]) => xs.map((x) => x.trim()).filter((x) => x && !/^(?:not sure|skip)$/i.test(x));
+
+export type Tier = 0 | 1 | 2;
+export const TIER_NAME = ["beginner", "intermediate", "advanced"] as const;
+export type Kind = "chords" | "songs" | "scales" | "write" | "ear";
+export interface Drill { kind: Kind; tier: Tier; text: string }
+
+/** Every drill, by what it works on and the level that does it. A player never gets one above their own level. */
+export const DRILLS: Drill[] = [
+  { kind: "chords", tier: 0, text: "Switch between two chords, one a beat, with the click at 60" },
+  { kind: "chords", tier: 1, text: "Play four chords in a loop with clean changes, click at 70" },
+  { kind: "chords", tier: 2, text: "Add 7th and slash chords to your loop, click at 90" },
+  { kind: "songs", tier: 0, text: "Learn the first verse of an easy song on the Chords page, half speed" },
+  { kind: "songs", tier: 1, text: "Play a whole easy song through at 75%, then at full speed" },
+  { kind: "songs", tier: 2, text: "Learn a song with a bridge and loop the hard bar until it is easy" },
+  { kind: "scales", tier: 0, text: "One major scale, slow, up and down, click at 60" },
+  { kind: "scales", tier: 1, text: "A pentatonic scale in one position, click at 80" },
+  { kind: "scales", tier: 2, text: "A scale in every position, click at 100, then in thirds" },
+  { kind: "write", tier: 0, text: "Pick three notes and make a short phrase you like" },
+  { kind: "write", tier: 1, text: "Write four bars over a chord loop and repeat them until they stick" },
+  { kind: "write", tier: 2, text: "Write a verse and a chorus, then record a take" },
+  { kind: "ear", tier: 0, text: "Hum the top note of a song you know, then find it" },
+  { kind: "ear", tier: 1, text: "Play back a four-note phrase by ear" },
+  { kind: "ear", tier: 2, text: "Work out a song's chords by ear, then check them" },
+];
+
+const WARM: Record<string, string> = {
+  guitar: "Fret each string slowly, one finger a fret, up and down",
+  piano: "C major scale, both hands, slow, up and down",
+  drums: "Single strokes on a pad or your knees, slow to fast to slow",
+  bass: "Open strings, then walk up a fret at a time on the click",
+  voice: "Hum, lip trills, then slide up and down on an oo",
+  "not yet": "Open Keys and play the white keys up and back, one a beat",
+  any: "Shake out your hands, then play slow, even notes with the click",
+};
+const KIND_FOR: Record<string, Kind> = { songs: "songs", scales: "scales", chords: "chords", "make my own": "write", "play by ear": "ear" };
+const KIND_LABEL: Record<Kind, string> = { chords: "Chords", songs: "A song", scales: "Scales", write: "Your own music", ear: "Ear training" };
+const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+
+export interface Step { minutes: number; text: string }
+export interface PlanDay { day: string; focus: string; minutes: number; steps: Step[] }
+export interface FirstPlan { instrument: string; level: string; tier: Tier; minutes: number; wants: Kind[]; days: PlanDay[] }
+
+/** A session of `total` minutes cut into steps that add up to exactly that: never longer, never a step of nothing. */
+export function split(total: number): number[] {
+  const parts = total <= 10 ? [0.2, 0.5, 0.3] : [0.2, 0.4, 0.25, 0.15];
+  const out = parts.map((f) => Math.max(1, Math.round(total * f)));
+  out[1] += total - out.reduce((a, b) => a + b, 0);
+  return out;
+}
+
+/** The drill for a kind at, or just under, the player's own level. */
+const drillFor = (kind: Kind, tier: Tier): Drill =>
+  DRILLS.filter((d) => d.kind === kind && d.tier <= tier).sort((a, b) => b.tier - a.tier)[0];
+
+/**
+ * The first practice plan's answers as a week: the instrument, sessions of the minutes picked, drills no harder than
+ * the level, the focus cycling through what they want to play. Not sure and Skip (or no answer) fall back to an
+ * instrument-agnostic beginner with 15 minutes a day and a bit of everything.
+ */
+export function buildFirstPlan(a: Record<string, unknown>): FirstPlan {
+  const inst = realOf([String(a.instrument ?? "")])[0] ?? "";
+  const instrument = FIRST_INSTRUMENTS.find((x) => x.toLowerCase() === inst.toLowerCase()) ?? "";
+  const lv = FIRST_LEVELS.findIndex((x) => x.toLowerCase() === (realOf([String(a.level ?? "")])[0] ?? "").toLowerCase());
+  const tier = (lv < 2 ? 0 : lv - 1) as Tier;
+  const m = realOf([String(a.minutes ?? "")])[0];
+  const minutes = m ? readMinutes(m) || 15 : 15;
+  const wants = [...new Set(realOf(list(a.want)).map((w) => KIND_FOR[w.toLowerCase()]).filter(Boolean))] as Kind[];
+  const cycle: Kind[] = wants.length ? wants : ["chords", "songs", "scales", "ear"];
+  const warm = WARM[instrument.toLowerCase()] ?? WARM.any;
+  const cuts = split(minutes);
+  const days: PlanDay[] = DAYS.map((day, i) => {
+    if (i === 6) {
+      const fun = [{ minutes: cuts[0], text: warm }, { minutes: minutes - cuts[0], text: "Play what you love, no rules, and no click unless you want it" }];
+      return { day, focus: "Play for fun", minutes, steps: fun };
+    }
+    const main = cycle[i % cycle.length];
+    const second = cycle[(i + 1) % cycle.length];
+    const steps: Step[] = [{ minutes: cuts[0], text: warm }, { minutes: cuts[1], text: drillFor(main, tier).text }];
+    if (cuts.length === 4) steps.push({ minutes: cuts[2], text: drillFor(second === main ? (["chords", "songs", "scales", "ear", "write"] as Kind[]).find((k) => k !== main)! : second, tier).text });
+    steps.push({ minutes: cuts[cuts.length - 1], text: "Play something you like, then note what felt hard" });
+    return { day, focus: KIND_LABEL[main], minutes, steps };
+  });
+  return { instrument, level: TIER_NAME[tier], tier, minutes, wants, days };
+}
+
+const stepsText = (steps: Step[]) => steps.map((s) => `${s.minutes} min: ${s.text}`).join(" | ");
+
+/** Today's session from the saved plan, or none. */
+export function todaysSession(store: TableStore, clk: Clock): { focus: string; minutes: number; steps: Step[] } | null {
+  const [y, m, d] = clk.today.split("-").map(Number);
+  const key = DAYS[(new Date(Date.UTC(y, m - 1, d)).getUTCDay() + 6) % 7].toLowerCase();
+  const row = store.tables[PRACTICE_PLAN]?.rows[key];
+  if (!row || !row.Steps) return null;
+  const steps = String(row.Steps).split(" | ").map((x) => {
+    const mm = x.match(/^(\d+) min: (.*)$/);
+    return mm ? { minutes: Number(mm[1]), text: mm[2] } : null;
+  }).filter((x): x is Step => !!x);
+  return steps.length ? { focus: String(row.Focus ?? "Practice"), minutes: num(row.Minutes), steps } : null;
+}
+
+/** A session as a card's words. */
+export const sessionBody = (s: { minutes: number; steps: Step[] }) =>
+  `${s.minutes} minutes. ${s.steps.map((x) => `${x.minutes} min, ${x.text.replace(/^\w/, (c) => c.toLowerCase())}`).join(". ")}.`;
+
+/** The first plan's Send: the week saved in practice_plan, the answers in first_practice. */
+export function applyPracticeFirst(store: TableStore, answers: Record<string, unknown>, clk: Clock): { store: TableStore; plan: FirstPlan } {
+  const plan = buildFirstPlan(answers);
+  let out = store;
+  const ensure = (name: string, cols: { name: string; type: "text" | "number" }[]) => {
+    if (out.tables[name]) return;
+    const t = write(out, { op: "table", name, cols });
+    if (!t.error) out = t.store;
+  };
+  ensure(PRACTICE_PLAN, [{ name: "Day", type: "text" }, { name: "Focus", type: "text" }, { name: "Minutes", type: "number" }, { name: "Steps", type: "text" }]);
+  ensure(FIRST_PRACTICE, [{ name: "Question", type: "text" }, { name: "Answer", type: "text" }]);
+  for (const d of plan.days) out = put(out, PRACTICE_PLAN, d.day.toLowerCase(), { Day: d.day, Focus: d.focus, Minutes: d.minutes, Steps: stepsText(d.steps) }, clk);
+  const saved: [string, string][] = [["instrument", "Instrument"], ["level", "Level"], ["minutes", "Minutes a day"], ["want", "Wants to play"]];
+  for (const [k, label] of saved) out = put(out, FIRST_PRACTICE, k, { Question: label, Answer: list(answers[k]).join(", ") || NOT_SURE }, clk);
+  return { store: out, plan };
+}
+
+/** What Gouda says on top of the plan: what it is, today's session, where to tap. No question. */
+export function firstLine(plan: FirstPlan): string {
+  const on = plan.instrument && plan.instrument !== "Not yet" ? ` on ${plan.instrument.toLowerCase()}` : "";
+  return `Your practice plan is set: ${plan.minutes} minutes a day${on}, ${plan.level} level. Open Practice to see today. Tap Start on the timer when you're ready.`;
 }
 
 // ---------- sessions ----------
@@ -522,7 +677,7 @@ export function looperScreen(store: TableStore): string[] {
   const mine = sessions(store).length;
   return [
     `loop@looper ${s.bpm} ${q(s.name)} p=${patternOf(s)}${extra} +inline`,
-    `choose@sessions "Open a beat" ${opts(openable(store).map((x) => x.name))} body=${q(mine ? `${mine} saved. Send on the looper saves another.` : "Send on the looper saves your version.")}`,
+    `choose@sessions "Open a beat" ${opts(openable(store).map((x) => x.name))} body=${q(mine ? `${mine} saved. Stop the looper to save another.` : "Stop the looper and your changes go to Gouda.")}`,
   ];
 }
 
@@ -564,6 +719,7 @@ export function practiceScreen(store: TableStore, clk: Clock): string[] {
   const week = weekMinutes(store, clk);
   const total = week.reduce((a, b) => a + b, 0);
   const n = nextUp(store, clk);
+  const today = todaysSession(store, clk);
   const recent = practice(store).slice(-5).reverse().map((p) => `${p.day.slice(5).replace("-", "/")} ${p.minutes} min, ${p.what}`);
   return [
     `stat@streak ${q(`${s} ${s === 1 ? "day" : "days"}`)} "Streak" sub=${q(s ? "Days in a row. Keep it going." : "Practice today and this starts.")}`,
@@ -571,8 +727,13 @@ export function practiceScreen(store: TableStore, clk: Clock): string[] {
     `chart@practice-chart bar "Minutes a day" x=${WEEK.join("|")} y=${week.join("|")} unit=min`,
     `card@next-up ${q(n.title)} ${q(n.body)} cta="Log practice"`,
     `list@recent title="Lately" ${opts(recent.length ? recent : ["Nothing logged yet"])}`,
+    // The plan's session is the last thing on the page: one tap starts the clock. Drawn with the page, never patched.
+    ...(today ? [`timer@session ${today.minutes}m ${q("Today's practice")} +inline`] : []),
   ];
 }
+
+/** The Practice page drawn again from its first line (a first plan puts a timer on it). */
+export const practiceRedraw = (store: TableStore, clk: Clock): string[] => [`>${PAGE_AT.practice.at} clear`, `>${PAGE_AT.practice.at}`, ...practiceScreen(store, clk), "save practice"];
 
 export type Page = "looper" | "chords" | "keys" | "practice";
 export const PAGES: Page[] = ["looper", "chords", "keys", "practice"];
@@ -617,7 +778,7 @@ export function screenLines(store: TableStore, clk: Clock, was: string | undefin
   const now = shapeText(store);
   const first = !/^v[12];/.test(was ?? "");
   const song = (t?: string) => t?.replace(/^v\d;/, "");
-  const patch = (lines: string[]) => lines.map((l) => l.replace(/^[a-z]+@/, "~"));
+  const patch = (lines: string[]) => lines.filter((l) => !/^timer@/.test(l)).map((l) => l.replace(/^[a-z]+@/, "~"));
   const out: string[] = [];
   for (const page of PAGES) {
     const { at, save, draw } = PAGE_AT[page];
@@ -644,7 +805,8 @@ export type MusicAsk =
   | { kind: "clicked"; row: Row; id: string; seconds: number; bpm: number }
   | { kind: "take"; row: Row; value: Record<string, unknown> }
   | { kind: "saved"; row: Row; answers: Record<string, unknown> }
-  | { kind: "open"; row: Row; name: string };
+  | { kind: "open"; row: Row; name: string }
+  | { kind: "first"; row: Row; answers: Record<string, unknown> };
 
 const LEARN_WORDS = /^\s*(?:(?:please|can you|could you|let'?s|i want to|help me)\s+)?(?:learn|teach me)\s+(?:(?:a|the|my|this|new|another)\s+){0,2}song(?:'?s)?(?:\s+chords)?\s*[.!?]*\s*$/i;
 const LEARN_TITLE = /^\s*(?:(?:please|can you|let'?s|i want to|help me)\s+)?(?:learn|teach me)\s+(?:to play\s+)?["']?(.+?)["']?\s*[.!?]*\s*$/i;
@@ -680,6 +842,8 @@ export function musicAsks(rows: Row[], store?: TableStore): { asks: MusicAsk[]; 
         a = { kind: "learned", row: r, answers: { own: { ...(v.form as Record<string, unknown>), name: String((v.form as Record<string, unknown>).name ?? "") } } };
       } else if (e.preset === "plan" && e.id === "practiced" && plan) a = { kind: "practiced", row: r, answers: plan };
       else if (e.preset === "plan" && e.id === "keep" && plan) a = { kind: "saved", row: r, answers: plan };
+      else if (e.preset === "plan" && e.id === PRACTICE_FIRST_ID && plan) a = { kind: "first", row: r, answers: plan };
+      else if (e.preset === "flow" && e.id === "firstpractice" && v.flow && typeof v.flow === "object") a = { kind: "first", row: r, answers: v.flow as Record<string, unknown> };
       else if (e.preset === "choose" && e.id === "speed" && choice) a = { kind: "speed", row: r, choice };
       else if (e.preset === "choose" && e.id === "bar" && choice) a = { kind: "bar", row: r, choice };
       else if (e.preset === "choose" && e.id === "scale" && choice) a = { kind: "scale", row: r, choice };

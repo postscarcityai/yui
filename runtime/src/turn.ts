@@ -33,7 +33,7 @@ import { ADD_BODY, GOAL, GROCERIES, LOG_BODY, MEALS as MEAL_LOG, PLAN as MEAL_PL
          drawnShape, fixBody, groceryText, lastPrefs, logPlanned, mealAsks, nextPlanned, planBody, plansMeals, readItems, screenLines as mealScreenLines, tickGrocery,
          weekDeck, applyMealFirst, firstLine as mealFirstLine, type MealAsk } from "./mealplan.ts";
 import { applyBar, applyLearn, applyOpen, applyPracticed, applySave, applyScale, applySpeed, drawnShape as musicShape, ensureTools as ensureMusic,
-         keepDraft, learnBody, logPractice, musicAsks, musicPages, pasteBody, playBpm, lesson, playsMusic, practiceBody, readTake, saveBody,
+         keepDraft, learnBody, logPractice, applyPracticeFirst, firstLine as musicFirstLine, practiceRedraw, musicAsks, musicPages, pasteBody, playBpm, lesson, playsMusic, practiceBody, readTake, saveBody,
          screenLines as musicScreenLines, streak, type MusicAsk, type Page as MusicPage } from "./music.ts";
 import { ADD_BODY as TODO_BODY, TASKS, addTasks, applyMove, applyOrder, applyPlan as applyWeekPlan, applyReview, clockText, dayWord, drawnShape as plannerShape,
          ensureTools as ensurePlanner, moveBody, nextText, nextTask, planAsks, planBody as weekPlanBody, plansWeeks, remindLead, reminderMeta, reviewBody,
@@ -832,6 +832,11 @@ async function musicTools(store: Store, agent: NativeAgent, asks: MusicAsk[], no
       const l = r.lesson;
       text = `${l.song} is on your Chords page: ${l.bars.length} bars in ${l.key}, the click at ${playBpm(l)}. Tap Start, count four, play.`;
       only = ["chords", "keys", "practice"];
+    } else if (a.kind === "first") {
+      // The first open's Send (YUI-222): the week saved, Practice drawn again with today's session and a timer on it.
+      const r = applyPracticeFirst(tables, a.answers, clk);
+      tables = r.store;
+      text = musicFirstLine(r.plan);
     } else if (a.kind === "speed" || a.kind === "bar") {
       const r = a.kind === "speed" ? applySpeed(tables, a.choice, clk) : applyBar(tables, a.choice, clk);
       if (!r.lesson) {
@@ -881,6 +886,7 @@ async function musicTools(store: Store, agent: NativeAgent, asks: MusicAsk[], no
       only = ["looper"];
     }
     const sl = musicScreenLines(tables, clk, musicShape(agent.profile), only);
+    if (a.kind === "first") sl.lines.push(...practiceRedraw(tables, clk));
     await say(`${text}\n\`\`\`yui\n${sl.lines.join("\n")}\n\`\`\``, { ...turn, native: { musictool: a.kind } });
     agent.profile = { ...agent.profile, musicScreens: sl.shape };
     await store.updateAgent(agent.id, agent.profile);

@@ -1,5 +1,9 @@
-Gouda here. Let's make some noise. Here's a beat to start; tell me what you play and I'll build from there.
+Gouda here. Four taps and you have a practice plan. Not sure and Skip are always there.
 ```yui
-loop 92 "Lazy Sunday" p=x...x...|..x...x.|........|x.x.x.x.
-choose "What are we doing?" "Make a beat"|"Learn theory"|"Write a song"|"Practice plan" +other
+plan@first "Your first practice plan" submit="Build my practice"
+choose@instrument "What do you play?" "Guitar"|"Piano"|"Drums"|"Bass"|"Voice"|"Not yet"|"Not sure"|"Skip"
+choose@level "How would you rate yourself?" "Brand new"|"Know a few things"|"Getting there"|"Pretty good"|"Not sure"|"Skip"
+choose@minutes "Minutes a day?" "10"|"20"|"30"|"An hour"|"Not sure"|"Skip"
+pick@want "What do you want to play?" "Songs"|"Scales"|"Chords"|"Make my own"|"Play by ear"|"Not sure"|"Skip"
+end
 ```
