@@ -798,7 +798,7 @@ struct ChatView: View {
                     edit: { editingAgent = $0 },
                     settings: { settleDrawer(open: false); showSettings = true },
                     newChat: startNewChat, openChat: pickChat,
-                    reduceMotion: reduceMotion)
+                    reduceMotion: reduceMotion, isOpen: drawerOpen)
     }
 
     // MARK: Chats (YUI-169)

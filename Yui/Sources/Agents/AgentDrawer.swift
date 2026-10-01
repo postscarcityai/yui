@@ -135,8 +135,13 @@ struct AgentDrawer: View {
     /// A chat from the list: the drawer shuts and it is up.
     var openChat: (String) -> Void = { _ in }
     var reduceMotion = false
+    /// True while the drawer is out: opening it counts the person's $U up to its new total (YUI-210).
+    var isOpen = false
+    @Environment(Account.self) private var account
     @Environment(\.yuiTheme) private var theme
     @Environment(\.colorScheme) private var scheme
+    @State private var earn = EarnStore()
+    @State private var showU = false
     @State private var tab = DrawerTab.home
     @State private var switching = ProcessInfo.processInfo.arguments.contains("-yuiDrawerSwitcher")
     @Namespace private var tabs
@@ -203,36 +208,59 @@ struct AgentDrawer: View {
         }
     }
 
+    /// Your picture and name top left (a tap opens Settings), your $U top right as the coin and the number.
+    /// Closing is a tap on the chat sliver or a drag.
     private func header(_ c: Swatch) -> some View {
-        HStack(alignment: .firstTextBaseline) {
-            Text(store.agent?.name ?? "Yui")
-                .font(theme.font(34, theme.strong))
-                .foregroundStyle(c.ink)
-                .lineLimit(1)
-                .minimumScaleFactor(0.6)
-                .accessibilityAddTraits(.isHeader)
+        HStack {
+            Button(action: settings) {
+                HStack(spacing: 10) {
+                    Text(Self.initial(account))
+                        .font(theme.font(15, .bold)).foregroundStyle(c.onAccent)
+                        .frame(width: 34, height: 34).background(c.accent, in: Circle())
+                    Text(Self.name(account))
+                        .font(theme.font(20, theme.strong)).foregroundStyle(c.ink)
+                        .lineLimit(1).minimumScaleFactor(0.7)
+                }
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Settings, \(Self.name(account))")
+            .accessibilityAddTraits(.isHeader)
+            .accessibilityIdentifier("drawer-settings")
             Spacer(minLength: theme.spacing.m)
-            Button("Settings", systemImage: "gearshape.fill", action: settings)
-                .labelStyle(.iconOnly)
-                .font(theme.font(theme.type.body, .bold))
-                .foregroundStyle(c.inkSoft)
-                .frame(width: 36, height: 36)
-                .background(c.surface, in: Circle())
-                .overlay(Circle().stroke(c.outline, lineWidth: 1))
-                .accessibilityIdentifier("drawer-settings")
-            Button("Close", systemImage: "xmark", action: close)
-                .labelStyle(.iconOnly)
-                .font(theme.font(theme.type.body, .bold))
-                .foregroundStyle(c.inkSoft)
-                .frame(width: 36, height: 36)
-                .background(c.surface, in: Circle())
-                .overlay(Circle().stroke(c.outline, lineWidth: 1))
-                .accessibilityIdentifier("drawer-close")
+            UPill(earn: earn, reduceMotion: reduceMotion) { showU = true }
         }
         .padding(.horizontal, theme.spacing.l)
         .padding(.top, theme.spacing.m)
         .padding(.bottom, theme.spacing.m)
+        // No visible close button. The blank part of the header still closes it, for VoiceOver and the UI tests, with the escape gesture.
+        .background {
+            Color.clear.contentShape(Rectangle())
+                .onTapGesture(perform: close)
+                .accessibilityElement()
+                .accessibilityLabel("Close menu")
+                .accessibilityAddTraits(.isButton)
+                .accessibilityIdentifier("drawer-close")
+        }
+        .accessibilityAction(.escape, close)
+        .task(id: isOpen) {
+            guard isOpen || earn.shown == 0 else { return }
+            await earn.refresh(account, animate: isOpen, reduceMotion: reduceMotion)
+        }
+        .onChange(of: store.pool.count) {
+            guard isOpen else { return }
+            Task { await earn.refresh(account, animate: false, reduceMotion: reduceMotion) }
+        }
+        .sheet(isPresented: $showU) { YourUView(earn: earn) }
     }
+
+    /// The first name from the account's email, else "You": Apple's private relay names nobody.
+    static func name(_ account: Account) -> String {
+        guard let local = account.session?.email?.split(separator: "@").first.map(String.init),
+              local.allSatisfy(\.isLetter), !local.isEmpty else { return "You" }
+        return local.prefix(1).uppercased() + local.dropFirst()
+    }
+
+    static func initial(_ account: Account) -> String { String(name(account).prefix(1)) }
 }
 
 enum DrawerTab: String, CaseIterable, Identifiable {
