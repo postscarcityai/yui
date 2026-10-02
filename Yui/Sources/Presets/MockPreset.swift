@@ -263,11 +263,13 @@ struct MockDrawing: View {
                         let rects = anchors.mapValues { g[$0] }
                         let screen = rects.values.reduce(CGRect.null) { $0.union($1) }
                         if !screen.isNull, screen.width > 1, screen.height > 1 {
-                            MockMarks(scene: ShapesModel.marksOver(
-                                marks.map { (id: $0.id, props: $0.props) },
-                                cells: rects.mapValues { [$0.minX - screen.minX, $0.minY - screen.minY, $0.width, $0.height] },
-                                box: [screen.width, screen.height]),
-                                      delay: Blueprint.delay(parts.count + 1), shown: shown, still: reduceMotion)
+                            // Typed out step by step, so the type checker never has to guess through the view.
+                            let cells: [String: [Double]] = rects.mapValues { r in
+                                [Double(r.minX - screen.minX), Double(r.minY - screen.minY), Double(r.width), Double(r.height)]
+                            }
+                            let size: [Double] = [Double(screen.width), Double(screen.height)]
+                            let scene = ShapesModel.marksOver(marks.map { (id: $0.id, props: $0.props) }, cells: cells, box: size)
+                            MockMarks(scene: scene, delay: Blueprint.delay(parts.count + 1), shown: shown, still: reduceMotion)
                                 .frame(width: screen.width, height: screen.height)
                                 .offset(x: screen.minX, y: screen.minY)
                         }
