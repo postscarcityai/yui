@@ -9,6 +9,12 @@ import YuiLines
 // that come on one after another (fade, +draw, +grow, +pulse, move=). Drawn
 // here with Canvas from ShapesModel, no images and no network. Reduce Motion
 // shows the finished drawing. A tap plays it again. Sends nothing.
+//
+// Draw anything on any screen (YUI-276): Venns with labelled overlaps, contour
+// rings, free regions, hand-drawn doodles (a stroke or a ring round a spot),
+// bent arrows (bend=), and img= to mark up a picture under the drawing. The
+// same view draws in the chat, on pages 2 to 12, on the stage and in a deck or
+// plan, since every one of them draws through PresetView.
 
 /// `shapes` in the chat, and a lone `shape` as a one-part drawing.
 struct ShapesPreset: View {
@@ -50,6 +56,11 @@ struct ShapesDrawing: View {
             }
             .aspectRatio(scene.w / scene.h, contentMode: .fit)
             .frame(maxWidth: .infinity)
+            // Marks over a picture (YUI-276): it fills the canvas under the drawing, cropped to its shape.
+            .background {
+                if let src = picture { RemoteImage(src: src, fit: .fill) }
+            }
+            .clipShape(.rect(cornerRadius: picture == nil ? 0 : theme.radius.card))
             .contentShape(Rectangle())
             .onTapGesture { if !reduceMotion { started = Date(); runs += 1 } }
             .accessibilityElement(children: .ignore)
@@ -71,6 +82,9 @@ struct ShapesDrawing: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
+    /// The picture under the drawing, when it has one (`img=`).
+    private var picture: URL? { YLMediaURL.url(scene.img) }
+
     private func tone(_ name: String, _ s: Swatch) -> Color {
         switch name {
         case "mint": s.mint
@@ -89,18 +103,32 @@ struct ShapesDrawing: View {
         let fs = scene.fs
         let lw = sw * u
         let dash: [CGFloat] = [lw * 3, lw * 2.5]
+        // Over a picture every line and label gets a soft halo of the page's ground, so it reads on any photo (YUI-276).
+        var base = ctx
+        if picture != nil { base.addFilter(.shadow(color: s.background.opacity(0.9), radius: max(1.5, lw * 1.2))) }
         for f in frames where f.o > 0 {
             let it = f.item
             let color = tone(it.tone, s)
-            var c = ctx
+            var c = base
             c.opacity = f.o
             if let a = f.a, let b = f.b {
-                // A line or an arrow, traced from a toward b.
-                let len = max(hypot(b[0] - a[0], b[1] - a[1]), 1e-9)
-                let ux = (b[0] - a[0]) / len, uy = (b[1] - a[1]) / len
-                let h = [a[0] + (b[0] - a[0]) * f.d, a[1] + (b[1] - a[1]) * f.d]
+                // A line or an arrow, traced from a toward b: straight, or bent through q (YUI-276).
                 var line = Path()
-                line.move(to: P(a)); line.addLine(to: P(h))
+                line.move(to: P(a))
+                let h: [Double], dir: [Double]
+                if let q = f.q {
+                    // The first d of the curve is itself a curve: a to bent(d), its control a d of the way to q.
+                    let e = ShapesModel.bent(a, q, b, f.d)
+                    h = e.p
+                    dir = e.dir
+                    line.addQuadCurve(to: P(h), control: P([a[0] + (q[0] - a[0]) * f.d, a[1] + (q[1] - a[1]) * f.d]))
+                } else {
+                    h = [a[0] + (b[0] - a[0]) * f.d, a[1] + (b[1] - a[1]) * f.d]
+                    dir = [b[0] - a[0], b[1] - a[1]]
+                    line.addLine(to: P(h))
+                }
+                let len = max(hypot(dir[0], dir[1]), 1e-9)
+                let ux = dir[0] / len, uy = dir[1] / len
                 c.stroke(line, with: .color(color), style: StrokeStyle(lineWidth: lw, lineCap: .round, dash: it.dash ? dash : []))
                 if it.kind == "arrow" && f.d > 0.05 {
                     let k = 0.34 * (sw / 0.07), sn = sin(0.5), cs = cos(0.5)
@@ -112,25 +140,92 @@ struct ShapesDrawing: View {
                 }
                 if !it.label.isEmpty {
                     var tc = c; tc.opacity = f.o * f.d
-                    label(tc, it.label, at: [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2 - fs * 0.75], fs: fs * 0.9,
+                    // Over the middle of the line, or the top of the bow.
+                    let m = f.q.map { ShapesModel.bent(a, $0, b, 0.5).p } ?? [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2]
+                    label(tc, it.label, at: [m[0], m[1] - fs * 0.75], fs: fs * 0.9,
                           width: ShapesModel.labelWidth(it, k: scene.k), u: u, color: s.ink, weight: .bold)
                 }
                 continue
             }
             if let pts = it.pts {
-                var path = curve(pts, closed: false, u: u)
-                if !it.dash { path = path.trimmedPath(from: 0, to: f.d) }
-                c.stroke(path, with: .color(color), style: StrokeStyle(lineWidth: lw, lineCap: .round, dash: it.dash ? dash : []))
+                switch it.kind {
+                case "region":
+                    // A free outline (YUI-276): traced on, then washed when it says +fill.
+                    let shape = curve(pts, closed: true, u: u)
+                    if it.fill { c.fill(shape, with: .color(color.opacity(0.18 * f.d))) }
+                    let edge = it.dash || f.d >= 1 ? shape : shape.trimmedPath(from: 0, to: f.d)
+                    c.stroke(edge, with: .color(color), style: StrokeStyle(lineWidth: lw, lineJoin: .round, dash: it.dash ? dash : []))
+                case "doodle":
+                    // A hand-drawn stroke (YUI-276): a wobbly line, a little heavier than a ruled one.
+                    var path = curve(ShapesModel.doodle(pts, seed: it.i, w: scene.w), closed: false, u: u)
+                    if !it.dash { path = path.trimmedPath(from: 0, to: f.d) }
+                    c.stroke(path, with: .color(color),
+                             style: StrokeStyle(lineWidth: lw * 1.6, lineCap: .round, lineJoin: .round, dash: it.dash ? dash : []))
+                default:
+                    var path = curve(pts, closed: false, u: u)
+                    if !it.dash { path = path.trimmedPath(from: 0, to: f.d) }
+                    c.stroke(path, with: .color(color), style: StrokeStyle(lineWidth: lw, lineCap: .round, dash: it.dash ? dash : []))
+                }
                 if !it.label.isEmpty {
-                    let m = pts[pts.count / 2]
                     var tc = c; tc.opacity = f.o * f.d
-                    label(tc, it.label, at: [m[0], m[1] - fs * 0.85], fs: fs * 0.9,
-                          width: ShapesModel.labelWidth(it, k: scene.k), u: u, color: s.ink, weight: .bold)
+                    switch it.kind {
+                    case "region":
+                        // Inside it, at the middle of its points.
+                        let m = [pts.map { $0[0] }.reduce(0, +) / Double(pts.count), pts.map { $0[1] }.reduce(0, +) / Double(pts.count)]
+                        label(tc, it.label, at: m, fs: fs * 0.9, width: ShapesModel.labelWidth(it, k: scene.k), u: u,
+                              color: s.ink, weight: .heavy)
+                    case "doodle":
+                        // Over its highest point, like a note written above a mark.
+                        let top = pts.min { $0[1] < $1[1] } ?? pts[0]
+                        label(tc, it.label, at: [top[0], top[1] - fs * 0.85], fs: fs * 0.9,
+                              width: ShapesModel.labelWidth(it, k: scene.k), u: u, color: s.ink, weight: .bold)
+                    default:
+                        let m = pts[pts.count / 2]
+                        label(tc, it.label, at: [m[0], m[1] - fs * 0.85], fs: fs * 0.9,
+                              width: ShapesModel.labelWidth(it, k: scene.k), u: u, color: s.ink, weight: .bold)
+                    }
                 }
                 continue
             }
             guard let cen = f.c, let sz = it.size else { continue }
             let scaled = [sz[0] * f.s, sz[1] * f.s]
+            if it.kind == "venn" {
+                // Circles washed in their tones, so where they overlap reads darker; a label in each part (YUI-276).
+                let v = ShapesModel.venn(it, center: cen, s: f.s)
+                for circle in v.circles {
+                    let shape = outline("circle", [circle.r * 2, circle.r * 2], seed: it.i, center: circle.c, u: u)
+                    let col = tone(circle.tone, s)
+                    c.fill(shape, with: .color(col.opacity(0.16 * f.d)))
+                    let edge = it.dash || f.d >= 1 ? shape : shape.trimmedPath(from: 0, to: f.d)
+                    c.stroke(edge, with: .color(col), style: StrokeStyle(lineWidth: lw, lineJoin: .round, dash: it.dash ? dash : []))
+                }
+                if fs * f.s > 0.01 {
+                    for l in v.labels {
+                        label(c, l.text, at: l.at, fs: fs * f.s * (l.middle ? 1 : 0.85), width: l.width, u: u, color: s.ink,
+                              weight: l.middle ? .heavy : .bold)
+                    }
+                }
+                continue
+            }
+            if it.kind == "contour" {
+                // Rings like a height map (YUI-276): traced outside in, the inner ones stronger, washes stacking toward the peak.
+                let ct = ShapesModel.contour(it, center: cen, s: f.s)
+                let last = Double(max(ct.rings.count - 1, 1))
+                for (k, ring) in ct.rings.enumerated() {
+                    let shape = curve(ring, closed: true, u: u)
+                    let col = color.opacity(0.5 + 0.5 * Double(k) / last)
+                    if it.fill { c.fill(shape, with: .color(color.opacity(0.08 * f.d))) }
+                    let local = min(1, max(0, f.d * 1.6 - 0.6 * Double(k) / last))
+                    guard local > 0 else { continue }
+                    let edge = it.dash || local >= 1 ? shape : shape.trimmedPath(from: 0, to: local)
+                    c.stroke(edge, with: .color(col), style: StrokeStyle(lineWidth: lw, lineJoin: .round, dash: it.dash ? dash : []))
+                }
+                if !it.label.isEmpty, fs * f.s > 0.01 {
+                    label(c, it.label, at: ct.peak, fs: fs * f.s, width: ShapesModel.labelWidth(it, k: scene.k) * f.s, u: u,
+                          color: s.ink, weight: .heavy)
+                }
+                continue
+            }
             if it.kind != "text" {
                 let shape = outline(it.kind, scaled, seed: it.i, center: cen, u: u)
                 if it.fill { c.fill(shape, with: .color(color.opacity((it.kind == "dot" ? 1 : 0.18) * f.d))) }

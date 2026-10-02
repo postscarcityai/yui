@@ -68,6 +68,11 @@ final class ShapesSceneTests: XCTestCase {
                 XCTAssertEqual(it.pts?.count, pts?.count, "\(w) pts")
                 for (p, q) in zip(it.pts ?? [], pts ?? []) { near(p, q, "\(w) pt") }
                 end(it.from, j["from"], "\(w) from"); end(it.to, j["to"], "\(w) to")
+                // Venns, contours and bent connectors (YUI-276).
+                XCTAssertEqual(it.sets ?? [], j["sets"] as? [String] ?? [], "\(w) sets")
+                XCTAssertEqual(it.pairs ?? [], j["pairs"] as? [String] ?? [], "\(w) pairs")
+                XCTAssertEqual(it.rings, j["rings"] as? Int, "\(w) rings")
+                near(it.bend, j["bend"], "\(w) bend")
             }
             let frames = try XCTUnwrap(c["frames"] as? [String: [[String: Any]]])
             for (key, list) in frames {
@@ -78,6 +83,7 @@ final class ShapesSceneTests: XCTestCase {
                     let w = "\(name) t=\(key) #\(f.item.i)"
                     near(f.o, j["o"], "\(w) o"); near(f.s, j["s"], "\(w) s"); near(f.d, j["d"], "\(w) d")
                     near(f.c, j["c"], "\(w) c"); near(f.a, j["a"], "\(w) a"); near(f.b, j["b"], "\(w) b")
+                    near(f.q, j["q"], "\(w) q")
                 }
             }
             let labels = c["labels"] as? [String: [String]] ?? [:]
