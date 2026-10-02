@@ -8,14 +8,25 @@ import YuiLines
 // Pure values, no SwiftUI: ShapesPreset draws what frame(at:) returns.
 
 enum ShapesModel {
-    static let closed: Set<String> = ["circle", "box", "pill", "dot", "blob", "text"]
+    static let closed: Set<String> = ["circle", "box", "pill", "dot", "blob", "text", "venn", "contour"]
     static let connectors: Set<String> = ["line", "arrow"]
-    static let kinds: Set<String> = closed.union(connectors).union(["path"])
+    /// Kinds drawn through points: an open curve, a closed outline, a hand-drawn stroke (YUI-276).
+    static let traced: Set<String> = ["path", "region", "doodle"]
+    static let kinds: Set<String> = closed.union(connectors).union(traced)
     static let tones: Set<String> = ["accent", "mint", "lavender", "butter", "ink", "mute"]
 
     /// Default sizes in canvas units, width and height.
     static let defaultSize: [String: [Double]] = ["circle": [2, 2], "box": [3, 2], "pill": [3, 1.2], "dot": [0.5, 0.5],
-                                                  "blob": [2.6, 2.2], "text": [3, 0.9]]
+                                                  "blob": [2.6, 2.2], "text": [3, 0.9],
+                                                  "venn": [5.2, 3.2], "contour": [3.2, 2.4], "doodle": [2.4, 1.6]]
+    /// A Venn of three sets is rounder than one of two.
+    static let venn3: [Double] = [4.8, 4.56]
+    /// Kinds whose height keeps their proportions when size= is one number.
+    static let keeps: Set<String> = ["pill", "box", "text", "venn", "contour", "doodle"]
+    /// Kinds that trace themselves on unless told otherwise.
+    static let traces: Set<String> = ["line", "arrow", "path", "region", "doodle", "contour"]
+    /// A Venn's circles take the shape's tone, then the next ones in this order.
+    static let cycle = ["accent", "mint", "lavender", "butter"]
     // The clock, in seconds.
     static let step = 0.35
     static let durations: [Motion: Double] = [.fade: 0.35, .grow: 0.5, .draw: 0.7]
@@ -52,6 +63,13 @@ enum ShapesModel {
         var pts: [[Double]]? = nil
         var from: End? = nil
         var to: End? = nil
+        /// A Venn's sets (at most three) and its pair overlaps' labels (YUI-276).
+        var sets: [String]? = nil
+        var pairs: [String]? = nil
+        /// A contour's ring count, 2 to 8.
+        var rings: Int? = nil
+        /// A connector's bow: the share of its length its middle stands off, + to the left of the way it goes.
+        var bend: Double? = nil
     }
 
     struct Scene: Equatable {
@@ -63,6 +81,8 @@ enum ShapesModel {
         var caption: String
         var items: [Item]
         var total: Double
+        /// A picture under the drawing (`img=`), filling the canvas: marks over a screenshot or a photo (YUI-276).
+        var img: String = ""
         var pulses: Bool { items.contains { $0.pulse } }
         /// The row scale: 1 unless a crowded auto row shrank.
         var k: Double { fs / (ShapesModel.label * w) }
@@ -78,6 +98,8 @@ enum ShapesModel {
         var c: [Double]? = nil
         var a: [Double]? = nil
         var b: [Double]? = nil
+        /// A bent connector's control point: it runs a to b as a curve through q (YUI-276).
+        var q: [Double]? = nil
     }
 
     // MARK: values as the JS model reads them
@@ -122,19 +144,37 @@ enum ShapesModel {
         return [x, y]
     }
 
+    /// A list prop as the parser gives it (a list), or one written as a|b.
+    private static func list(_ v: YLValue?) -> [String] {
+        switch v {
+        case .array(let a)?: return a.compactMap { text($0) }.filter { !$0.isEmpty }
+        case nil, .null?, .bool(true)?: return []
+        default:
+            return (text(v) ?? "").split(separator: "|", omittingEmptySubsequences: false).map(String.init).filter { !$0.isEmpty }
+        }
+    }
+
+    /// A Venn's sets: at most three.
+    private static func setsOf(_ p: [String: YLValue]) -> [String] { Array(list(p["sets"]).prefix(3)) }
+
+    /// A kind's default size; a Venn's depends on how many sets it has.
+    private static func sizeOf(_ kind: String, _ p: [String: YLValue]) -> [Double] {
+        kind == "venn" && setsOf(p).count >= 3 ? venn3 : defaultSize[kind] ?? defaultSize["box"]!
+    }
+
     /// size=2 is 2 by 2 (a circle's diameter); size=3,2 is 3 wide, 2 tall.
-    private static func size(_ v: YLValue?, _ kind: String) -> [Double]? {
-        let d = defaultSize[kind] ?? defaultSize["box"]!
+    private static func size(_ v: YLValue?, _ kind: String, _ p: [String: YLValue] = [:]) -> [Double]? {
+        let d = sizeOf(kind, p)
         guard let v else { return nil }
-        if let one = num(v) { return ["pill", "box", "text"].contains(kind) ? [one, one * d[1] / d[0]] : [one, one] }
+        if let one = num(v) { return keeps.contains(kind) ? [one, one * d[1] / d[0]] : [one, one] }
         return point(v)
     }
 
     private static func motion(_ p: [String: YLValue], _ kind: String) -> Motion {
         if truthy(p["draw"]) { return .draw }
         if truthy(p["grow"]) { return .grow }
-        // Lines, arrows and paths trace themselves on unless told otherwise.
-        if kind == "line" || kind == "arrow" || kind == "path" { return .draw }
+        // Lines, arrows, paths, regions, doodles and contours trace themselves on unless told otherwise.
+        if traces.contains(kind) { return .draw }
         return .fade
     }
 
@@ -159,7 +199,7 @@ enum ShapesModel {
         let row = rowLayout(loose, W, label * W, joined, parts)
         let k = row.k
         let onlyRow = !loose.isEmpty && loose.count == parts.filter(\.closed).count
-            && !parts.contains { $0.kind == "path" || point($0.p["from"]) != nil || point($0.p["to"]) != nil }
+            && !parts.contains { traced.contains($0.kind) || point($0.p["from"]) != nil || point($0.p["to"]) != nil }
         let H = clamp(num(head["h"]) ?? (onlyRow ? row.h + 1.4 * k : 6), 2, 16)
         var items: [Item] = []
         var t = 0.0
@@ -168,11 +208,11 @@ enum ShapesModel {
             let tn = text(p["tone"]) ?? ""
             var item = Item(i: s.i, id: s.id, kind: kind, label: text(p["label"]) ?? "",
                             tone: tones.contains(tn) ? tn : kind == "text" ? "ink" : "accent",
-                            fill: truthy(p["fill"]) || kind == "dot", dash: truthy(p["dash"]),
+                            fill: truthy(p["fill"]) || kind == "dot" || kind == "venn", dash: truthy(p["dash"]),
                             motion: motion(p, kind), pulse: truthy(p["pulse"]), start: t)
             if s.closed {
                 var at = point(p["at"])
-                var sz = (size(p["size"], kind) ?? defaultSize[kind]!).map { $0 * k }
+                var sz = (size(p["size"], kind, p) ?? sizeOf(kind, p)).map { $0 * k }
                 if at == nil, let j = loose.firstIndex(where: { $0.i == s.i }) {
                     at = [row.places[j].x, H / 2]
                     sz = row.places[j].size
@@ -180,9 +220,21 @@ enum ShapesModel {
                 item.at = inside(at!, sz, W, H)
                 item.size = sz
                 if let mv = point(p["move"]) { item.move = inside(mv, sz, W, H) }
-            } else if kind == "path" {
-                let pts = (p["pts"]?.array ?? []).compactMap { point($0) }
-                if pts.count < 2 { continue }
+                if kind == "venn" {
+                    item.sets = setsOf(p)
+                    let pairs = Array(list(p["pairs"]).prefix(3))
+                    if !pairs.isEmpty { item.pairs = pairs }
+                }
+                if kind == "contour" { item.rings = Int(clamp((num(p["rings"]) ?? 4).rounded(), 2, 8)) }
+            } else if traced.contains(kind) {
+                var pts = (p["pts"]?.array ?? []).compactMap { point($0) }
+                // A doodle with no points but a place is a ring scribbled round it (YUI-276).
+                if kind == "doodle", pts.count < 2, let at = point(p["at"]) {
+                    let sz = (size(p["size"], kind) ?? defaultSize["doodle"]!).map { $0 * k }
+                    pts = ring(inside(at, sz, W, H), sz, seed: s.i)
+                }
+                // A region is a closed outline, so it needs three points.
+                if pts.count < (kind == "region" ? 3 : 2) { continue }
                 item.pts = pts
             } else {
                 // A connector: from= and to= are a shape's id or a point. With
@@ -190,6 +242,7 @@ enum ShapesModel {
                 item.from = end(p["from"], p["at"], parts, s.i, -1)
                 item.to = end(p["to"], nil, parts, s.i, 1)
                 if item.from == nil || item.to == nil { continue }
+                if let bend = num(p["bend"]), bend != 0 { item.bend = clamp(bend, -1, 1) }
             }
             item.dur = durations[item.motion]!
             items.append(item)
@@ -197,7 +250,7 @@ enum ShapesModel {
         }
         let last = items.reduce(0.0) { max($0, $1.start + $1.dur + ($1.move != nil ? move : 0)) }
         return Scene(w: W, h: H, fs: label * W * k, title: text(head["title"]) ?? "",
-                     caption: text(head["caption"]) ?? "", items: items, total: last)
+                     caption: text(head["caption"]) ?? "", items: items, total: last, img: text(head["img"]) ?? "")
     }
 
     private static func rowLayout(_ loose: [Part], _ W: Double, _ fs: Double, _ joined: Bool, _ parts: [Part])
@@ -211,7 +264,7 @@ enum ShapesModel {
             let lab = text(s.p["label"]) ?? ""
             let widest = max(0, wordW(lab))
             var sz: [Double]
-            if let given = size(s.p["size"], s.kind) { sz = given }
+            if let given = size(s.p["size"], s.kind, s.p) { sz = given }
             else {
                 switch s.kind {
                 case "box":
@@ -230,6 +283,8 @@ enum ShapesModel {
                 case "text":
                     let w = min(3.4, max(widest, count(lab) * glyph * fs))
                     sz = [max(w, 0.5), max(1, lines(lab, 3.4)) * line * fs]
+                case "venn", "contour":
+                    sz = sizeOf(s.kind, s.p)
                 default:
                     sz = defaultSize["dot"]!
                 }
@@ -315,10 +370,26 @@ enum ShapesModel {
             let B: Frame? = if case .ref(let r) = to { now[r] } else { nil }
             let a0 = A?.c ?? { if case .pt(let p) = from { p } else { [0, 0] } }()
             let b0 = B?.c ?? { if case .pt(let p) = to { p } else { [0, 0] } }()
-            out[j].a = A.map { edge($0, toward: b0) } ?? a0
-            out[j].b = B.map { edge($0, toward: a0) } ?? b0
+            if let bend = out[j].item.bend {
+                // A curve through q, its control point: its middle stands off bend times its length (YUI-276).
+                let dx = b0[0] - a0[0], dy = b0[1] - a0[1]
+                let q = [(a0[0] + b0[0]) / 2 + 2 * bend * dy, (a0[1] + b0[1]) / 2 - 2 * bend * dx]
+                out[j].q = q
+                out[j].a = A.map { edge($0, toward: q) } ?? a0
+                out[j].b = B.map { edge($0, toward: q) } ?? b0
+            } else {
+                out[j].a = A.map { edge($0, toward: b0) } ?? a0
+                out[j].b = B.map { edge($0, toward: a0) } ?? b0
+            }
         }
         return out
+    }
+
+    /// A point on a curved connector, `t` from 0 (a) to 1 (b), and the way it heads there.
+    static func bent(_ a: [Double], _ q: [Double], _ b: [Double], _ t: Double) -> (p: [Double], dir: [Double]) {
+        let u = 1 - t
+        return ([u * u * a[0] + 2 * u * t * q[0] + t * t * b[0], u * u * a[1] + 2 * u * t * q[1] + t * t * b[1]],
+                [2 * u * (q[0] - a[0]) + 2 * t * (b[0] - q[0]), 2 * u * (q[1] - a[1]) + 2 * t * (b[1] - q[1])])
     }
 
     /// The point on a shape's outline on the way to `toward`, with a small gap.
@@ -329,7 +400,7 @@ enum ShapesModel {
         let ux = dx / len, uy = dy / len
         let w = sz[0], h = sz[1]
         var r: Double
-        if ["circle", "dot", "blob"].contains(f.item.kind) {
+        if ["circle", "dot", "blob", "venn", "contour"].contains(f.item.kind) {
             let a = w / 2, b = h / 2
             r = a * b / hypot(b * ux, a * uy)
         } else {
@@ -352,6 +423,103 @@ enum ShapesModel {
             let r = 1 + 0.13 * sin(Double(seed + 1) * 12.9898 + Double(k) * 78.233)
             return [cos(ang) * (w / 2) * r * 0.94, sin(ang) * (h / 2) * r * 0.94]
         }
+    }
+
+    /// A doodle ring (YUI-276): a loop scribbled round `c` for a w by h box, a little more than one
+    /// turn so its ends overlap, as guide points for `doodle`.
+    static func ring(_ c: [Double], _ sz: [Double], seed: Int) -> [[Double]] {
+        let n = 10, turn = 2 * Double.pi * 1.12, a0 = -Double.pi * 0.62
+        return (0..<n).map { k in
+            let t = Double(k) / Double(n - 1)
+            let r = (0.96 + 0.1 * t) * (1 + 0.05 * sin(Double(seed + 1) * 12.9898 + Double(k) * 78.233))
+            return [c[0] + cos(a0 + turn * t) * (sz[0] / 2) * r, c[1] + sin(a0 + turn * t) * (sz[1] / 2) * r]
+        }
+    }
+
+    /// A hand-drawn stroke through guide points (YUI-276): the smooth curve sampled about every
+    /// 0.035 w, each inner sample nudged off the line by up to 0.007 w (w the canvas width), seeded so
+    /// the same line wobbles the same way. Join the result with `smooth(_, closed: false)`.
+    static func doodle(_ pts: [[Double]], seed: Int, w: Double) -> [[Double]] {
+        guard pts.count >= 2 else { return pts }
+        let gap = 0.035 * w, amp = 0.007 * w
+        var q: [[Double]] = [pts[0]]
+        for (k, seg) in smooth(pts, closed: false).enumerated() {
+            let (c1, c2, p3) = seg
+            let p0 = pts[k]
+            let m = max(2, Int((hypot(p3[0] - p0[0], p3[1] - p0[1]) / gap).rounded(.up)))
+            for j in 1...m {
+                let t = Double(j) / Double(m), u = 1 - t
+                let b0 = u * u * u, b1 = 3 * u * u * t, b2 = 3 * u * t * t, b3 = t * t * t
+                q.append([b0 * p0[0] + b1 * c1[0] + b2 * c2[0] + b3 * p3[0],
+                          b0 * p0[1] + b1 * c1[1] + b2 * c2[1] + b3 * p3[1]])
+            }
+        }
+        return q.indices.map { j in
+            if j == 0 || j == q.count - 1 { return q[j] }
+            let tx = q[j + 1][0] - q[j - 1][0], ty = q[j + 1][1] - q[j - 1][1]
+            let len = hypot(tx, ty) == 0 ? 1 : hypot(tx, ty)
+            let off = amp * sin(Double(seed + 1) * 12.9898 + Double(j) * 78.233)
+            return [q[j][0] - ty / len * off, q[j][1] + tx / len * off]
+        }
+    }
+
+    /// A Venn's circle radius for its box: two sets side by side, three in a triangle.
+    static func vennRadius(_ it: Item, s: Double = 1) -> Double {
+        let w = (it.size?[0] ?? 0) * s, h = (it.size?[1] ?? 0) * s
+        return (it.sets ?? []).count >= 3 ? min(w / 3.2, h / 3.0392) : min(w / 3.2, h / 2)
+    }
+
+    struct VennCircle: Equatable { var c: [Double]; var r: Double; var tone: String }
+    struct VennLabel: Equatable { var at: [Double]; var text: String; var width: Double; var middle = false }
+
+    /// A Venn centred on `c` (YUI-276): its circles, each with a tone (the shape's own, then on through
+    /// `cycle`), and its labels with the width each may wrap to. Two circles when it has fewer than three sets.
+    static func venn(_ it: Item, center c: [Double], s: Double = 1) -> (circles: [VennCircle], labels: [VennLabel]) {
+        let sets = it.sets ?? []
+        let r = vennRadius(it, s: s)
+        let three = sets.count >= 3
+        let y = 0.5196 * r
+        let at: [[Double]] = three ? [[-0.6 * r, -y], [0.6 * r, -y], [0, y]] : [[-0.6 * r, 0], [0.6 * r, 0]]
+        let start = cycle.firstIndex(of: it.tone)
+        let circles = at.enumerated().map { k, p in
+            VennCircle(c: [c[0] + p[0], c[1] + p[1]], r: r, tone: start.map { cycle[($0 + k) % cycle.count] } ?? it.tone)
+        }
+        // The middle of the three centres, where every set overlaps.
+        let g: [Double] = three ? [0, -y / 3] : [0, 0]
+        func away(_ p: [Double], _ by: Double) -> [Double] {
+            let dx = p[0] - g[0], dy = p[1] - g[1]
+            let len = hypot(dx, dy) == 0 ? 1 : hypot(dx, dy)
+            return [c[0] + p[0] + dx / len * by, c[1] + p[1] + dy / len * by]
+        }
+        var labels: [VennLabel] = []
+        for (k, p) in at.enumerated() where k < sets.count && !sets[k].isEmpty {
+            labels.append(three ? VennLabel(at: away(p, 0.45 * r), text: sets[k], width: 0.8 * r)
+                                : VennLabel(at: [c[0] + (k == 0 ? -1 : 1) * r, c[1]], text: sets[k], width: r))
+        }
+        if !it.label.isEmpty {
+            labels.append(VennLabel(at: [c[0] + g[0], c[1] + g[1]], text: it.label, width: r * (three ? 0.5 : 0.7), middle: true))
+        }
+        if three {
+            let pairs = it.pairs ?? []
+            for (k, ij) in [(0, 1), (0, 2), (1, 2)].enumerated() where k < pairs.count && !pairs[k].isEmpty {
+                let m = [(at[ij.0][0] + at[ij.1][0]) / 2, (at[ij.0][1] + at[ij.1][1]) / 2]
+                labels.append(VennLabel(at: away(m, 0.35 * r), text: pairs[k], width: 0.55 * r))
+            }
+        }
+        return (circles, labels)
+    }
+
+    /// A contour's rings round `c` (YUI-276), outermost first: one outline scaled in steps, each
+    /// step's middle drifting toward the peak, where the label goes.
+    static func contour(_ it: Item, center c: [Double], s: Double = 1) -> (rings: [[[Double]]], peak: [Double]) {
+        let n = it.rings ?? 4
+        let w = (it.size?[0] ?? 0) * s, h = (it.size?[1] ?? 0) * s
+        let dx = 0.08 * w * sin(Double(it.i + 1) * 3.1), dy = -0.07 * h * abs(cos(Double(it.i + 1) * 3.1))
+        let rings = (0..<n).map { k -> [[Double]] in
+            let f = Double(n - k) / Double(n), m = Double(k) / Double(n)
+            return blobPoints(w * f, h * f, seed: it.i).map { [$0[0] + c[0] + dx * m, $0[1] + c[1] + dy * m] }
+        }
+        return (rings, [c[0] + dx * Double(n - 1) / Double(n), c[1] + dy * Double(n - 1) / Double(n)])
     }
 
     /// Catmull-Rom through points, as cubic Bezier segments (c1, c2, p).
@@ -383,6 +551,9 @@ enum ShapesModel {
     static func labelWidth(_ it: Item, k: Double = 1) -> Double {
         let w = it.size?[0] ?? 0
         if let s = share[it.kind] { return w * s }
+        // A Venn's label sits where every set overlaps; a contour's on its peak (YUI-276).
+        if it.kind == "venn", it.size != nil { return vennRadius(it) * ((it.sets ?? []).count >= 3 ? 0.5 : 0.7) }
+        if it.kind == "contour", it.size != nil { return w * 0.5 }
         if it.kind == "text", it.size != nil { return max(w, 1) }
         return 3.4 * k
     }
@@ -412,6 +583,11 @@ enum ShapesModel {
                 if case .ref(let f)? = it.from, let tl = tail, tl == f, !bits.isEmpty { bits[bits.count - 1] += sign }
                 else { bits.append(a + sign) }
                 if case .ref(let t)? = it.to { tail = t }
+            } else if it.kind == "venn", let s = it.sets, !s.isEmpty, !joined.contains(it.i) {
+                // "Chat and Drawing overlap: Yui" (YUI-276).
+                let names = s.count > 1 ? s.dropLast().joined(separator: ", ") + " and " + s[s.count - 1] + " overlap" : s[0]
+                bits.append(names + (it.label.isEmpty ? "" : ": \(it.label)"))
+                tail = nil
             } else if !it.label.isEmpty && !joined.contains(it.i) {
                 bits.append(it.label)
                 tail = nil

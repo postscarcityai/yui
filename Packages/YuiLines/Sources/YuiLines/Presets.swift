@@ -59,7 +59,8 @@ let presets: Set<String> = [
 /// a sketch (the picture of the page before it).
 let groups: [String: Set<String>] = [
     "deck": ["page", "ask", "choose", "pick", "sketch", "shapes", "diagram", "mock", "draw", "map", "math", "chart", "stat", "calc"],
-    "plan": ["page", "ask", "choose", "pick", "slide", "form", "mic", "camera", "sketch", "diagram", "mock", "draw", "map"],
+    // A plan takes `shapes` too, so a drawing reaches every screen a deck does (YUI-276).
+    "plan": ["page", "ask", "choose", "pick", "slide", "form", "mic", "camera", "sketch", "shapes", "diagram", "mock", "draw", "map"],
     "narrate": ["page", "compare", "image", "video", "card", "stat", "chart", "math", "storyboard", "gallery", "deck"],
     "timeline": ["done", "now", "next"],
     "sketch": ["row", "after"],
@@ -135,7 +136,8 @@ private let listProps: [String: [String]] = [
     "project": ["facts", "next"],
     "pick": ["answer"],
     "game": ["items"],
-    "shape": ["pts"],
+    // A Venn's sets and its pair overlaps (YUI-276).
+    "shape": ["pts", "sets", "pairs"],
     "part": ["items"],
     "area": ["codes", "pts"],
     "route": ["pts"],
