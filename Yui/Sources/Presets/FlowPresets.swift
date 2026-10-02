@@ -505,10 +505,13 @@ struct PlanPreset: View {
     /// Steps holding Next: a form with a required field still empty.
     @State private var missing: Set<String> = []
     @State private var restored = false
+    /// Where the person left it came back, once (feedback NOTE-19357): nothing is kept before that.
+    @State private var placed = false
     /// A workout (YUI-182): where the runner is, kept on the phone.
     @State private var progress = RunnerProgress()
     @Environment(\.ylComponents) private var all
     @Environment(\.ylAnswers) private var sent
+    @Environment(\.ylAgent) private var agent
     @Environment(\.ylScope) private var scope
     @Environment(\.ylEmit) private var emit
     @Environment(\.ylOnStage) private var onStage
@@ -595,13 +598,20 @@ struct PlanPreset: View {
                 }
             }
         }
-        .onAppear { restore(runner) }
+        .onAppear {
+            restore(runner)
+            restorePlace(steps, runner)
+        }
         // The reply streams in: the moves may land after the plan first shows.
         .onChange(of: runner?.moves.count ?? 0) { restore(runner) }
+        .onChange(of: steps.count) { restorePlace(steps, runner) }
         .onChange(of: at) { _, n in
+            keepPlace(steps, runner)
             guard runner != nil, !submitted else { return }
             progress.at = n
         }
+        .onChange(of: reviewing) { keepPlace(steps, runner) }
+        .onChange(of: answers) { keepPlace(steps, runner) }
         .onChange(of: progress) { _, p in
             guard let runner, !submitted else { return }
             for m in runner.moves { answers[m.sets.ylID] = nil }
@@ -626,6 +636,30 @@ struct PlanPreset: View {
         restored = true
         answers = plan
         submitted = true
+    }
+
+    /// Not sent yet: it reopens on the step the person was on, with everything they set
+    /// (feedback NOTE-19357), however it went away (the full screen, home, another agent, a
+    /// relaunch). Its questions bring back their own drafts as they show; the plan's copy of
+    /// the answers fills the review, which shows none of them. A sent plan never reopens
+    /// mid-way, and a workout keeps its own place (`RunnerProgress`).
+    private func restorePlace(_ steps: [YLComponent], _ runner: RunnerPlan?) {
+        guard !placed, !steps.isEmpty else { return }
+        placed = true
+        guard runner == nil, sent(scope, c.ylID)?["plan"] == nil,
+              let place = AnswerDrafts.shared.place(agent, scope, c.ylID) else { return }
+        // A question that already handed over its answer on appear keeps it.
+        answers.merge(place.answers) { now, _ in now }
+        if let i = place.index(in: steps.map(\.ylID)) { at = i }
+        reviewing = place.review
+    }
+
+    /// Where the person is and what they set, kept on the phone until the plan is sent.
+    private func keepPlace(_ steps: [YLComponent], _ runner: RunnerPlan?) {
+        guard placed, runner == nil, !submitted, !steps.isEmpty, sent(scope, c.ylID)?["plan"] == nil else { return }
+        let cur = min(at, steps.count - 1)
+        AnswerDrafts.shared.setPlace(agent, scope, c.ylID,
+                                     PlanPlace(step: cur > 0 ? steps[cur].ylID : nil, review: reviewing, answers: answers))
     }
 
     private func record(_ e: YLEvent, step: YLComponent, i: Int, steps: [YLComponent], review: Bool) {
@@ -702,7 +736,10 @@ struct PlanPreset: View {
         // The reps of a set that went to failure: no step of their own, the runtime reads them by id.
         for (id, v) in answers where id.hasSuffix("-fail") { plan[id] = v }
         // The echo is the fold-back: the chat shows it as the person's own message.
-        emit(c.event(["plan": .object(plan)], echo: YLComponent.foldText(steps, answers)))
+        let e = c.event(["plan": .object(plan)], echo: YLComponent.foldText(steps, answers))
+        emit(e)
+        // Sent: its place and its questions' drafts go with it (feedback NOTE-19357).
+        AnswerDrafts.shared.sent(e, scope: scope, agent: agent)
         RunnerProgress.clear(c.ylID)
         withAnimation(theme.spring) { submitted = true; reviewing = false }
         // The first plan (Build my week): the moment to ask for notifications (YUI-230).

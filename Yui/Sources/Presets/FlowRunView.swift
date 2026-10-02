@@ -17,17 +17,29 @@ struct FlowRun: Codable, Equatable {
     /// An edit opened from the review: Next goes back to it once the path is whole again.
     var fromReview = false
     var graph: YLValue?
+    /// When it was last saved (feedback NOTE-19357). Nil in a run saved before it was stamped.
+    var at: Double?
 
     /// Keyed by the message and the flow's id. Under `yui.runner.` so a UI test's runner reset clears it too.
     static func key(_ scope: String, _ id: String) -> String { "yui.runner.flow.\(scope).\(id)" }
 
-    @MainActor static func load(_ scope: String, _ id: String, in d: UserDefaults = .standard) -> FlowRun? {
+    /// The run as it was left: its step and every answer, so a flow reopens where the person was.
+    /// One not sent and untouched for a week starts over, as an answer's draft goes then
+    /// (`AnswerDrafts.maxAge`); a sent one stays, so it comes back sent.
+    @MainActor static func load(_ scope: String, _ id: String, in d: UserDefaults = .standard, now: Date = Date()) -> FlowRun? {
         RunnerProgress.resetIfAsked()
-        return d.data(forKey: key(scope, id)).flatMap { try? JSONDecoder().decode(FlowRun.self, from: $0) }
+        guard let run = d.data(forKey: key(scope, id)).flatMap({ try? JSONDecoder().decode(FlowRun.self, from: $0) }) else { return nil }
+        if !run.sent, let at = run.at, now.timeIntervalSince1970 - at > AnswerDrafts.maxAge {
+            clear(scope, id, in: d)
+            return nil
+        }
+        return run
     }
 
-    func save(_ scope: String, _ id: String, in d: UserDefaults = .standard) {
-        if let data = try? JSONEncoder().encode(self) { d.set(data, forKey: Self.key(scope, id)) }
+    func save(_ scope: String, _ id: String, in d: UserDefaults = .standard, now: Date = Date()) {
+        var run = self
+        run.at = now.timeIntervalSince1970
+        if let data = try? JSONEncoder().encode(run) { d.set(data, forKey: Self.key(scope, id)) }
     }
 
     static func clear(_ scope: String, _ id: String, in d: UserDefaults = .standard) { d.removeObject(forKey: key(scope, id)) }

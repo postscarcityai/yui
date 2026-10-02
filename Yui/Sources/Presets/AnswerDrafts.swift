@@ -7,13 +7,18 @@ import YuiLines
 /// away, going home, another agent and back, the record and back or a relaunch threw them
 /// away. Here they outlive the view: one small defaults entry per agent, keyed by the
 /// reply (its message id), the component's YL id and a field name. A draft goes once its
-/// answer is sent, and a view never puts one over an answer that already went.
+/// answer is sent, or once it is a week old, and a view never puts one over an answer that
+/// already went. A plan keeps where it was left here too (`PlanPlace`).
 @MainActor
 final class AnswerDrafts {
     static let shared = AnswerDrafts()
 
     /// Each agent keeps its newest drafts only: a reply nobody came back to drops off the end.
     static let cap = 40
+    /// A draft a week old goes (Chris on NOTE-19357): long enough to come back to a plan after
+    /// a weekend or a busy few days, short enough that last month's half-typed words never
+    /// turn up under a reply the conversation has long moved past.
+    nonisolated static let maxAge: TimeInterval = 7 * 24 * 60 * 60
 
     private struct Entry: Codable, Equatable {
         var value: YLValue
@@ -21,11 +26,14 @@ final class AnswerDrafts {
     }
 
     private let defaults: UserDefaults
+    /// The clock every stamp and every age is read from: a test moves it on.
+    private let now: () -> Date
     /// Each agent's drafts by `key`: read once per agent, written through.
     private var agents: [String: [String: Entry]] = [:]
 
-    init(defaults: UserDefaults = .standard) {
+    init(defaults: UserDefaults = .standard, now: @escaping () -> Date = { Date() }) {
         self.defaults = defaults
+        self.now = now
         Self.resetIfAsked(defaults)
     }
 
@@ -68,7 +76,7 @@ final class AnswerDrafts {
         if let value, !Self.isEmpty(value), !Self.holdsKey(value) {
             guard all[k]?.value != value else { return }
             // Strictly newer than the newest, so two keys in one instant still keep their order.
-            let at = max(Date().timeIntervalSince1970, (all.values.map(\.at).max() ?? 0) + 0.001)
+            let at = max(now().timeIntervalSince1970, (all.values.map(\.at).max() ?? 0) + 0.001)
             all[k] = Entry(value: value, at: at)
             if all.count > Self.cap {
                 for old in all.sorted(by: { $0.value.at < $1.value.at }).prefix(all.count - Self.cap) { all[old.key] = nil }
@@ -103,14 +111,21 @@ final class AnswerDrafts {
         write(agent, all)
     }
 
+    /// The agent's drafts younger than `maxAge`. One that aged out goes for good, on disk too,
+    /// so every read and every write drops the old ones.
     private func entries(_ agent: String) -> [String: Entry] {
-        if let all = agents[agent] { return all }
         // No agent (a chat on its own): kept while the app runs, never on disk.
         var all: [String: Entry] = [:]
-        if !agent.isEmpty, let data = defaults.data(forKey: Self.storeKey(agent)),
-           let saved = try? JSONDecoder().decode([String: Entry].self, from: data) { all = saved }
-        agents[agent] = all
-        return all
+        if let cached = agents[agent] {
+            all = cached
+        } else if !agent.isEmpty, let data = defaults.data(forKey: Self.storeKey(agent)),
+                  let saved = try? JSONDecoder().decode([String: Entry].self, from: data) {
+            all = saved
+        }
+        let cutoff = now().timeIntervalSince1970 - Self.maxAge
+        let fresh = all.filter { $0.value.at >= cutoff }
+        if fresh.count != all.count { write(agent, fresh) } else { agents[agent] = fresh }
+        return fresh
     }
 
     private func write(_ agent: String, _ all: [String: Entry]) {
@@ -123,6 +138,16 @@ final class AnswerDrafts {
         }
     }
 
+    /// Where the person left the plan `id` in reply `scope`, if it is not sent yet.
+    func place(_ agent: String, _ scope: String, _ id: String) -> PlanPlace? {
+        PlanPlace(draft(agent, scope, id, PlanPlace.field))
+    }
+
+    /// Keeps where the plan was left; the first step with nothing set keeps nothing.
+    func setPlace(_ agent: String, _ scope: String, _ id: String, _ place: PlanPlace) {
+        set(agent, scope, id, PlanPlace.field, place.value)
+    }
+
     /// The demo account (UI tests, screenshots) starts with no drafts, as the composer's do;
     /// `-yuiDraftsKeep` keeps them across a relaunch. Once per launch.
     private static var wasReset = false
@@ -132,5 +157,45 @@ final class AnswerDrafts {
         guard !wasReset, args.contains("-yuiDemoAccount"), !args.contains("-yuiDraftsKeep") else { return }
         wasReset = true
         for k in d.dictionaryRepresentation().keys where k.hasPrefix("yui.answers.") { d.removeObject(forKey: k) }
+    }
+}
+
+/// Where a plan was left (feedback NOTE-19357: Chris wants a plan to remember the step as well as the
+/// answers): the step on show by its YL id, so a step that streams in later never shifts it,
+/// the review if that was up, and every answer so far, since the review draws none of the
+/// questions that would hand theirs back. Kept under the plan's own id, so the plan's send
+/// takes it with the answers.
+struct PlanPlace: Equatable {
+    static let field = "place"
+
+    var step: String?
+    var review = false
+    var answers: [String: YLValue] = [:]
+
+    init(step: String? = nil, review: Bool = false, answers: [String: YLValue] = [:]) {
+        self.step = step
+        self.review = review
+        self.answers = answers
+    }
+
+    init?(_ v: YLValue?) {
+        guard let o = v?.object else { return nil }
+        step = o["step"]?.string
+        review = o["review"]?.bool ?? false
+        answers = o["answers"]?.object ?? [:]
+    }
+
+    /// As kept, or nil on the first step with nothing set: nothing to come back to.
+    var value: YLValue? {
+        guard step != nil || review || !answers.isEmpty else { return nil }
+        var o: [String: YLValue] = ["answers": .object(answers)]
+        if let step { o["step"] = .string(step) }
+        if review { o["review"] = .bool(true) }
+        return .object(o)
+    }
+
+    /// The step to reopen on among `ids` (the plan's steps in order), or nil when it is gone.
+    func index(in ids: [String]) -> Int? {
+        step.flatMap { s in ids.firstIndex(of: s) }
     }
 }

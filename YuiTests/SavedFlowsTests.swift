@@ -74,7 +74,10 @@ final class SavedFlowsTests: XCTestCase {
         run.step = "time"
         run.graph = SavedFlows.resolve("first-plan", in: d)!.graph.value
         run.save("demo-1", "n2", in: d)
-        let back = try XCTUnwrap(FlowRun.load("demo-1", "n2", in: d))
+        var back = try XCTUnwrap(FlowRun.load("demo-1", "n2", in: d))
+        // Saving stamps the run (feedback NOTE-19357); the rest is as it was.
+        XCTAssertNotNil(back.at)
+        back.at = nil
         XCTAssertEqual(back, run)
         XCTAssertEqual(back.step, "time")
         XCTAssertEqual(back.answers["days"], .array([.string("Mon"), .string("Wed")]))
