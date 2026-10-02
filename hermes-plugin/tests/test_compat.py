@@ -118,11 +118,11 @@ class Downgrade(unittest.TestCase):
         self.assertDrawable(out, 96)
 
     def test_note_names_what_to_skip(self):
-        self.assertIn("cannot draw chords, diagram, drums, keys, loop, map, metronome, mock, shapes, sketch, tuner yet", compat.note(96))
+        self.assertIn("cannot draw chords, diagram, draw, drums, keys, loop, map, metronome, mock, shapes, sketch, tuner; venn, contour, region or doodle shapes, or shapes img= yet", compat.note(96))
         self.assertNotIn("timeline", compat.note(96))
-        self.assertEqual(compat.note(compat.SHAPES_BUILD), f"[yui] This person's Yui app (build {compat.SHAPES_BUILD}) cannot draw chords, diagram, drums, keys, loop, map, metronome, mock, tuner yet: don't send those. Say it in words or use another preset.")
+        self.assertEqual(compat.note(compat.SHAPES_BUILD), f"[yui] This person's Yui app (build {compat.SHAPES_BUILD}) cannot draw chords, diagram, draw, drums, keys, loop, map, metronome, mock, tuner; venn, contour, region or doodle shapes, or shapes img= yet: don't send those. Say it in words or use another preset.")
         self.assertEqual(compat.note(compat.DRAW_BUILD), "")
-        self.assertIn("cannot draw chords, diagram, drums, keys, loop, map, metronome, mock, shapes", compat.note(122))
+        self.assertIn("cannot draw chords, diagram, draw, drums, keys, loop, map, metronome, mock, shapes", compat.note(122))
         self.assertIn("an older build", compat.note(None))
 
     def test_menu_lines_go_quietly_before_the_drawer(self):
@@ -163,8 +163,8 @@ class Downgrade(unittest.TestCase):
         self.assertIn("There are chord buttons here: G I-V-vi-IV. Update Yui to play them.", out)
         self.assertIn("There are chord buttons here: C G Am F. Update Yui to play them.", out)
         self.assertDrawable(out, 176)
-        self.assertIn("cannot draw chords, diagram, keys, map, metronome, mock, tuner yet", compat.note(176))
-        self.assertIn("cannot draw diagram, map, metronome, mock, tuner yet", compat.note(compat.KEYS_BUILD))
+        self.assertIn("cannot draw chords, diagram, draw, keys, map, metronome, mock, tuner; venn, contour, region or doodle shapes, or shapes img= yet", compat.note(176))
+        self.assertIn("cannot draw diagram, draw, map, metronome, mock, tuner; venn, contour, region or doodle shapes, or shapes img= yet", compat.note(compat.KEYS_BUILD))
         self.assertEqual(compat.downgrade(body, compat.KEYS_BUILD), body)
 
     def test_tuner_and_metronome_before_build_205(self):
@@ -176,7 +176,7 @@ class Downgrade(unittest.TestCase):
         self.assertIn("There's a tuner here. Update Yui to use it.", out)
         self.assertIn("There's a metronome here at 72 bpm. Update Yui to use it.", out)
         self.assertDrawable(out, 204)
-        self.assertIn("cannot draw diagram, map, metronome, mock, tuner yet", compat.note(204))
+        self.assertIn("cannot draw diagram, draw, map, metronome, mock, tuner; venn, contour, region or doodle shapes, or shapes img= yet", compat.note(204))
         self.assertEqual(compat.note(compat.DRAW_BUILD), "")
         self.assertEqual(compat.downgrade(body, compat.TUNER_BUILD), body)
 
@@ -219,6 +219,71 @@ class Downgrade(unittest.TestCase):
                          fence("stat Total 3", "deck D +inline", "page One", "end", "stat Out 4", ">2 chart bar x=a y=1"))
         plain = fence("deck D", "page One", "page Two")
         self.assertEqual(compat.downgrade(plain, 150), plain)
+
+    def test_a_draw_before_its_build_is_its_title_and_caption(self):
+        # The stage redesign's `draw`: the SVG up to its `end` is dropped, the words stay.
+        body = "Fixed.\n\n" + fence(
+            'say "Push tap fixed."',
+            'draw "Push tap" caption="Tap the banner. The answer plays itself."',
+            '<svg viewBox="0 0 360 250">',
+            '  <rect class="draw soft" x="30" y="14" width="120" height="222" rx="20"/>',
+            '  <text x="50" y="43">timer 60</text>',
+            '</svg>',
+            'end',
+            'say "Next build."')
+        want = ("Fixed.\n\n" + fence('say "Push tap fixed."')
+                + "\n\n**Push tap**\nTap the banner. The answer plays itself.\n\n" + fence('say "Next build."'))
+        self.assertEqual(compat.downgrade(body, compat.FREE_DRAW_BUILD - 1), want)
+        self.assertDrawable(compat.downgrade(body, compat.FREE_DRAW_BUILD - 1), compat.FREE_DRAW_BUILD - 1)
+        self.assertEqual(compat.downgrade(body, compat.FREE_DRAW_BUILD), body)
+        self.assertIn("draw", compat.note(compat.FREE_DRAW_BUILD - 1))
+        self.assertNotIn("draw,", compat.note(compat.DRAW_BUILD - 1))
+
+    def test_a_draw_with_no_markup_takes_only_its_head(self):
+        # No tag after the head: the draw is empty and the next line is still the reply's.
+        body = fence('draw "Empty"', "timer 60")
+        self.assertEqual(compat.downgrade(body, compat.FREE_DRAW_BUILD - 1), "**Empty**\n\n" + fence("timer 60"))
+        # Left open at the end of the fence, it still takes everything after it.
+        self.assertEqual(compat.downgrade(fence("draw", "<svg/>", "<g/>"), compat.FREE_DRAW_BUILD - 1), "")
+
+    def test_a_draw_in_a_deck_is_a_page_of_its_words(self):
+        body = fence('>full', 'deck "How"', 'page "Tap" body="Look."', 'draw "Push tap" caption="Tap it."',
+                     '<svg viewBox="0 0 4 3"></svg>', 'end', 'page "Last" body="Done."', 'end')
+        self.assertEqual(compat.downgrade(body, compat.FREE_DRAW_BUILD - 1), fence(
+            '>full', 'deck "How"', 'page "Tap" body="Look."', 'page "Push tap" body="Tap it."',
+            'page "Last" body="Done."', 'end'))
+        self.assertEqual(compat.downgrade(body, compat.FREE_DRAW_BUILD), body)
+
+
+    def test_marks_before_their_build_are_words(self):
+        # YUI-276: a Venn reads as its sets, the labels in order, then the caption.
+        old = compat.MARKS_BUILD - 1
+        body = fence('say "Where Yui sits."', 'shapes "Where Yui sits" caption="They overlap."',
+                     "shape venn Yui sets=Chat|Drawing", "shape arrow", "shape circle Done")
+        self.assertEqual(compat.downgrade(body, old),
+                         fence('say "Where Yui sits."') + "\n\n**Where Yui sits**\nChat and Drawing overlap: Yui → Done\nThey overlap.")
+        self.assertEqual(compat.downgrade(body, compat.MARKS_BUILD), body)
+        # A picture under the marks, or a doodle, needs the build too; plain shapes do not.
+        pic = fence('shapes "Fix this" img=/demo/a.jpg w=16 h=9 caption="The headline."', 'shape arrow "this one" from=13,2 to=7,3 bend=0.3')
+        self.assertEqual(compat.downgrade(pic, old), "**Fix this**\nThe headline.")
+        plain = fence("shapes Parts", "shape box A", "shape arrow bend=0.3", "shape box B")
+        self.assertEqual(compat.downgrade(plain, old), plain)
+        self.assertEqual(compat.downgrade(fence("shape doodle Here at=5,3"), old), "Here")
+        self.assertIn("venn, contour, region or doodle shapes", compat.note(old))
+        self.assertNotIn("venn", compat.note(compat.MARKS_BUILD))
+
+    def test_shapes_in_a_plan_before_their_build_are_a_page(self):
+        old = compat.MARKS_BUILD - 1
+        body = fence('plan P', 'page One body="Look."', 'shapes Overlap', 'shape venn Yui sets=Chat|Drawing',
+                     'page Two body="Done."', 'choose@ok "Ok?" Yes|No', 'end')
+        out = compat.downgrade(body, old)
+        self.assertEqual(out, fence('plan P', 'page One body="Look."', 'page "Overlap" points="Chat and Drawing overlap: Yui"',
+                                    'page Two body="Done."', 'choose@ok "Ok?" Yes|No', 'end'))
+        self.assertDrawable(out, old)
+        self.assertEqual(compat.downgrade(body, compat.MARKS_BUILD), body)
+        # In a deck, plain shapes stay a page's picture, as since YUI-113.
+        deck = fence('deck D', 'page One', 'shapes', 'shape box A', 'page Two', 'end')
+        self.assertEqual(compat.downgrade(deck, old), deck)
 
 
 @unittest.skipUnless(YL.exists() and shutil.which("node"), "yuigui checkout or node not found")
