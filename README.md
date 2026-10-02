@@ -4,7 +4,7 @@ Yui is a phone app for talking to your own AI agents. You chat like normal. When
 
 Yui brings no brain of its own. You bring the agent, and Yui gives it a face, a voice and a screen it can draw on. Hermes is the first agent it supports.
 
-This repo holds the native SwiftUI app, the Swift Yui Lines parser, the Supabase backend and the Hermes plugin. The roadmap, the progress log and the Yui Lines spec live in the hub repo, [postscarcityai/yuigui](https://github.com/postscarcityai/yuigui), and at [yuigui.com](https://www.yuigui.com).
+This repo holds the native SwiftUI app, the Swift Yui Lines parser, the Supabase backend and the Hermes plugin. The roadmap, the progress log and the Yui Lines spec live in the hub repo, [postscarcityai/yuigui](https://github.com/postscarcityai/yuigui), and at [yuigui.com](https://www.yuigui.com). Every other platform has its own repo: see [Every Yui](#every-yui).
 
 <p>
   <img src="docs/img/app-chat.png" width="260" alt="Yui chat screen on iPhone">
@@ -159,6 +159,24 @@ scripts/devbuild.sh --no-send    # build and host, print the link, send nothing
 `scripts/testflight.sh` archives and uploads with an App Store Connect API key read from `~/.appstoreconnect/`. Never commit keys.
 
 **App Review demo.** Apple's reviewer taps **Demo code** on the sign-in screen and enters the code from the review notes (App Store Connect only, never in this repo). `yui-auth` grant `review` checks it against the edge secret `YUI_REVIEW_CODE` and opens the one account `YUI_REVIEW_USER`; with either secret unset the grant is off. That account's agent is `hermes-plugin/demo_agent.py`: a scripted agent with canned Yui Lines screens, no model and no tools, on its own connector token (`~/.hermes/yui/demo-connector.json`), kept up by launchd. If the reviewer deletes the account, the next demo sign-in recreates it and the demo agent pairs itself again. Gate: `python3 supabase/tests/review_test.py` (21 checks). The App Privacy answers live in `docs/APP-PRIVACY.md`.
+
+## Every Yui
+
+This repo is the iPhone and iPad app. Every other platform has a repo of its own on postscarcityai, so whoever builds it has a place to push. Each keeps the same contract: it speaks Yui Lines and passes the shared conformance vectors, a tap sends the same line the iPhone sends, and a screen the device cannot draw says "Open on your iPhone" (or phone) instead of breaking.
+
+| Platform | Repo | Built with |
+| --- | --- | --- |
+| Mac | [yui-macos](https://github.com/postscarcityai/yui-macos) | SwiftUI for macOS |
+| Apple Watch | [yui-watch](https://github.com/postscarcityai/yui-watch) | SwiftUI for watchOS |
+| Apple Vision Pro | [yui-visionos](https://github.com/postscarcityai/yui-visionos) | SwiftUI for visionOS |
+| Apple TV | [yui-tvos](https://github.com/postscarcityai/yui-tvos) | SwiftUI for tvOS |
+| Android phones and tablets | [yui-android](https://github.com/postscarcityai/yui-android) | Kotlin and Jetpack Compose |
+| Wear OS | [yui-wearos](https://github.com/postscarcityai/yui-wearos) | Kotlin and Compose for Wear OS |
+| Windows and Linux | [yui-desktop](https://github.com/postscarcityai/yui-desktop) | Tauri 2 and the web renderer |
+| Omarchy | [yui-omarchy](https://github.com/postscarcityai/yui-omarchy) | Rust in the terminal, in your Omarchy theme |
+| Browser | [yui-web](https://github.com/postscarcityai/yui-web) | The web renderer, live on the relay |
+
+The Apple repos pull this one in as a git submodule at `yui/`, for `Packages/YuiLines` and any shared file that compiles on their platform. They never copy or edit it: a change the shared code needs (an `#if os(iOS)` guard, a small shim) comes here as its own pull request, and the iPhone app must build and behave exactly as before. The first pull request for each platform is a card on [yuigui.com/contribute](https://www.yuigui.com/contribute#platforms).
 
 ## Contributing
 
