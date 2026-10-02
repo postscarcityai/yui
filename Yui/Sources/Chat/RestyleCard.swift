@@ -151,7 +151,7 @@ private struct MiniYui: View {
         VStack(spacing: host.spacing.xs) {
             VStack(alignment: .leading, spacing: 7) {
                 HStack {
-                    Wordmark(height: 13)
+                    Wordmark(height: 13, centered: false)
                     Spacer(minLength: 0)
                     Circle().fill(c.inkSoft).frame(width: 7, height: 7)
                 }
