@@ -215,11 +215,15 @@ enum StageChunks {
 
     /// The agent's hello (YUI-167): the first messages of a thread marked as its hello,
     /// up to the first thing the person said. Empty when there is none.
-    static func hello(_ messages: [ChatMessage]) -> StageTurn {
+    ///
+    /// `from` (YUI-262) is an agent message nobody answered and no hello leads: a reply from another channel
+    /// in a thread the person never spoke in. It plays like a hello, from that message on.
+    static func hello(_ messages: [ChatMessage], from lead: String? = nil) -> StageTurn {
         var t = StageTurn(hello: true)
-        for m in messages {
+        let led = lead.flatMap { id in messages.firstIndex { $0.id == id && !$0.hello } }
+        for m in messages[(led ?? 0)...] {
             if m.fromUser { break }
-            if m.hello { add(m, to: &t) }
+            if led != nil ? !m.home && !m.stopped : m.hello { add(m, to: &t) }
         }
         t.chunks = pack(t.chunks)
         return t

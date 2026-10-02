@@ -295,11 +295,26 @@ enum PushLanding {
         return hello.id
     }
 
+    /// A thread row is `<message id>#<part>` (one agent message splits into a text or screen per fence), while a push
+    /// names the bare message id (`message_id`): either form is the same message.
+    static func isRow(_ rowID: String, _ named: String) -> Bool {
+        let named = named.lowercased()
+        return rowID == named || rowID.hasPrefix(named + "#")
+    }
+
+    /// How long a tap waits for the message it names to reach the thread before it opens the newest instead.
+    static let patience: TimeInterval = 8
+
+    /// The first thing the agent said among rows that just arrived (YUI-262), else nil.
+    static func arrival(_ added: [ChatMessage]) -> String? {
+        added.first { !$0.fromUser && !$0.home && !$0.stopped && !$0.hello }?.id
+    }
+
     /// The message the tap names, else the first thing the agent said in its newest turn (what
     /// came after the person's last word), so the stage opens on page one, never on the last.
     static func message(_ messages: [ChatMessage], want: String?) -> String? {
         let said = { (m: ChatMessage) in !m.fromUser && !m.home && !m.stopped }
-        if let want, let m = messages.first(where: { $0.id == want }), said(m) { return m.id }
+        if let want, let m = messages.first(where: { isRow($0.id, want) && said($0) }) { return m.id }
         let turn = messages.lastIndex(where: \.fromUser).map { messages[($0 + 1)...] } ?? messages[...]
         return turn.first(where: said)?.id
     }

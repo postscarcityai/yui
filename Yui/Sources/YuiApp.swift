@@ -95,7 +95,10 @@ struct YuiApp: App {
                 let d = UserDefaults.standard
                 guard let agent = d.string(forKey: "yuiDemoPushTap") else { return }
                 try? await Task.sleep(for: .seconds(d.object(forKey: "yuiDemoPushTapAfter") == nil ? 3 : d.double(forKey: "yuiDemoPushTapAfter")))
-                PushCenter.shared.tapped(["agent_id": agent, "url": "yui://agent/\(agent)/thread"])
+                var tap: [AnyHashable: Any] = ["agent_id": agent, "url": "yui://agent/\(agent)/thread"]
+                // -yuiDemoPushTapMessage <id>: the payload names the message too (YUI-262; `arrive-1` is -yuiDemoArrive's).
+                if let message = d.string(forKey: "yuiDemoPushTapMessage") { tap["message_id"] = message }
+                PushCenter.shared.tapped(tap)
             }
             #endif
             .onOpenURL { url in

@@ -100,7 +100,7 @@ struct ChatView: View {
     /// Stage first (YUI-119): Yui lives on the full screen and the chat is the record.
     @State private var stageFirst = StageFirstModel()
     /// A notification tap waiting for its thread to load: the agent and the message it came with (YUI-199).
-    @State private var pushLanding: (agent: String, message: String?)?
+    @State private var pushLanding: (agent: String, message: String?, since: Date)?
     /// The agent whose pending first plan this open thread already landed on (YUI-231).
     @State private var firstPlanLanded: String?
     @AppStorage(StageFirstModel.key) private var stageFirstStored = true
@@ -653,7 +653,7 @@ struct ChatView: View {
                 showLanding = (agent: target, name: name)
                 pushLanding = nil
             } else {
-                pushLanding = (agent: target, message: push.pendingMessageID)
+                pushLanding = (agent: target, message: push.pendingMessageID, since: .now)
             }
             push.pendingMessageID = nil
             if push.pendingTalk { push.pendingTalk = false; talkLanding = target }
@@ -709,12 +709,35 @@ struct ChatView: View {
     /// newest thing the agent said when it is not in the thread. Waits for the thread to load.
     private func landPushed() {
         guard let want = pushLanding, store.loaded, store.agent?.id == want.agent else { return }
+        // The message the push names has not reached the thread yet (a cold start, a slow fetch): wait for it,
+        // never open the older turn in its place. After PushLanding.patience the newest thing said stands in.
+        if let named = want.message, !store.messages.contains(where: { PushLanding.isRow($0.id, named) }),
+           Date.now.timeIntervalSince(want.since) < PushLanding.patience {
+            Task { try? await Task.sleep(for: .seconds(PushLanding.patience)); landPushed() }
+            return
+        }
         guard let id = PushLanding.message(store.messages, want: want.message) else { return }
         pushLanding = nil
         // A message with nothing staged (a hello's words, the plan is its next part) has nothing to open: opening
         // it would only pull the stage off the first plan `landFirstPlan` just put up, and settle shut (YUI-234).
-        guard store.messages.first(where: { $0.id == id })?.yl?.staged(store.style).isEmpty == false else { return }
+        // With stage first the stage plays the reply's chunks, not its staged parts, so the guard is the chat's alone
+        // (YUI-262: it left every stage-first tap on the home, whatever the reply held).
+        guard stageFirstOn || store.messages.first(where: { $0.id == id })?.yl?.staged(store.style).isEmpty == false else { return }
         openStage(id, toPlan: true)
+    }
+
+    /// Something the agent said just landed in the thread on screen, and the stage is on the home (no turn
+    /// playing, no field out, nothing else asked for): it comes up full screen on that message. The record
+    /// (chat) and a turn already playing are left alone; another agent's thread only ever gets the badge.
+    private func landArrival(after old: String?) {
+        guard stageFirstOn, stageFirst.open, store.loaded, scenePhase == .active,
+              stageFirst.ask == nil, stageFirst.hello == nil, !stageFirst.typing, !store.waiting, pushLanding == nil,
+              !stageFocused, !focused, !showSettings, !showAgents else { return }
+        // From an empty thread everything is new, so a history that just loaded must be told from a fresh row: by its age.
+        let from = store.messages.lastIndex { $0.id == old }.map { $0 + 1 } ?? (old == nil ? 0 : store.messages.count)
+        let added = store.messages[from...].filter { old != nil || $0.sentAt.timeIntervalSinceNow > -PushLanding.patience * 4 }
+        guard let id = PushLanding.arrival(Array(added)) else { return }
+        openStage(id)
     }
 
     /// A thread that opens with its first plan still to answer (chat first, YUI-231: Open on Yui's card, the
@@ -1693,6 +1716,14 @@ struct ChatView: View {
                 }
             }
             .onChange(of: store.loaded) { if store.loaded { stageFirst.seen = store.shown.count } }
+            // A reply that lands while the agent's home is up plays at once (YUI-262), no tap on a badge.
+            .onChange(of: store.messages.last?.id) { old, _ in landArrival(after: old) }
+            #if DEBUG
+            .task(id: store.loaded) {
+                guard store.loaded, let text = UserDefaults.standard.string(forKey: "yuiDemoArrive") else { return }
+                store.demoArrive(text)
+            }
+            #endif
             // Hold to snap and say (YUI-166): the photo and the words go as one message.
             .fullScreenCover(isPresented: $snapping) {
                 SnapSayView { said in

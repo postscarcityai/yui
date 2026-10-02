@@ -92,6 +92,43 @@ final class PushTapTests: XCTestCase {
         sleep(32)
         shot("4-after-the-tap")
         XCTAssertTrue(line("First page.").exists, "the tap did not land on page one")
-        XCTAssertFalse(line("Finish here.").exists, "the tap landed on the last page")
+        // Short pages pack into one chunk now (all three show at once), so the last page is no longer apart from the first.
+    }
+
+    private let fresh = "```yui\\nsay Fresh news from the agent.\\n```"
+
+    /// YUI-262, Chris on build 340: a reply landed while he sat on the home and only showed as a "1" on the chat
+    /// button. It comes up full screen on its own, within 2 seconds of landing.
+    func testAReplyLandingOnTheHomeComesUpFullScreen() {
+        app.terminate()
+        app.launchArguments = ["-yuiDemoAccount", "-yuiDemoAgents", "-yuiStageFirst", "YES", "-appearance", appearance, "-yuiAgent", "yui",
+                               "-yuiDemoArrive", fresh, "-yuiDemoArriveAfter", "10"]
+        app.launch()
+        XCTAssertTrue(app.buttons["stage-type"].waitForExistence(timeout: 15), "no stage")
+        sleep(1)
+        shot("5-before-on-the-home")
+        XCTAssertFalse(line("Fresh news").exists, "it landed early")
+        let landed = Date()
+        // It lands about 10 seconds after the thread loads; the stage plays it within 2 s of that.
+        XCTAssertTrue(line("Fresh news").waitForExistence(timeout: 14), "the reply did not come up on its own")
+        XCTAssertLessThan(Date().timeIntervalSince(landed), 12, "it came, but late")
+        XCTAssertTrue(app.descendants(matching: .any)["stage-first"].exists, "the reply is not on the stage")
+        sleep(1)
+        shot("6-after-it-came-up")
+    }
+
+    /// A tap for a reply the thread has not fetched yet (a cold start): it waits for that reply and opens it,
+    /// never the home and never an older turn.
+    func testAColdTapWaitsForTheMessageItNames() {
+        app.terminate()
+        app.launchArguments = ["-yuiDemoAccount", "-yuiDemoAgents", "-yuiStageFirst", "YES", "-appearance", appearance, "-yuiAgent", "yui",
+                               "-yuiDemoArrive", fresh, "-yuiDemoArriveAfter", "6",
+                               "-yuiDemoPushTap", "yui", "-yuiDemoPushTapMessage", "arrive-1", "-yuiDemoPushTapAfter", "3"]
+        app.launch()
+        XCTAssertTrue(line("Fresh news").waitForExistence(timeout: 25), "the tap did not open the reply it named")
+        XCTAssertTrue(app.descendants(matching: .any)["stage-first"].exists, "the reply is not on the stage")
+        XCTAssertFalse(app.descendants(matching: .any)["stage-greeting"].exists, "the tap landed on the home")
+        sleep(1)
+        shot("7-cold-tap-on-the-reply")
     }
 }

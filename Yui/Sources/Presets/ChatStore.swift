@@ -1468,6 +1468,17 @@ final class ChatStore {
             }
         }
     }
+
+    /// -yuiDemoArrive "<lines>" [-yuiDemoArriveAfter <s>]: the agent says this unprompted, a moment after the thread
+    /// loads, as a reply from the host would arrive with nothing owed. Its id is `arrive-1`, what a push names (YUI-262).
+    func demoArrive(_ text: String) {
+        let when = UserDefaults.standard.object(forKey: "yuiDemoArriveAfter") == nil ? 3 : UserDefaults.standard.double(forKey: "yuiDemoArriveAfter")
+        Task {
+            try? await Task.sleep(for: .seconds(when))
+            _ = add(ThreadRow(id: "arrive-1", sender: "agent", body: text.replacingOccurrences(of: "\\n", with: "\n"), kind: "text",
+                              meta: nil, createdAt: ISO8601DateFormatter().string(from: .now)))
+        }
+    }
     #endif
 
     /// Adds an agent reply and feeds it through the stream parser a line at a

@@ -55,7 +55,7 @@ final class StageFirstModel {
     /// What the stage plays: the turn the person started, the hello, or nothing (the greeting).
     func turn(_ messages: [ChatMessage]) -> StageTurn? {
         if let ask { return StageChunks.turn(messages, ask: ask) }
-        if hello != nil { return StageChunks.hello(messages) }
+        if hello != nil { return StageChunks.hello(messages, from: hello) }
         return nil
     }
 
@@ -142,12 +142,13 @@ final class StageFirstModel {
         guard let i = messages.firstIndex(where: { $0.id == id }) else { return false }
         let start = messages[..<i].lastIndex(where: \.fromUser)
         // The hello's pill, before anything was said, plays the hello again (YUI-167).
-        guard start != nil || messages[i].hello else { return false }
-        let t = start.map { StageChunks.turn(messages, ask: messages[$0].id) } ?? StageChunks.hello(messages)
+        // Nothing said before it and no hello (a reply from another channel into a thread nobody spoke in): it plays from itself.
+        let lead = start == nil && !messages[i].hello ? id : nil
+        let t = start.map { StageChunks.turn(messages, ask: messages[$0].id) } ?? StageChunks.hello(messages, from: lead)
         guard let at = t.chunks.firstIndex(where: { $0.scopes.contains(id) })
                 ?? (t.questions.contains { $0.scope == id } ? t.chunks.count : nil) else { return false }
         ask = start.map { messages[$0].id }
-        hello = start == nil ? messages.first(where: \.hello)?.id : nil
+        hello = start == nil ? (lead ?? messages.first(where: \.hello)?.id) : nil
         // Nothing said yet means the first plan is still to build; once they sent it, Open is the agent's home.
         self.at = toPlan && start == nil && t.plan != nil && !messages.contains(where: \.fromUser) ? max(0, t.pages - 1) : at
         typing = false
