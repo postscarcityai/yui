@@ -11,7 +11,7 @@
 // 1. Start: the "Start a workout" shortcut, "Start today's workout", or a card's
 //    Start button. Today's row of `this_week` becomes one full-screen `plan`:
 //    what the session holds, then per move its sets to tick, reps and weight to
-//    nudge (the last weight they lifted), and how it felt, with one Send.
+//    nudge (Arnold's call from the log, see 5), and how it felt, with one Send.
 // 2. The Send writes one row per move in `workouts` (the log) and ticks the day.
 //    "Log today's workout" is a short plan for sessions done off the app: when,
 //    what (the day's plan or their own words, "squat 3x5 @135"), how long, feel.
@@ -20,6 +20,10 @@
 //    main lift). Answers patch them; nothing is sent twice.
 // 4. A day tapped on This week opens a short plan: its focus and how long. The
 //    Send rewrites that day's row and patches the week.
+// 5. A real coach (feedback NOTE-35460): each move's load is Arnold's call from
+//    the log, with the reason on its page ("Last time 20 lb for 3x10, every rep:
+//    try 25"). Every rep done goes up, hard or short holds, short twice at one
+//    weight drops. The Send ends in a wrap-up: what went up, next time, streak.
 import type { NativeAgent, Row } from "./types.ts";
 import { type Cell, type Clock, type TableStore, write } from "./tables.ts";
 
@@ -118,6 +122,8 @@ export interface Move {
   lb?: number; // the weight to start from; none: bodyweight
   cue?: string;
   fail?: boolean; // the last set goes to failure with a safe stop (heavy lifters only)
+  why?: string; // Arnold's call on the load and the reason, from the log (feedback NOTE-35460)
+  trend?: Trend;
 }
 
 /** A session as the runner shows it, kept in the runner's reply so its Send is read against it. */
@@ -162,18 +168,6 @@ function exerciseInfo(store: TableStore, name: string): { cue?: string; gear?: s
   return {};
 }
 
-/** The newest weight they lifted on a move, from the log. */
-export function lastWeight(store: TableStore, name: string): number | undefined {
-  const want = slug(name);
-  let best: { day: string; lb: number } | undefined;
-  for (const { row } of rowsOf(store, LOG_TABLE)) {
-    if (slug(String(row.Exercise ?? "")) !== want || typeof row.Weight !== "number" || !(row.Weight > 0)) continue;
-    const day = String(row.Day ?? "");
-    if (!best || day >= best.day) best = { day, lb: row.Weight };
-  }
-  return best?.lb;
-}
-
 /** Where a weight starts when they have never logged the move: from its gear. None: bodyweight. */
 function startWeight(gear?: string): number | undefined {
   if (!gear || /^(none|bodyweight)\b/i.test(gear)) return undefined;
@@ -181,6 +175,82 @@ function startWeight(gear?: string): number | undefined {
   if (/cable|machine/i.test(gear)) return 40;
   if (/dumbbell|kettlebell/i.test(gear)) return 20;
   return undefined;
+}
+
+// ---------- coaching the load (feedback NOTE-35460) ----------
+
+/** One move done on one day, as the log holds it. */
+interface Past { day: string; sets: number; reps?: number; lb?: number; feel?: string }
+
+/** A move's past sessions from before a day, newest first. */
+function pastOf(store: TableStore, name: string, before: string): Past[] {
+  const want = slug(name);
+  const out: Past[] = [];
+  for (const { row } of rowsOf(store, LOG_TABLE)) {
+    const day = String(row.Day ?? "").slice(0, 10);
+    if (slug(String(row.Exercise ?? "")) !== want || !/^\d{4}-\d{2}-\d{2}$/.test(day) || day >= before) continue;
+    out.push({ day, sets: Number(row.Sets ?? 0) || 0, ...(typeof row.Reps === "number" ? { reps: row.Reps } : {}),
+               ...(typeof row.Weight === "number" && row.Weight > 0 ? { lb: row.Weight } : {}), ...(row.Feel ? { feel: String(row.Feel) } : {}) });
+  }
+  return out.sort((a, b) => b.day.localeCompare(a.day));
+}
+
+/** Which way a move's load went: first time, up, the same, down, or at the top of its reps (time for a harder move). */
+export type Trend = "first" | "up" | "hold" | "drop" | "top";
+
+/** Arnold's call for a move on a day: the weight (or reps) to use, why, and which way it went. */
+export interface Call { lb?: number; reps?: number; why?: string; trend?: Trend }
+
+/** How far a weight goes up: 10 lb on a barbell squat or deadlift, 5 on everything else. */
+export function loadStep(name: string): number {
+  return /^(?:back |front )?squat$|^deadlift$/i.test(name.trim()) ? 10 : 5;
+}
+
+/** Every set and every rep of the target. Reps not logged count as the target's. */
+const hit = (p: Past, w: { sets: number; reps: number }) => p.sets >= w.sets && (p.reps ?? w.reps) >= w.reps;
+const didLine = (p: Past, w: { reps: number }) => `${p.sets}x${p.reps ?? w.reps}`;
+
+/**
+ * Progressive overload over the log, no model: the call for a move on a day, from the sessions before it.
+ * A weight written on the split is the plan and stays. A lift with every set and rep done goes up a step;
+ * one that felt hard, or came up short, stays; short twice running at the same weight drops about 10%.
+ * A bodyweight move earns a rep a set the same way, up to five over its target. Timed holds keep their seconds.
+ */
+export function coachLoad(store: TableStore, w: Written, day: string, gear: string | undefined, noWeight: boolean): Call {
+  if (!noWeight && w.lb != null) return { lb: w.lb };
+  const past = pastOf(store, w.name, day);
+  if (w.secs) {
+    const lb = noWeight ? undefined : past.find((p) => p.lb != null)?.lb;
+    return lb != null ? { lb } : {};
+  }
+  const target = `${w.sets}x${w.reps}`;
+  const hard = (p: Past) => /^hard$/i.test(p.feel ?? "");
+  const weighted = noWeight ? [] : past.filter((p) => p.lb != null);
+  if (weighted.length) {
+    const [last, prev] = weighted;
+    const lb = last.lb!;
+    const said = `Last time ${lb} lb for ${didLine(last, w)}`;
+    if (!hit(last, w)) {
+      if (prev && prev.lb === lb && !hit(prev, w)) {
+        const down = Math.max(5, Math.floor((lb * 0.9) / 5) * 5);
+        return { lb: down, trend: "drop", why: `${said}, short of ${target} again: drop to ${down} and build back up.` };
+      }
+      return { lb, trend: "hold", why: `${said}, short of ${target}: stay at ${lb} and get every rep.` };
+    }
+    if (hard(last)) return { lb, trend: "hold", why: `${said}, felt hard: stay at ${lb} and own it.` };
+    const up = lb + loadStep(w.name);
+    return { lb: up, trend: "up", why: `${said}, ${/^easy$/i.test(last.feel ?? "") ? "felt easy" : "every rep"}: try ${up}.` };
+  }
+  const start = noWeight ? undefined : startWeight(gear);
+  if (start != null) return { lb: start, trend: "first", why: `First time on this one: start light at ${start} lb and go up once every rep is smooth.` };
+  const last = past.find((p) => p.reps != null && p.lb == null);
+  if (!last) return {};
+  const reps = last.reps!;
+  const said = `Last time ${didLine(last, w)}`;
+  if (!hit(last, w)) return { reps: w.reps, trend: "hold", why: `${said}: aim for ${target} again.` };
+  if (hard(last)) return { reps, trend: "hold", why: `${said}, felt hard: same again, cleaner.` };
+  if (reps >= Math.min(30, w.reps + 5)) return { reps, trend: "top", why: `${said}, every rep. That's strong: ask me for a harder version.` };
+  return { reps: reps + 1, trend: "up", why: `${said}, every rep: try ${reps + 1} a set.` };
 }
 
 /** What the saved first plan says: the kit they own and whether it chose failure sets (YUI-217, YUI-220). */
@@ -199,12 +269,14 @@ export function session(store: TableStore, from: SplitDay, day: string): Session
   const choices = planChoices(store);
   // Bands and bodyweight kits have nothing to load: no weight, even from an old log row.
   const noWeight = choices.kit === "bands" || choices.kit === "bodyweight";
-  const moves = parseWorkout(from.workout).slice(0, 8).map((w, i, all): Move => {
+  const moves = parseWorkout(from.workout).slice(0, 8).map((w, i): Move => {
     const info = exerciseInfo(store, w.name);
-    const lb = noWeight ? undefined : w.lb ?? lastWeight(store, w.name) ?? (w.secs ? undefined : startWeight(info.gear));
+    // The load is Arnold's call from the sessions before this day (feedback NOTE-35460).
+    const call = coachLoad(store, w, day, info.gear, noWeight);
     const fail = choices.failure && !w.secs && !NO_FAILURE.test(w.name) && w.sets > 1;
-    return { n: i + 1, name: w.name, sets: w.sets, reps: w.reps, ...(w.secs ? { secs: w.secs } : {}), ...(w.each ? { each: true } : {}),
-             ...(lb != null ? { lb } : {}), ...(info.cue ? { cue: info.cue } : {}), ...(fail ? { fail: true } : {}) };
+    return { n: i + 1, name: w.name, sets: w.sets, reps: call.reps ?? w.reps, ...(w.secs ? { secs: w.secs } : {}), ...(w.each ? { each: true } : {}),
+             ...(call.lb != null ? { lb: call.lb } : {}), ...(info.cue ? { cue: info.cue } : {}), ...(fail ? { fail: true } : {}),
+             ...(call.why ? { why: call.why } : {}), ...(call.trend ? { trend: call.trend } : {}) };
   });
   return { id: `wk-${day.replace(/-/g, "")}-${from.key}`, day, from: from.key, focus: from.focus, minutes: from.minutes, workout: from.workout, moves,
            ...(choices.failure ? { failure: true } : {}) };
@@ -245,12 +317,14 @@ export function runnerLines(s: Session): string[] {
     out.push(`page ${q(s.focus)} body=${q(`${s.workout || s.focus}. Go at a pace you can talk at.`)}`);
     out.push(`slide@minutes "How long did you go, in minutes?" 5-120 value=${Math.max(5, Math.min(120, s.minutes || 30))} step=5`);
   } else {
-    out.push(`page ${q(s.focus)} body=${q(`${s.moves.length} moves, about ${s.minutes || s.moves.length * 10} minutes. Rest about ${REST_SECONDS} seconds between sets.`)} points=${opts(s.moves.map(moveLine))}`);
+    const moved = changesLine(s.moves);
+    out.push(`page ${q(s.focus)} body=${q(`${s.moves.length} moves, about ${s.minutes || s.moves.length * 10} minutes. Rest about ${REST_SECONDS} seconds between sets.${moved ? ` ${moved}` : ""}`)} points=${opts(s.moves.map(moveLine))}`);
     s.moves.forEach((m) => {
       // "Skip" lets a move go by with nothing ticked (a pick with no answer holds the flow's Next).
       const sets = [...Array.from({ length: m.sets }, (_, i) => `Set ${i + 1}`), SKIP];
-      const body = `${m.cue ? `${m.cue} ` : ""}Target ${target(m)}${m.lb ? ` at ${m.lb} lb` : ""}. Tick each set as you finish it, or Skip.`;
-      out.push(`pick@e${m.n}-sets ${q(`${m.name}: sets done`)} ${opts(sets)} tag=${q(`${m.n} of ${s.moves.length}`)} title=${q(m.name)} body=${q(body.slice(0, 400))} cue=${q(coachCue(m))} work=${workSeconds(m)}${m.fail ? " +fail" : ""}`);
+      const body = `${m.cue ? `${m.cue} ` : ""}Target ${target(m)}${m.lb ? ` at ${m.lb} lb` : ""}.${m.why ? ` ${m.why}` : ""} Tick each set as you finish it, or Skip.`;
+      // `why` carries the load call too, for the timed session's screen (feedback NOTE-35460).
+      out.push(`pick@e${m.n}-sets ${q(`${m.name}: sets done`)} ${opts(sets)} tag=${q(`${m.n} of ${s.moves.length}`)} title=${q(m.name)} body=${q(body.slice(0, 400))} cue=${q(coachCue(m))} work=${workSeconds(m)}${m.why ? ` why=${q(m.why)}` : ""}${m.fail ? " +fail" : ""}`);
       if (m.secs) out.push(`slide@e${m.n}-secs ${q(`${m.name}: seconds per set`)} 5-180 value=${m.secs} step=5`);
       else out.push(`slide@e${m.n}-reps ${q(`${m.name}: reps per set`)} 1-30 value=${m.reps}`);
       if (m.lb != null) out.push(`slide@e${m.n}-lb ${q(`${m.name}: weight in lb`)} 0-${Math.max(300, Math.ceil((m.lb * 2) / 50) * 50)} value=${m.lb} step=5 unit=lb`);
@@ -260,9 +334,21 @@ export function runnerLines(s: Session): string[] {
   return out;
 }
 
+const joinAnd = (xs: string[]) => (xs.length < 2 ? xs.join("") : `${xs.slice(0, -1).join(", ")} and ${xs[xs.length - 1]}`);
+
+/** What moved since last time, for the session's first page and Arnold's line: "Up today: Goblet squat to 25 lb." */
+export function changesLine(moves: Move[]): string {
+  const at = (m: Move) => (m.lb != null ? `${m.name} to ${m.lb} lb` : `${m.name} to ${m.reps} reps`);
+  const ups = moves.filter((m) => m.trend === "up").map(at);
+  const downs = moves.filter((m) => m.trend === "drop").map(at);
+  return [ups.length ? `Up today: ${joinAnd(ups)}.` : "", downs.length ? `Lighter today: ${joinAnd(downs)}, then build back up.` : ""]
+    .filter(Boolean).join(" ");
+}
+
 /** The body of the runner's reply: a line, then the plan. */
 export function runnerBody(s: Session): string {
-  const words = s.moves.length ? `${s.focus}. ${s.moves.length} moves, one set at a time. Let's go.` : `${s.focus}. Let's go.`;
+  const moved = changesLine(s.moves);
+  const words = s.moves.length ? `${s.focus}. ${s.moves.length} moves, one set at a time. Let's go.${moved ? ` ${moved}` : ""}` : `${s.focus}. Let's go.`;
   return `${words}\n\`\`\`yui\n${runnerLines(s).join("\n")}\n\`\`\``;
 }
 
@@ -841,5 +927,47 @@ export function loggedLine(name: string, items: Logged[]): string {
     return `Logged ${name}${mins ? `, ${mins} minutes` : ""}. Nice work.`;
   }
   return `Logged ${name}: ${items.length} ${items.length === 1 ? "move" : "moves"}, ${sets} ${sets === 1 ? "set" : "sets"}. Nice work.`;
+}
+
+/**
+ * The runner's wrap-up after the Send (feedback NOTE-35460): what was logged, what went up since last time, the
+ * call for next time from the same rule the runner uses, and the streak. `store` already holds today's rows.
+ */
+export function wrapUp(store: TableStore, s: Session, items: Logged[], feel: string | undefined, clk: Clock): string {
+  const out = [loggedLine(s.focus, items)];
+  const done = new Map(items.map((it) => [slug(it.exercise), it]));
+  const written = parseWorkout(s.workout);
+  const k = planChoices(store).kit;
+  const noWeight = k === "bands" || k === "bodyweight";
+  const ups: string[] = [];
+  const next: string[] = [];
+  const holds: string[] = [];
+  const drops: string[] = [];
+  const tops: string[] = [];
+  for (const m of s.moves) {
+    const it = done.get(slug(m.name));
+    if (!it || it.secs != null) continue;
+    const before = pastOf(store, m.name, s.day);
+    const was = it.lb != null ? before.find((p) => p.lb != null) : before.find((p) => p.reps != null && p.lb == null);
+    if (was?.lb != null && it.lb != null && it.lb > was.lb) ups.push(`${m.name} ${was.lb} to ${it.lb} lb`);
+    else if (was?.reps != null && it.lb == null && it.reps != null && it.reps > was.reps) ups.push(`${m.name} ${was.reps} to ${it.reps} reps`);
+    const w = written[m.n - 1] ?? { name: m.name, sets: m.sets, reps: m.reps };
+    const call = coachLoad(store, { ...w, name: m.name }, shift(s.day, 1), exerciseInfo(store, m.name).gear, noWeight);
+    if (call.trend === "up") next.push(call.lb != null ? `${m.name} ${call.lb} lb` : `${m.name} ${call.reps} reps`);
+    else if (call.trend === "hold") holds.push(m.name);
+    else if (call.trend === "drop") drops.push(`${m.name} ${call.lb} lb`);
+    else if (call.trend === "top") tops.push(m.name);
+  }
+  if (ups.length) out.push(`Up today: ${joinAnd(ups)}.`);
+  if (next.length) out.push(`Next time: ${joinAnd(next)}.`);
+  if (holds.length) {
+    out.push(/^hard$/i.test(feel ?? "") ? `Felt hard, so next time hold steady on ${joinAnd(holds)} and own the reps.`
+                                        : `Hold steady on ${joinAnd(holds)} until every rep is there.`);
+  }
+  if (drops.length) out.push(`Lighter next time: ${joinAnd(drops)}, then build back up.`);
+  if (tops.length) out.push(`${joinAnd(tops)} ${tops.length === 1 ? "is" : "are"} at the top of the reps: ask me for a harder version.`);
+  const n = streak(store, clk);
+  if (n) out.push(n === 1 ? "First week of your streak." : `${n} weeks in a row.`);
+  return out.join(" ");
 }
 

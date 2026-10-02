@@ -201,6 +201,15 @@ struct SessionEngine {
         return "Next: \(m.name), set \(n.set) of \(m.labels.count)"
     }
 
+    /// Arnold's load call for step `i` (feedback NOTE-35460): on a move's first set, and on the rest before it.
+    func why(at i: Int) -> String? {
+        guard i >= 0, i < steps.count else { return nil }
+        let s = steps[i]
+        let w: SessionStep? = s.kind == .rest ? nextWork(after: i) : s
+        guard let w, w.set == 1, let why = runner.moves[w.move].why, !why.isEmpty else { return nil }
+        return why
+    }
+
     /// Arnold's line for a move: the runtime's, else one of the app's own.
     static func cue(_ m: RunnerMove) -> String {
         if let c = m.cue, !c.isEmpty { return c }
@@ -354,6 +363,12 @@ struct TimedSessionView: View {
                 .font(theme.font(theme.type.body, .bold)).foregroundStyle(s.inkSoft)
                 .fixedSize(horizontal: false, vertical: true)
                 .accessibilityIdentifier("session-cue")
+            if let why = e.why(at: run.step) {
+                Text(why)
+                    .font(theme.font(theme.type.body, .medium)).foregroundStyle(s.ink)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("session-why")
+            }
             if step.kind == .work {
                 Text(e.target(m, progress))
                     .font(theme.font(theme.type.caption, .heavy)).foregroundStyle(s.inkSoft)
