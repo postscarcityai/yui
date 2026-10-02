@@ -72,3 +72,26 @@ func marksStream() {
     streamed += s.flush()
     #expect(streamed == YuiLines.parse(text))
 }
+
+@Test("mock: shape lines are gesture marks, they join the mock and point at parts by id")
+func gestureMarksJoinTheMock() {
+    let nodes = YuiLines.parse("mock \"Hold to talk\"\npart@send button Send\nshape tap at=send\nshape swipe \"slide to cancel\" at=send dir=left\nsay Done.")
+    #expect(nodes.map(\.preset) == ["mock", "part", "shape", "shape", "say"])
+    #expect(nodes[1].id == "send")
+    #expect(nodes[2].inGroup == nodes[0].id)
+    #expect(nodes[3].inGroup == nodes[0].id)
+    #expect(nodes[2].props?["kind"] == .string("tap"))
+    #expect(nodes[2].props?["at"] == .string("send"))
+    #expect(nodes[3].props?["dir"] == .string("left"))
+    #expect(nodes[3].props?["label"] == .string("slide to cancel"))
+    // A line that is neither a part nor a shape ends the mock.
+    #expect(nodes[4].inGroup == nil)
+}
+
+@Test("mock: in a deck, the marks join the mock and the next page goes back to the deck")
+func gestureMarksInADeck() {
+    let nodes = YuiLines.parse("deck D\npage One\nmock\npart button Go\nshape tap at=5,5\npage Two")
+    #expect(nodes.map(\.preset) == ["deck", "page", "mock", "part", "shape", "page"])
+    #expect(nodes[4].inGroup == nodes[2].id)
+    #expect(nodes[5].inGroup == nodes[0].id)
+}
