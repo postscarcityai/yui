@@ -154,8 +154,7 @@ struct StageView: View {
                         .font(theme.font(theme.type.body, .black))
                         .foregroundStyle(c.ink)
                         .frame(width: 44, height: 44)
-                        .background(c.surface, in: Circle())
-                        .overlay(Circle().stroke(c.outline, lineWidth: 1.5))
+                        .glassEffect(.regular.interactive(), in: .circle)
                         .frame(width: 56, height: 56)
                         .contentShape(.rect)
                 }

@@ -65,13 +65,17 @@ struct BarButtons: View {
 
     var body: some View {
         let c = theme.swatch(scheme)
-        HStack(spacing: 8) {
-            if showAttach, !micOn { attach(c).transition(pop) }
-            if showType || !showMic, !micOn { type(c).transition(pop) }
-            // Chris on TestFlight (YUI-190): "Find the best place to put a cancel button... I'm
-            // leaning towards the main screen." The mic's own spot, always under the thumb.
-            if let stop = actions.stop { stopButton(c, stop).transition(swap) }
-            else if showMic { mic(c).transition(swap) }
+        // Liquid Glass: + T and the mic share one container, so they read as one piece of glass and
+        // blend as + and T step aside for the mic.
+        GlassEffectContainer {
+            HStack(spacing: 8) {
+                if showAttach, !micOn { attach(c).transition(pop) }
+                if showType || !showMic, !micOn { type(c).transition(pop) }
+                // Chris on TestFlight (YUI-190): "Find the best place to put a cancel button... I'm
+                // leaning towards the main screen." The mic's own spot, always under the thumb.
+                if let stop = actions.stop { stopButton(c, stop).transition(swap) }
+                else if showMic { mic(c).transition(swap) }
+            }
         }
         .animation(reduceMotion ? .easeInOut(duration: 0.2) : theme.spring, value: micOn)
         .animation(reduceMotion ? .easeInOut(duration: 0.2) : theme.spring, value: actions.stop != nil)
@@ -92,8 +96,7 @@ struct BarButtons: View {
                 .font(theme.font(18, .bold))
                 .foregroundStyle(c.ink)
                 .frame(width: Self.small, height: Self.small)
-                .background(c.surface, in: Circle())
-                .overlay(Circle().stroke(c.outline, lineWidth: 1.5))
+                .glassEffect(.regular.interactive(), in: .circle)
                 .frame(width: Self.touch, height: Self.touch)
                 .contentShape(Circle())
         }
@@ -108,8 +111,7 @@ struct BarButtons: View {
                 .font(.system(size: 19, weight: .bold))
                 .foregroundStyle(c.ink)
                 .frame(width: Self.small, height: Self.small)
-                .background(c.surface, in: Circle())
-                .overlay(Circle().stroke(c.outline, lineWidth: 1.5))
+                .glassEffect(.regular.interactive(), in: .circle)
                 .frame(width: Self.touch, height: Self.touch)
                 .contentShape(Circle())
         }
@@ -129,8 +131,7 @@ struct BarButtons: View {
                 .font(.system(size: Self.micSize * 0.3, weight: .bold))
                 .foregroundStyle(c.onAccent)
                 .frame(width: Self.micSize, height: Self.micSize)
-                .background(c.accent, in: Circle())
-                .shadow(color: c.accent.opacity(0.45), radius: 9, y: 6)
+                .glassEffect(.regular.tint(c.accent).interactive(), in: .circle)
                 .contentShape(Circle())
         }
         .buttonStyle(BounceButtonStyle())
@@ -146,8 +147,7 @@ struct BarButtons: View {
                 .font(.system(size: 17, weight: .bold))
                 .foregroundStyle(lockArmed ? c.onAccent : c.ink)
                 .frame(width: Self.small, height: Self.small)
-                .background(lockArmed ? c.accent : c.surface, in: Circle())
-                .overlay(Circle().stroke(lockArmed ? .clear : c.outline, lineWidth: 1.5))
+                .glassEffect(lockArmed ? .regular.tint(c.accent) : .regular, in: .circle)
                 .scaleEffect(lockArmed && !reduceMotion ? 1.2 : 1)
                 .animation(reduceMotion ? nil : theme.spring, value: lockArmed)
             Image(systemName: "chevron.up")
@@ -180,8 +180,8 @@ struct BarButtons: View {
             .background {
                 if let look, micLive, !look.reduced { MicRing(color: c.accent, look: look, voice: voice) }
             }
-            .background(c.accent, in: Circle())
-            .shadow(color: c.accent.opacity(0.45), radius: 9, y: 6)
+            // The mic is glass in the agent's color: the one tinted piece in the bar.
+            .glassEffect(.regular.tint(c.accent).interactive(), in: .circle)
             .scaleEffect(press != nil && !reduceMotion ? 0.94 : micLive && !reduceMotion ? 1.08 : 1)
             .animation(reduceMotion ? nil : theme.spring, value: press != nil)
             .animation(reduceMotion ? nil : theme.spring, value: micLive)
@@ -273,8 +273,7 @@ struct BarTrash: View {
             .font(.system(size: BarButtons.micSize * 0.34, weight: .bold))
             .foregroundStyle(armed ? c.onAccent : c.ink)
             .frame(width: BarButtons.micSize, height: BarButtons.micSize)
-            .background(armed ? c.accent : c.surface, in: Circle())
-            .overlay(Circle().stroke(armed ? .clear : c.outline, lineWidth: 1.5))
+            .glassEffect(armed ? .regular.tint(c.accent) : .regular, in: .circle)
             .scaleEffect(armed && !reduceMotion ? 1.1 : 1)
             .animation(reduceMotion ? nil : theme.spring, value: armed)
             .allowsHitTesting(false)

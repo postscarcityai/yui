@@ -100,8 +100,8 @@ struct HomeChips: View {
             }
             .padding(.horizontal, small ? theme.spacing.m : theme.spacing.m)
             .frame(maxWidth: .infinity, minHeight: small ? 40 : 58)
-            .background(c.accent.opacity(small ? 0.10 : 0.14), in: .rect(cornerRadius: small ? 20 : 22))
-            .overlay(RoundedRectangle(cornerRadius: small ? 20 : 22).stroke(c.accent.opacity(0.45), lineWidth: 1.5))
+            // Liquid Glass with a wash of the agent's color: they sit over the bar, with the rest of its glass.
+            .glassEffect(.regular.tint(c.accent.opacity(small ? 0.10 : 0.16)).interactive(), in: .rect(cornerRadius: small ? 20 : 22))
             .contentShape(.rect(cornerRadius: 22))
         }
         .buttonStyle(BounceButtonStyle())
@@ -303,8 +303,8 @@ struct ScreenPills: View {
                                 .lineLimit(1)
                                 .padding(.horizontal, theme.spacing.m)
                                 .frame(height: Self.height)
-                                .background(on ? c.accent : c.surface, in: Capsule())
-                                .overlay(Capsule().stroke(on ? .clear : c.outline, lineWidth: 1.5))
+                                // Glass, the one on show tinted in the agent's color.
+                                .glassEffect(on ? .regular.tint(c.accent).interactive() : .regular.interactive(), in: .capsule)
                                 .contentShape(Capsule())
                         }
                         .buttonStyle(BounceButtonStyle())

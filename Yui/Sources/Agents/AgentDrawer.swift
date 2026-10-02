@@ -172,23 +172,25 @@ struct AgentDrawer: View {
             }
             .scrollIndicators(.hidden)
             .animation(reduceMotion ? nil : theme.spring, value: tab)
-            // Always in view, not behind the switcher (YUI-229): a stranger finds it in the drawer.
-            if let add {
-                Button { close(); add() } label: {
-                    Label("Add an agent", systemImage: "plus")
-                        .font(theme.font(15, .bold)).foregroundStyle(c.onAccent)
-                        .frame(maxWidth: .infinity).padding(.vertical, 13)
-                        .background(c.accent, in: Capsule())
+            // Switching agents lives down here, as it did before the top pill (YUI-194). Add an agent is tucked
+            // in beside it (feedback NOTE-3651): still in view without the switcher (YUI-229), no longer a slab.
+            HStack(spacing: theme.spacing.s) {
+                AgentBar(agent: store.agent) { switching = true }
+                if let add {
+                    Button { close(); add() } label: {
+                        Image(systemName: "plus")
+                            .font(theme.font(17, .bold)).foregroundStyle(c.ink)
+                            .frame(width: 52, height: 52)
+                            .glassEffect(.regular.interactive(), in: .circle)
+                            .contentShape(Circle())
+                    }
+                    .buttonStyle(BounceButtonStyle())
+                    .accessibilityLabel("Add an agent")
+                    .accessibilityIdentifier("drawer-add-agent")
                 }
-                .buttonStyle(BounceButtonStyle())
-                .padding(.horizontal, theme.spacing.m)
-                .padding(.bottom, theme.spacing.s)
-                .accessibilityIdentifier("drawer-add-agent")
             }
-            // Switching agents lives down here, as it did before the top pill (YUI-194).
-            AgentBar(agent: store.agent) { switching = true }
-                .padding(.horizontal, theme.spacing.m)
-                .padding(.bottom, theme.spacing.s)
+            .padding(.horizontal, theme.spacing.m)
+            .padding(.bottom, theme.spacing.s)
         }
         .background(c.background)
         .overlay {

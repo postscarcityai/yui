@@ -101,8 +101,7 @@ struct MenuPill: View {
             .foregroundStyle(c.ink)
             .padding(.horizontal, 14)
             .frame(height: 44)
-            .background(c.surface, in: Capsule())
-            .overlay(Capsule().stroke(c.outline, lineWidth: 1.5))
+            .glassEffect(.regular.interactive(), in: .capsule)
             .contentShape(Capsule())
         }
         .buttonStyle(BounceButtonStyle())

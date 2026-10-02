@@ -591,22 +591,27 @@ struct StageFirstView: View {
                 Spacer(minLength: 0)
             }
             // The pen on a page starts a new chat (YUI-169); the chat itself, the record, is the bubble beside it.
-            circle("bubble.left", c, label: "Chat", id: "stage-record", action: actions.record)
-                .overlay(alignment: .topTrailing) {
-                    if unread > 0 {
-                        Text(unread > 99 ? "99+" : "\(unread)")
-                            .font(.system(size: 11, weight: .heavy).monospacedDigit())
-                            .foregroundStyle(c.onAccent)
-                            .padding(.horizontal, 5)
-                            .frame(minWidth: 20, minHeight: 20)
-                            .background(c.accent, in: Capsule())
-                            .offset(x: 2, y: -2)
-                            .allowsHitTesting(false)
-                            .accessibilityHidden(true)
-                    }
+            // One glass container, so the two circles sit in the same pane of glass and blend as they move.
+            GlassEffectContainer {
+                HStack(spacing: theme.spacing.s) {
+                    circle("bubble.left", c, label: "Chat", id: "stage-record", action: actions.record)
+                        .overlay(alignment: .topTrailing) {
+                            if unread > 0 {
+                                Text(unread > 99 ? "99+" : "\(unread)")
+                                    .font(.system(size: 11, weight: .heavy).monospacedDigit())
+                                    .foregroundStyle(c.onAccent)
+                                    .padding(.horizontal, 5)
+                                    .frame(minWidth: 20, minHeight: 20)
+                                    .background(c.accent, in: Capsule())
+                                    .offset(x: 2, y: -2)
+                                    .allowsHitTesting(false)
+                                    .accessibilityHidden(true)
+                            }
+                        }
+                        .accessibilityValue(unread > 0 ? "\(unread) new" : "")
+                    circle("square.and.pencil", c, label: "New chat", id: "stage-new-chat", action: actions.newChat)
                 }
-                .accessibilityValue(unread > 0 ? "\(unread) new" : "")
-            circle("square.and.pencil", c, label: "New chat", id: "stage-new-chat", action: actions.newChat)
+            }
         }
         .padding(.horizontal, theme.spacing.l)
         .padding(.top, theme.spacing.xs)
@@ -974,6 +979,10 @@ struct StageFirstView: View {
         }
         .scrollBounceBehavior(.basedOnSize)
         .scrollIndicators(.hidden)
+        // Tap the left side to go back (feedback NOTE-35492), as on a chunk: a tap on words or space in the
+        // left third goes back to the page before the questions. Buttons, pickers and fields keep their own taps.
+        .contentShape(.rect)
+        .onTapGesture { p in if p.x < geo.size.width / 3, !t.chunks.isEmpty { step(-1) } }
         }
         .accessibilityIdentifier("stage-questions")
     }
@@ -1069,18 +1078,26 @@ struct StageFirstView: View {
             } else {
                 let pages = turn?.pages ?? 0
                 let arrows = pages > 1 && !mic.live
+                let part = min(model.at, max(0, pages - 1))
+                // No X, just arrows (feedback NOTE-24156, NOTE-37260): on the first page the back arrow
+                // is the way home, so the bar holds one button fewer. It keeps the close's id and sends nothing.
+                let home = closable(turn) && !atEnd(turn) && part == 0
                 HStack(spacing: 8) {
-                    if closable(turn), !atEnd(turn) {
-                        small("xmark", c, filled: false, label: "Close", id: "stage-close") { goHome() }
-                    }
-                    if arrows {
-                        let at = min(model.at, pages - 1)
-                        small("chevron.left", c, filled: false, label: "Back", id: "stage-back") { step(-1) }
-                            .opacity(at == 0 ? 0.35 : 1)
-                            .disabled(at == 0)
-                        small("chevron.right", c, filled: at < pages - 1, label: "Next", id: "stage-next") { step(1) }
-                            .opacity(at == pages - 1 ? 0.35 : 1)
-                            .disabled(at == pages - 1)
+                    GlassEffectContainer {
+                        HStack(spacing: 8) {
+                            if home {
+                                small("chevron.left", c, filled: false, label: "Back home", id: "stage-close") { goHome() }
+                            } else if arrows {
+                                small("chevron.left", c, filled: false, label: "Back", id: "stage-back") { step(-1) }
+                                    .opacity(part == 0 ? 0.35 : 1)
+                                    .disabled(part == 0)
+                            }
+                            if arrows {
+                                small("chevron.right", c, filled: part < pages - 1, label: "Next", id: "stage-next") { step(1) }
+                                    .opacity(part == pages - 1 ? 0.35 : 1)
+                                    .disabled(part == pages - 1)
+                            }
+                        }
                     }
                     Spacer(minLength: 0)
                     BarButtons(prefix: "stage", showMic: showMic, showType: showType, showAttach: showAttach,
@@ -1170,8 +1187,7 @@ struct StageFirstView: View {
                                 .font(.system(size: 19, weight: .bold))
                                 .foregroundStyle(c.ink)
                                 .frame(width: Self.small, height: Self.small)
-                                .background(c.surface, in: Circle())
-                                .overlay(Circle().stroke(c.outline, lineWidth: 1.5))
+                                .glassEffect(.regular.interactive(), in: .circle)
                                 .frame(width: Self.touch, height: Self.touch)
                                 .contentShape(Circle())
                         }
@@ -1195,7 +1211,7 @@ struct StageFirstView: View {
                             .font(.system(size: 17, weight: .black))
                             .foregroundStyle(c.onAccent)
                             .frame(width: Self.small, height: Self.small)
-                            .background(c.accent, in: Circle())
+                            .glassEffect(.regular.tint(c.accent).interactive(), in: .circle)
                             .frame(width: Self.touch, height: Self.touch)
                             .contentShape(Circle())
                             .overlay { if sending { ProgressView().tint(c.onAccent) } }
@@ -1207,9 +1223,9 @@ struct StageFirstView: View {
                 }
             }
             .padding(theme.spacing.s)
-            .background(c.surface, in: .rect(cornerRadius: theme.radius.card))
+            // Liquid Glass, as the bar it grows out of; the agent's color rims it while it has the keyboard.
+            .glassEffect(.regular, in: .rect(cornerRadius: theme.radius.card))
             .overlay(RoundedRectangle(cornerRadius: theme.radius.card).stroke(c.accent.opacity(0.5), lineWidth: 1.5))
-            .shadow(color: .black.opacity(0.08), radius: 14, y: 6)
             if showMic {
                 Button(action: fold) {
                     Text("Back to the mic")
