@@ -199,7 +199,7 @@ extension YLComponent {
     static let groupHeads: Set<String> = ["deck", "plan", "narrate", "timeline", "sketch", "shapes", "mock", "map"]
 
     /// What can be a page's picture in a deck (spec: On a page; YUI-113).
-    static let pictures: Set<String> = ["sketch", "shapes", "diagram", "mock", "map", "math", "chart", "stat", "calc"]
+    static let pictures: Set<String> = ["sketch", "shapes", "diagram", "mock", "draw", "map", "math", "chart", "stat", "calc"]
 }
 
 extension Array where Element == YLComponent {

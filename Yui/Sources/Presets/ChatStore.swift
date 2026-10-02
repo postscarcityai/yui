@@ -1272,6 +1272,16 @@ final class ChatStore {
         if turnTimes.count > Self.turnTimesKept { turnTimes.removeFirst(turnTimes.count - Self.turnTimesKept) }
     }
 
+    /// Whether a reply's messages put anything in front of the person: words, or a component on the chat's
+    /// own screen. An empty reply counts (a turn that ended with nothing), so the wait never hangs on it.
+    static func answersTurn(_ new: [ChatMessage]) -> Bool {
+        new.isEmpty || new.contains { m in
+            if m.home { return false }
+            guard let yl = m.yl else { return !m.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+            return yl.components.contains { $0.page == 1 }
+        }
+    }
+
     /// True when the row was new.
     @discardableResult
     private func add(_ row: ThreadRow) -> Bool {
@@ -1292,7 +1302,7 @@ final class ChatStore {
         if !history { time(row) }
         if !history, row.sender == "agent", Mentions.from(meta: row.meta) == nil { trackJob(row) }
         // Another agent's answer copied in (YUI-44) doesn't end this agent's turn.
-        if !history, row.sender == "agent", Mentions.from(meta: row.meta) == nil { waiting = false; pickedUpAt = nil; doing = nil }
+        let mayEndTurn = !history && row.sender == "agent" && Mentions.from(meta: row.meta) == nil
         if !history, row.sender == "agent", let done = TalkAbout.applied(meta: row.meta), done == about?.id {
             withAnimation(spring) { about = nil }  // its proposal was applied (YUI-69)
         }
@@ -1362,6 +1372,10 @@ final class ChatStore {
                 }
             }
         }
+        // Only something to read or answer ends the wait (feedback APO8y7eU: "it makes it seem like we're half
+        // done, but the thing is still working"). A row that only fills a side screen, the home or the drawer
+        // mid-turn leaves the working state up; the turn's own end (`track`) still clears it.
+        if mayEndTurn, Self.answersTurn(new) { waiting = false; pickedUpAt = nil; doing = nil }
         guard !new.isEmpty else { return false }
         if let at = historyAt {
             // History goes in front, in order, and never takes the stage or moves a page.
@@ -1475,6 +1489,8 @@ final class ChatStore {
         let when = UserDefaults.standard.object(forKey: "yuiDemoArriveAfter") == nil ? 3 : UserDefaults.standard.double(forKey: "yuiDemoArriveAfter")
         Task {
             try? await Task.sleep(for: .seconds(when))
+            // With -yuiDemoPrompt the reply answers something said, so the stage shows the ask over it.
+            if let prompt = UserDefaults.standard.string(forKey: "yuiDemoPrompt") { messages.append(ChatMessage(text: prompt, fromUser: true)) }
             _ = add(ThreadRow(id: "arrive-1", sender: "agent", body: text.replacingOccurrences(of: "\\n", with: "\n"), kind: "text",
                               meta: nil, createdAt: ISO8601DateFormatter().string(from: .now)))
         }

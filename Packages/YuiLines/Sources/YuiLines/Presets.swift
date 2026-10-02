@@ -47,7 +47,7 @@ let presets: Set<String> = [
     "timeline", "done", "now", "next",
     "sketch", "row", "after",
     "shapes", "shape",
-    "diagram", "mock", "part",
+    "diagram", "mock", "part", "draw",
     "map", "area", "pin", "route",
     "game", "flow",
     "loop", "drums", "keys", "chords", "tuner", "metronome",
@@ -58,8 +58,8 @@ let presets: Set<String> = [
 /// the same screen. A narrate can hold another group (a deck), a deck or plan
 /// a sketch (the picture of the page before it).
 let groups: [String: Set<String>] = [
-    "deck": ["page", "ask", "choose", "pick", "sketch", "shapes", "diagram", "mock", "map", "math", "chart", "stat", "calc"],
-    "plan": ["page", "ask", "choose", "pick", "slide", "form", "mic", "camera", "sketch", "diagram", "mock", "map"],
+    "deck": ["page", "ask", "choose", "pick", "sketch", "shapes", "diagram", "mock", "draw", "map", "math", "chart", "stat", "calc"],
+    "plan": ["page", "ask", "choose", "pick", "slide", "form", "mic", "camera", "sketch", "diagram", "mock", "draw", "map"],
     "narrate": ["page", "compare", "image", "video", "card", "stat", "chart", "math", "storyboard", "gallery", "deck"],
     "timeline": ["done", "now", "next"],
     "sketch": ["row", "after"],
@@ -487,7 +487,7 @@ private func positional(_ preset: String, _ pos: [Token]) -> Props {
             if text.count > 1 { o["body"] = .string(joinText(Array(text.dropFirst()))) }
         }
 
-    case "calc", "deck", "plan", "flow", "narrate", "timeline", "sketch", "shapes", "diagram", "mock", "map":
+    case "calc", "deck", "plan", "flow", "narrate", "timeline", "sketch", "shapes", "diagram", "mock", "draw", "map":
         if !pos.isEmpty { o["title"] = .string(joinText(pos)) }
 
     case "row":

@@ -72,7 +72,7 @@ enum StageChunks {
     static let pageWords = 60
     /// Drawings that share a page: they scale to the width and stack. A map, a game, a timer or a
     /// form keeps a page of its own.
-    static let stackable: Set<String> = ["sketch", "shapes", "chart", "stat", "timeline", "list", "table", "row", "card", "compare", "math", "step"]
+    static let stackable: Set<String> = ["sketch", "shapes", "chart", "stat", "timeline", "list", "table", "row", "card", "compare", "math", "step", "draw"]
 
     /// Packs a turn's chunks onto pages, up to `perPage` ideas each (mirror: `packPages` in
     /// yuigui site/lib/yl/chunks.mjs). A deck or plan page, and any chunk that is not a line with
@@ -81,6 +81,15 @@ enum StageChunks {
         var out: [StageChunk] = []
         var words = 0
         for c in chunks {
+            // Lines that are each one `Label: value` read as one ledger, not as separate ideas
+            // (feedback ACHcboRE: "line up push taps and new replies"). Up to six rows.
+            if isLabel(c), let last = out.last, last.more.isEmpty, isLabel(last),
+               (last.line ?? "").split(separator: "\n").count < 6 {
+                out[out.count - 1].line = (last.line ?? "") + "\n" + (c.line ?? "")
+                continue
+            }
+            // A ledger's first row starts its own page: it never rides under a drawing.
+            if isLabel(c) { out.append(c); words = pageWords; continue }
             let w = c.line.map { $0.split(whereSeparator: \.isWhitespace).count } ?? 0
             if canStack(c), var last = out.last, canStack(last), last.blocks.count < perPage, words + w <= pageWords {
                 last.more.append(c)
@@ -92,6 +101,12 @@ enum StageChunks {
             }
         }
         return out
+    }
+
+    /// Words alone, every line of them a `Label: value`.
+    private static func isLabel(_ c: StageChunk) -> Bool {
+        guard c.pic == nil, c.page == nil, let line = c.line, !line.isEmpty else { return false }
+        return ReadingBlock.parse(line).allSatisfy { if case .label = $0 { true } else { false } }
     }
 
     private static func canStack(_ c: StageChunk) -> Bool {

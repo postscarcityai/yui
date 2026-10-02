@@ -132,14 +132,22 @@ struct ReadingText: View {
     /// Lay a body out at a headline's weight only when it is one short line.
     var alignment: HorizontalAlignment = .leading
     @Environment(\.yuiTheme) private var theme
+    @Environment(\.ylOnStage) private var onStage
 
     var body: some View {
         let blocks = ReadingBlock.parse(text)
         if ReadingType.role(text) == .headline, let size = headlineSize, case .paragraph(let a) = blocks[0] {
+            // Sized to how much it says (feedback ADv4muh0: "does the text really need to be that big?"):
+            // a few words fill the line, a full sentence steps down. Bold, not black, and set tight.
+            let fit = onStage ? StageType.headline(String(a.characters), base: size) : size
             Text(a)
-                .font(theme.font(size, .heavy))
+                .font(theme.font(fit, onStage ? .bold : .heavy))
+                .tracking(onStage ? -fit * 0.022 : 0)
+                .lineSpacing(onStage ? -fit * 0.04 : 0)
                 .foregroundStyle(ink)
                 .fixedSize(horizontal: false, vertical: true)
+        } else if onStage, let rows = StatusLedger.rows(blocks) {
+            StatusLedger(rows: rows, ink: ink, soft: soft ?? ink.opacity(0.6), accent: accent)
         } else {
             VStack(alignment: alignment, spacing: theme.spacing.s + 2) {
                 ForEach(Array(blocks.enumerated()), id: \.offset) { _, b in row(b) }
@@ -198,6 +206,141 @@ struct ReadingText: View {
                 .padding(theme.spacing.m)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background((soft ?? ink).opacity(0.12), in: .rect(cornerRadius: theme.radius.bubble / 2))
+        }
+    }
+}
+
+/// How big a headline is set on the stage.
+enum StageType {
+    /// A few words at the full size, a sentence a step or two down, so no headline fills the phone.
+    static func headline(_ text: String, base: Double) -> Double {
+        let n = LongText.wordCount(text)
+        // A stacked idea's line is small already: only the big single line steps down.
+        guard base >= 30 else { return base }
+        return n <= 4 ? base : n <= 8 ? base * 0.86 : base * 0.74
+    }
+}
+
+/// `Label: value` lines on the stage, as a short ledger (feedback ACHcboRE: "line up push taps and new
+/// replies and put a simple checkmark"; AEfIl6dC: "Invite: Declined. Simple and to the point"). Each line
+/// is a row: a mark that says how it went, the label small, the value set bigger. No sentences.
+struct StatusLedger: View {
+    struct Row: Equatable {
+        let label: String
+        let value: AttributedString
+        let mark: Mark
+    }
+
+    /// How a row went, read from its value's own words.
+    enum Mark: Equatable {
+        case good, bad, waiting, plain
+
+        static let goodWords: Set<String> = ["fixed", "done", "good", "strong", "shipped", "live", "ready", "yes", "works", "working",
+                                             "passed", "green", "sent", "approved", "accepted", "merged", "saved", "booked", "paid", "up"]
+        static let badWords: Set<String> = ["declined", "broken", "failed", "fails", "no", "missing", "blocked", "down", "red", "bad",
+                                            "weak", "never", "rejected", "cancelled", "canceled", "late", "overdue", "lost"]
+        static let waitingWords: Set<String> = ["next", "waiting", "soon", "later", "need", "needs", "queued", "pending", "tomorrow",
+                                                "building", "running", "open", "todo"]
+
+        /// The first word that says it. A value that says none is plain: a dot, no verdict.
+        static func of(_ value: String) -> Mark {
+            for w in value.lowercased().split(whereSeparator: { !$0.isLetter }).map(String.init) {
+                if goodWords.contains(w) { return .good }
+                if badWords.contains(w) { return .bad }
+                if waitingWords.contains(w) { return .waiting }
+            }
+            return .plain
+        }
+    }
+
+    /// The rows when a text is nothing but two or more `Label: value` lines; nil for anything else.
+    static func rows(_ blocks: [ReadingBlock]) -> [Row]? {
+        var out: [Row] = []
+        for b in blocks {
+            switch b {
+            case .gap: continue
+            case .label(let l, let v): out.append(Row(label: l, value: v, mark: Mark.of(String(v.characters))))
+            default: return nil
+            }
+        }
+        return out.count >= 2 ? out : nil
+    }
+
+    let rows: [Row]
+    var ink: Color
+    var soft: Color
+    var accent: Color
+    @State private var on = false
+    @Environment(\.yuiTheme) private var theme
+    @Environment(\.colorScheme) private var scheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            ForEach(Array(rows.enumerated()), id: \.offset) { i, r in
+                HStack(alignment: .center, spacing: theme.spacing.m) {
+                    mark(r.mark)
+                        .scaleEffect(on || reduceMotion ? 1 : 0.2)
+                        .animation(reduceMotion ? nil : .spring(duration: 0.4, bounce: 0.5).delay(0.18 + 0.12 * Double(i)), value: on)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(r.label.uppercased())
+                            .font(theme.font(theme.type.caption - 2, .heavy))
+                            .tracking(1.2)
+                            .foregroundStyle(soft)
+                        Text(r.value)
+                            .font(theme.font(theme.type.title - 2, .semibold))
+                            .foregroundStyle(ink)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    Spacer(minLength: 0)
+                }
+                .padding(.vertical, theme.spacing.m)
+                .overlay(alignment: .top) {
+                    if i > 0 { Rectangle().fill(ink.opacity(0.12)).frame(height: 1) }
+                }
+                .opacity(on || reduceMotion ? 1 : 0)
+                .offset(y: on || reduceMotion ? 0 : 10)
+                .animation(reduceMotion ? nil : .spring(duration: 0.45, bounce: 0.18).delay(0.08 + 0.12 * Double(i)), value: on)
+                .accessibilityElement(children: .combine)
+                .accessibilityValue(spoken(r.mark))
+                .accessibilityIdentifier("stage-ledger-row")
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .onAppear { on = true }
+    }
+
+    @ViewBuilder private func mark(_ m: Mark) -> some View {
+        let color: Color = switch m {
+        case .good: ChartPalette.good(scheme)
+        case .bad: ChartPalette.bad(scheme)
+        case .waiting, .plain: accent
+        }
+        let icon: String? = switch m {
+        case .good: "checkmark"
+        case .bad: "xmark"
+        case .waiting: "arrow.right"
+        case .plain: nil
+        }
+        ZStack {
+            Circle().fill(color.opacity(m == .plain ? 0 : 0.16))
+            Circle().stroke(color.opacity(m == .plain ? 0.5 : 0.9), lineWidth: 1.25)
+            if let icon {
+                Image(systemName: icon).font(.system(size: 12, weight: .black)).foregroundStyle(color)
+            } else {
+                Circle().fill(color).frame(width: 6, height: 6)
+            }
+        }
+        .frame(width: 28, height: 28)
+        .accessibilityHidden(true)
+    }
+
+    private func spoken(_ m: Mark) -> String {
+        switch m {
+        case .good: "done"
+        case .bad: "not done"
+        case .waiting: "coming"
+        case .plain: ""
         }
     }
 }

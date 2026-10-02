@@ -578,7 +578,7 @@ struct StageFirstView: View {
     private func topBar(_ c: Swatch) -> some View {
         HStack(spacing: theme.spacing.s) {
             // The drawer: the war room, the agent's controls and Settings.
-            circle("line.3.horizontal", c, label: "Menu", id: "stage-menu", action: actions.menu)
+            menuButton(c, named: screens.count <= 1)
                 .modifier(WaitingDot(waiting: waiting > 0, reduceMotion: reduceMotion, x: 1, y: 1))
                 .accessibilityValue(waiting > 0 ? "\(waiting) waiting on you" : "")
             // The screens as pills (YUI-193, Chris Sep 28: "some pills for the screens ... kind of
@@ -618,13 +618,36 @@ struct StageFirstView: View {
                 .font(.system(size: 17, weight: .bold))
                 .foregroundStyle(c.ink)
                 .frame(width: 44, height: 44)
-                .background(c.surface, in: Circle())
-                .overlay(Circle().stroke(c.outline, lineWidth: 1.5))
+                .glassEffect(.regular.interactive(), in: .circle)
                 .contentShape(Circle())
         }
         .buttonStyle(BounceButtonStyle())
         .accessibilityLabel(label)
         .accessibilityIdentifier(id)
+    }
+
+    /// The menu and who you are talking to, one button (feedback ANG8AA-7: "I don't actually know where I
+    /// am ... the hamburger on the left, then the name of the agent, the whole button just opens the drawer").
+    private func menuButton(_ c: Swatch, named: Bool) -> some View {
+        Button(action: actions.menu) {
+            HStack(spacing: theme.spacing.s) {
+                Image(systemName: "line.3.horizontal")
+                    .font(.system(size: 17, weight: .bold))
+                if named, let name = agent?.name {
+                    Text(name)
+                        .font(theme.font(theme.type.body, .semibold))
+                        .lineLimit(1)
+                }
+            }
+            .foregroundStyle(c.ink)
+            .padding(.horizontal, named && agent != nil ? 15 : 0)
+            .frame(minWidth: 44, minHeight: 44)
+            .glassEffect(.regular.interactive(), in: .capsule)
+            .contentShape(Capsule())
+        }
+        .buttonStyle(BounceButtonStyle())
+        .accessibilityLabel(named ? "Menu, \(agent?.name ?? "Yui")" : "Menu")
+        .accessibilityIdentifier("stage-menu")
     }
 
     // MARK: The middle
@@ -679,13 +702,15 @@ struct StageFirstView: View {
         return VStack(alignment: .leading, spacing: theme.spacing.s) {
             if pages > 1 { segments(pages, at: at, c) }
             if let ask = t.ask {
+                // What was asked, over the answer. Chris, TestFlight AKh8806F: one line cut his question too soon.
+                // Six, then the ellipsis. Always from the left, so it never jumps sides between the working
+                // state and the answer.
                 Text("\(Text("You: ").bold())\(ask.text)")
                     .font(theme.font(theme.type.caption))
                     .foregroundStyle(c.inkSoft)
-                    // Chris, TestFlight AKh8806F: one line cut his question too soon. Six, then the ellipsis.
                     .lineLimit(6)
-                    .multilineTextAlignment(pages > 1 ? .leading : .trailing)
-                    .frame(maxWidth: .infinity, alignment: pages > 1 ? .leading : .trailing)
+                    .multilineTextAlignment(.leading)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                     .accessibilityIdentifier("stage-you")
             }
             Group {
@@ -696,7 +721,10 @@ struct StageFirstView: View {
                         // Stopped (YUI-190): the stage is still, ready for the next thing.
                         greeting(c, title: "Stopped.", sub: "Say the next thing when you're ready.", id: "stage-stopped")
                     } else {
-                        greeting(c, title: "Anything else?", sub: "Everything so far is in the chat, top right.")
+                        // Nothing came back to show for this (a command, a quiet update): say so, never "Anything else?"
+                        // over a question that looks unanswered (feedback APO8y7eU).
+                        greeting(c, title: t.ask != nil ? "Nothing to show for that." : "Anything else?",
+                                 sub: t.ask != nil ? "Ask again, or open the chat, top right." : "Everything so far is in the chat, top right.")
                     }
                 } else if at < t.chunks.count {
                     // done: the stage hands over to the chunk, in the look's enter.
@@ -735,9 +763,10 @@ struct StageFirstView: View {
     /// The end of the last page (YUI-208): Back home and New chat side by side, quiet. Back home sends
     /// nothing: the agent never hears of it. New chat starts an empty one.
     private func pageEnd(_ c: Swatch) -> some View {
-        HStack(spacing: theme.spacing.s) {
+        HStack(spacing: theme.spacing.xs) {
             endButton("Back home", "house", c, id: "stage-home", hint: "Closes this and goes to the agent's home. Sends nothing.") { goHome() }
             endButton("New chat", "square.and.pencil", c, id: "stage-page-new-chat", hint: "Starts a new chat with this agent.") { actions.newChat() }
+            Spacer(minLength: 0)
         }
     }
 
@@ -747,9 +776,8 @@ struct StageFirstView: View {
             Label(title, systemImage: icon)
                 .font(theme.font(theme.type.caption, .semibold))
                 .foregroundStyle(c.inkSoft)
-                .frame(maxWidth: .infinity, minHeight: 44)
-                .background(c.surface, in: Capsule())
-                .overlay(Capsule().stroke(c.outline, lineWidth: 1.5))
+                .padding(.horizontal, theme.spacing.m)
+                .frame(minHeight: 44)
                 .contentShape(Capsule())
         }
         .buttonStyle(BounceButtonStyle())
@@ -777,7 +805,10 @@ struct StageFirstView: View {
         return GeometryReader { geo in
             ScrollView {
                 VStack(alignment: .leading, spacing: blocks.count > 1 ? theme.spacing.xl : theme.spacing.l) {
-                    ForEach(blocks) { k in block(k, c, room: blocks.count > 1 ? geo.size.width * 0.5 : nil) }
+                    ForEach(blocks) { k in
+                        block(k, c, room: blocks.count > 1 ? geo.size.width * 0.72 : nil)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
                 }
                 .frame(maxWidth: .infinity, minHeight: geo.size.height, alignment: .center)
             }
@@ -790,41 +821,21 @@ struct StageFirstView: View {
         .accessibilityIdentifier("stage-page-\(blocks.count)")
     }
 
-    /// One idea: its drawing, then its line (stacked: the line, then its drawing).
+    /// Presets that are a drawing: on the stage they sit straight on the page, no card round them
+    /// (values 4, "no card sitting inside full screen"; feedback APXu3dFU, ALkikjiu).
+    static let drawings: Set<String> = ["sketch", "row", "shapes", "shape", "mock", "part", "diagram", "map", "chart", "stat",
+                                        "math", "timeline", "compare", "draw"]
+
+    /// One idea: its words, then the drawing that shows them, as a headline sits over its figure.
     @ViewBuilder private func block(_ k: StageChunk, _ c: Swatch, room: CGFloat?) -> some View {
         let stacked = room != nil
-        VStack(alignment: .leading, spacing: stacked ? theme.spacing.s : theme.spacing.l) {
-            // Stacked ideas read line first, so each drawing sits under the words it shows.
-            if stacked {
+        VStack(alignment: .leading, spacing: stacked ? theme.spacing.m : theme.spacing.xl) {
             if let line = k.line, !line.isEmpty {
                 // Big type is for one short line; longer words read as body (YUI-196). Stacked ideas read a size down.
                 ReadingText(text: line, ink: c.ink, soft: c.inkSoft, accent: c.accent,
-                            headlineSize: stacked ? theme.type.title : k.pic == nil ? theme.type.display + 4 : theme.type.display)
+                            headlineSize: stacked ? theme.type.title + 2 : theme.type.display + 4)
                     .accessibilityIdentifier("stage-line")
                     .onGeometryChange(for: CGFloat.self, of: { $0.frame(in: .global).minY }) { wordsTop = $0 }
-            }
-            if let pic = k.pic {
-                PresetView(component: pic)
-                    .environment(\.ylComponents, k.all)
-                    .environment(\.ylScope, k.scope)
-                    // Stacked ideas share the height: a scene scales down to half the width so its height shrinks with it; a sketch keeps its own height and the page scrolls if it must.
-                    .frame(maxWidth: k.pic?.preset == "shapes" ? room : nil)
-            }
-            } else {
-            if let pic = k.pic {
-                PresetView(component: pic)
-                    .environment(\.ylComponents, k.all)
-                    .environment(\.ylScope, k.scope)
-                    // Stacked ideas share the height: a scene scales down to half the width so its height shrinks with it; a sketch keeps its own height and the page scrolls if it must.
-                    .frame(maxWidth: k.pic?.preset == "shapes" ? room : nil)
-            }
-            if let line = k.line, !line.isEmpty {
-                // Big type is for one short line; longer words read as body (YUI-196). Stacked ideas read a size down.
-                ReadingText(text: line, ink: c.ink, soft: c.inkSoft, accent: c.accent,
-                            headlineSize: stacked ? theme.type.title : k.pic == nil ? theme.type.display + 4 : theme.type.display)
-                    .accessibilityIdentifier("stage-line")
-                    .onGeometryChange(for: CGFloat.self, of: { $0.frame(in: .global).minY }) { wordsTop = $0 }
-            }
             }
             if let page = k.page {
                 if let body = page.string("body") {
@@ -838,6 +849,14 @@ struct StageFirstView: View {
                         .font(theme.font(theme.type.body, .semibold))
                         .foregroundStyle(c.ink)
                 }
+            }
+            if let pic = k.pic {
+                PresetView(component: pic)
+                    .environment(\.ylComponents, k.all)
+                    .environment(\.ylScope, k.scope)
+                    .environment(\.ylBare, Self.drawings.contains(pic.preset))
+                    // Stacked ideas share the height: a scene is drawn narrower so its height shrinks with it; a sketch keeps its own height and the page scrolls if it must.
+                    .frame(maxWidth: pic.preset == "shapes" ? room : nil)
             }
         }
     }
@@ -928,8 +947,8 @@ struct StageFirstView: View {
         let sent = t.ask.map { model.sent.contains($0.id) } == true || alreadySent(t)
         let n = t.questions.count
         let lone = n == 1 && t.plan == nil && (t.questions[0].c.string("q") ?? t.questions[0].c.string("title")) != nil
-        return ScrollView {
-            VStack(alignment: .leading, spacing: theme.spacing.m) {
+        return GeometryReader { geo in ScrollView {
+            VStack(alignment: .leading, spacing: theme.spacing.l) {
                 if !lone {
                     Text(t.plan?.c.string("title") ?? (n == 1 ? "One question" : "Before I go"))
                         .font(theme.font(theme.type.display, .heavy))
@@ -947,6 +966,8 @@ struct StageFirstView: View {
                         .environment(\.ylScope, q.scope)
                         .environment(\.ylOnStage, false)
                         .environment(\.ylHostedSubmit, true)
+                        // On the stage a question is the page, not a card on it.
+                        .environment(\.ylBare, true)
                         .environment(\.ylEmit, YLEmit { e in model.answers[q.id] = e })
                         .disabled(sent)
                         // ask: the questions come on one by one.
@@ -970,9 +991,12 @@ struct StageFirstView: View {
                 if atEnd(t) { pageEnd(c) }
             }
             .padding(.vertical, theme.spacing.m)
+            // A short page sits in the middle of the phone, where the thumb is, not pinned under the bar.
+            .frame(maxWidth: .infinity, minHeight: geo.size.height, alignment: .leading)
         }
         .scrollBounceBehavior(.basedOnSize)
         .scrollIndicators(.hidden)
+        }
         .accessibilityIdentifier("stage-questions")
     }
 
@@ -1108,8 +1132,7 @@ struct StageFirstView: View {
                 .font(.system(size: 15, weight: .black))
                 .foregroundStyle(filled ? c.onAccent : c.ink)
                 .frame(width: Self.small, height: Self.small)
-                .background(filled ? c.accent : c.surface, in: Circle())
-                .overlay(Circle().stroke(filled ? .clear : c.outline, lineWidth: 1.5))
+                .glassEffect(filled ? .regular.tint(c.accent).interactive() : .regular.interactive(), in: .circle)
                 .frame(width: Self.touch, height: Self.touch)
                 .contentShape(Circle())
         }

@@ -145,6 +145,9 @@ struct MockDrawing: View {
     let parts: [MockPart]
     @Environment(\.yuiTheme) private var theme
     @Environment(\.colorScheme) private var scheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// The frame has traced on and its parts have come on, in line order.
+    @State private var on = false
 
     private var frame: String { MockModel.frame(head) }
     private var title: String { head["title"]?.string ?? "" }
@@ -152,42 +155,66 @@ struct MockDrawing: View {
 
     var body: some View {
         let s = theme.swatch(scheme)
-        let notes = parts.contains { !$0.note.isEmpty }
         let hasNav = parts.contains { $0.kind == "nav" }
         let side: CGFloat = frame == "phone" ? 16 : 12
-        VStack(alignment: .leading, spacing: theme.spacing.xs) {
+        // Callouts are numbered on the frame's edge, their words in a key under it (as in `sketch`),
+        // so the screen keeps its width and the notes never squeeze into a side column.
+        let numbers = Self.numbers(parts)
+        let shown = on || reduceMotion
+        VStack(alignment: .leading, spacing: theme.spacing.m) {
             if frame == "watch", !title.isEmpty {
                 Text(title).font(theme.font(theme.type.caption, .heavy)).foregroundStyle(s.inkSoft)
                     .accessibilityHidden(true)
             }
-            Grid(alignment: .topLeading, horizontalSpacing: 6, verticalSpacing: 0) {
+            Grid(alignment: .topLeading, horizontalSpacing: 0, verticalSpacing: 0) {
                 GridRow {
                     bar(s, hasNav: hasNav).frame(maxWidth: cellWidth, alignment: .leading).anchorPreference(key: MockBox.self, value: .bounds) { [$0] }
-                    if notes { Color.clear.frame(width: 0, height: 0) }
                 }
-                ForEach(Array(parts.enumerated()), id: \.offset) { _, p in
+                ForEach(Array(parts.enumerated()), id: \.offset) { i, p in
                     GridRow {
                         cell(p, s)
                             .padding(.horizontal, side).padding(.vertical, 3)
                             .frame(maxWidth: cellWidth, alignment: .leading)
                             .anchorPreference(key: MockBox.self, value: .bounds) { [$0] }
-                        if notes { note(p, s) }
+                            .overlay(alignment: .trailing) {
+                                if let n = numbers[i] {
+                                    Blueprint.Number(n: n, color: p.x ? ChartPalette.bad(scheme) : s.accent, ink: s.background)
+                                        .offset(x: 8)
+                                }
+                            }
+                            .blueprintStep(shown, i + 1, reduceMotion)
                     }
                 }
                 GridRow {
                     Color.clear.frame(maxWidth: cellWidth).frame(height: frame == "phone" ? 18 : 10)
                         .anchorPreference(key: MockBox.self, value: .bounds) { [$0] }
-                    if notes { Color.clear.frame(width: 0, height: 0) }
                 }
             }
             .backgroundPreferenceValue(MockBox.self) { anchors in
                 GeometryReader { g in
                     let r = anchors.map { g[$0] }.reduce(CGRect.null) { $0.union($1) }
-                    if !r.isNull { box(s).frame(width: r.width, height: r.height).offset(x: r.minX, y: r.minY) }
+                    if !r.isNull { box(s, shown).frame(width: r.width, height: r.height).offset(x: r.minX, y: r.minY) }
                 }
+            }
+            .frame(maxWidth: frame == "phone" ? 300 : frame == "watch" ? 190 : .infinity)
+            .padding(.trailing, numbers.isEmpty ? 0 : 8)
+            if !numbers.isEmpty {
+                VStack(alignment: .leading, spacing: 5) {
+                    ForEach(Array(parts.enumerated()), id: \.offset) { i, p in
+                        if let n = numbers[i] {
+                            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                                Blueprint.Number(n: n, color: p.x ? ChartPalette.bad(scheme) : s.accent, ink: s.background)
+                                Text(p.note).font(theme.font(theme.type.caption, .semibold)).foregroundStyle(s.ink.opacity(0.85))
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                        }
+                    }
+                }
+                .blueprintStep(shown, parts.count + 1, reduceMotion)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .onAppear { on = true }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(MockModel.describe(head: head, parts: parts))
         .accessibilityValue("\(parts.count) parts")
@@ -195,15 +222,25 @@ struct MockDrawing: View {
         .accessibilityAddTraits(.isImage)
     }
 
+    /// Each noted part's number, by its place in the list.
+    static func numbers(_ parts: [MockPart]) -> [Int: Int] {
+        var out: [Int: Int] = [:]
+        for (i, p) in parts.enumerated() where !p.note.isEmpty { out[i] = out.count + 1 }
+        return out
+    }
+
     private var cellWidth: CGFloat { frame == "watch" ? 190 : .infinity }
 
     // MARK: Frame
 
-    private func box(_ s: Swatch) -> some View {
+    /// The frame: a thin line that traces itself on, over a wash that lets the stage show through.
+    private func box(_ s: Swatch, _ shown: Bool) -> some View {
         let radius: CGFloat = frame == "phone" ? 28 : frame == "watch" ? 34 : 14
-        let width: CGFloat = frame == "phone" ? 3 : frame == "watch" ? 4 : 2
-        return RoundedRectangle(cornerRadius: radius, style: .continuous).fill(s.background)
-            .overlay(RoundedRectangle(cornerRadius: radius, style: .continuous).stroke(frame == "phone" ? s.ink.opacity(0.75) : s.outline, lineWidth: width))
+        let shape = RoundedRectangle(cornerRadius: radius, style: .continuous)
+        return shape.fill(s.background.opacity(0.6))
+            .overlay(shape.trim(from: 0, to: shown ? 1 : 0)
+                .stroke(s.ink.opacity(0.6), style: StrokeStyle(lineWidth: 1.5, lineCap: .round))
+                .animation(reduceMotion ? nil : .easeInOut(duration: 0.8), value: shown))
     }
 
     @ViewBuilder
@@ -239,36 +276,22 @@ struct MockDrawing: View {
 
     // MARK: Cells
 
-    private var marker: Color {
-        scheme == .dark ? Color(red: 1, green: 0.82, blue: 0.25).opacity(0.36) : Color(red: 1, green: 0.8, blue: 0).opacity(0.45)
-    }
-
     private func cell(_ p: MockPart, _ s: Swatch) -> some View {
         let bad = ChartPalette.bad(scheme)
         return part(p, s)
             .strikethrough(p.x, color: bad)
             .background {
-                if p.hi { LinearGradient(colors: [.clear, marker, marker, .clear], startPoint: .leading, endPoint: .trailing).opacity(1) }
+                // Lit: a wash of the agent's color and a fine line round it, not a highlighter pen.
+                if p.hi {
+                    RoundedRectangle(cornerRadius: 9, style: .continuous).fill(s.accent.opacity(scheme == .dark ? 0.18 : 0.12))
+                        .overlay(RoundedRectangle(cornerRadius: 9, style: .continuous).stroke(s.accent.opacity(0.8), lineWidth: 1.25))
+                        .padding(.horizontal, -7).padding(.vertical, -2)
+                }
             }
             .overlay {
-                if p.x { RoundedRectangle(cornerRadius: 3).stroke(bad, style: StrokeStyle(lineWidth: 2, dash: [5, 3])).padding(.horizontal, -3).padding(.vertical, -1) }
+                if p.x { RoundedRectangle(cornerRadius: 9).stroke(bad, style: StrokeStyle(lineWidth: 1.25, dash: [5, 4])).padding(.horizontal, -7).padding(.vertical, -2) }
             }
             .opacity(p.dim ? 0.4 : p.x ? 0.6 : 1)
-    }
-
-    /// A callout beside the frame, an arrow pointing back at its part.
-    @ViewBuilder
-    private func note(_ p: MockPart, _ s: Swatch) -> some View {
-        if !p.note.isEmpty {
-            HStack(alignment: .firstTextBaseline, spacing: 4) {
-                Image(systemName: "arrow.left").font(theme.font(theme.type.caption - 1, .black)).foregroundStyle(s.accent)
-                Text(p.note).font(theme.font(theme.type.caption, .bold)).foregroundStyle(s.ink).fixedSize(horizontal: false, vertical: true)
-            }
-            .frame(width: 118, alignment: .leading)
-            .padding(.vertical, 3)
-        } else {
-            Color.clear.frame(width: 0, height: 0)
-        }
     }
 
     @ViewBuilder
