@@ -270,13 +270,10 @@ private struct FieldRow: View {
             .keyboardType(keyboard)
             .textContentType(content)
             .textInputAutocapitalization(["email", "url"].contains(field.type) ? .never : .sentences)
-            if field.type == "voice" {
-                // The keyboard's dictation key does speech to text until the `mic` preset lands.
-                Image(systemName: "mic.fill")
-                    .foregroundStyle(s.userInk)
-                    .frame(width: 34, height: 34)
-                    .background(s.accent, in: Circle())
-                    .accessibilityHidden(true)
+            // Speak to fill a form (feedback NOTE-40679): every field of words has a mic that works, not only
+            // `voice`, whose mic used to be a picture. Emails, links, phones and numbers keep the keyboard.
+            if ["text", "long", "voice"].contains(field.type) {
+                FieldMic(text: text, label: field.label, id: "field-mic-\(field.key)")
             }
         }
         .padding(.horizontal, theme.spacing.l)
@@ -311,5 +308,75 @@ private struct FieldRow: View {
         case .bool(let b): b ? "yes" : "no"
         default: nil
         }
+    }
+}
+
+/// Tap to talk into a field, tap again to stop (NOTE-40679). The words show in the field as they are heard,
+/// after anything already in it, so a person can talk, stop, fix a word and talk again. Speech stays on the
+/// phone (PushToTalk); the listener is made on the first tap, not one per field on screen.
+struct FieldMic: View {
+    @Binding var text: String
+    let label: String
+    let id: String
+    @State private var talk: PushToTalk?
+    /// What the field held when the talking started: heard words go after it.
+    @State private var base = ""
+    @Environment(\.yuiTheme) private var theme
+    @Environment(\.colorScheme) private var scheme
+
+    private var listening: Bool { talk?.listening == true }
+    private var denied: Bool { talk?.phase == .denied || talk?.phase == .failed }
+
+    var body: some View {
+        let s = theme.swatch(scheme)
+        Button { toggle() } label: {
+            Image(systemName: listening ? "stop.fill" : denied ? "mic.slash.fill" : "mic.fill")
+                .font(.system(size: 15, weight: .bold))
+                .foregroundStyle(listening ? s.onAccent : s.ink)
+                .symbolEffect(.pulse, isActive: listening)
+                .frame(width: 34, height: 34)
+                .glassEffect(listening ? .regular.tint(s.accent).interactive() : .regular.interactive(), in: .circle)
+                .frame(width: 44, height: 44)
+                .contentShape(Circle())
+        }
+        .buttonStyle(BounceButtonStyle())
+        .sensoryFeedback(.impact(weight: .light), trigger: listening)
+        .accessibilityLabel(listening ? "Stop talking" : "Talk to fill \(label)")
+        .accessibilityHint(denied ? "The mic is off for Yui. Turn it on in Settings, or type." : "")
+        .accessibilityIdentifier(id)
+        .onChange(of: talk?.transcript ?? "") { _, heard in
+            if listening { text = Self.join(base, heard) }
+        }
+        .onDisappear { talk?.cancel() }
+    }
+
+    private func toggle() {
+        let t = talk ?? {
+            let t = PushToTalk()
+            #if DEBUG
+            t.fakeWords = UserDefaults.standard.string(forKey: "yuiPTTFake")
+            #endif
+            talk = t
+            return t
+        }()
+        if t.listening {
+            Task {
+                let heard = await t.stop()
+                text = Self.join(base, heard)
+            }
+        } else {
+            base = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            Task { await t.start() }
+        }
+    }
+
+    /// The words after what was there, as MicPreset joins a second talk: a full stop between them unless one is there,
+    /// and a capital after it.
+    static func join(_ had: String, _ heard: String) -> String {
+        let heard = heard.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !heard.isEmpty else { return had }
+        guard !had.isEmpty else { return heard }
+        if had.last.map({ ".!?,".contains($0) }) == true { return had + " " + heard }
+        return had + ". " + heard.prefix(1).uppercased() + heard.dropFirst()
     }
 }
