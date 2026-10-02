@@ -33,7 +33,9 @@ final class StageFirstModel {
     var at = 0
     /// The T field is out.
     var typing = false
-    /// Answers given on the questions screen, by question, waiting for Send.
+    /// Answers given on the questions screen, by question, waiting for Send. Only while the
+    /// model lives: a question drawn again (a page back and on, home, another agent, a relaunch)
+    /// hands back what the phone kept of it (`AnswerDrafts`, feedback NOTE-19357).
     var answers: [String: YLEvent] = [:]
     /// Turns whose questions went.
     var sent: Set<String> = []

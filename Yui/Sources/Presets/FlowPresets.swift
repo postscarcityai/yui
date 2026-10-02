@@ -637,8 +637,8 @@ struct PlanPreset: View {
         }
         guard let v = YLComponent.answerValue(e) else { return }
         answers[step.ylID] = v
-        // ask and choose move on by themselves after a tap.
-        guard step.preset == "ask" || step.preset == "choose" else { return }
+        // ask and choose move on by themselves after a tap; one that came back on appear stays put (feedback NOTE-19357).
+        guard !e.restored, step.preset == "ask" || step.preset == "choose" else { return }
         Task { @MainActor in
             try? await Task.sleep(for: .milliseconds(450))
             withAnimation(theme.spring) {

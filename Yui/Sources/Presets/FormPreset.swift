@@ -14,6 +14,9 @@ extension EnvironmentValues {
 /// `{form: {...}}` once the person has set any field (nothing while all are empty),
 /// plus `missing: true` while a required field is empty, so the host's Send
 /// carries it and waits for it.
+/// What the person set is kept on the phone until it goes (feedback NOTE-19357):
+/// the stage paging away, going home, another agent, the record or a relaunch
+/// brings the form back as they left it.
 struct FormPreset: View {
     let c: YLComponent
     @State private var values: [String: YLValue] = [:]
@@ -21,8 +24,12 @@ struct FormPreset: View {
     /// A key-shaped word typed into a field is held (YUI-34): Move it to Keys, or Send anyway for a mere lookalike.
     @State private var anyway = false
     @State private var moving: KeyShape?
+    /// What was held or kept came back, once, on appear. Hosted, the host hears nothing before it,
+    /// so an empty first pass never wipes the answer it holds.
+    @State private var settled = false
     @Environment(\.ylScope) private var scope
     @Environment(\.ylAnswers) private var answers
+    @Environment(\.ylAgent) private var agent
     @Environment(\.yuiTheme) private var theme
     @Environment(\.colorScheme) private var scheme
     @Environment(\.ylEmit) private var emit
@@ -35,7 +42,7 @@ struct FormPreset: View {
         let fields = fields
         let shape = keyShape(fields)
         let blocked = shape.map { $0.isKnown || !anyway } ?? false
-        let ready = fields.allSatisfy { !$0.required || filled($0) } && !blocked
+        let ready = isReady(fields)
         PresetCard {
             if let t = c.string("title") { PresetTitle(text: t) }
             ForEach(fields) { f in
@@ -49,6 +56,7 @@ struct FormPreset: View {
                            grow: true) {
                     sent = true
                     emit(event(fields))
+                    AnswerDrafts.shared.clear(agent, scope, c.ylID)
                 }
                 .disabled(!ready)
             }
@@ -66,16 +74,51 @@ struct FormPreset: View {
             restore(form, fields)
             sent = true
         }
-        .onAppear {
-            guard hosted, values.isEmpty, let g = c.inGroup,
-                  let form = answers(scope, g)?["plan"]?[c.ylID]?.object else { return }
+        .onAppear { settle(fields) }
+        // Hosted, the host's copy can land after the form shows (a flow loading its run).
+        .onChange(of: held) { _, form in
+            guard settled, hosted, values.isEmpty, let form else { return }
             restore(form, fields)
         }
         // No debounce: a Send right after the last key must carry it.
-        .onChange(of: values, initial: true) {
-            emitHosted(fields, ready: ready)
+        .onChange(of: values) {
+            keep()
+            if settled { emitHosted(fields) }
         }
-        .onChange(of: anyway) { emitHosted(fields, ready: ready) }
+        .onChange(of: anyway) { if settled { emitHosted(fields) } }
+    }
+
+    /// What this form already holds. Hosted: a sent plan's answer, else the host's own copy
+    /// (a flow's step, or a stage question that went). On its own: the answer it sent.
+    private var held: [String: YLValue]? {
+        if !hosted { return answers(scope, c.ylID)?["form"]?.object }
+        if let g = c.inGroup, let form = answers(scope, g)?["plan"]?[c.ylID]?.object { return form }
+        return answers(scope, c.ylID)?["form"]?.object
+    }
+
+    /// On appear, once (feedback NOTE-19357): hosted, what the host holds comes back, else what
+    /// the person set and never sent. A draft never covers an answer that went. Hosted, the host
+    /// then hears the form as it stands, so its Send carries what came back.
+    private func settle(_ fields: [FormField]) {
+        guard !settled else { return }
+        settled = true
+        if values.isEmpty, !sent {
+            if hosted, let form = held { restore(form, fields) }
+            else if held == nil, let form = AnswerDrafts.shared.draft(agent, scope, c.ylID, "form")?.object { restore(form, fields) }
+        }
+        emitHosted(fields)
+    }
+
+    /// The fields as they stand, kept on the phone until they go (feedback NOTE-19357).
+    private func keep() {
+        guard settled, !sent, held == nil else { return }
+        AnswerDrafts.shared.set(agent, scope, c.ylID, "form", .object(values))
+    }
+
+    /// Every required field set, and no key-shaped word held.
+    private func isReady(_ fields: [FormField]) -> Bool {
+        let blocked = keyShape(fields).map { $0.isKnown || !anyway } ?? false
+        return fields.allSatisfy { !$0.required || filled($0) } && !blocked
     }
 
     /// The first key-shaped word in what was typed.
@@ -84,7 +127,7 @@ struct FormPreset: View {
         return nil
     }
 
-    private func emitHosted(_ fields: [FormField], ready: Bool) {
+    private func emitHosted(_ fields: [FormField]) {
         do {
             guard hosted else { return }
             // Held: the key-shaped words go nowhere, not even into the plan's answer.
@@ -97,7 +140,7 @@ struct FormPreset: View {
             // A date or a slider starts with a value; only what the person set counts.
             let any = fields.contains { values[$0.key] != nil && filled($0) }
             var e = any ? event(fields) : c.event([:])
-            if !ready { e.value["missing"] = .bool(true) }
+            if !isReady(fields) { e.value["missing"] = .bool(true) }
             emit(e)
         }
     }

@@ -222,6 +222,8 @@ struct AskPreset: View {
     @State private var answer: String?
     @Environment(\.ylScope) private var scope
     @Environment(\.ylAnswers) private var answers
+    @Environment(\.ylAgent) private var agent
+    @Environment(\.ylHostedSubmit) private var hosted
     @Environment(\.agentStyle) private var style
     @Environment(\.yuiTheme) private var theme
     @Environment(\.colorScheme) private var scheme
@@ -230,7 +232,7 @@ struct AskPreset: View {
 
     var body: some View {
         let s = theme.swatch(scheme)
-        let options = Array((c.strings("options") ?? ["Yes", "No"]).prefix(4))
+        let options = self.options
         PresetCard {
             PresetTitle(text: c.string("q") ?? "Continue?")
             let buttons = ForEach(Array(options.enumerated()), id: \.offset) { i, o in
@@ -265,15 +267,42 @@ struct AskPreset: View {
             guard p.n > 0, !c.locked, options.contains(p.option) else { return }
             tap(p.option)
         }
+        // Hosted and not sent yet: the tap comes back, and goes to the host again so its Send carries it.
+        .onAppear {
+            guard hosted, answer == nil, !c.locked, !c.answered(scope, answers),
+                  let a = AnswerDrafts.shared.draft(agent, scope, c.ylID, "answer")?.string, options.contains(a) else { return }
+            answer = a
+            var e = answerEvent(a, changed: false)
+            e.restored = true
+            emit(e)
+        }
     }
+
+    private var options: [String] { Array((c.strings("options") ?? ["Yes", "No"]).prefix(4)) }
 
     private func tap(_ o: String) {
         guard answer != o else { return }
         let changed = answer != nil
         withAnimation(theme.spring) { answer = o }
+        emit(answerEvent(o, changed: changed))
+        // Hosted, the tap waits for the host's Send: kept on the phone until then (feedback NOTE-19357).
+        if hosted { AnswerDrafts.shared.set(agent, scope, c.ylID, "answer", .string(o)) }
+    }
+
+    private func answerEvent(_ o: String, changed: Bool) -> YLEvent {
         var v: [String: YLValue] = ["answer": .string(o)]
         if let right = c.quizAnswer { v["correct"] = .bool(right.contains(o)) }
-        emit(c.answer(v, echo: o, changed: changed))
+        return c.answer(v, echo: o, changed: changed)
+    }
+}
+
+extension YLComponent {
+    /// Already went out (feedback NOTE-19357): its own answer is on record, or the plan it is in was sent.
+    /// A draft never comes back over it.
+    @MainActor func answered(_ scope: String, _ answers: YLAnswers) -> Bool {
+        if answers(scope, ylID) != nil { return true }
+        guard let g = inGroup else { return false }
+        return answers(scope, g)?["plan"] != nil
     }
 }
 
@@ -296,6 +325,7 @@ struct ChoosePreset: View {
     @FocusState private var otherFocused: Bool
     @Environment(\.ylScope) private var scope
     @Environment(\.ylAnswers) private var answers
+    @Environment(\.ylAgent) private var agent
     @Environment(\.agentStyle) private var style
     @Environment(\.yuiTheme) private var theme
     @Environment(\.colorScheme) private var scheme
@@ -358,6 +388,7 @@ struct ChoosePreset: View {
                     let changed = sent != nil
                     sent = picked
                     emit(pickedEvent(changed: changed))
+                    AnswerDrafts.shared.set(agent, scope, c.ylID, "picked", nil)
                 }
                 .disabled(!fresh)
             }
@@ -371,12 +402,13 @@ struct ChoosePreset: View {
         }
         // Hosted in a plan, its answer is inside the plan's.
         .onAppear {
-            guard hosted, multi, picked.isEmpty, let g = c.inGroup,
-                  let back = answers(scope, g)?["plan"]?[c.ylID]?.array?.compactMap(\.string) else { return }
-            picked = back
+            if hosted, multi, picked.isEmpty, let g = c.inGroup,
+               let back = answers(scope, g)?["plan"]?[c.ylID]?.array?.compactMap(\.string) { picked = back }
+            restoreDraft(options)
         }
         // Hosted: every change goes to the host, which sends it with its one Send.
         .onChange(of: picked) {
+            keepPicks()
             guard hosted, multi else { return }
             emit(picked.isEmpty ? c.event([:]) : pickedEvent(changed: false))
         }
@@ -385,6 +417,40 @@ struct ChoosePreset: View {
             guard p.n > 0, !c.locked, options.contains(p.option) else { return }
             tap(p.option, cap: cap)
         }
+        .onChange(of: other) {
+            guard !c.locked else { return }
+            AnswerDrafts.shared.set(agent, scope, c.ylID, "other", .string(other))
+        }
+    }
+
+    /// What was picked or typed and never sent comes back (feedback NOTE-19357). Picks wait
+    /// for Done, or hosted for the host's Send; a single choice on its own goes on its tap.
+    /// Never over an answer that went. Hosted, the picks go to the host again so its Send carries them.
+    private func restoreDraft(_ options: [String]) {
+        guard !c.locked else { return }
+        let drafts = AnswerDrafts.shared
+        if other.isEmpty, let t = drafts.draft(agent, scope, c.ylID, "other")?.string {
+            other = t
+            typing = true
+        }
+        guard hosted || multi, picked.isEmpty, sent == nil, !c.answered(scope, answers),
+              let back = drafts.draft(agent, scope, c.ylID, "picked")?.array?.compactMap(\.string), !back.isEmpty else { return }
+        picked = back
+        // A multi pick hands itself over through `onChange(of: picked)`; a single choice went on its tap.
+        guard hosted, !multi, let o = back.first else { return }
+        sent = [o]
+        var v: [String: YLValue] = ["choice": .string(o)]
+        if !options.contains(o) { v["other"] = .bool(true) }
+        else if let right = c.quizAnswer { v["correct"] = .bool(right.contains(o)) }
+        var e = c.answer(v, echo: o, changed: false)
+        e.restored = true
+        emit(e)
+    }
+
+    /// Picks that have not gone yet, kept on the phone until they do.
+    private func keepPicks() {
+        guard hosted || (multi && sent == nil), !c.answered(scope, answers) else { return }
+        AnswerDrafts.shared.set(agent, scope, c.ylID, "picked", .array(picked.map(YLValue.string)))
     }
 
     /// The picks as an answer, `{picked: [...]}`, echoed as a list.
@@ -473,6 +539,8 @@ struct SlidePreset: View {
     @State private var sent: Double?
     @Environment(\.ylScope) private var scope
     @Environment(\.ylAnswers) private var answers
+    @Environment(\.ylAgent) private var agent
+    @Environment(\.ylHostedSubmit) private var hosted
     @Environment(\.yuiTheme) private var theme
     @Environment(\.colorScheme) private var scheme
     @Environment(\.ylEmit) private var emit
@@ -493,8 +561,9 @@ struct SlidePreset: View {
                 guard !editing, v != sent else { return }
                 let changed = sent != nil
                 sent = v
-                let text = YLComponent.format(v) + (c.string("unit").map { " \($0)" } ?? "")
-                emit(c.answer(["value": .number(v)], echo: text, changed: changed))
+                emit(valueEvent(v, changed: changed))
+                // Hosted, the release waits for the host's Send: kept on the phone until then (feedback NOTE-19357).
+                if hosted { AnswerDrafts.shared.set(agent, scope, c.ylID, "value", .number(v)) }
             }
             .tint(s.accent)
             HStack {
@@ -510,6 +579,21 @@ struct SlidePreset: View {
         .onChange(of: answers(scope, c.ylID), initial: true) { _, v in
             if sent == nil, let n = v?["value"]?.number { value = n; sent = n }
         }
+        // Hosted and not sent yet: the slider comes back where it was let go, and goes to the host again.
+        .onAppear {
+            guard hosted, sent == nil, !c.locked, !c.answered(scope, answers),
+                  let n = AnswerDrafts.shared.draft(agent, scope, c.ylID, "value")?.number else { return }
+            value = n
+            sent = n
+            var e = valueEvent(n, changed: false)
+            e.restored = true
+            emit(e)
+        }
+    }
+
+    private func valueEvent(_ v: Double, changed: Bool) -> YLEvent {
+        let text = YLComponent.format(v) + (c.string("unit").map { " \($0)" } ?? "")
+        return c.answer(["value": .number(v)], echo: text, changed: changed)
     }
 }
 
