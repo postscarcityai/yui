@@ -246,6 +246,16 @@ test("shapes: title, the labels as a chain with the arrows between, the caption"
   assert.equal((await renderYL(LINE.shape, opts())).messages[0].text, "Solo");
 });
 
+test("gesture marks (YUI-276): a mock's tap and swipe go with it to the app, a tap in shapes is its label", async () => {
+  const r = await renderYL('mock "Hold to talk"\npart@mic button "Hold to talk"\nshape tap "hold" at=mic +pulse\nshape swipe "slide to cancel" at=mic dir=left', opts());
+  assert.equal(r.messages.length, 1); // the one Open in Yui message
+  const adds = parse('mock "Hold to talk"\npart@mic button "Hold to talk"\nshape tap "hold" at=mic +pulse\nshape swipe "slide to cancel" at=mic dir=left').filter((o: any) => o.op === "add");
+  assert.deepEqual(adds.map((o: any) => r.placed[o.id]), ["app", "member", "member", "member"]);
+  assert.deepEqual(r.errors, []);
+  const s = await renderYL('shapes "Hold"\nshape tap hold at=5,4\nshape swipe slide at=5,4 dir=left', opts());
+  assert.equal(s.messages[0].text, "<b>Hold</b>\nhold · slide");
+});
+
 test("agent tables: table create and put send nothing, a query opens in Yui", async () => {
   const quiet = await renderYL("put meals Day=today Cal=640\ntable create lifts Day:date Weight:number", opts());
   assert.deepEqual(quiet.messages, []);

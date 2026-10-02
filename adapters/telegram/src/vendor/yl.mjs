@@ -67,7 +67,7 @@ export const GROUPS = {
   timeline: ["done", "now", "next"],
   sketch: ["row", "after"],
   shapes: ["shape"],
-  mock: ["part"],
+  mock: ["part", "shape"],
   map: ["area", "pin", "route"],
 };
 
