@@ -448,7 +448,8 @@ struct StageFirstView: View {
         } else if hasHome {
             // The agent's home (YUI-168): what it does, what is waiting on you, its chips below.
             HomeHead(agent: agent, line: homeLine, waiting: AgentHome.waiting(store), open: openWaiting,
-                     seeAll: actions.menu, hasScreens: screens.count > 1)
+                     seeAll: actions.menu, dismiss: { if let item = $0.item { store.dismissMenu(item) } },
+                     hasScreens: screens.count > 1)
         } else {
             greeting(c, title: "Hi. \(showMic ? "Tap the mic and talk." : "Tap T and type.")",
                      sub: "I answer right here, on the whole screen.")

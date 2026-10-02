@@ -121,6 +121,8 @@ struct HomeHead: View {
     let waiting: [AgentHome.Waiting]
     let open: (AgentHome.Waiting) -> Void
     let seeAll: () -> Void
+    /// Dismiss on a row the host asked (YUI-265); nil when the row cannot be dismissed.
+    var dismiss: ((AgentHome.Waiting) -> Void)? = nil
     /// There are screens a swipe away: the quiet line says so.
     var hasScreens = false
     @Environment(\.yuiTheme) private var theme
@@ -182,35 +184,49 @@ struct HomeHead: View {
                 }
             }
             ForEach(waiting.prefix(AgentHome.maxWaiting)) { w in
-                Button { open(w) } label: {
-                    HStack(spacing: theme.spacing.m) {
-                        Circle().fill(c.accent).frame(width: 8, height: 8)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(w.title)
-                                .font(theme.font(theme.type.body, .bold))
-                                .foregroundStyle(c.ink)
-                                .lineLimit(2)
-                                .multilineTextAlignment(.leading)
-                            if let sub = w.sub, !sub.isEmpty {
-                                Text(sub)
-                                    .font(theme.font(theme.type.caption))
-                                    .foregroundStyle(c.inkSoft)
-                                    .lineLimit(1)
+                HStack(spacing: theme.spacing.s) {
+                    Button { open(w) } label: {
+                        HStack(spacing: theme.spacing.m) {
+                            Circle().fill(c.accent).frame(width: 8, height: 8)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(w.title)
+                                    .font(theme.font(theme.type.body, .bold))
+                                    .foregroundStyle(c.ink)
+                                    .lineLimit(2)
+                                    .multilineTextAlignment(.leading)
+                                if let sub = w.sub, !sub.isEmpty {
+                                    Text(sub)
+                                        .font(theme.font(theme.type.caption))
+                                        .foregroundStyle(c.inkSoft)
+                                        .lineLimit(1)
+                                }
                             }
+                            Spacer(minLength: 0)
+                            Image(systemName: "chevron.right")
+                                .font(.system(size: 13, weight: .heavy))
+                                .foregroundStyle(c.inkSoft)
                         }
-                        Spacer(minLength: 0)
-                        Image(systemName: "chevron.right")
-                            .font(.system(size: 13, weight: .heavy))
-                            .foregroundStyle(c.inkSoft)
+                        .contentShape(.rect(cornerRadius: 18))
                     }
-                    .padding(theme.spacing.m)
-                    .background(c.surface, in: .rect(cornerRadius: 18))
-                    .overlay(RoundedRectangle(cornerRadius: 18).stroke(c.outline, lineWidth: 1.5))
-                    .contentShape(.rect(cornerRadius: 18))
+                    .buttonStyle(BounceButtonStyle())
+                    .accessibilityHint("Opens it to answer")
+                    .accessibilityIdentifier("home-\(w.id)")
+                    if let dismiss, w.item != nil {
+                        Button { dismiss(w) } label: {
+                            Text("Dismiss")
+                                .font(theme.font(theme.type.caption, .heavy)).foregroundStyle(c.inkSoft)
+                                .padding(.horizontal, theme.spacing.s).frame(minHeight: 36)
+                                .overlay(Capsule().stroke(c.outline, lineWidth: 1.5))
+                                .contentShape(.capsule)
+                        }
+                        .buttonStyle(BounceButtonStyle())
+                        .accessibilityHint("Takes it off your list for good")
+                        .accessibilityIdentifier("home-dismiss-\(w.id)")
+                    }
                 }
-                .buttonStyle(BounceButtonStyle())
-                .accessibilityHint("Opens it to answer")
-                .accessibilityIdentifier("home-\(w.id)")
+                .padding(theme.spacing.m)
+                .background(c.surface, in: .rect(cornerRadius: 18))
+                .overlay(RoundedRectangle(cornerRadius: 18).stroke(c.outline, lineWidth: 1.5))
             }
         }
         .accessibilityElement(children: .contain)

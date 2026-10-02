@@ -557,7 +557,7 @@ final class ChatStore {
             return
         }
         #endif
-        if client != nil, quietTick { post(id: id, body: e.line, kind: "event", meta: e.meta, answers: false); return }
+        if client != nil, quietTick || e.dismisses { post(id: id, body: e.line, kind: "event", meta: e.meta, answers: false); return }
         guard client != nil, e.relays else { return }
         post(id: id, body: e.line, kind: "event", meta: e.meta)
     }
@@ -675,6 +675,15 @@ final class ChatStore {
     func removeFromMenu(_ id: String) {
         withAnimation(spring) { menu.remove(id) }
         if let agentID = agent?.id { menu.store(agentID: agentID) }
+    }
+
+    /// Dismiss on a Needs you row (YUI-265): the row leaves at once, and a host ask (`need-<task id>`) hears about it
+    /// quietly, with no agent turn, so the war room, the briefing and the lane driver stop asking it.
+    func dismissMenu(_ item: YLMenuItem) {
+        if item.id.hasPrefix("need-") {
+            receive(YLEvent(id: item.id, preset: "menu", value: ["bucket": .string("review"), "dismissed": .bool(true)], echo: nil))
+        }
+        removeFromMenu(item.id)
     }
 
     /// A review or backlog item with no `show=` or `url=`: it goes back to the

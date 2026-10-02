@@ -36,6 +36,16 @@ def tap(item, bucket="review"):
 
 
 class Parse(unittest.TestCase):
+    def test_dismissed_of(self):
+        d = tap("need-t_0a0b0c")
+        d["meta"]["value"] = {"bucket": "review", "dismissed": True}
+        self.assertEqual(needs.dismissed_of(d), "t_0a0b0c")
+        self.assertIsNone(needs.opened(d), "a Dismiss never opens the ask")
+        self.assertIsNone(needs.dismissed_of(tap("need-t_0a0b0c")), "a plain tap is not a dismiss")
+        d["meta"]["id"] = "invite-42"
+        self.assertIsNone(needs.dismissed_of(d), "invites are not dismissed on the card")
+        self.assertIsNone(needs.dismissed_of({**tap("need-t_0a0b0c"), "kind": "text"}))
+
     def test_opened(self):
         self.assertEqual(needs.opened(tap("need-t_0a0b0c")), "need-t_0a0b0c")
         self.assertEqual(needs.opened(tap("invite-42")), "invite-42")
@@ -114,7 +124,8 @@ class RealBoard(unittest.TestCase):
         r = self.answer("t_aa01")
         self.assertEqual((r["ok"], r["card"], r["unblocked"], r["status"]), (True, "YUI-60", True, "ready"))
         c = self.rows("SELECT author, body FROM task_comments WHERE task_id = 't_aa01'")
-        self.assertEqual(c, [("chris (yui-app)", "ANSWER (Chris, tapped in the Yui war room): a: board kit")])
+        self.assertEqual(c, [("chris (yui-app)", "ANSWER (Chris, tapped in the Yui war room): a: board kit"),
+                             ("chris (yui-app)", "ASK-CLOSED: answered")])
         self.assertEqual(self.rows("SELECT status FROM tasks WHERE id = 't_aa01'")[0][0], "ready")
         # Chris changes his mind: a second comment, the card stays queued.
         r2 = self.answer("t_aa01", "Park it", changed=True)
@@ -132,7 +143,7 @@ class RealBoard(unittest.TestCase):
     def test_you_decide_hands_the_call_back_and_unblocks(self):
         r = self.answer("t_aa01", "You decide")
         self.assertEqual((r["ok"], r["unblocked"], r["status"]), (True, True, "ready"))
-        self.assertEqual(self.rows("SELECT body FROM task_comments WHERE task_id = 't_aa01'")[0][0],
+        self.assertEqual(self.rows("SELECT body FROM task_comments WHERE task_id = 't_aa01' ORDER BY id")[0][0],
                          "ANSWER (Chris, tapped in the Yui war room): You decide. Pick the option you recommend and go.")
         self.assertEqual(needs.reply(r), "YUI-60 will pick what it recommends and go.")
 
@@ -141,8 +152,9 @@ class RealBoard(unittest.TestCase):
         self.assertEqual((r["ok"], r["unblocked"], r["waiting"], r["status"]), (True, False, True, "blocked"))
         self.assertEqual(self.rows("SELECT author, body FROM task_comments WHERE task_id = 't_aa01'"),
                          [("chris (yui-app)", "NOT YET (Chris, tapped in the Yui war room): he hasn't done this yet. "
-                                              "The card stays blocked until he answers.")])
-        self.assertEqual(needs.reply(r), "Noted on YUI-60: not yet. It stays in Needs you until you've done it.")
+                                              "The card stays blocked, and the ask stays quiet for a week."),
+                          ("chris (yui-app)", f"ASK-SNOOZED: until {needs.snooze_until()}")])
+        self.assertEqual(needs.reply(r), "Noted on YUI-60: not yet. It stays quiet for a week.")
         self.assertNotIn("unblocked", needs.note(r))
         # Later he does it and taps the real answer: that one unblocks.
         r2 = self.answer("t_aa01", "Works", changed=True)
@@ -150,6 +162,23 @@ class RealBoard(unittest.TestCase):
         # Typing "not yet" as his own words is an answer, not the button.
         r3 = self.answer("t_aa02", "Not yet", other=True)
         self.assertTrue(r3["unblocked"])
+
+    def test_dismiss_closes_the_ask_on_the_card(self):
+        # YUI-265: a Dismiss is a quiet menu event; the card gets one ASK-CLOSED comment and stays as it was.
+        r = needs.dismiss("yui", "t_aa01", self.db)
+        self.assertEqual((r["ok"], r["card"]), (True, "YUI-60"))
+        c = self.rows("SELECT author, body FROM task_comments WHERE task_id = 't_aa01'")
+        self.assertEqual(len(c), 1)
+        self.assertTrue(c[0][1].startswith("ASK-CLOSED: dismissed"))
+        self.assertEqual(self.rows("SELECT status FROM tasks WHERE id = 't_aa01'")[0][0], "blocked", "no unblock, no worker turn")
+        self.assertEqual(needs.dismiss("yui", "t_aa03", self.db)["why"], "r0ss's card")
+        self.assertEqual(needs.dismiss("yui", "t_nope", self.db)["why"], "not on the board")
+
+    def test_an_answer_closes_the_ask_and_a_changed_answer_does_not_add_another(self):
+        self.answer("t_aa01")
+        self.answer("t_aa01", "Park it", changed=True)
+        bodies = [b for (b,) in self.rows("SELECT body FROM task_comments WHERE task_id = 't_aa01'")]
+        self.assertEqual(sum(b.startswith("ASK-CLOSED: answered") for b in bodies), 1)
 
     def test_a_card_with_an_open_parent_goes_to_todo(self):
         r = self.answer("t_aa06", "Build it")
@@ -238,6 +267,32 @@ class AdapterPath(RealBoard):
         os.environ["YUI_WAR_ROOM"] = "/nonexistent/yui_war_room.py"
         self.assertIsNone(needs.refresh_cmd("yui"))
         self.assertEqual(self.answer_and_wait(a, event("t_aa01", "Park it")), [])
+
+    def test_a_dismiss_closes_the_card_redraws_and_says_nothing(self):
+        a = self.make()
+        d = tap("need-t_aa01")
+        d["meta"]["value"] = {"bucket": "review", "dismissed": True}
+        d["body"] = "[yui] need-t_aa01 menu bucket=review dismissed"
+        ad = self.ad
+        orig = needs.dismiss
+        ad.needs.dismiss = lambda board, task: orig(board, task, self.db)
+
+        async def go():
+            took = await a._need_dismiss("a1", d)
+            await a._war_task
+            return took
+        self.assertTrue(asyncio.run(go()))
+        self.assertEqual(a.written, [], "quiet: nothing lands in the chat")
+        self.assertIn("row-9", a._acks)
+        self.assertEqual(self.ran.read_text().splitlines(), ["--refresh"])
+        self.assertTrue(self.rows("SELECT body FROM task_comments WHERE task_id = 't_aa01'")[0][0].startswith("ASK-CLOSED"))
+
+    def test_someone_else_cannot_dismiss(self):
+        a = self.make(user_id="someone-else")
+        d = tap("need-t_aa01")
+        d["meta"]["value"] = {"bucket": "review", "dismissed": True}
+        self.assertTrue(asyncio.run(a._need_dismiss("a1", d)))
+        self.assertEqual(self.rows("SELECT count(*) FROM task_comments")[0][0], 0)
 
     def test_a_review_row_tap_opens_the_ask_without_a_turn(self):
         # YUI-126: the war room is the drawer; a tap on its Review row gets the ask's screen.
