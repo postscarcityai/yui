@@ -202,7 +202,7 @@ from gateway.config import Platform, PlatformConfig
 from gateway.platforms.base import (BasePlatformAdapter, MessageEvent, MessageType, ProcessingOutcome,
                                     SendResult)
 
-from . import board, compat, connector, controls, doing, flywheel, groups, jev, media, mentions, needs, outbox, restyle, sandbox, shown, tables, oneline, talk, textbomb, vault
+from . import board, compat, connector, controls, doing, flywheel, groups, jev, media, mentions, needs, outbox, restyle, sandbox, shown, syserror, tables, oneline, talk, textbomb, vault
 from . import commands as slash
 
 logger = logging.getLogger(__name__)
@@ -1291,6 +1291,9 @@ class YuiAdapter(BasePlatformAdapter):
         if not self._client:
             return SendResult(success=False, error="not connected")
         body = body.strip()
+        if syserror.is_failure(body):  # Hermes cron failure lines: no bubble, no push
+            logger.info("[yui] system failure line dropped")
+            return SendResult(success=True, message_id=None)
         # `doing` (YUI-63) is never a message: the newest goes onto the turn's rows
         # (a phone that draws it, a turn still running) and the lines leave the body.
         body, now = doing.split(body)
@@ -1627,6 +1630,8 @@ async def _standalone_send(pconfig, chat_id: str, message: str, *, thread_id: Op
         body = "\n\n".join([message.strip()] + [
             media_fence("video" if f.lower().endswith((".mp4", ".mov", ".m4v")) else "image", f)
             for f in files if f.lower().rsplit(".", 1)[-1] in media.TYPES]).strip()
+        if syserror.is_failure(body):  # Hermes cron failure lines: no bubble, no push
+            return {"success": True, "platform": "yui", "chat_id": target["id"], "message_id": None}
         if restyle.has_line(body):  # `theme app` (YUI-96): out of process is always the owner's thread
             try:
                 lr = await c.get(f"{REST}/yui_limits", params={"select": "value", "name": "eq.restyle_min_build"},
