@@ -1723,7 +1723,7 @@ struct ChatView: View {
             .onChange(of: store.messages.last?.id) { old, _ in landArrival(after: old) }
             #if DEBUG
             .task(id: store.loaded) {
-                guard store.loaded, let text = UserDefaults.standard.string(forKey: "yuiDemoArrive") else { return }
+                guard store.loaded, let text = ChatStore.demoText("yuiDemoArrive") else { return }
                 store.demoArrive(text)
             }
             #endif
@@ -1865,6 +1865,10 @@ struct ChatView: View {
         focused = false
         withAnimation(reduceMotion ? .easeInOut(duration: 0.2) : theme.spring) {
             if !stageFirst.show(reply: id, in: store.messages, toPlan: toPlan) { store.openStage(id) }
+            #if DEBUG
+            // -yuiDemoStageAt <n>: the stage opens on that page of the answer (0 the first), for a shot of each.
+            if UserDefaults.standard.object(forKey: "yuiDemoStageAt") != nil { stageFirst.at = UserDefaults.standard.integer(forKey: "yuiDemoStageAt") }
+            #endif
         }
     }
 

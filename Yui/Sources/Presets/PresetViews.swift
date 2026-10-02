@@ -101,6 +101,7 @@ struct PresetView: View {
         case "map", "area", "pin", "route": MapPreset(c: component)
         case "diagram": DiagramPreset(c: component)
         case "mock", "part": MockPreset(c: component)
+        case "draw": DrawPreset(c: component)
         case "game": GamePreset(c: component)
         case "loop": LoopPreset(c: component)
         case "drums": DrumsPreset(c: component)

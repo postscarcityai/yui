@@ -75,8 +75,8 @@ final class StageCloseTests: XCTestCase {
         XCTAssertTrue(field.waitForExistence(timeout: 5))
         field.typeText(said)
         app.buttons["stage-send-text"].tap()
-        let all4 = app.descendants(matching: .any).matching(NSPredicate(format: "identifier == 'stage-segments' AND label == 'Part 1 of 4'")).firstMatch
-        XCTAssertTrue(all4.waitForExistence(timeout: 25), "the reply never grew to four parts")
+        let both = app.descendants(matching: .any).matching(NSPredicate(format: "identifier == 'stage-segments' AND label == 'Part 1 of 2'")).firstMatch
+        XCTAssertTrue(both.waitForExistence(timeout: 25), "the reply never grew to its two parts")
         XCTAssertTrue(app.buttons["stage-close"].waitForExistence(timeout: 3), "no close on the plan")
     }
 
