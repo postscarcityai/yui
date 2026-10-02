@@ -281,6 +281,15 @@ final class ChatStore {
     private(set) var agent: YuiAgent? { didSet { if agent != nil { flushTables() } } }
     /// The agent owes a reply: shows the typing dots.
     private(set) var waiting = false
+    /// The person's row the wait is for. Status read off another row, or a reply that names another
+    /// turn, never ends it (the stage showed "Anything else?" while the agent still worked).
+    private(set) var waitingRow: String?
+    /// A turn is in flight: a reply is owed, or the host says what it is doing, or a job runs.
+    /// The stage's end screen never shows while this holds.
+    var inFlight: Bool { waiting || doing != nil || job != nil || streaming > 0 }
+    /// Replies still arriving line by line (a demo or pasted reply): the message is there before its
+    /// first line, and the wait is already over, so this keeps the stage from reading it as the end.
+    private(set) var streaming = 0
     private(set) var loaded = false
     var error: String?
     private var client: ThreadClient?
@@ -825,6 +834,7 @@ final class ChatStore {
         scopeCursor = nil
         scopePass = 0
         waiting = false
+        waitingRow = nil
         pickedUpAt = nil
         doing = nil
         job = nil
@@ -968,7 +978,7 @@ final class ChatStore {
                       answers: Bool = true) {
         guard client != nil, let agentID = agent?.id, let user = account?.session?.userID else { return }
         seen.insert(id.lowercased())
-        if answers { owe() }
+        if answers { owe(row: id.lowercased()) }
         let item = Outbox.Item(id: id.lowercased(), userID: user, agentID: agentID, body: body, kind: kind,
                                meta: meta, queuedAt: .now, chatID: chatID)
         // A chat made on this phone is made on the server with its first words, not before.
@@ -1005,6 +1015,7 @@ final class ChatStore {
                 let words = messages.first { ids.contains($0.id.lowercased()) && $0.fromUser }?.text ?? ""
                 withAnimation(spring) { messages.removeAll { ids.contains($0.id.lowercased()) } }
                 waiting = false
+                waitingRow = nil
                 refusal = (words, refused.spoken)
                 chats.note = refused.spoken
                 return
@@ -1020,9 +1031,10 @@ final class ChatStore {
     }
 
     /// A reply is owed: the working row shows and its seconds start.
-    private func owe() {
+    private func owe(row: String? = nil) {
         owed += 1
         waiting = true
+        waitingRow = row
         waitingSince = .now
         pickedUpAt = nil
         doing = nil
@@ -1033,6 +1045,21 @@ final class ChatStore {
     /// The person's Stop: a control row from them with op stop.
     static func isStop(_ row: ThreadRow) -> Bool {
         row.kind == "control" && row.sender == "user" && row.meta?.object?["op"]?.string == "stop"
+    }
+
+    /// Seconds the host's "handled" waits before the phone believes nothing more comes.
+    static let handoffGrace: TimeInterval = 20
+
+    /// The person's row `id` is the one this wait is for (any row when nothing names it).
+    static func tracks(_ id: String, waiting: String?) -> Bool {
+        waiting.map { $0 == id.lowercased() } ?? true
+    }
+
+    /// An agent row ends the wait unless its `meta.turn` names rows and the waited-for one is not
+    /// among them: it answers an earlier turn (a late or board reply) and this one is still running.
+    static func ends(_ meta: YLValue?, waiting: String?) -> Bool {
+        guard let waiting, let turn = meta?.object?["turn"]?.array, !turn.isEmpty else { return true }
+        return turn.contains { $0.string?.lowercased() == waiting }
     }
 
     /// True when an agent row answers something a Stop ended: its meta.turn names a stopped
@@ -1088,6 +1115,7 @@ final class ChatStore {
         for m in messages[from...] where m.fromUser { stoppedRows.insert(m.rowID.lowercased()) }
         if let job { stoppedJobs.insert(job) }
         waiting = false
+        waitingRow = nil
         pickedUpAt = nil
         doing = nil
         job = nil
@@ -1116,6 +1144,7 @@ final class ChatStore {
         guard !new.isEmpty else { return }
         messages.append(contentsOf: new)
         waiting = true
+        waitingRow = Outbox.shared.pending(agentID: agentID, chatID: chatID).last { $0.kind != "control" }?.id.lowercased()
         waitingSince = .now
         pickedUpAt = nil
         doing = nil
@@ -1240,9 +1269,12 @@ final class ChatStore {
     /// A thread opened mid-turn: its newest row is the person's and the agent
     /// has not finished it, so the working note picks up where it was.
     private func resume(_ rows: [ThreadRow], now: Date = .now) {
-        guard let last = rows.last, last.sender == "user", last.kind != "control", last.handledAt == nil,
+        guard let last = rows.last, last.sender == "user", last.kind != "control",
               let sent = YuiTime.date(last.createdAt), now.timeIntervalSince(sent) < Self.turnWindow else { return }
+        // Handed back a moment ago: its reply may still be on its way, so track() decides, as live.
+        if let done = last.handledAt.flatMap(YuiTime.date), now.timeIntervalSince(done) > Self.handoffGrace { return }
         waiting = true
+        waitingRow = last.id.lowercased()
         waitingSince = sent
         pickedUpAt = last.deliveredAt.flatMap(YuiTime.date)
         doing = pickedUpAt == nil ? nil : Self.doing(last.doing)
@@ -1251,12 +1283,15 @@ final class ChatStore {
     /// How far the turn on the person's newest row has got. Finished with no
     /// reply after a grace period (a command, a turn that errored): stop waiting.
     private func track(_ row: ThreadRow, now: Date = .now) {
+        // Only the row this wait is for: the newest row the server has can be an older, finished one
+        // while the new one is still on its way, and its "handled" is not this turn's end.
+        guard Self.tracks(row.id, waiting: waitingRow) else { return }
         pickedUpAt = row.deliveredAt.flatMap(YuiTime.date) ?? pickedUpAt
         // Words for the working row only once the host has the row: a queued
         // row has none of its own yet.
         if row.deliveredAt != nil { setDoing(Self.doing(row.doing)) }
         time(row)
-        if let done = row.handledAt.flatMap(YuiTime.date), now.timeIntervalSince(done) > 20 { waiting = false }
+        if let done = row.handledAt.flatMap(YuiTime.date), now.timeIntervalSince(done) > Self.handoffGrace { waiting = false }
     }
 
     /// A finished turn on one of the person's rows: keep how long it took.
@@ -1292,7 +1327,9 @@ final class ChatStore {
         if !history { time(row) }
         if !history, row.sender == "agent", Mentions.from(meta: row.meta) == nil { trackJob(row) }
         // Another agent's answer copied in (YUI-44) doesn't end this agent's turn.
-        if !history, row.sender == "agent", Mentions.from(meta: row.meta) == nil { waiting = false; pickedUpAt = nil; doing = nil }
+        if !history, row.sender == "agent", Mentions.from(meta: row.meta) == nil, Self.ends(row.meta, waiting: waitingRow) {
+            waiting = false; waitingRow = nil; pickedUpAt = nil; doing = nil
+        }
         if !history, row.sender == "agent", let done = TalkAbout.applied(meta: row.meta), done == about?.id {
             withAnimation(spring) { about = nil }  // its proposal was applied (YUI-69)
         }
@@ -1454,6 +1491,7 @@ final class ChatStore {
             try? await Task.sleep(for: .seconds(steps.isEmpty ? answer - pickup : gap))
             guard !Task.isCancelled else { return }  // stopped (YUI-190): no late reply
             waiting = false
+            waitingRow = nil
             pickedUpAt = nil
             doing = nil
             let text = reply.replacingOccurrences(of: "\\n", with: "\n")
@@ -1493,7 +1531,9 @@ final class ChatStore {
         }
         #endif
         withAnimation(spring) { messages.append(msg) }
+        streaming += 1
         Task {
+            defer { streaming -= 1 }
             var parser = YLStreamParser(known: lastingIds)
             for line in text.split(separator: "\n", omittingEmptySubsequences: false) {
                 apply(parser.push(line + "\n"), to: msg.id)
@@ -1741,6 +1781,7 @@ extension ChatStore {
         guard chatID == id else { return }
         withAnimation(spring) { messages = [] }
         waiting = false
+        waitingRow = nil
         pickedUpAt = nil
         doing = nil
         job = nil
