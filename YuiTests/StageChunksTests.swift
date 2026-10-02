@@ -187,4 +187,146 @@ final class StageChunksTests: XCTestCase {
         end
         """), [1, 1, 1])
     }
+
+    // NOTE-42080, VALUES 9: one decision, one screen (mirror of askHere in yuigui site/lib/yl/askhere.test.mjs).
+    private func asks(_ yl: String) -> [String?] {
+        StageChunks.of(YLScreen(yl), scope: "r").chunks.filter(\.asks).map(\.line)
+    }
+
+    private func turn(_ yl: String) -> StageTurn {
+        StageChunks.turn([ChatMessage(id: "u", text: "Go", fromUser: true),
+                          ChatMessage(id: "r", text: "", fromUser: false, yl: YLScreen(yl))], ask: "u")
+    }
+
+    func testAChooseAfterAPlanPageAsksOnThatPage() {
+        XCTAssertEqual(asks("""
+        plan "Review"
+        page "1 done today" body="2 still open."
+        choose "Groceries" Done|Tomorrow|Drop
+        end
+        """), ["1 done today"])
+    }
+
+    func testAPickAndAnAskJoinToo() {
+        XCTAssertEqual(asks("""
+        plan "P"
+        page "x"
+        pick "Which?" A|B
+        end
+        """), ["x"])
+        XCTAssertEqual(asks("""
+        plan "P"
+        page "y"
+        ask "Go?"
+        end
+        """), ["y"])
+    }
+
+    func testASlideOrFormDoesNotJoinAPage() {
+        XCTAssertEqual(asks("""
+        plan "P"
+        page "x"
+        slide "How much?" 1-5
+        end
+        """), [])
+        XCTAssertEqual(asks("""
+        plan "P"
+        page "x"
+        form "About you" name:text
+        choose "Then?" A|B
+        end
+        """), [], "the choose follows the form, not the page")
+    }
+
+    func testAPageWithItsPictureStillAsks() {
+        XCTAssertEqual(asks("""
+        plan "P"
+        page "Look C: Chalk"
+        sketch frame=bubble
+        row "Chalk lines" +hi
+        end
+        choose "Which drawing look should Yui use?" A|B|C
+        end
+        """), ["Look C: Chalk"])
+    }
+
+    func testADeckPageDoesNotAsk() {
+        XCTAssertEqual(asks("""
+        deck "D"
+        page "P"
+        choose "Quiz?" A|B
+        end
+        """), [])
+    }
+
+    func testAQuestionWithNoPageBeforeItStaysAlone() {
+        XCTAssertEqual(asks("""
+        plan "P"
+        choose "Q" A|B
+        page "after"
+        end
+        """), [])
+        // The release reply's plan has no page in it: nothing moves.
+        let t = turn("""
+        say "Keys ride along."
+        sketch "In 0.3.2"
+        row Keys +hi
+        plan@before "Before I go"
+        choose@ping "Ping you?" Yes|No
+        end
+        """)
+        XCTAssertNil(t.lead)
+        XCTAssertEqual(t.pages, 2)
+    }
+
+    /// The last page and its question share the questions screen: one page, not two.
+    func testTheLastPageMovesOntoTheQuestionsScreen() {
+        let t = turn("""
+        say "Two things."
+        plan "Before I go"
+        page "Findings" body="The guide changes nothing for routing."
+        choose "When do we ship?" Friday|Monday +other
+        end
+        """)
+        XCTAssertEqual(t.lead?.line, "Findings")
+        XCTAssertEqual(t.chunks.map(\.line), ["Two things."])
+        XCTAssertEqual(t.questions.count, 1)
+        XCTAssertEqual(t.pages, 2, "Two things., then Findings with its question")
+    }
+
+    /// Three looks, then the question: the last look heads the question, the first two stay pages to read.
+    func testOnlyTheLastPageMoves() {
+        let t = turn("""
+        plan "Pick a look"
+        page "Look A: Hand drawn"
+        page "Look B: Clean lines"
+        page "Look C: Chalk"
+        choose "Which drawing look should Yui use?" A|B|C
+        end
+        """)
+        XCTAssertEqual(t.chunks.map(\.line), ["Look A: Hand drawn", "Look B: Clean lines"])
+        XCTAssertEqual(t.lead?.line, "Look C: Chalk")
+        XCTAssertEqual(t.pages, 3)
+    }
+
+    /// A plan that is a page and its questions plays as one screen, and the record's pill opens it there.
+    func testAPageAndItsQuestionsAreOneScreen() {
+        let messages = [
+            ChatMessage(id: "u1", text: "Review", fromUser: true),
+            ChatMessage(id: "a1", text: "", fromUser: false, yl: YLScreen("""
+            plan@review "Evening review" submit="Wrap up the day"
+            page "1 done today" body="Nice. 2 still open." points="Pay the water bill"
+            choose@r-groceries "Groceries" "Done"|"Tomorrow"|"Drop"
+            choose@feel "How did today go?" "Great"|"Okay"|"Rough"
+            end
+            """)),
+        ]
+        let t = StageChunks.turn(messages, ask: "u1")
+        XCTAssertTrue(t.chunks.isEmpty)
+        XCTAssertEqual(t.lead?.line, "1 done today")
+        XCTAssertEqual(t.pages, 1)
+        let model = StageFirstModel()
+        XCTAssertTrue(model.show(reply: "a1", in: messages))
+        XCTAssertEqual(model.at, 0, "the pill opens on the questions screen")
+    }
 }

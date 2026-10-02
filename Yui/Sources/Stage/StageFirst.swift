@@ -932,7 +932,14 @@ struct StageFirstView: View {
         let lone = n == 1 && t.plan == nil && (t.questions[0].c.string("q") ?? t.questions[0].c.string("title")) != nil
         return GeometryReader { geo in ScrollView {
             VStack(alignment: .leading, spacing: theme.spacing.l) {
-                if !lone {
+                // One decision, one screen (NOTE-42080): the page the questions ask about heads them, a size
+                // down so the answers stay in reach. It is the headline, so the plan's own title steps aside.
+                if let lead = t.lead {
+                    block(lead, c, room: geo.size.width * 0.72)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .accessibilityElement(children: .contain)
+                        .accessibilityIdentifier("stage-questions-lead")
+                } else if !lone {
                     Text(t.plan?.c.string("title") ?? (n == 1 ? "One question" : "Before I go"))
                         .font(theme.font(theme.type.display, .heavy))
                         .foregroundStyle(c.ink)

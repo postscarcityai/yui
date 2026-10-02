@@ -24,6 +24,9 @@ struct StageChunk: Identifiable, Equatable {
     var all: [YLComponent] = []
     /// The ideas that share this page (VIS-4): up to 2 more, stacked under this one.
     var more: [StageChunk] = []
+    /// A plan's page with its question right after it (NOTE-42080): it asks that question, so when it is
+    /// the last page it moves onto the questions screen (`StageTurn.lead`).
+    var asks = false
 
     /// Every idea on the page, top to bottom.
     var blocks: [StageChunk] {
@@ -54,6 +57,9 @@ struct StageTurn: Equatable {
     /// The plan the questions came from: Send answers its questions as that plan,
     /// and the loose ones as their own events.
     var plan: StageQuestion?
+    /// One decision, one screen (feedback NOTE-42080, spec VALUES 9, web YUI-277): the plan page the
+    /// questions follow sits on the questions screen above them, not a page before it with nothing to answer.
+    var lead: StageChunk?
     /// Replies landed for this turn so far (text or screens).
     var replies = 0
     /// A reply came back as nothing but error lines: the turn failed (Stage motion's error).
@@ -121,6 +127,9 @@ enum StageChunks {
 
     /// Things to answer. On the stage they wait for the end, all on one screen.
     static let questions: Set<String> = ["ask", "choose", "pick", "slide", "form", "mic", "camera"]
+    /// Questions that join the plan page before them (mirror: `askHere` in yuigui site/lib/yl/askhere.mjs).
+    /// A slide, a form, the mic or the camera does not.
+    static let decisions: Set<String> = ["ask", "choose", "pick"]
     /// Groups whose pages become chunks and whose questions join the end.
     static let flows: Set<String> = ["deck", "plan"]
 
@@ -132,10 +141,13 @@ enum StageChunks {
         var plan: YLComponent?
         // The chunk still waiting for its picture.
         var open: Int?
+        // A plan's page, while nothing but its picture has come after it: a decision next joins it.
+        var page: Int?
 
         func start(_ c: StageChunk) {
             chunks.append(c)
             open = c.pic == nil ? chunks.count - 1 : nil
+            page = nil
         }
 
         // Pages 2 to 12 are the agent's screens, not this turn's story.
@@ -143,7 +155,7 @@ enum StageChunks {
             let head = yl.head(of: c)
             // A member of a drawing belongs to the drawing, not to the flow.
             if let head, !flows.contains(head.preset) { continue }
-            if flows.contains(c.preset) { open = nil; continue }
+            if flows.contains(c.preset) { open = nil; page = nil; continue }
             // A deck page you act on (Basil's week, a day a card, each meal a swap, YUI-183): a question
             // with its own title is that page, played in turn, and a tap on it goes at once. A quiz
             // question has no title and still waits for the end.
@@ -155,6 +167,8 @@ enum StageChunks {
             if questions.contains(c.preset) {
                 qs.append(StageQuestion(scope: scope, c: c, all: all))
                 if let head, head.preset == "plan" { plan = head }
+                if let i = page, decisions.contains(c.preset) { chunks[i].asks = true }
+                page = nil
                 continue
             }
             let id = "\(scope)#\(c.serial)"
@@ -163,6 +177,7 @@ enum StageChunks {
                 start(StageChunk(scope: scope, id: id, line: c.string("text") ?? "", all: all))
             case "page":
                 start(StageChunk(scope: scope, id: id, line: c.string("title") ?? "", page: c, all: all))
+                if head?.preset == "plan" { page = chunks.count - 1 }
             default:
                 if let i = open {
                     chunks[i].pic = c
@@ -229,6 +244,7 @@ enum StageChunks {
             add(m, to: &t)
         }
         t.chunks = pack(t.chunks)
+        lift(&t)
         return t
     }
 
@@ -245,7 +261,15 @@ enum StageChunks {
             if led != nil ? !m.home && !m.stopped : m.hello { add(m, to: &t) }
         }
         t.chunks = pack(t.chunks)
+        lift(&t)
         return t
+    }
+
+    /// The last page asks the questions that follow it: it moves onto their screen (NOTE-42080).
+    /// A page before more pages stays where it is, so the story still reads in order.
+    static func lift(_ t: inout StageTurn) {
+        guard !t.questions.isEmpty, let last = t.chunks.last, last.asks, last.more.isEmpty else { return }
+        t.lead = t.chunks.removeLast()
     }
 
     /// One reply's chunks and questions onto the turn.
