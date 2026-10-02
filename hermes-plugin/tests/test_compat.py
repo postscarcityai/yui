@@ -118,11 +118,11 @@ class Downgrade(unittest.TestCase):
         self.assertDrawable(out, 96)
 
     def test_note_names_what_to_skip(self):
-        self.assertIn("cannot draw chords, diagram, drums, keys, loop, map, metronome, mock, shapes, sketch, tuner yet", compat.note(96))
+        self.assertIn("cannot draw chords, diagram, draw, drums, keys, loop, map, metronome, mock, shapes, sketch, tuner yet", compat.note(96))
         self.assertNotIn("timeline", compat.note(96))
-        self.assertEqual(compat.note(compat.SHAPES_BUILD), f"[yui] This person's Yui app (build {compat.SHAPES_BUILD}) cannot draw chords, diagram, drums, keys, loop, map, metronome, mock, tuner yet: don't send those. Say it in words or use another preset.")
+        self.assertEqual(compat.note(compat.SHAPES_BUILD), f"[yui] This person's Yui app (build {compat.SHAPES_BUILD}) cannot draw chords, diagram, draw, drums, keys, loop, map, metronome, mock, tuner yet: don't send those. Say it in words or use another preset.")
         self.assertEqual(compat.note(compat.DRAW_BUILD), "")
-        self.assertIn("cannot draw chords, diagram, drums, keys, loop, map, metronome, mock, shapes", compat.note(122))
+        self.assertIn("cannot draw chords, diagram, draw, drums, keys, loop, map, metronome, mock, shapes", compat.note(122))
         self.assertIn("an older build", compat.note(None))
 
     def test_menu_lines_go_quietly_before_the_drawer(self):
@@ -163,8 +163,8 @@ class Downgrade(unittest.TestCase):
         self.assertIn("There are chord buttons here: G I-V-vi-IV. Update Yui to play them.", out)
         self.assertIn("There are chord buttons here: C G Am F. Update Yui to play them.", out)
         self.assertDrawable(out, 176)
-        self.assertIn("cannot draw chords, diagram, keys, map, metronome, mock, tuner yet", compat.note(176))
-        self.assertIn("cannot draw diagram, map, metronome, mock, tuner yet", compat.note(compat.KEYS_BUILD))
+        self.assertIn("cannot draw chords, diagram, draw, keys, map, metronome, mock, tuner yet", compat.note(176))
+        self.assertIn("cannot draw diagram, draw, map, metronome, mock, tuner yet", compat.note(compat.KEYS_BUILD))
         self.assertEqual(compat.downgrade(body, compat.KEYS_BUILD), body)
 
     def test_tuner_and_metronome_before_build_205(self):
@@ -176,7 +176,7 @@ class Downgrade(unittest.TestCase):
         self.assertIn("There's a tuner here. Update Yui to use it.", out)
         self.assertIn("There's a metronome here at 72 bpm. Update Yui to use it.", out)
         self.assertDrawable(out, 204)
-        self.assertIn("cannot draw diagram, map, metronome, mock, tuner yet", compat.note(204))
+        self.assertIn("cannot draw diagram, draw, map, metronome, mock, tuner yet", compat.note(204))
         self.assertEqual(compat.note(compat.DRAW_BUILD), "")
         self.assertEqual(compat.downgrade(body, compat.TUNER_BUILD), body)
 
@@ -219,6 +219,40 @@ class Downgrade(unittest.TestCase):
                          fence("stat Total 3", "deck D +inline", "page One", "end", "stat Out 4", ">2 chart bar x=a y=1"))
         plain = fence("deck D", "page One", "page Two")
         self.assertEqual(compat.downgrade(plain, 150), plain)
+
+    def test_a_draw_before_its_build_is_its_title_and_caption(self):
+        # The stage redesign's `draw`: the SVG up to its `end` is dropped, the words stay.
+        body = "Fixed.\n\n" + fence(
+            'say "Push tap fixed."',
+            'draw "Push tap" caption="Tap the banner. The answer plays itself."',
+            '<svg viewBox="0 0 360 250">',
+            '  <rect class="draw soft" x="30" y="14" width="120" height="222" rx="20"/>',
+            '  <text x="50" y="43">timer 60</text>',
+            '</svg>',
+            'end',
+            'say "Next build."')
+        want = ("Fixed.\n\n" + fence('say "Push tap fixed."')
+                + "\n\n**Push tap**\nTap the banner. The answer plays itself.\n\n" + fence('say "Next build."'))
+        self.assertEqual(compat.downgrade(body, compat.FREE_DRAW_BUILD - 1), want)
+        self.assertDrawable(compat.downgrade(body, compat.FREE_DRAW_BUILD - 1), compat.FREE_DRAW_BUILD - 1)
+        self.assertEqual(compat.downgrade(body, compat.FREE_DRAW_BUILD), body)
+        self.assertIn("draw", compat.note(compat.FREE_DRAW_BUILD - 1))
+        self.assertNotIn("draw,", compat.note(compat.DRAW_BUILD - 1))
+
+    def test_a_draw_with_no_markup_takes_only_its_head(self):
+        # No tag after the head: the draw is empty and the next line is still the reply's.
+        body = fence('draw "Empty"', "timer 60")
+        self.assertEqual(compat.downgrade(body, compat.FREE_DRAW_BUILD - 1), "**Empty**\n\n" + fence("timer 60"))
+        # Left open at the end of the fence, it still takes everything after it.
+        self.assertEqual(compat.downgrade(fence("draw", "<svg/>", "<g/>"), compat.FREE_DRAW_BUILD - 1), "")
+
+    def test_a_draw_in_a_deck_is_a_page_of_its_words(self):
+        body = fence('>full', 'deck "How"', 'page "Tap" body="Look."', 'draw "Push tap" caption="Tap it."',
+                     '<svg viewBox="0 0 4 3"></svg>', 'end', 'page "Last" body="Done."', 'end')
+        self.assertEqual(compat.downgrade(body, compat.FREE_DRAW_BUILD - 1), fence(
+            '>full', 'deck "How"', 'page "Tap" body="Look."', 'page "Push tap" body="Tap it."',
+            'page "Last" body="Done."', 'end'))
+        self.assertEqual(compat.downgrade(body, compat.FREE_DRAW_BUILD), body)
 
 
 @unittest.skipUnless(YL.exists() and shutil.which("node"), "yuigui checkout or node not found")

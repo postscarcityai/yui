@@ -12,7 +12,10 @@ something it can:
   * inside a deck or plan: a `page` whose points are those rows.
 
   * a `flow` (YUI-155, feedback AMLn-Gg3): the plan it walks by default, the
-    same questions and one submit. A saved flow is looked up in the starter
+    same questions and one submit.
+
+  * a `draw` (the agent's own SVG, docs/STAGE-REDESIGN.md): its words only, the
+    title and the caption; the markup up to its `end` is dropped. A saved flow is looked up in the starter
     flows (starter_flows.json, from yuigui by sync_flows.py).
 
 An unknown build (no phone has said yet) counts as older than all of them.
@@ -44,6 +47,11 @@ MAP_BUILD = 219  # YUI-158 step 2: maps drawn and pinched (the app commit's coun
 DRAW_BUILD = 1_000_000
 # YUI-115: the app runs flows from this build (the runtime commit's count); older builds get a plan.
 FLOW_BUILD = 414
+# The stage redesign: `draw`, the agent's own SVG up to `end` (docs/STAGE-REDESIGN.md). 450 is the
+# commit count (git rev-list --count, the TestFlight build number) of ac0f3a9, the merge of pull
+# request 6 that brought `draw` to main. The draw commit itself (16b10e0) counts 444, but main
+# builds 445 to 447 were cut before that merge and cannot draw it. Older builds get the words.
+FREE_DRAW_BUILD = 450
 
 # First app build whose parser knows each preset (git rev-list --count of the
 # commit that added it to Packages/YuiLines/Sources/YuiLines/Presets.swift).
@@ -59,6 +67,7 @@ MIN_BUILD: Dict[str, int] = {
     "map": MAP_BUILD, "area": MAP_BUILD, "pin": MAP_BUILD, "route": MAP_BUILD,  # YUI-158: places on a map
     "diagram": DRAW_BUILD, "mock": DRAW_BUILD, "part": DRAW_BUILD,  # DRAW-2: a Mermaid diagram, a UI mock
     "flow": FLOW_BUILD,                                  # YUI-115: older builds get a plan
+    "draw": FREE_DRAW_BUILD,                             # the agent's own SVG: older builds get its words
 }
 GROUPS = {"sketch": {"row", "after"}, "timeline": {"done", "now", "next"}, "shapes": {"shape"},
           "map": {"area", "pin", "route"}, "mock": {"part"}}
@@ -361,6 +370,31 @@ def _diagram_words(lines: List[str]) -> tuple:
     return used, title, _graph_lines(graph), cap, ""
 
 
+def _draw_extent(lines: List[str], i: int) -> int:
+    """Index just past the draw whose head is lines[i], read the way every Yui Lines
+    parser reads it: blank lines after the head are skipped, a first line that does
+    not open a tag (`<`) leaves the draw empty (that line is YL), and otherwise the
+    markup runs to a line that is only `end`, or to the end of the fence."""
+    started = False
+    for k in range(i + 1, len(lines)):
+        t = lines[k].strip()
+        if t == "end":
+            return k + 1
+        if not started:
+            if not t:
+                continue
+            if not t.startswith("<"):
+                return i + 1
+            started = True
+    return len(lines)
+
+
+def _draw_words(lines: List[str]) -> tuple:
+    """(lines it takes, title, caption) for the draw whose head is lines[0]."""
+    _, _, _, words, props, _ = _split(lines[0])
+    return _draw_extent(lines, 0), " ".join(words).strip(), _unquote(props.get("caption", ""))
+
+
 def _graph_lines(g: dict) -> List[str]:
     if g.get("type") == "sequence":
         names = {a["id"]: a.get("label") or a["id"] for a in g.get("actors", [])}
@@ -634,6 +668,21 @@ def _fence(block: str, gated: set) -> List[tuple]:
             continue
         group = [line]
         members = GROUPS.get(preset, set())
+        if preset == "draw":
+            used, title_, cap = _draw_words(lines[i:])
+            i += used
+            if story:
+                page = _words_page(title_, cap, [], "The drawing")
+                if page:
+                    cur.append(SCREEN.match(line).group(1) + page if SCREEN.match(line) else page)
+                continue
+            text = "\n".join(([f"**{title_}**"] if title_ else []) + ([cap] if cap else []))
+            if cur and any(l.strip() for l in cur):
+                parts.append(("yui", cur))
+            cur = []
+            if text:
+                parts.append(("text", text))
+            continue
         if preset == "diagram":
             used, title_, points, cap, source = _diagram_words(lines[i:])
             i += used
