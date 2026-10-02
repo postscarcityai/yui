@@ -82,7 +82,11 @@ extension YLEvent {
     /// Quiet events (a timer starting, a checklist tick) stay on the phone;
     /// anything the person answered, anything that finished, and every game
     /// event (a tic-tac-toe move needs the agent's answer) goes back.
-    var relays: Bool { echo != nil || value["done"] == .bool(true) || preset == "game" || (preset == "query" && value["op"] != nil) }
+    var relays: Bool { echo != nil || dismisses || value["done"] == .bool(true) || preset == "game" || (preset == "query" && value["op"] != nil) }
+
+    /// A Dismiss on a Needs you row (YUI-265): goes to the host quietly, which closes the ask on its card.
+    /// No chat echo and no agent turn.
+    var dismisses: Bool { preset == "menu" && value["dismissed"] == .bool(true) }
 
     var meta: YLValue {
         var o: [String: YLValue] = ["id": .string(id), "preset": .string(preset), "value": .object(value)]

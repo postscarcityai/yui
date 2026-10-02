@@ -49,7 +49,10 @@ import os
 import re
 import subprocess
 import sys
+import time
+from datetime import datetime, timedelta
 from pathlib import Path
+from zoneinfo import ZoneInfo
 from typing import List, Optional
 
 ID = re.compile(r"^need-(t_[0-9a-f]{4,})$")
@@ -123,7 +126,51 @@ def opened(row: dict) -> Optional[str]:
     rid = str(meta.get("id") or "")
     if meta.get("preset") != "menu" or not isinstance(v, dict) or v.get("bucket") != "review" or not ROW.match(rid):
         return None
+    if v.get("dismissed"):  # a Dismiss is not a tap that opens the ask
+        return None
     return rid
+
+
+def dismissed_of(row: dict) -> Optional[str]:
+    """The task id when the row is a Dismiss on a Needs you row (YUI-265), else None. The app sends it quiet:
+    `{"id": "need-<task id>", "preset": "menu", "value": {"bucket": "review", "dismissed": true}}`."""
+    if row.get("kind") != "event":
+        return None
+    meta = row.get("meta") or {}
+    v = meta.get("value") or {}
+    m = ID.match(str(meta.get("id") or ""))
+    if not m or meta.get("preset") != "menu" or not isinstance(v, dict) or v.get("dismissed") is not True:
+        return None
+    return m.group(1)
+
+
+SNOOZE_DAYS = 7
+
+
+def snooze_until(now: Optional[float] = None) -> str:
+    """The ISO date a Not yet keeps an ask quiet until: a week out, New York time (the war room reads it)."""
+    d = datetime.fromtimestamp(now or time.time(), ZoneInfo("America/New_York")).date()
+    return (d + timedelta(days=SNOOZE_DAYS)).isoformat()
+
+
+def dismiss(board: str, task: str, db_path=None) -> dict:
+    """Close the ask on the card: an `ASK-CLOSED: dismissed` comment, no agent turn. The card stays as it is
+    (a blocked card keeps its block, but the war room, briefing and lane driver skip it until something new
+    lands on it). Returns {ok, card, why?}."""
+    from hermes_cli import kanban_db as kb  # the gateway runs inside hermes-agent
+
+    with kb.connect_closing(db_path) as conn:
+        row = conn.execute("SELECT title, status, assignee FROM tasks WHERE id = ?", (task,)).fetchone()
+        if row is None:
+            return {"ok": False, "why": "not on the board", "card": task}
+        out = {"card": card_name(row[0]), "task": task}
+        if row[2] not in (board, None):
+            return {**out, "ok": False, "why": f"{row[2]}'s card"}
+        if row[1] in ("archived", "done"):
+            return {**out, "ok": False, "why": row[1]}
+        kb.add_comment(conn, task, AUTHOR, "ASK-CLOSED: dismissed (Chris, dismissed in the Yui war room). "
+                                           "Do not re-ask this unless something new happens on the card.")
+        return {**out, "ok": True}
 
 
 def script(board: str) -> Optional[str]:
@@ -153,7 +200,7 @@ def comment(ans: dict) -> str:
     how = "typed" if ans["typed"] else "tapped"
     who = f"(Chris, {how} in the Yui war room)"
     if not ans["typed"] and is_(ans["choice"], NOT_YET):
-        return f"NOT YET {who}: he hasn't done this yet. The card stays blocked until he answers."
+        return f"NOT YET {who}: he hasn't done this yet. The card stays blocked, and the ask stays quiet for a week."
     head = "ANSWER CHANGED" if ans["changed"] else "ANSWER"
     if not ans["typed"] and is_(ans["choice"], YOU_DECIDE):
         return f"{head} {who}: You decide. Pick the option you recommend and go."
@@ -176,6 +223,10 @@ def apply(board: str, ans: dict, db_path=None) -> dict:
             return {**out, "ok": False, "why": status}
         kb.add_comment(conn, ans["task"], AUTHOR, comment(ans))
         wait = not ans["typed"] and is_(ans["choice"], NOT_YET)
+        # YUI-265: an answer closes the ask for good, Not yet puts it to sleep for a week.
+        if wait or not ans["changed"]:
+            kb.add_comment(conn, ans["task"], AUTHOR,
+                           f"ASK-SNOOZED: until {snooze_until()}" if wait else "ASK-CLOSED: answered")
         unblocked = not wait and status == "blocked" and kb.unblock_task(conn, ans["task"])
         now = conn.execute("SELECT status FROM tasks WHERE id = ?", (ans["task"],)).fetchone()[0]
         return {**out, "ok": True, "unblocked": bool(unblocked), "status": now, "waiting": wait}
@@ -186,7 +237,7 @@ def reply(r: dict) -> str:
     if not r.get("ok"):
         return f"Couldn't answer {r.get('card') or 'that card'}: {r.get('why')}."
     if r.get("waiting"):
-        return f"Noted on {r['card']}: not yet. It stays in Needs you until you've done it."
+        return f"Noted on {r['card']}: not yet. It stays quiet for a week."
     if r["unblocked"] and is_(r["choice"], YOU_DECIDE):
         return f"{r['card']} will pick what it recommends and go."
     if r["unblocked"]:

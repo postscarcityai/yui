@@ -340,12 +340,12 @@ struct StageFirstView: View {
     /// An answer is up on screen 1, with something to leave: a way out is always there.
     private func closable(_ t: StageTurn?) -> Bool {
         guard let t, t.ask != nil || t.hello, at == 1, !mic.live, !model.typing else { return false }
-        return t.pages > 0 || !store.waiting
+        return t.pages > 0 || !store.inFlight
     }
 
     /// The last page (the questions, or the last chunk) with nothing more coming: the end.
     private func atEnd(_ t: StageTurn?) -> Bool {
-        guard closable(t), let t, t.pages > 0, !store.waiting, model.foundUntil == nil else { return false }
+        guard closable(t), let t, t.pages > 0, !store.inFlight, model.foundUntil == nil else { return false }
         return min(model.at, t.pages - 1) == t.pages - 1
     }
 
@@ -448,7 +448,8 @@ struct StageFirstView: View {
         } else if hasHome {
             // The agent's home (YUI-168): what it does, what is waiting on you, its chips below.
             HomeHead(agent: agent, line: homeLine, waiting: AgentHome.waiting(store), open: openWaiting,
-                     seeAll: actions.menu, hasScreens: screens.count > 1)
+                     seeAll: actions.menu, dismiss: { if let item = $0.item { store.dismissMenu(item) } },
+                     hasScreens: screens.count > 1)
         } else {
             greeting(c, title: "Hi. \(showMic ? "Tap the mic and talk." : "Tap T and type.")",
                      sub: "I answer right here, on the whole screen.")
@@ -570,7 +571,7 @@ struct StageFirstView: View {
     private func working(_ turn: StageTurn?) -> Bool {
         guard !mic.live, let t = turn, t.ask != nil else { return false }
         if model.foundUntil != nil { return true }
-        return t.pages == 0 && store.waiting
+        return t.pages == 0 && store.inFlight
     }
 
     // MARK: Top bar (YUI-122, TopBar.swift): the menu and the agent top left, the record top right
@@ -578,7 +579,7 @@ struct StageFirstView: View {
     private func topBar(_ c: Swatch) -> some View {
         HStack(spacing: theme.spacing.s) {
             // The drawer: the war room, the agent's controls and Settings.
-            menuButton(c, named: screens.count <= 1)
+            MenuPill(agent: agent, compact: screens.count > 1, id: "stage-menu", action: actions.menu)
                 .modifier(WaitingDot(waiting: waiting > 0, reduceMotion: reduceMotion, x: 1, y: 1))
                 .accessibilityValue(waiting > 0 ? "\(waiting) waiting on you" : "")
             // The screens as pills (YUI-193, Chris Sep 28: "some pills for the screens ... kind of
@@ -624,30 +625,6 @@ struct StageFirstView: View {
         .buttonStyle(BounceButtonStyle())
         .accessibilityLabel(label)
         .accessibilityIdentifier(id)
-    }
-
-    /// The menu and who you are talking to, one button (feedback ANG8AA-7: "I don't actually know where I
-    /// am ... the hamburger on the left, then the name of the agent, the whole button just opens the drawer").
-    private func menuButton(_ c: Swatch, named: Bool) -> some View {
-        Button(action: actions.menu) {
-            HStack(spacing: theme.spacing.s) {
-                Image(systemName: "line.3.horizontal")
-                    .font(.system(size: 17, weight: .bold))
-                if named, let name = agent?.name {
-                    Text(name)
-                        .font(theme.font(theme.type.body, .semibold))
-                        .lineLimit(1)
-                }
-            }
-            .foregroundStyle(c.ink)
-            .padding(.horizontal, named && agent != nil ? 15 : 0)
-            .frame(minWidth: 44, minHeight: 44)
-            .glassEffect(.regular.interactive(), in: .capsule)
-            .contentShape(Capsule())
-        }
-        .buttonStyle(BounceButtonStyle())
-        .accessibilityLabel(named ? "Menu, \(agent?.name ?? "Yui")" : "Menu")
-        .accessibilityIdentifier("stage-menu")
     }
 
     // MARK: The middle
@@ -714,10 +691,10 @@ struct StageFirstView: View {
                     .accessibilityIdentifier("stage-you")
             }
             Group {
-                if t.failed, pages == 0, !store.waiting {
+                if t.failed, pages == 0, !store.inFlight {
                     failed(t, c)
                 } else if pages == 0 || model.foundUntil != nil {
-                    if store.waiting || model.foundUntil != nil { working(c) } else if t.stopped {
+                    if store.inFlight || model.foundUntil != nil { working(c) } else if t.stopped {
                         // Stopped (YUI-190): the stage is still, ready for the next thing.
                         greeting(c, title: "Stopped.", sub: "Say the next thing when you're ready.", id: "stage-stopped")
                     } else {
@@ -741,7 +718,7 @@ struct StageFirstView: View {
             // The end (YUI-195): the mic stays in the bar; the way out is a quiet line under the content.
             if atEnd(t), t.questions.isEmpty { pageEnd(c) }
             // More is coming: the working line stays under what already landed.
-            if pages > 0, store.waiting { workingLine(c).frame(maxWidth: .infinity) }
+            if pages > 0, store.inFlight { workingLine(c).frame(maxWidth: .infinity) }
         }
         .padding(.horizontal, theme.spacing.l)
         .padding(.top, theme.spacing.s)
@@ -908,7 +885,7 @@ struct StageFirstView: View {
     private func facts(_ t: StageTurn?) -> StageFacts {
         let pages = t?.pages ?? 0
         var f = StageFacts()
-        f.failed = t?.failed == true && pages == 0 && !store.waiting
+        f.failed = t?.failed == true && pages == 0 && !store.inFlight
         f.listening = mic.live
         f.asking = t != nil && pages > 0 && model.foundUntil == nil && model.at >= (t?.chunks.count ?? 0)
         if pages > 0, model.foundUntil == nil, !f.asking { f.chunk = model.at }

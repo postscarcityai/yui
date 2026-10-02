@@ -617,7 +617,7 @@ private struct DrawerReview: View {
                 ForEach(flagged) { item in
                     MenuReviewCard(item: item, agent: store.agent?.name ?? "Your agent") {
                         MenuAction.open(item, bucket: "review", store: store, close: close, openURL: openURL)
-                    } remove: { store.removeFromMenu(item.id) }
+                    } remove: { store.removeFromMenu(item.id) } dismiss: { store.dismissMenu(item) }
                 }
             }
         }
@@ -691,43 +691,57 @@ private struct MenuReviewCard: View {
     let agent: String
     let open: () -> Void
     let remove: () -> Void
+    /// Dismiss (YUI-265): the ask is gone for good, with no agent turn.
+    let dismiss: () -> Void
     @Environment(\.yuiTheme) private var theme
     @Environment(\.colorScheme) private var scheme
 
     var body: some View {
         let c = theme.swatch(scheme)
-        Button(action: open) {
-            HStack(alignment: .top, spacing: theme.spacing.m) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("From \(agent)")
-                        .font(theme.font(12, .heavy)).textCase(.uppercase).kerning(0.8)
-                        .foregroundStyle(c.accent)
-                    Text(item.label)
-                        .font(theme.font(21, theme.strong)).foregroundStyle(c.ink)
-                        .lineLimit(3).multilineTextAlignment(.leading)
-                        .fixedSize(horizontal: false, vertical: true)
-                    if let sub = item.sub {
-                        Text(sub).font(theme.font(15)).foregroundStyle(c.inkSoft).lineLimit(2)
-                            .multilineTextAlignment(.leading)
+        VStack(alignment: .leading, spacing: theme.spacing.s) {
+            Button(action: open) {
+                HStack(alignment: .top, spacing: theme.spacing.m) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("From \(agent)")
+                            .font(theme.font(12, .heavy)).textCase(.uppercase).kerning(0.8)
+                            .foregroundStyle(c.accent)
+                        Text(item.label)
+                            .font(theme.font(21, theme.strong)).foregroundStyle(c.ink)
+                            .lineLimit(3).multilineTextAlignment(.leading)
+                            .fixedSize(horizontal: false, vertical: true)
+                        if let sub = item.sub {
+                            Text(sub).font(theme.font(15)).foregroundStyle(c.inkSoft).lineLimit(2)
+                                .multilineTextAlignment(.leading)
+                        }
                     }
+                    Spacer(minLength: 0)
+                    Image(systemName: MenuAction.trailing(item))
+                        .font(theme.font(14, .bold)).foregroundStyle(c.onAccent)
+                        .frame(width: 30, height: 30).background(c.accent, in: Circle())
                 }
-                Spacer(minLength: 0)
-                Image(systemName: MenuAction.trailing(item))
-                    .font(theme.font(14, .bold)).foregroundStyle(c.onAccent)
-                    .frame(width: 30, height: 30).background(c.accent, in: Circle())
+                .contentShape(.rect(cornerRadius: 26))
             }
-            .padding(theme.spacing.l)
-            .background(c.surface, in: .rect(cornerRadius: 26))
-            .overlay(RoundedRectangle(cornerRadius: 26).stroke(c.outline, lineWidth: 1.5))
-            .contentShape(.rect(cornerRadius: 26))
+            .buttonStyle(BounceButtonStyle())
+            .accessibilityLabel("From \(agent): \(item.label)")
+            .accessibilityHint(MenuAction.hint(item))
+            .accessibilityIdentifier("review-menu-\(item.id)")
+            Button(action: dismiss) {
+                Text("Dismiss")
+                    .font(theme.font(theme.type.caption, .heavy)).foregroundStyle(c.inkSoft)
+                    .padding(.horizontal, theme.spacing.m).frame(minHeight: 36)
+                    .overlay(Capsule().stroke(c.outline, lineWidth: 1.5))
+                    .contentShape(.capsule)
+            }
+            .buttonStyle(BounceButtonStyle())
+            .accessibilityHint("Takes it off your list for good")
+            .accessibilityIdentifier("review-dismiss-\(item.id)")
         }
-        .buttonStyle(BounceButtonStyle())
+        .padding(theme.spacing.l)
+        .background(c.surface, in: .rect(cornerRadius: 26))
+        .overlay(RoundedRectangle(cornerRadius: 26).stroke(c.outline, lineWidth: 1.5))
         .contextMenu {
             Button("Remove", systemImage: "minus.circle", role: .destructive, action: remove)
         }
-        .accessibilityLabel("From \(agent): \(item.label)")
-        .accessibilityHint(MenuAction.hint(item))
-        .accessibilityIdentifier("review-menu-\(item.id)")
     }
 }
 

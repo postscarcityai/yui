@@ -202,7 +202,7 @@ from gateway.config import Platform, PlatformConfig
 from gateway.platforms.base import (BasePlatformAdapter, MessageEvent, MessageType, ProcessingOutcome,
                                     SendResult)
 
-from . import board, compat, connector, controls, doing, flywheel, groups, jev, media, mentions, needs, outbox, restyle, sandbox, shown, tables, oneline, talk, textbomb, vault
+from . import board, compat, connector, controls, doing, flywheel, groups, jev, media, mentions, needs, outbox, restyle, sandbox, shown, syserror, tables, oneline, talk, textbomb, vault
 from . import commands as slash
 
 logger = logging.getLogger(__name__)
@@ -671,6 +671,7 @@ class YuiAdapter(BasePlatformAdapter):
                             or await self._board_order(aid, row)
                             or await self._need_answer(aid, row)
                             or await self._invite_answer(aid, row)
+                            or await self._need_dismiss(aid, row)
                             or await self._need_open(aid, row)
                             or await self._talk_tap(aid, row)):
                         continue
@@ -763,6 +764,24 @@ class YuiAdapter(BasePlatformAdapter):
                 logger.warning("[yui] needs-you answer %s: %s", row["id"][:8], e)
                 text = "Couldn't reach the board to send that answer. Try again in a minute."
         await self._confirm(aid, row, text)
+        return True
+
+    async def _need_dismiss(self, aid: str, row: dict) -> bool:
+        """A Dismiss on a Needs you row (YUI-265): the ask closes on the card, no turn and no reply in the
+        chat; the drawer redraws without it."""
+        task = needs.dismissed_of(row)
+        if not task or not self._remote_ref:
+            return False
+        await self._mark([row["id"]], "delivered_at")
+        if row.get("user_id") == self._user_id:
+            try:
+                result = await asyncio.to_thread(needs.dismiss, self._remote_ref, task)
+                if result.get("ok"):
+                    self._war_refresh()
+                logger.info("[yui] dismissed %s: %s", task, "ok" if result.get("ok") else result.get("why"))
+            except Exception as e:
+                logger.warning("[yui] dismiss %s: %s", task, e)
+        self._acks.add(row["id"])
         return True
 
     async def _invite_answer(self, aid: str, row: dict) -> bool:
@@ -1291,6 +1310,9 @@ class YuiAdapter(BasePlatformAdapter):
         if not self._client:
             return SendResult(success=False, error="not connected")
         body = body.strip()
+        if syserror.is_failure(body):  # Hermes cron failure lines: no bubble, no push
+            logger.info("[yui] system failure line dropped")
+            return SendResult(success=True, message_id=None)
         # `doing` (YUI-63) is never a message: the newest goes onto the turn's rows
         # (a phone that draws it, a turn still running) and the lines leave the body.
         body, now = doing.split(body)
@@ -1627,6 +1649,8 @@ async def _standalone_send(pconfig, chat_id: str, message: str, *, thread_id: Op
         body = "\n\n".join([message.strip()] + [
             media_fence("video" if f.lower().endswith((".mp4", ".mov", ".m4v")) else "image", f)
             for f in files if f.lower().rsplit(".", 1)[-1] in media.TYPES]).strip()
+        if syserror.is_failure(body):  # Hermes cron failure lines: no bubble, no push
+            return {"success": True, "platform": "yui", "chat_id": target["id"], "message_id": None}
         if restyle.has_line(body):  # `theme app` (YUI-96): out of process is always the owner's thread
             try:
                 lr = await c.get(f"{REST}/yui_limits", params={"select": "value", "name": "eq.restyle_min_build"},
