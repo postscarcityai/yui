@@ -253,8 +253,8 @@ struct FlowPreset: View {
         run.events[node.id] = e.value
         run.sent = false
         if run.graph == nil, c.props["nodes"] == nil { run.graph = g.value }
-        // ask and choose move on by themselves after a tap.
-        guard node.preset == "ask" || node.preset == "choose" else { return }
+        // ask and choose move on by themselves after a tap; one that came back on appear stays put (feedback NOTE-19357).
+        guard !e.restored, node.preset == "ask" || node.preset == "choose" else { return }
         Task { @MainActor in
             try? await Task.sleep(for: .milliseconds(450))
             // Only if the person did not move on already.

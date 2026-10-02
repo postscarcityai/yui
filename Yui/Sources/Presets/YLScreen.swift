@@ -302,6 +302,9 @@ struct YLEvent: Sendable {
     /// A quiet tick on a checklist an agent keeps on one of its pages (YUI-185, Penny's Today):
     /// a native agent's runtime gets it, with no working row, so the page and its tables follow.
     var keepsPage = false
+    /// A pick handed to its host again as it came back on appear (feedback NOTE-19357): the host
+    /// carries it, and a plan or a flow does not move on as it does after a tap. Never sent.
+    var restored = false
 
     var json: String {
         var o = value
