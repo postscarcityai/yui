@@ -254,6 +254,10 @@ struct StageFirstView: View {
     static let small = BarButtons.small, touch = BarButtons.touch
     /// The room kept for the shader blob above the working words.
     static let blobRoom: CGFloat = 250
+    /// Faster screen switching (feedback NOTE-15980): a page turn settles in a quick spring with no wobble,
+    /// the same for every agent. The look's own spring (0.55 s for a calm agent, a wobble for the default)
+    /// was slow to land, and the old screen stayed drawn beside it until it came to rest.
+    static let pageTurn = Animation.snappy(duration: 0.28)
 
     var body: some View {
         let c = theme.swatch(scheme)
@@ -521,7 +525,7 @@ struct StageFirstView: View {
 
     /// The page springs to the middle; the one beside it goes once it is off screen.
     private func settle() {
-        withAnimation(theme.spring) {
+        withAnimation(Self.pageTurn) {
             slide = 0
         } completion: {
             if slide == 0 { beside = nil }
