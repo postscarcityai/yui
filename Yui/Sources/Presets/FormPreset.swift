@@ -62,7 +62,13 @@ struct FormPreset: View {
         // Reopened thread: a sent form comes back filled in and sent. Hosted,
         // its answer is inside the plan's.
         .onChange(of: answers(scope, c.ylID), initial: true) { _, v in
-            guard !sent, !hosted, let form = v?["form"]?.object else { return }
+            guard !sent, let form = v?["form"]?.object else { return }
+            // Hosted by a flow or a plan: what was typed before the step went away (Back, another
+            // agent, a relaunch) comes back into the fields, and stays open to edits.
+            if hosted {
+                if values.isEmpty { restore(form, fields) }
+                return
+            }
             restore(form, fields)
             sent = true
         }
@@ -87,6 +93,9 @@ struct FormPreset: View {
     private func emitHosted(_ fields: [FormField], ready: Bool) {
         do {
             guard hosted else { return }
+            // Just mounted with nothing typed yet, over an answer kept on the phone: handing over
+            // "nothing" would wipe what is about to come back.
+            if values.isEmpty, answers(scope, c.ylID)?["form"] != nil { return }
             // Held: the key-shaped words go nowhere, not even into the plan's answer.
             if let k = keyShape(fields), k.isKnown || !anyway {
                 var e = c.event([:])

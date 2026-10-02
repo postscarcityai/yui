@@ -112,6 +112,9 @@ struct MicPreset: View {
         guard !restored, text.isEmpty else { return }
         if hosted, let g = c.inGroup, let v = answers(scope, g)?["plan"]?[c.ylID]?.string {
             text = v
+        } else if hosted, let v = answers(scope, c.ylID)?["transcript"]?.string {
+            // A flow or plan step that went away and came back, or a relaunch.
+            text = v
         } else if !hosted, let v = answers(scope, c.ylID)?["transcript"]?.string {
             text = v
             sent = true

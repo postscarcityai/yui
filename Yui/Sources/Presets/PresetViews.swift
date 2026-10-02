@@ -346,7 +346,8 @@ struct ChoosePreset: View {
         .onChange(of: answers(scope, c.ylID), initial: true) { _, v in
             guard sent == nil, let v else { return }
             let back = multi ? v["picked"]?.array?.compactMap(\.string) : v["choice"]?.string.map { [$0] }
-            if let back { picked = back; sent = back }
+            // A hosted pick has no Done to read "Sent" on, so its other options stay lit.
+            if let back { picked = back; if !(hosted && multi) { sent = back } }
         }
         // Hosted in a plan, its answer is inside the plan's.
         .onAppear {

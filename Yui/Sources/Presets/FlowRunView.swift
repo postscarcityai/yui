@@ -251,6 +251,9 @@ struct FlowPreset: View {
         }
         guard YLComponent.answerValue(e) != nil else { return }
         run.events[node.id] = e.value
+        // The step on screen is the one being answered: a first step typed into must not let the
+        // next open question take its place.
+        if run.step == nil { run.step = node.id }
         run.sent = false
         if run.graph == nil, c.props["nodes"] == nil { run.graph = g.value }
         // ask and choose move on by themselves after a tap.
