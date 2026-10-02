@@ -63,6 +63,10 @@ struct StageTurn: Equatable {
 
     /// The questions screen follows the last chunk.
     var pages: Int { chunks.count + (questions.isEmpty ? 0 : 1) }
+
+    /// Their words got nothing back and nobody stopped it: a dropped or timed-out turn. The stage says so
+    /// with Try again, never a bare "Nothing to show" (TestFlight AClUWC-D8VpsUHE98ZgCDik).
+    var unanswered: Bool { ask != nil && pages == 0 && !stopped }
 }
 
 enum StageChunks {

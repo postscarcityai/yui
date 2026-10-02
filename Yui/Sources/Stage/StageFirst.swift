@@ -697,11 +697,12 @@ struct StageFirstView: View {
                     if store.inFlight || model.foundUntil != nil { working(c) } else if t.stopped {
                         // Stopped (YUI-190): the stage is still, ready for the next thing.
                         greeting(c, title: "Stopped.", sub: "Say the next thing when you're ready.", id: "stage-stopped")
+                    } else if t.unanswered {
+                        // The agent never answered this one (a dropped or timed-out turn): say so and offer
+                        // Try again, never a bare "Nothing to show" that reads as Yui gave up (feedback AClUWC-D8Vp).
+                        failed(t, c, title: "No answer came back.")
                     } else {
-                        // Nothing came back to show for this (a command, a quiet update): say so, never "Anything else?"
-                        // over a question that looks unanswered (feedback APO8y7eU).
-                        greeting(c, title: t.ask != nil ? "Nothing to show for that." : "Anything else?",
-                                 sub: t.ask != nil ? "Ask again, or open the chat, top right." : "Everything so far is in the chat, top right.")
+                        greeting(c, title: "Anything else?", sub: "Everything so far is in the chat, top right.")
                     }
                 } else if at < t.chunks.count {
                     // done: the stage hands over to the chunk, in the look's enter.
@@ -859,9 +860,9 @@ struct StageFirstView: View {
     }
 
     /// error: a small shake, grey, and Try again. The words still say what happened.
-    private func failed(_ t: StageTurn, _ c: Swatch) -> some View {
+    private func failed(_ t: StageTurn, _ c: Swatch, title: String = "That didn't go through.") -> some View {
         VStack(spacing: theme.spacing.l) {
-            Text("That didn't go through.")
+            Text(title)
                 .font(theme.font(theme.type.title, .bold))
                 .foregroundStyle(c.ink)
             if let ask = t.ask?.text, !ask.isEmpty {
@@ -885,7 +886,7 @@ struct StageFirstView: View {
     private func facts(_ t: StageTurn?) -> StageFacts {
         let pages = t?.pages ?? 0
         var f = StageFacts()
-        f.failed = t?.failed == true && pages == 0 && !store.inFlight
+        f.failed = (t?.failed == true || t?.unanswered == true) && pages == 0 && !store.inFlight && model.foundUntil == nil
         f.listening = mic.live
         f.asking = t != nil && pages > 0 && model.foundUntil == nil && model.at >= (t?.chunks.count ?? 0)
         if pages > 0, model.foundUntil == nil, !f.asking { f.chunk = model.at }

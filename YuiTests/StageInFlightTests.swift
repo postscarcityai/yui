@@ -56,3 +56,25 @@ final class StageInFlightTests: XCTestCase {
         XCTAssertTrue(ChatStore.tracks("u0", waiting: nil))
     }
 }
+
+/// A turn nobody answered is a failure the stage names, with Try again (TestFlight AClUWC-D8VpsUHE98ZgCDik).
+@MainActor
+final class StageUnansweredTests: XCTestCase {
+    private func msg(_ id: String, user: Bool, _ text: String) -> ChatMessage {
+        ChatMessage(id: id, text: text, fromUser: user)
+    }
+
+    func testAnAskWithNoReplyIsUnanswered() {
+        let t = StageChunks.turn([msg("u1", user: true, "explain string theory")], ask: nil)
+        XCTAssertTrue(t.unanswered)
+    }
+
+    func testATextReplyIsAnAnswer() {
+        let t = StageChunks.turn([msg("u1", user: true, "explain string theory"), msg("a1", user: false, "Tiny strings.")], ask: nil)
+        XCTAssertFalse(t.unanswered)
+    }
+
+    func testAHelloIsNotUnanswered() {
+        XCTAssertFalse(StageTurn(hello: true).unanswered)
+    }
+}
