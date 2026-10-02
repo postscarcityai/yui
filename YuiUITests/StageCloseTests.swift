@@ -2,7 +2,7 @@ import XCTest
 
 /// A way out of every full-screen answer (YUI-195, TestFlight feedback: "I don't wanna take any
 /// action. I don't want to burn any tokens so I need a default way to just cancel this and get
-/// back to the home screen"). Close mid-plan, Back home at the end, pull the card down: each one
+/// back to the home screen"). The back arrow on the first page (no X, NOTE-24156), Back home at the end, pull the card down: each one
 /// goes home and sends nothing (the record still holds one message of theirs and no working
 /// state ever starts), and the plan opens again from its chip in the chat.
 /// Screenshots go to `YUI_SHOTS` when set, and always into the result bundle.
@@ -78,6 +78,10 @@ final class StageCloseTests: XCTestCase {
         let both = app.descendants(matching: .any).matching(NSPredicate(format: "identifier == 'stage-segments' AND label == 'Part 1 of 2'")).firstMatch
         XCTAssertTrue(both.waitForExistence(timeout: 25), "the reply never grew to its two parts")
         XCTAssertTrue(app.buttons["stage-close"].waitForExistence(timeout: 3), "no close on the plan")
+        // No X, just arrows (NOTE-24156): on the first page the back arrow is the way home, and it is the only back.
+        XCTAssertEqual(app.buttons["stage-close"].label, "Back home", "the first page's back arrow is not Back home")
+        XCTAssertFalse(app.buttons["stage-back"].exists, "two backs on the first page")
+        XCTAssertTrue(app.buttons["stage-next"].exists, "no next arrow beside Back home")
     }
 
     /// The agent's home: no answer on screen, and the greeting or its shortcuts in its place.

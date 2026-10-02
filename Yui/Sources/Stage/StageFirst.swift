@@ -250,10 +250,16 @@ struct StageFirstView: View {
     @State private var releasedAt: CGFloat?
     /// How far the finger has pulled the answer down toward home (YUI-195).
     @State private var pull: CGFloat = 0
+    /// Compare pictures pressed, by question (NOTE-42080): each press reaches the question as a tap on its option.
+    @State private var presses: [String: YLPress] = [:]
 
     static let small = BarButtons.small, touch = BarButtons.touch
     /// The room kept for the shader blob above the working words.
     static let blobRoom: CGFloat = 250
+    /// Faster screen switching (feedback NOTE-15980): a page turn settles in a quick spring with no wobble,
+    /// the same for every agent. The look's own spring (0.55 s for a calm agent, a wobble for the default)
+    /// was slow to land, and the old screen stayed drawn beside it until it came to rest.
+    static let pageTurn = Animation.snappy(duration: 0.28)
 
     var body: some View {
         let c = theme.swatch(scheme)
@@ -521,7 +527,7 @@ struct StageFirstView: View {
 
     /// The page springs to the middle; the one beside it goes once it is off screen.
     private func settle() {
-        withAnimation(theme.spring) {
+        withAnimation(Self.pageTurn) {
             slide = 0
         } completion: {
             if slide == 0 { beside = nil }
@@ -591,22 +597,27 @@ struct StageFirstView: View {
                 Spacer(minLength: 0)
             }
             // The pen on a page starts a new chat (YUI-169); the chat itself, the record, is the bubble beside it.
-            circle("bubble.left", c, label: "Chat", id: "stage-record", action: actions.record)
-                .overlay(alignment: .topTrailing) {
-                    if unread > 0 {
-                        Text(unread > 99 ? "99+" : "\(unread)")
-                            .font(.system(size: 11, weight: .heavy).monospacedDigit())
-                            .foregroundStyle(c.onAccent)
-                            .padding(.horizontal, 5)
-                            .frame(minWidth: 20, minHeight: 20)
-                            .background(c.accent, in: Capsule())
-                            .offset(x: 2, y: -2)
-                            .allowsHitTesting(false)
-                            .accessibilityHidden(true)
-                    }
+            // One glass container, so the two circles sit in the same pane of glass and blend as they move.
+            GlassEffectContainer {
+                HStack(spacing: theme.spacing.s) {
+                    circle("bubble.left", c, label: "Chat", id: "stage-record", action: actions.record)
+                        .overlay(alignment: .topTrailing) {
+                            if unread > 0 {
+                                Text(unread > 99 ? "99+" : "\(unread)")
+                                    .font(.system(size: 11, weight: .heavy).monospacedDigit())
+                                    .foregroundStyle(c.onAccent)
+                                    .padding(.horizontal, 5)
+                                    .frame(minWidth: 20, minHeight: 20)
+                                    .background(c.accent, in: Capsule())
+                                    .offset(x: 2, y: -2)
+                                    .allowsHitTesting(false)
+                                    .accessibilityHidden(true)
+                            }
+                        }
+                        .accessibilityValue(unread > 0 ? "\(unread) new" : "")
+                    circle("square.and.pencil", c, label: "New chat", id: "stage-new-chat", action: actions.newChat)
                 }
-                .accessibilityValue(unread > 0 ? "\(unread) new" : "")
-            circle("square.and.pencil", c, label: "New chat", id: "stage-new-chat", action: actions.newChat)
+            }
         }
         .padding(.horizontal, theme.spacing.l)
         .padding(.top, theme.spacing.xs)
@@ -829,14 +840,19 @@ struct StageFirstView: View {
                 }
             }
             if let pic = k.pic {
-                PresetView(component: pic)
-                    .environment(\.ylComponents, k.all)
-                    .environment(\.ylScope, k.scope)
-                    .environment(\.ylBare, Self.drawings.contains(pic.preset))
+                drawing(pic, k)
                     // Stacked ideas share the height: a scene is drawn narrower so its height shrinks with it; a sketch keeps its own height and the page scrolls if it must.
                     .frame(maxWidth: pic.preset == "shapes" ? room : nil)
             }
         }
+    }
+
+    /// A chunk's picture as the stage draws it: a drawing sits bare on the page.
+    private func drawing(_ pic: YLComponent, _ k: StageChunk) -> some View {
+        PresetView(component: pic)
+            .environment(\.ylComponents, k.all)
+            .environment(\.ylScope, k.scope)
+            .environment(\.ylBare, Self.drawings.contains(pic.preset))
     }
 
     private func step(_ by: Int) {
@@ -927,7 +943,14 @@ struct StageFirstView: View {
         let lone = n == 1 && t.plan == nil && (t.questions[0].c.string("q") ?? t.questions[0].c.string("title")) != nil
         return GeometryReader { geo in ScrollView {
             VStack(alignment: .leading, spacing: theme.spacing.l) {
-                if !lone {
+                // One decision, one screen (NOTE-42080): the page the questions ask about heads them, a size
+                // down so the answers stay in reach. It is the headline, so the plan's own title steps aside.
+                if let lead = t.lead {
+                    block(lead, c, room: geo.size.width * 0.72)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .accessibilityElement(children: .contain)
+                        .accessibilityIdentifier("stage-questions-lead")
+                } else if !lone {
                     Text(t.plan?.c.string("title") ?? (n == 1 ? "One question" : "Before I go"))
                         .font(theme.font(theme.type.display, .heavy))
                         .foregroundStyle(c.ink)
@@ -939,17 +962,22 @@ struct StageFirstView: View {
                         .foregroundStyle(c.inkSoft)
                 }
                 ForEach(Array(t.questions.enumerated()), id: \.element.id) { i, q in
-                    PresetView(component: q.c)
-                        .environment(\.ylComponents, q.all)
-                        .environment(\.ylScope, q.scope)
-                        .environment(\.ylOnStage, false)
-                        .environment(\.ylHostedSubmit, true)
-                        // On the stage a question is the page, not a card on it.
-                        .environment(\.ylBare, true)
-                        .environment(\.ylEmit, YLEmit { e in model.answers[q.id] = e })
-                        .disabled(sent)
-                        // ask: the questions come on one by one.
-                        .modifier(StaggerIn(index: i, look: look))
+                    VStack(alignment: .leading, spacing: theme.spacing.m) {
+                        // The looks it compares sit small above it, side by side (NOTE-42080, web YUI-277).
+                        if !q.compare.isEmpty { compare(q, c, width: geo.size.width, sent: sent) }
+                        PresetView(component: q.c)
+                            .environment(\.ylComponents, q.all)
+                            .environment(\.ylScope, q.scope)
+                            .environment(\.ylOnStage, false)
+                            .environment(\.ylHostedSubmit, true)
+                            // On the stage a question is the page, not a card on it.
+                            .environment(\.ylBare, true)
+                            .environment(\.ylEmit, YLEmit { e in model.answers[q.id] = e })
+                            .environment(\.ylPress, presses[q.id] ?? YLPress())
+                            .disabled(sent)
+                    }
+                    // ask: the questions come on one by one.
+                    .modifier(StaggerIn(index: i, look: look))
                 }
                 if !sent {
                     let ready = picked(t)
@@ -974,8 +1002,86 @@ struct StageFirstView: View {
         }
         .scrollBounceBehavior(.basedOnSize)
         .scrollIndicators(.hidden)
+        // Tap the left side to go back (feedback NOTE-35492), as on a chunk: a tap on words or space in the
+        // left third goes back to the page before the questions. Buttons, pickers and fields keep their own taps.
+        .contentShape(.rect)
+        .onTapGesture { p in if p.x < geo.size.width / 3, !t.chunks.isEmpty { step(-1) } }
         }
         .accessibilityIdentifier("stage-questions")
+    }
+
+    /// The earlier pages a question's options name, each a small picture with its option under it (feedback
+    /// NOTE-42080, web YUI-277). A tap is the answer: it presses that option in the question, which shows it picked.
+    /// The row fits the phone's width; only when too many to fit does it scroll sideways, so a swipe still turns the page.
+    private func compare(_ q: StageQuestion, _ c: Swatch, width: CGFloat, sent: Bool) -> some View {
+        ViewThatFits(in: .horizontal) {
+            compareRow(q, c, width: width, sent: sent)
+            ScrollView(.horizontal) { compareRow(q, c, width: width, sent: sent) }
+                .scrollIndicators(.hidden)
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Compare")
+        .accessibilityIdentifier("stage-compare")
+    }
+
+    private func compareRow(_ q: StageQuestion, _ c: Swatch, width: CGFloat, sent: Bool) -> some View {
+        let n = CGFloat(q.compare.count), gap = CGFloat(theme.spacing.s)
+        let w = max(72, min(112, ((width - gap * (n - 1) - 4) / n - gap).rounded(.down))), h = (w * 0.72).rounded()
+        // Each picture is drawn at a phone page's width, then scaled down into its frame.
+        let scale = w / 320
+        let on = chosen(q)
+        let corner = CGFloat(theme.radius.card) * 0.7
+        return HStack(alignment: .top, spacing: gap) {
+            ForEach(Array(q.compare.enumerated()), id: \.offset) { i, hit in
+                let picked = on.contains(hit.option)
+                Button {
+                    let was = presses[q.id]?.n ?? 0
+                    presses[q.id] = YLPress(option: hit.option, n: was + 1)
+                } label: {
+                    VStack(spacing: theme.spacing.xs) {
+                        thumbnail(hit.page)
+                            .frame(width: w / scale, height: h / scale)
+                            .scaleEffect(scale, anchor: .topLeading)
+                            .frame(width: w, height: h, alignment: .topLeading)
+                            .clipShape(.rect(cornerRadius: corner / 2))
+                            .allowsHitTesting(false)
+                            .accessibilityHidden(true)
+                        Text(hit.option)
+                            .font(theme.font(theme.type.caption, .heavy))
+                            .foregroundStyle(picked ? c.accent : c.ink)
+                            .lineLimit(1)
+                            .frame(maxWidth: w)
+                    }
+                    .padding(gap / 2)
+                    .background(c.surface, in: .rect(cornerRadius: corner))
+                    .overlay(RoundedRectangle(cornerRadius: corner).stroke(picked ? c.accent : c.outline, lineWidth: picked ? 3 : 1.5))
+                }
+                .buttonStyle(BounceButtonStyle())
+                .disabled(sent || q.c.locked)
+                .accessibilityLabel("\(hit.option), \(hit.page.page?.string("title") ?? "")")
+                .accessibilityHint("Picks \(hit.option)")
+                .accessibilityAddTraits(picked ? .isSelected : [])
+                .accessibilityIdentifier("stage-compare-\(i)")
+            }
+        }
+        // Room for the picked ring.
+        .padding(2)
+    }
+
+    /// A page's picture for the compare row: its drawing, or its image when it has no drawing.
+    @ViewBuilder private func thumbnail(_ k: StageChunk) -> some View {
+        if let pic = k.pic {
+            drawing(pic, k)
+        } else if let url = YLMediaURL.url(k.page?.string("img")) {
+            MediaTile(src: url, fit: .fill)
+        }
+    }
+
+    /// The options the question holds right now, so the pictures show what the question shows.
+    private func chosen(_ q: StageQuestion) -> Set<String> {
+        guard let v = model.answers[q.id]?.value else { return [] }
+        if let one = v["choice"]?.string ?? v["answer"]?.string { return [one] }
+        return Set(v["picked"]?.array?.compactMap(\.string) ?? [])
     }
 
     /// A form counts once a field has a value; one missing a required field holds Send.
@@ -1069,18 +1175,26 @@ struct StageFirstView: View {
             } else {
                 let pages = turn?.pages ?? 0
                 let arrows = pages > 1 && !mic.live
+                let part = min(model.at, max(0, pages - 1))
+                // No X, just arrows (feedback NOTE-24156, NOTE-37260): on the first page the back arrow
+                // is the way home, so the bar holds one button fewer. It keeps the close's id and sends nothing.
+                let home = closable(turn) && !atEnd(turn) && part == 0
                 HStack(spacing: 8) {
-                    if closable(turn), !atEnd(turn) {
-                        small("xmark", c, filled: false, label: "Close", id: "stage-close") { goHome() }
-                    }
-                    if arrows {
-                        let at = min(model.at, pages - 1)
-                        small("chevron.left", c, filled: false, label: "Back", id: "stage-back") { step(-1) }
-                            .opacity(at == 0 ? 0.35 : 1)
-                            .disabled(at == 0)
-                        small("chevron.right", c, filled: at < pages - 1, label: "Next", id: "stage-next") { step(1) }
-                            .opacity(at == pages - 1 ? 0.35 : 1)
-                            .disabled(at == pages - 1)
+                    GlassEffectContainer {
+                        HStack(spacing: 8) {
+                            if home {
+                                small("chevron.left", c, filled: false, label: "Back home", id: "stage-close") { goHome() }
+                            } else if arrows {
+                                small("chevron.left", c, filled: false, label: "Back", id: "stage-back") { step(-1) }
+                                    .opacity(part == 0 ? 0.35 : 1)
+                                    .disabled(part == 0)
+                            }
+                            if arrows {
+                                small("chevron.right", c, filled: part < pages - 1, label: "Next", id: "stage-next") { step(1) }
+                                    .opacity(part == pages - 1 ? 0.35 : 1)
+                                    .disabled(part == pages - 1)
+                            }
+                        }
                     }
                     Spacer(minLength: 0)
                     BarButtons(prefix: "stage", showMic: showMic, showType: showType, showAttach: showAttach,
@@ -1170,8 +1284,7 @@ struct StageFirstView: View {
                                 .font(.system(size: 19, weight: .bold))
                                 .foregroundStyle(c.ink)
                                 .frame(width: Self.small, height: Self.small)
-                                .background(c.surface, in: Circle())
-                                .overlay(Circle().stroke(c.outline, lineWidth: 1.5))
+                                .glassEffect(.regular.interactive(), in: .circle)
                                 .frame(width: Self.touch, height: Self.touch)
                                 .contentShape(Circle())
                         }
@@ -1195,7 +1308,7 @@ struct StageFirstView: View {
                             .font(.system(size: 17, weight: .black))
                             .foregroundStyle(c.onAccent)
                             .frame(width: Self.small, height: Self.small)
-                            .background(c.accent, in: Circle())
+                            .glassEffect(.regular.tint(c.accent).interactive(), in: .circle)
                             .frame(width: Self.touch, height: Self.touch)
                             .contentShape(Circle())
                             .overlay { if sending { ProgressView().tint(c.onAccent) } }
@@ -1207,9 +1320,9 @@ struct StageFirstView: View {
                 }
             }
             .padding(theme.spacing.s)
-            .background(c.surface, in: .rect(cornerRadius: theme.radius.card))
+            // Liquid Glass, as the bar it grows out of; the agent's color rims it while it has the keyboard.
+            .glassEffect(.regular, in: .rect(cornerRadius: theme.radius.card))
             .overlay(RoundedRectangle(cornerRadius: theme.radius.card).stroke(c.accent.opacity(0.5), lineWidth: 1.5))
-            .shadow(color: .black.opacity(0.08), radius: 14, y: 6)
             if showMic {
                 Button(action: fold) {
                     Text("Back to the mic")

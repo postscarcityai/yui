@@ -14,6 +14,16 @@ extension EnvironmentValues {
     @Entry var ylPage = YLPage()
     /// The agent whose thread this is: a checklist keeps its ticks under it (YUI-183).
     @Entry var ylAgent = ""
+    /// A tap on one of the question's options from outside it: the stage's compare pictures (YLPress).
+    @Entry var ylPress = YLPress()
+}
+
+/// The host presses an option for the question (feedback NOTE-42080, web YUI-277): a tap on a compare
+/// picture is a tap on that option, so ask, choose and pick keep their own picks. `n` counts the presses,
+/// so the same option pressed again still arrives (a pick lets it go); 0 is no press yet.
+struct YLPress: Equatable, Sendable {
+    var option = ""
+    var n = 0
 }
 
 /// Moves the thread to page `n` (spec section 5, Pages).
@@ -216,6 +226,7 @@ struct AskPreset: View {
     @Environment(\.yuiTheme) private var theme
     @Environment(\.colorScheme) private var scheme
     @Environment(\.ylEmit) private var emit
+    @Environment(\.ylPress) private var press
 
     var body: some View {
         let s = theme.swatch(scheme)
@@ -225,12 +236,7 @@ struct AskPreset: View {
             let buttons = ForEach(Array(options.enumerated()), id: \.offset) { i, o in
                 OptionPill(text: o, fill: s.candy[i % 4], ink: s.candyInk(i), on: answer == nil || answer == o,
                            dim: answer != nil && answer != o, grow: true) {
-                    guard answer != o else { return }
-                    let changed = answer != nil
-                    withAnimation(theme.spring) { answer = o }
-                    var v: [String: YLValue] = ["answer": .string(o)]
-                    if let right = c.quizAnswer { v["correct"] = .bool(right.contains(o)) }
-                    emit(c.answer(v, echo: o, changed: changed))
+                    tap(o)
                 }
             }
             // Two options sit side by side unless the agent prefers stacked buttons
@@ -254,6 +260,20 @@ struct AskPreset: View {
         .onChange(of: answers(scope, c.ylID), initial: true) { _, v in
             if answer == nil, let a = v?["answer"]?.string { answer = a }
         }
+        // A compare picture on the stage presses its option (NOTE-42080).
+        .onChange(of: press) { _, p in
+            guard p.n > 0, !c.locked, options.contains(p.option) else { return }
+            tap(p.option)
+        }
+    }
+
+    private func tap(_ o: String) {
+        guard answer != o else { return }
+        let changed = answer != nil
+        withAnimation(theme.spring) { answer = o }
+        var v: [String: YLValue] = ["answer": .string(o)]
+        if let right = c.quizAnswer { v["correct"] = .bool(right.contains(o)) }
+        emit(c.answer(v, echo: o, changed: changed))
     }
 }
 
@@ -281,6 +301,7 @@ struct ChoosePreset: View {
     @Environment(\.colorScheme) private var scheme
     @Environment(\.ylEmit) private var emit
     @Environment(\.ylHostedSubmit) private var hosted
+    @Environment(\.ylPress) private var press
 
     var body: some View {
         let s = theme.swatch(scheme)
@@ -360,6 +381,11 @@ struct ChoosePreset: View {
             guard hosted, multi else { return }
             emit(picked.isEmpty ? c.event([:]) : pickedEvent(changed: false))
         }
+        // A compare picture on the stage presses its option, the same as a tap on it (NOTE-42080).
+        .onChange(of: press) { _, p in
+            guard p.n > 0, !c.locked, options.contains(p.option) else { return }
+            tap(p.option, cap: cap)
+        }
     }
 
     /// The picks as an answer, `{picked: [...]}`, echoed as a list.
@@ -384,16 +410,20 @@ struct ChoosePreset: View {
                 .background(s.background, in: RoundedRectangle(cornerRadius: theme.radius.card))
                 .overlay(RoundedRectangle(cornerRadius: theme.radius.card).stroke(s.outline, lineWidth: 1.5))
                 .accessibilityIdentifier("other-field")
-            Button(action: addOther) {
-                Label("Add", systemImage: "arrow.up")
-                    .font(theme.font(theme.type.body, .bold))
-                    .foregroundStyle(s.userInk)
-                    .padding(.horizontal, theme.spacing.l)
-                    .frame(height: 44)
-                    .background(s.accent, in: Capsule())
+            HStack(spacing: theme.spacing.s) {
+                // Voice first (feedback NOTE-48549): say your own answer instead of typing it.
+                FieldMic(text: $other, label: "your answer", id: "other-mic")
+                Button(action: addOther) {
+                    Label("Add", systemImage: "arrow.up")
+                        .font(theme.font(theme.type.body, .bold))
+                        .foregroundStyle(s.userInk)
+                        .padding(.horizontal, theme.spacing.l)
+                        .frame(height: 44)
+                        .background(s.accent, in: Capsule())
+                }
+                .buttonStyle(BounceButtonStyle())
+                .accessibilityIdentifier("other-add")
             }
-            .buttonStyle(BounceButtonStyle())
-            .accessibilityIdentifier("other-add")
         }
         .transition(.opacity)
     }
