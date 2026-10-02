@@ -12,6 +12,13 @@ import YuiLines
 // nothing in it can be tapped and it sends nothing. Reduce Motion has nothing to
 // show: it is still. In a deck or plan it is a page's picture; a lone `part` is a
 // one-part mock.
+//
+// Gesture marks (YUI-276, gap 2 of the visual gaps audit): `shape` lines in a mock
+// draw over its screen once its parts are on: `shape tap at=send`, `shape swipe
+// at=row2 dir=left`, an arrow, a doodle ring round a part. A place is a part's id
+// (`part@send button Send`) or x,y with 0,0 the screen's top left and 10,10 its
+// bottom right. ShapesModel.marksOver turns them into a shapes scene over the
+// screen, drawn by ShapesCanvas with the same motion and Reduce Motion.
 
 struct MockPreset: View {
     let c: YLComponent
@@ -21,12 +28,17 @@ struct MockPreset: View {
         let lone = c.preset != "mock"
         let head = lone ? [:] : c.props
         let members = lone ? [c] : all.members(of: c).filter { $0.preset == "part" }
-        PresetCard { MockDrawing(head: head, parts: MockModel.parts(members.map(\.props))) }
+        let marks = lone ? [] : all.members(of: c).filter { $0.preset == "shape" }.map { MockMark(id: $0.ylID, props: $0.props) }
+        PresetCard {
+            MockDrawing(head: head, parts: MockModel.parts(withIDs: members.map { (id: $0.ylID, props: $0.props) }), marks: marks)
+        }
     }
 }
 
 /// One part of the screen, read from a `part` line's props.
 struct MockPart: Equatable {
+    /// The part's YL id, so a gesture mark can point at it (YUI-276).
+    var id = ""
     var kind = "text"
     var text = "", sub = "", value = "", ph = "", icon = "", action = "", size = "", ratio = "", body = "", note = ""
     var back: String? // nil: no back button; "": a bare ‹
@@ -72,8 +84,18 @@ enum MockModel {
 
     /// nav first, tabs after the content, sheets, alerts and keyboards last,
     /// whatever the order of the lines; only the first nav and the first tabs count.
-    static func parts(_ members: [[String: YLValue]]) -> [MockPart] {
-        let all = members.map(part)
+    static func parts(_ members: [[String: YLValue]]) -> [MockPart] { order(members.map(part)) }
+
+    /// The same, each part keeping its YL id for the marks over it (YUI-276).
+    static func parts(withIDs members: [(id: String, props: [String: YLValue])]) -> [MockPart] {
+        order(members.map { m in
+            var p = part(m.props)
+            p.id = m.id
+            return p
+        })
+    }
+
+    private static func order(_ all: [MockPart]) -> [MockPart] {
         let at = { (k: String) in all.filter { $0.kind == k } }
         let rest = all.filter { $0.kind != "nav" && $0.kind != "tabs" && !overlays.contains($0.kind) }
         return Array(at("nav").prefix(1)) + rest + Array(at("tabs").prefix(1)) + all.filter { overlays.contains($0.kind) }
@@ -93,6 +115,25 @@ enum MockModel {
     static func frame(_ p: [String: YLValue]) -> String {
         let f = p["frame"]?.string ?? "phone"
         return frames.contains(f) ? f : "phone"
+    }
+
+    /// What VoiceOver reads of the marks over the screen: "Marks: tap on Send; swipe on Basil, left." (YUI-276)
+    static func describe(marks: [MockMark], parts: [MockPart]) -> String {
+        let byID = Dictionary(parts.filter { !$0.id.isEmpty }.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        func on(_ v: YLValue?) -> String? {
+            guard let name = v?.string, let p = byID[name] else { return nil }
+            return p.text.isEmpty ? p.kind : p.text
+        }
+        let said = marks.map { m -> String in
+            let kind = text(m.props["kind"]).lowercased()
+            var s = kind.isEmpty ? "mark" : kind
+            if let t = on(m.props["at"]) ?? on(m.props["to"]) ?? on(m.props["from"]) { s += " on " + t }
+            if kind == "swipe", let d = m.props["dir"]?.string, ShapesModel.dirs[d] != nil { s += ", " + d }
+            let label = text(m.props["label"])
+            if !label.isEmpty { s += ", " + label }
+            return s
+        }
+        return said.isEmpty ? "" : "Marks: " + said.joined(separator: "; ") + "."
     }
 
     /// What VoiceOver reads, top to bottom.
@@ -134,6 +175,21 @@ enum MockModel {
     }
 }
 
+/// A `shape` line inside a mock: a gesture mark over its screen (YUI-276).
+struct MockMark: Equatable {
+    var id: String
+    var props: [String: YLValue]
+}
+
+/// Where each part's content sits (by its id, `#bar` and `#end` for the frame's top and bottom),
+/// so the marks over the screen find the parts they point at (YUI-276).
+private struct MockCells: PreferenceKey {
+    static let defaultValue: [String: Anchor<CGRect>] = [:]
+    static func reduce(value: inout [String: Anchor<CGRect>], nextValue: () -> [String: Anchor<CGRect>]) {
+        value.merge(nextValue()) { $1 }
+    }
+}
+
 /// Every frame cell's bounds, so the frame draws once behind all of them.
 private struct MockBox: PreferenceKey {
     static let defaultValue: [Anchor<CGRect>] = []
@@ -143,6 +199,7 @@ private struct MockBox: PreferenceKey {
 struct MockDrawing: View {
     let head: [String: YLValue]
     let parts: [MockPart]
+    var marks: [MockMark] = []
     @Environment(\.yuiTheme) private var theme
     @Environment(\.colorScheme) private var scheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -169,10 +226,12 @@ struct MockDrawing: View {
             Grid(alignment: .topLeading, horizontalSpacing: 0, verticalSpacing: 0) {
                 GridRow {
                     bar(s, hasNav: hasNav).frame(maxWidth: cellWidth, alignment: .leading).anchorPreference(key: MockBox.self, value: .bounds) { [$0] }
+                        .anchorPreference(key: MockCells.self, value: .bounds) { ["#bar": $0] }
                 }
                 ForEach(Array(parts.enumerated()), id: \.offset) { i, p in
                     GridRow {
                         cell(p, s)
+                            .anchorPreference(key: MockCells.self, value: .bounds) { [(p.id.isEmpty ? "#\(i)" : p.id): $0] }
                             .padding(.horizontal, side).padding(.vertical, 3)
                             .frame(maxWidth: cellWidth, alignment: .leading)
                             .anchorPreference(key: MockBox.self, value: .bounds) { [$0] }
@@ -188,12 +247,31 @@ struct MockDrawing: View {
                 GridRow {
                     Color.clear.frame(maxWidth: cellWidth).frame(height: frame == "phone" ? 18 : 10)
                         .anchorPreference(key: MockBox.self, value: .bounds) { [$0] }
+                        .anchorPreference(key: MockCells.self, value: .bounds) { ["#end": $0] }
                 }
             }
             .backgroundPreferenceValue(MockBox.self) { anchors in
                 GeometryReader { g in
                     let r = anchors.map { g[$0] }.reduce(CGRect.null) { $0.union($1) }
                     if !r.isNull { box(s, shown).frame(width: r.width, height: r.height).offset(x: r.minX, y: r.minY) }
+                }
+            }
+            // Gesture marks over the screen, once its parts are on (YUI-276).
+            .overlayPreferenceValue(MockCells.self) { anchors in
+                if !marks.isEmpty {
+                    GeometryReader { g in
+                        let rects = anchors.mapValues { g[$0] }
+                        let screen = rects.values.reduce(CGRect.null) { $0.union($1) }
+                        if !screen.isNull, screen.width > 1, screen.height > 1 {
+                            MockMarks(scene: ShapesModel.marksOver(
+                                marks.map { (id: $0.id, props: $0.props) },
+                                cells: rects.mapValues { [$0.minX - screen.minX, $0.minY - screen.minY, $0.width, $0.height] },
+                                box: [screen.width, screen.height]),
+                                      delay: Blueprint.delay(parts.count + 1), shown: shown, still: reduceMotion)
+                                .frame(width: screen.width, height: screen.height)
+                                .offset(x: screen.minX, y: screen.minY)
+                        }
+                    }
                 }
             }
             .frame(maxWidth: frame == "phone" ? 300 : frame == "watch" ? 190 : .infinity)
@@ -216,7 +294,8 @@ struct MockDrawing: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .onAppear { on = true }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(MockModel.describe(head: head, parts: parts))
+        .accessibilityLabel([MockModel.describe(head: head, parts: parts), MockModel.describe(marks: marks, parts: parts)]
+            .filter { !$0.isEmpty }.joined(separator: " "))
         .accessibilityValue("\(parts.count) parts")
         .accessibilityIdentifier("mock-drawing")
         .accessibilityAddTraits(.isImage)
@@ -493,5 +572,28 @@ struct MockDrawing: View {
     private func keycap(_ s: Swatch) -> some View {
         RoundedRectangle(cornerRadius: 4).fill(s.background)
             .overlay(RoundedRectangle(cornerRadius: 4).stroke(s.outline, lineWidth: 1))
+    }
+}
+
+/// The marks over a mock's screen on their own clock: they start when the screen shows and come on
+/// after its parts (`delay`), then rest, apart from anything that pulses (YUI-276).
+private struct MockMarks: View {
+    let scene: ShapesModel.Scene
+    let delay: Double
+    let shown: Bool
+    let still: Bool
+    @State private var start: Date?
+    @State private var finished = false
+
+    var body: some View {
+        ShapesCanvas(scene: scene, start: start, delay: delay, finished: finished, still: still)
+            .allowsHitTesting(false)
+            .onChange(of: shown, initial: true) { _, on in if on, start == nil { start = Date() } }
+            .task(id: start) {
+                guard start != nil else { return }
+                finished = false
+                try? await Task.sleep(for: .seconds(delay + scene.total + 0.1))
+                finished = true
+            }
     }
 }

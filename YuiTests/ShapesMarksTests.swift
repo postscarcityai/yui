@@ -25,16 +25,20 @@ final class ShapesMarksTests: XCTestCase {
         let sc = try scene("shapes w=12 h=5\nshape venn Yui sets=Chat|Drawing at=3.2,2.5")
         let it = try XCTUnwrap(sc.items.first)
         XCTAssertTrue(it.fill, "a Venn is always washed, so the overlap reads darker")
-        let v = ShapesModel.venn(it, center: try XCTUnwrap(it.at))
+        let v = ShapesModel.venn(it, center: try XCTUnwrap(it.at), fs: sc.fs)
         XCTAssertEqual(v.circles.map(\.tone), ["accent", "mint"])
         near(v.circles[0].c, [2.24, 2.5], "left circle")
         near(v.circles[1].c, [4.16, 2.5], "right circle")
         XCTAssertEqual(v.circles[0].r, 1.6, accuracy: tol)
         XCTAssertEqual(v.labels.map(\.text), ["Chat", "Drawing", "Yui"])
-        near(v.labels[0].at, [1.6, 2.5], "Chat")
+        // Each name in the widest part of its own region: the middle of each crescent, the middle of the lens.
+        near(v.labels[0].at, [1.6095, 2.5], "Chat")
+        near(v.labels[1].at, [4.7905, 2.5], "Drawing")
         near(v.labels[2].at, [3.2, 2.5], "the overlap")
         XCTAssertTrue(v.labels[2].middle)
-        XCTAssertEqual(v.labels[2].width, 1.12, accuracy: tol)
+        XCTAssertEqual(v.labels[2].width, 1.1044, accuracy: tol)
+        XCTAssertEqual(v.labels.map(\.lines), [["Chat"], ["Drawing"], ["Yui"]])
+        XCTAssertEqual(v.labels[0].fs, 0.4284, accuracy: tol, "set names at 0.85 of the label size")
         XCTAssertEqual(ShapesModel.describe(sc), "Chat and Drawing overlap: Yui")
     }
 
@@ -42,13 +46,16 @@ final class ShapesMarksTests: XCTestCase {
         let sc = try scene("shapes w=12 h=5\nshape venn All sets=Design|Code|Words pairs=Mock|Sketch|Docs at=9,2.5 size=4.6 tone=mint")
         let it = try XCTUnwrap(sc.items.first)
         near(it.size, [4.6, 4.37], "three sets keep a rounder box")
-        let v = ShapesModel.venn(it, center: try XCTUnwrap(it.at))
+        let v = ShapesModel.venn(it, center: try XCTUnwrap(it.at), fs: sc.fs)
         XCTAssertEqual(v.circles.map(\.tone), ["mint", "lavender", "butter"])
         near(v.circles[2].c, [9, 3.2469], "bottom circle")
         XCTAssertEqual(v.labels.map(\.text), ["Design", "Code", "Words", "All", "Mock", "Sketch", "Docs"])
-        near(v.labels[3].at, [9, 2.251], "where all three overlap")
-        near(v.labels[4].at, [9, 1.25], "Design and Code")
-        near(v.labels[5].at, [8.133, 2.7516], "Design and Words")
+        near(v.labels[3].at, [9, 2.1685], "where all three overlap")
+        near(v.labels[4].at, [9, 1.5231], "Design and Code")
+        near(v.labels[5].at, [8.2071, 2.8315], "Design and Words")
+        // A pair's part is small: its name shrinks, down to the floor, and stays whole.
+        XCTAssertEqual(v.labels[5].lines, ["Sketch"])
+        XCTAssertEqual(v.labels[5].fs, 0.2999, accuracy: tol)
     }
 
     func testAOneSetVennReadsAsItsName() throws {
