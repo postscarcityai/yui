@@ -39,8 +39,24 @@ export const SETS = {
 export const PAPERS = { cream: "#FFF9F0", paper: "#FBFAF7", white: "#FFFFFF", mist: "#F3F6FA", sand: "#F7F0E6", blush: "#FFF1F3" };
 export const RADII = ["round", "soft", "square"];
 export const FONTS = ["rounded", "default", "serif", "mono"];
-export const WEIGHTS = ["regular", "bold", "heavy"];
+export const WEIGHTS = ["regular", "semibold", "bold", "heavy"];
 export const MOTIONS = ["bouncy", "calm", "snappy"];
+// A motion look in the person's words (YUI-123): four keys on top of the
+// character `motion=` names. Timings for each value are in motion.mjs.
+export const MOTION_KEYS = {
+  pace: ["slow", "even", "quick"],
+  ease: ["float", "spring", "sharp", "heavy"],
+  enter: ["rise", "pop", "slide", "drop", "fade"],
+  pulse: ["soft", "beat", "tick", "still"],
+};
+// `motion=` alone starts the four keys fresh from that character, so
+// `theme motion=calm` undoes a look made of words.
+export function mergeTheme(prev, props) {
+  if (props.name) return { ...props };
+  const next = { ...(prev || {}) };
+  if (props.motion && !Object.keys(MOTION_KEYS).some((k) => k in props)) for (const k of Object.keys(MOTION_KEYS)) delete next[k];
+  return { ...next, ...props };
+}
 
 // WCAG AA with a little headroom, so rounding to 8-bit hex never lands a
 // hair under the line. Same numbers as AgentLook.Guard.
@@ -54,7 +70,7 @@ export const YUI = {
   name: "yui",
   light: { background: "#FFF9F0", surface: "#FFFFFF", ink: "#3A3340", inkSoft: "#6E6478", outline: "#F0E4D6", accent: "#FF7E8A", onAccent: "#3A3340", userBubble: "#FFA8B0", userInk: "#3A3340", agentBubble: "#FFFFFF", agentInk: "#3A3340" },
   dark: { background: "#231D33", surface: "#2F2842", ink: "#F6EEF7", inkSoft: "#A99FB8", outline: "#3D3452", accent: "#FF7E8A", onAccent: "#2A2238", userBubble: "#F28D97", userInk: "#2A2238", agentBubble: "#352D4A", agentInk: "#F6EEF7" },
-  radius: "yui", font: "rounded", weight: "heavy", motion: "bouncy", adjusted: { light: [], dark: [] },
+  radius: "yui", font: "default", weight: "semibold", motion: "bouncy", adjusted: { light: [], dark: [] },
 };
 
 // ---------- color math (sRGB, WCAG 2 relative luminance) ----------
@@ -66,7 +82,7 @@ export function rgb(hex) {
   return { r: ((v >> 16) & 255) / 255, g: ((v >> 8) & 255) / 255, b: (v & 255) / 255 };
 }
 
-function fromHSL(h, s, l) {
+export function fromHSL(h, s, l) {
   const c = (1 - Math.abs(2 * l - 1)) * s;
   const hp = (((h % 360) + 360) % 360) / 60;
   const x = c * (1 - Math.abs((hp % 2) - 1));
@@ -80,7 +96,7 @@ export function hex(c) {
   return "#" + p(c.r) + p(c.g) + p(c.b);
 }
 
-function hsl({ r, g, b }) {
+export function hsl({ r, g, b }) {
   const mx = Math.max(r, g, b), mn = Math.min(r, g, b), l = (mx + mn) / 2;
   if (mx === mn) return { h: 0, s: 0, l };
   const d = mx - mn;
@@ -89,7 +105,7 @@ function hsl({ r, g, b }) {
   return { h: h * 60, s, l };
 }
 
-function luminance({ r, g, b }) {
+export function luminance({ r, g, b }) {
   const lin = (v) => (v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4));
   return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
 }
@@ -116,7 +132,8 @@ const better = (opts, bg) => opts.reduce((a, b) => (contrast(b, bg) > contrast(a
 
 // ---------- compiling a look ----------
 
-// A recipe ({accent, bg?, radius, font, weight, motion}) into a light and a
+// A recipe ({accent, bg?, radius, font, weight, motion, pace?, ease?, enter?,
+// pulse?}) into a light and a
 // dark palette, the way AgentLook.compile does it. `adjusted` names, per mode,
 // the colors the guard had to move from what was asked.
 export function compile(r, name = "custom") {
@@ -158,9 +175,10 @@ export function compile(r, name = "custom") {
     light: palette(false),
     dark: palette(true),
     radius: RADII.includes(r.radius) || r.radius === "yui" ? r.radius : "soft",
-    font: FONTS.includes(r.font) ? r.font : "rounded",
-    weight: WEIGHTS.includes(r.weight) ? r.weight : "heavy",
+    font: FONTS.includes(r.font) ? r.font : "default",
+    weight: WEIGHTS.includes(r.weight) ? r.weight : "semibold",
     motion: MOTIONS.includes(r.motion) ? r.motion : "bouncy",
+    ...Object.fromEntries(Object.entries(MOTION_KEYS).filter(([k, vs]) => vs.includes(r[k])).map(([k]) => [k, r[k]])),
     adjusted,
   };
 }
@@ -173,7 +191,8 @@ export function appLook(props, from = null) {
   let r = props.name ? { ...SETS[props.name] } : { ...(from || SETS.yui) };
   if (props.accent) r.accent = SETS[props.accent] ? SETS[props.accent].accent : props.accent;
   if (props.bg) r.bg = PAPERS[props.bg] || props.bg;
-  for (const k of ["radius", "font", "weight", "motion"]) if (props[k]) r[k] = props[k];
+  if (props.motion && !Object.keys(MOTION_KEYS).some((k) => props[k])) for (const k of Object.keys(MOTION_KEYS)) delete r[k];
+  for (const k of ["radius", "font", "weight", "motion", ...Object.keys(MOTION_KEYS)]) if (props[k]) r[k] = props[k];
   if (r.radius === "yui" && !props.name) r.radius = "soft";
   return compile(r, props.name || "custom");
 }

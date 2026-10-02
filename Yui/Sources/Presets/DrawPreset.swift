@@ -60,7 +60,7 @@ struct DrawDrawing: View {
                                          still: reduceMotion)
                 // The shape is set here, by a clear box the canvas lies over: a web view has no size of its own.
                 Color.clear
-                    .aspectRatio(DrawPage.ratio(props["ratio"]?.string, source: source), contentMode: .fit)
+                    .aspectRatio(DrawPage.ratio(props["ratio"].flatMap { $0.string ?? $0.number.map { String($0) } }, source: source), contentMode: .fit)
                     .frame(maxWidth: .infinity)
                     .overlay { DrawCanvas(html: page) }
                     // Its taps are the page's: a tap turns the page, a swipe changes the screen.

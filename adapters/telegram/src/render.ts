@@ -77,6 +77,12 @@ export const HOW: Record<string, "keyboard" | "text" | "app" | "member"> = {
   chart: "app", math: "app", calc: "app",
   deck: "app", page: "app", plan: "app", project: "app", narrate: "app",
   game: "app", flow: "app", custom: "app",
+  // Drawn on the phone: a diagram, a recreated screen, a map, the music tools. A lone member
+  // (a part, an area, a pin, a route) waits there too; inside its group it is drawn with the head.
+  diagram: "app", mock: "app", part: "app", map: "app", area: "app", pin: "app", route: "app",
+  loop: "app", drums: "app", keys: "app", chords: "app", tuner: "app", metronome: "app",
+  // `draw` in Telegram is its words (YL.md 10): the caption, else the title, else it waits in the app.
+  draw: "text",
   // A query reads the agent's tables, which live on the phone: open it in
   // Yui (YL.md 10). `table create` and `put` draw nothing, here or there.
   query: "app",
@@ -195,6 +201,12 @@ export async function renderYL(yl: string, opts: Options): Promise<Rendered> {
       case "shape": // outside a shapes group: a one-part drawing
         messages.push(msg(shapes({}, [n])));
         break;
+      case "draw": {
+        const words = String(p.caption ?? "").trim() || String(p.title ?? "").trim();
+        if (words) messages.push(msg(esc(words)));
+        else holdForApp(n); // nothing to say in words: the drawing is the whole of it
+        break;
+      }
       case "after": break; // outside a sketch it draws nothing, in the app too
       case "card": messages.push(await card(n, opts)); break;
       case "ask": case "choose": case "pick":
