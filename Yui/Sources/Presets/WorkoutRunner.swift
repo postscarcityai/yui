@@ -27,6 +27,8 @@ struct RunnerMove: Equatable {
     var work: Int? = nil
     /// The last set goes to failure with a safe stop: only when the first plan chose it.
     var fail = false
+    /// Arnold's call on the load and why, from the log (feedback NOTE-35460). Nil: none yet.
+    var why: String? = nil
 
     /// The move's own name in ids: "e1" for `e1-sets`.
     var tag: String { sets.ylID.hasSuffix("-sets") ? String(sets.ylID.dropLast(5)) : sets.ylID }
@@ -59,7 +61,8 @@ struct RunnerPlan: Equatable {
                 nudges.append(next)
             }
             moves.append(RunnerMove(sets: step, labels: labels, skip: skip, nudges: nudges, cue: step.string("cue"),
-                                    work: step.number("work").map { max(5, min(Int($0), 600)) }, fail: step.flag("fail")))
+                                    work: step.number("work").map { max(5, min(Int($0), 600)) }, fail: step.flag("fail"),
+                                    why: step.string("why")))
         }
         guard !moves.isEmpty else { return nil }
         let words = steps.filter { $0.preset == "page" }.compactMap { $0.string("body") }.joined(separator: " ")
