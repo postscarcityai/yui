@@ -43,8 +43,10 @@ final class ShapesSceneTests: XCTestCase {
             let yl = YLScreen(c["input"] as? String ?? "")
             let top = try XCTUnwrap(yl.top.first, name)
             let parts = top.preset == "shape" ? [top] : yl.components.members(of: top).filter { $0.preset == "shape" }
+            // A scene over a picture is laid out with the picture's shape when the case gives one (YUI-276).
+            let ratio = ((c["opts"] as? [String: Any])?["ratio"] as? NSNumber)?.doubleValue
             let sc = ShapesModel.scene(head: top.preset == "shape" ? [:] : top.props,
-                                       members: parts.map { (id: $0.ylID, props: $0.props) })
+                                       members: parts.map { (id: $0.ylID, props: $0.props) }, ratio: ratio)
             let js = try XCTUnwrap(c["scene"] as? [String: Any], name)
             near(sc.w, js["w"], "\(name): w"); near(sc.h, js["h"], "\(name): h")
             near(sc.fs, js["fs"], "\(name): fs"); near(sc.total, js["total"], "\(name): total")
@@ -91,6 +93,30 @@ final class ShapesSceneTests: XCTestCase {
                 let fs = it.from != nil || it.pts != nil ? sc.fs * 0.9 : sc.fs
                 XCTAssertEqual(ShapesModel.wrap(it.label, width: ShapesModel.labelWidth(it, k: sc.k), fs: fs),
                                labels[String(it.i)], "\(name) #\(it.i) label lines")
+            }
+            // Where a Venn's, a region's and a contour's labels go and how they fit (YUI-276).
+            let marks = c["marks"] as? [String: [[String: Any]]] ?? [:]
+            for it in sc.items {
+                let w = "\(name) #\(it.i) \(it.kind) label"
+                var got: [(at: [Double], lines: [String], fs: Double, width: Double?)] = []
+                switch it.kind {
+                case "venn": got = ShapesModel.venn(it, center: it.at ?? [0, 0], fs: sc.fs).labels.map { ($0.at, $0.lines, $0.fs, $0.width) }
+                case "region" where !it.label.isEmpty:
+                    let r = ShapesModel.regionLabel(it, fs: sc.fs)
+                    got = [(r.at, r.lines, r.fs, r.width)]
+                case "contour" where !it.label.isEmpty:
+                    let ct = ShapesModel.contour(it, center: it.at ?? [0, 0], fs: sc.fs)
+                    got = [(ct.peak, ct.label.lines, ct.label.fs, nil)]
+                default: continue
+                }
+                let want = marks[String(it.i)] ?? []
+                XCTAssertEqual(got.count, want.count, "\(w) count")
+                for (g, j) in zip(got, want) {
+                    near(g.at, j["at"], "\(w) at")
+                    XCTAssertEqual(g.lines, j["lines"] as? [String], "\(w) lines")
+                    near(g.fs, j["fs"], "\(w) fs")
+                    near(g.width, j["width"], "\(w) width")
+                }
             }
             XCTAssertEqual(ShapesModel.describe(sc), c["text"] as? String, "\(name): spoken text")
         }

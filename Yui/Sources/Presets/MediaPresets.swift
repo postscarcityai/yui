@@ -13,6 +13,8 @@ struct RemoteImage: View {
     var fit: ContentMode = .fill
     /// Width over height of the picture, once it has loaded.
     var onRatio: ((CGFloat) -> Void)? = nil
+    /// The picture could not load (a drawing over it goes on without it, YUI-276).
+    var onFail: (() -> Void)? = nil
     @State private var image: UIImage?
     @State private var failed = false
     @State private var size: CGSize = .zero
@@ -49,7 +51,7 @@ struct RemoteImage: View {
             let url = await media?.fresh(src) ?? src
             let id = Pictures.id(src)
             guard let made = await Pictures.load(url, id: id, points: points, scale: scale) else {
-                if image == nil { failed = true }
+                if image == nil { failed = true; onFail?() }
                 return
             }
             withAnimation(image == nil ? theme.spring : nil) { image = made.image }

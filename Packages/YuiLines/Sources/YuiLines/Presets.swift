@@ -36,7 +36,9 @@ typealias Props = [String: YLValue]
 // from items=a|b|c) and any other key= the line gave. A view collects a mock's
 // parts with `components.filter { $0.inGroup == mock.ylID && $0.preset == "part" }`.
 // Defaults (frame "phone", kind "text") are the view's job; `resolved` is not
-// computed in Swift.
+// computed in Swift. A mock also takes `shape` lines, gesture marks drawn over
+// its screen (a tap, a swipe, an arrow, a doodle ring), placed by a part's id or
+// x,y on the screen (YUI-276).
 
 let presets: Set<String> = [
     "timer", "ask", "choose", "pick", "slide", "form",
@@ -65,7 +67,7 @@ let groups: [String: Set<String>] = [
     "timeline": ["done", "now", "next"],
     "sketch": ["row", "after"],
     "shapes": ["shape"],
-    "mock": ["part"],
+    "mock": ["part", "shape"],
     "map": ["area", "pin", "route"],
 ]
 
