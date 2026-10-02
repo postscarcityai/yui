@@ -36,6 +36,11 @@ struct SketchDrawing: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
+        let look = SketchLook.current
+        if look == .classic { classic } else { SketchLookView(look: look, sketch: sketch, parts: parts) }
+    }
+
+    @ViewBuilder private var classic: some View {
         let s = theme.swatch(scheme)
         let frame = Self.frames.contains(sketch.string("frame") ?? "") ? sketch.string("frame")! : "window"
         let title = sketch.string("title").flatMap { $0.isEmpty ? nil : $0 }

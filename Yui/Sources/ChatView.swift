@@ -2424,6 +2424,18 @@ struct ChatView: View {
                 [ChatMessage(text: ask, fromUser: true), ChatMessage(text: "", fromUser: false, yl: YLScreen(yl))]
             }
         }
+        // -yuiDemoLook: the push-tap fix drawn, to compare the sketch looks (YUI-267, -yuiSketchLook A|B|C).
+        if ProcessInfo.processInfo.arguments.contains("-yuiDemoLook") {
+            return [ChatMessage(text: "Good morning what's the latest with Yui", fromUser: true),
+                    ChatMessage(text: "Push taps land on the reply now.", fromUser: false),
+                    ChatMessage(text: "", fromUser: false, yl: YLScreen("""
+                        sketch "Push tap" frame=phone before=Before
+                        row "Tap lands on an empty home, badge 1" +x note="never matched"
+                        after Now
+                        row "Tap opens the reply, full screen" +hi note="cold + warm"
+                        row "A reply on home plays itself" +hi note="no badge tap"
+                        """))]
+        }
         // -yuiDemoDraw: a flowchart, a sequence, a state diagram and three mock-ups (DRAW-2).
         if ProcessInfo.processInfo.arguments.contains("-yuiDemoDraw") {
             let asks = ["How does an ask ship?", "What happens when I send a message?", "Show me the TestFlight build states",
