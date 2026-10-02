@@ -250,6 +250,8 @@ struct StageFirstView: View {
     @State private var releasedAt: CGFloat?
     /// How far the finger has pulled the answer down toward home (YUI-195).
     @State private var pull: CGFloat = 0
+    /// Compare pictures pressed, by question (NOTE-42080): each press reaches the question as a tap on its option.
+    @State private var presses: [String: YLPress] = [:]
 
     static let small = BarButtons.small, touch = BarButtons.touch
     /// The room kept for the shader blob above the working words.
@@ -838,14 +840,19 @@ struct StageFirstView: View {
                 }
             }
             if let pic = k.pic {
-                PresetView(component: pic)
-                    .environment(\.ylComponents, k.all)
-                    .environment(\.ylScope, k.scope)
-                    .environment(\.ylBare, Self.drawings.contains(pic.preset))
+                drawing(pic, k)
                     // Stacked ideas share the height: a scene is drawn narrower so its height shrinks with it; a sketch keeps its own height and the page scrolls if it must.
                     .frame(maxWidth: pic.preset == "shapes" ? room : nil)
             }
         }
+    }
+
+    /// A chunk's picture as the stage draws it: a drawing sits bare on the page.
+    private func drawing(_ pic: YLComponent, _ k: StageChunk) -> some View {
+        PresetView(component: pic)
+            .environment(\.ylComponents, k.all)
+            .environment(\.ylScope, k.scope)
+            .environment(\.ylBare, Self.drawings.contains(pic.preset))
     }
 
     private func step(_ by: Int) {
@@ -955,17 +962,22 @@ struct StageFirstView: View {
                         .foregroundStyle(c.inkSoft)
                 }
                 ForEach(Array(t.questions.enumerated()), id: \.element.id) { i, q in
-                    PresetView(component: q.c)
-                        .environment(\.ylComponents, q.all)
-                        .environment(\.ylScope, q.scope)
-                        .environment(\.ylOnStage, false)
-                        .environment(\.ylHostedSubmit, true)
-                        // On the stage a question is the page, not a card on it.
-                        .environment(\.ylBare, true)
-                        .environment(\.ylEmit, YLEmit { e in model.answers[q.id] = e })
-                        .disabled(sent)
-                        // ask: the questions come on one by one.
-                        .modifier(StaggerIn(index: i, look: look))
+                    VStack(alignment: .leading, spacing: theme.spacing.m) {
+                        // The looks it compares sit small above it, side by side (NOTE-42080, web YUI-277).
+                        if !q.compare.isEmpty { compare(q, c, width: geo.size.width, sent: sent) }
+                        PresetView(component: q.c)
+                            .environment(\.ylComponents, q.all)
+                            .environment(\.ylScope, q.scope)
+                            .environment(\.ylOnStage, false)
+                            .environment(\.ylHostedSubmit, true)
+                            // On the stage a question is the page, not a card on it.
+                            .environment(\.ylBare, true)
+                            .environment(\.ylEmit, YLEmit { e in model.answers[q.id] = e })
+                            .environment(\.ylPress, presses[q.id] ?? YLPress())
+                            .disabled(sent)
+                    }
+                    // ask: the questions come on one by one.
+                    .modifier(StaggerIn(index: i, look: look))
                 }
                 if !sent {
                     let ready = picked(t)
@@ -996,6 +1008,80 @@ struct StageFirstView: View {
         .onTapGesture { p in if p.x < geo.size.width / 3, !t.chunks.isEmpty { step(-1) } }
         }
         .accessibilityIdentifier("stage-questions")
+    }
+
+    /// The earlier pages a question's options name, each a small picture with its option under it (feedback
+    /// NOTE-42080, web YUI-277). A tap is the answer: it presses that option in the question, which shows it picked.
+    /// The row fits the phone's width; only when too many to fit does it scroll sideways, so a swipe still turns the page.
+    private func compare(_ q: StageQuestion, _ c: Swatch, width: CGFloat, sent: Bool) -> some View {
+        ViewThatFits(in: .horizontal) {
+            compareRow(q, c, width: width, sent: sent)
+            ScrollView(.horizontal) { compareRow(q, c, width: width, sent: sent) }
+                .scrollIndicators(.hidden)
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Compare")
+        .accessibilityIdentifier("stage-compare")
+    }
+
+    private func compareRow(_ q: StageQuestion, _ c: Swatch, width: CGFloat, sent: Bool) -> some View {
+        let n = CGFloat(q.compare.count), gap = CGFloat(theme.spacing.s)
+        let w = max(72, min(112, ((width - gap * (n - 1) - 4) / n - gap).rounded(.down))), h = (w * 0.72).rounded()
+        // Each picture is drawn at a phone page's width, then scaled down into its frame.
+        let scale = w / 320
+        let on = chosen(q)
+        let corner = CGFloat(theme.radius.card) * 0.7
+        return HStack(alignment: .top, spacing: gap) {
+            ForEach(Array(q.compare.enumerated()), id: \.offset) { i, hit in
+                let picked = on.contains(hit.option)
+                Button {
+                    let was = presses[q.id]?.n ?? 0
+                    presses[q.id] = YLPress(option: hit.option, n: was + 1)
+                } label: {
+                    VStack(spacing: theme.spacing.xs) {
+                        thumbnail(hit.page)
+                            .frame(width: w / scale, height: h / scale)
+                            .scaleEffect(scale, anchor: .topLeading)
+                            .frame(width: w, height: h, alignment: .topLeading)
+                            .clipShape(.rect(cornerRadius: corner / 2))
+                            .allowsHitTesting(false)
+                            .accessibilityHidden(true)
+                        Text(hit.option)
+                            .font(theme.font(theme.type.caption, .heavy))
+                            .foregroundStyle(picked ? c.accent : c.ink)
+                            .lineLimit(1)
+                            .frame(maxWidth: w)
+                    }
+                    .padding(gap / 2)
+                    .background(c.surface, in: .rect(cornerRadius: corner))
+                    .overlay(RoundedRectangle(cornerRadius: corner).stroke(picked ? c.accent : c.outline, lineWidth: picked ? 3 : 1.5))
+                }
+                .buttonStyle(BounceButtonStyle())
+                .disabled(sent || q.c.locked)
+                .accessibilityLabel("\(hit.option), \(hit.page.page?.string("title") ?? "")")
+                .accessibilityHint("Picks \(hit.option)")
+                .accessibilityAddTraits(picked ? .isSelected : [])
+                .accessibilityIdentifier("stage-compare-\(i)")
+            }
+        }
+        // Room for the picked ring.
+        .padding(2)
+    }
+
+    /// A page's picture for the compare row: its drawing, or its image when it has no drawing.
+    @ViewBuilder private func thumbnail(_ k: StageChunk) -> some View {
+        if let pic = k.pic {
+            drawing(pic, k)
+        } else if let url = YLMediaURL.url(k.page?.string("img")) {
+            MediaTile(src: url, fit: .fill)
+        }
+    }
+
+    /// The options the question holds right now, so the pictures show what the question shows.
+    private func chosen(_ q: StageQuestion) -> Set<String> {
+        guard let v = model.answers[q.id]?.value else { return [] }
+        if let one = v["choice"]?.string ?? v["answer"]?.string { return [one] }
+        return Set(v["picked"]?.array?.compactMap(\.string) ?? [])
     }
 
     /// A form counts once a field has a value; one missing a required field holds Send.

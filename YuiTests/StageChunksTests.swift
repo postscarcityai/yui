@@ -329,4 +329,148 @@ final class StageChunksTests: XCTestCase {
         XCTAssertTrue(model.show(reply: "a1", in: messages))
         XCTAssertEqual(model.at, 0, "the pill opens on the questions screen")
     }
+
+    // NOTE-42080, web YUI-277: a question that compares earlier pages shows them small above it
+    // (mirror of compareOf in yuigui site/lib/yl/askhere.test.mjs, one for one).
+    private func compared(_ yl: String) -> [String] {
+        (turn(yl).questions.first?.compare ?? []).map { "\($0.option)=\($0.page.line ?? "")" }
+    }
+
+    /// Chris, Oct 2: three drawing looks, then "Which drawing look should Yui use?" on the next screen.
+    static let looks = """
+    plan "Pick a look"
+    page "Look A: Hand drawn"
+    sketch frame=bubble
+    row "Wobbly lines" +hi
+    page "Look B: Clean lines"
+    sketch frame=bubble
+    row "Crisp lines" +hi
+    page "Look C: Chalk"
+    sketch frame=bubble
+    row "Chalk lines" +hi
+    choose "Which drawing look should Yui use?" "A"|"B"|"C"|"None, try again"|"You decide"
+    end
+    """
+
+    func testCompareABAndCPointAtTheirPages() {
+        let t = turn(Self.looks)
+        XCTAssertEqual(t.lead?.line, "Look C: Chalk", "the looks question joins the last look")
+        XCTAssertEqual(compared(Self.looks), ["A=Look A: Hand drawn", "B=Look B: Clean lines", "C=Look C: Chalk"])
+    }
+
+    func testCompareALoneQuestionAfterThePagesSeesThemToo() {
+        let yl = """
+        deck "Three looks"
+        page "Look A: Hand drawn"
+        sketch frame=bubble
+        row "Wobbly lines" +hi
+        page "Look B: Clean lines"
+        sketch frame=bubble
+        row "Crisp lines" +hi
+        page "Look C: Chalk"
+        sketch frame=bubble
+        row "Chalk lines" +hi
+        end
+        end
+        choose "Which drawing look should Yui use?" "A"|"B"|"C"|"None, try again"|"You decide"
+        """
+        XCTAssertNil(turn(yl).lead, "a deck page never heads the questions")
+        XCTAssertEqual(compared(yl).map { String($0.prefix(1)) }, ["A", "B", "C"])
+    }
+
+    func testCompareWordsInTheTitleMatchWordsInOptions() {
+        XCTAssertEqual(compared("""
+        plan "P"
+        page "Hand drawn"
+        sketch frame=bubble
+        row "Wobbly" +hi
+        page "Chalk"
+        sketch frame=bubble
+        row "Dusty" +hi
+        choose "Which?" "Hand drawn"|"Chalk"|"Neither"
+        end
+        """), ["Hand drawn=Hand drawn", "Chalk=Chalk"])
+    }
+
+    func testCompareOneMatchIsNotAComparison() {
+        XCTAssertEqual(compared("""
+        plan "P"
+        page "Look A"
+        sketch frame=bubble
+        row "Wobbly" +hi
+        choose "Which?" "A"|"B"
+        end
+        """), [])
+    }
+
+    func testComparePagesWithNoPictureNeverShow() {
+        XCTAssertEqual(compared("""
+        plan "P"
+        page "Look A"
+        page "Look B"
+        choose "Which?" "A"|"B"
+        end
+        """), [])
+    }
+
+    func testCompareAnOptionIsNotFoundInsideAWord() {
+        XCTAssertEqual(compared("""
+        plan "P"
+        page "Data"
+        sketch frame=bubble
+        row "Rows" +hi
+        page "Beta"
+        sketch frame=bubble
+        row "Tries" +hi
+        choose "Which?" "A"|"B"
+        end
+        """), [])
+    }
+
+    func testCompareAPageAfterTheQuestionIsNotOffered() {
+        XCTAssertEqual(compared("""
+        plan "P"
+        page "Look A"
+        sketch frame=bubble
+        row "Wobbly" +hi
+        choose "Which?" "A"|"B"
+        page "Look B"
+        sketch frame=bubble
+        row "Crisp" +hi
+        end
+        """), [])
+    }
+
+    /// Each page once: "A" and "Look A" name the same page, so the second gets none.
+    func testCompareUsesEachPageOnce() {
+        XCTAssertEqual(compared("""
+        plan "P"
+        page "Look A"
+        sketch frame=bubble
+        row "Wobbly" +hi
+        page "Look B"
+        sketch frame=bubble
+        row "Crisp" +hi
+        choose "Which?" "A"|"Look A"|"B"
+        end
+        """), ["A=Look A", "B=Look B"])
+    }
+
+    /// A page's image is its picture too (the web's `img`), and pages from an earlier reply of the turn count.
+    func testCompareSeesImagesAndEarlierReplies() {
+        let t = StageChunks.turn([
+            ChatMessage(id: "u", text: "Show me covers", fromUser: true),
+            ChatMessage(id: "r1", text: "", fromUser: false, yl: YLScreen("""
+            deck "Covers"
+            page "Cover 1" img="https://example.com/1.png"
+            page "Cover 2" img="https://example.com/2.png"
+            end
+            """)),
+            ChatMessage(id: "r2", text: "", fromUser: false, yl: YLScreen("""
+            choose "Which cover?" "1"|"2"
+            """)),
+        ], ask: "u")
+        XCTAssertEqual(t.questions.first?.compare.map(\.page.line), ["Cover 1", "Cover 2"])
+        XCTAssertEqual(t.questions.first?.compare.map(\.option), ["1", "2"])
+    }
 }
