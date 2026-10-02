@@ -118,9 +118,9 @@ class Downgrade(unittest.TestCase):
         self.assertDrawable(out, 96)
 
     def test_note_names_what_to_skip(self):
-        self.assertIn("cannot draw chords, diagram, draw, drums, keys, loop, map, metronome, mock, shapes, sketch, tuner; venn, contour, region or doodle shapes, or shapes img= yet", compat.note(96))
+        self.assertIn("cannot draw chords, diagram, draw, drums, keys, loop, map, metronome, mock, shapes, sketch, tuner; venn, contour, region, doodle, tap or swipe shapes, shapes img=, or shapes over a mock yet", compat.note(96))
         self.assertNotIn("timeline", compat.note(96))
-        self.assertEqual(compat.note(compat.SHAPES_BUILD), f"[yui] This person's Yui app (build {compat.SHAPES_BUILD}) cannot draw chords, diagram, draw, drums, keys, loop, map, metronome, mock, tuner; venn, contour, region or doodle shapes, or shapes img= yet: don't send those. Say it in words or use another preset.")
+        self.assertEqual(compat.note(compat.SHAPES_BUILD), f"[yui] This person's Yui app (build {compat.SHAPES_BUILD}) cannot draw chords, diagram, draw, drums, keys, loop, map, metronome, mock, tuner; venn, contour, region, doodle, tap or swipe shapes, shapes img=, or shapes over a mock yet: don't send those. Say it in words or use another preset.")
         self.assertEqual(compat.note(compat.DRAW_BUILD), "")
         self.assertIn("cannot draw chords, diagram, draw, drums, keys, loop, map, metronome, mock, shapes", compat.note(122))
         self.assertIn("an older build", compat.note(None))
@@ -163,8 +163,8 @@ class Downgrade(unittest.TestCase):
         self.assertIn("There are chord buttons here: G I-V-vi-IV. Update Yui to play them.", out)
         self.assertIn("There are chord buttons here: C G Am F. Update Yui to play them.", out)
         self.assertDrawable(out, 176)
-        self.assertIn("cannot draw chords, diagram, draw, keys, map, metronome, mock, tuner; venn, contour, region or doodle shapes, or shapes img= yet", compat.note(176))
-        self.assertIn("cannot draw diagram, draw, map, metronome, mock, tuner; venn, contour, region or doodle shapes, or shapes img= yet", compat.note(compat.KEYS_BUILD))
+        self.assertIn("cannot draw chords, diagram, draw, keys, map, metronome, mock, tuner; venn, contour, region, doodle, tap or swipe shapes, shapes img=, or shapes over a mock yet", compat.note(176))
+        self.assertIn("cannot draw diagram, draw, map, metronome, mock, tuner; venn, contour, region, doodle, tap or swipe shapes, shapes img=, or shapes over a mock yet", compat.note(compat.KEYS_BUILD))
         self.assertEqual(compat.downgrade(body, compat.KEYS_BUILD), body)
 
     def test_tuner_and_metronome_before_build_205(self):
@@ -176,7 +176,7 @@ class Downgrade(unittest.TestCase):
         self.assertIn("There's a tuner here. Update Yui to use it.", out)
         self.assertIn("There's a metronome here at 72 bpm. Update Yui to use it.", out)
         self.assertDrawable(out, 204)
-        self.assertIn("cannot draw diagram, draw, map, metronome, mock, tuner; venn, contour, region or doodle shapes, or shapes img= yet", compat.note(204))
+        self.assertIn("cannot draw diagram, draw, map, metronome, mock, tuner; venn, contour, region, doodle, tap or swipe shapes, shapes img=, or shapes over a mock yet", compat.note(204))
         self.assertEqual(compat.note(compat.DRAW_BUILD), "")
         self.assertEqual(compat.downgrade(body, compat.TUNER_BUILD), body)
 
@@ -269,7 +269,7 @@ class Downgrade(unittest.TestCase):
         plain = fence("shapes Parts", "shape box A", "shape arrow bend=0.3", "shape box B")
         self.assertEqual(compat.downgrade(plain, old), plain)
         self.assertEqual(compat.downgrade(fence("shape doodle Here at=5,3"), old), "Here")
-        self.assertIn("venn, contour, region or doodle shapes", compat.note(old))
+        self.assertIn("tap or swipe shapes", compat.note(old))
         self.assertNotIn("venn", compat.note(compat.MARKS_BUILD))
 
     def test_shapes_in_a_plan_before_their_build_are_a_page(self):
@@ -284,6 +284,46 @@ class Downgrade(unittest.TestCase):
         # In a deck, plain shapes stay a page's picture, as since YUI-113.
         deck = fence('deck D', 'page One', 'shapes', 'shape box A', 'page Two', 'end')
         self.assertEqual(compat.downgrade(deck, old), deck)
+
+
+    def test_gesture_marks_on_a_mock_are_words(self):
+        # YUI-276: a mock carries its shape lines; each mark is a line naming the part it is on.
+        old = compat.MARKS_BUILD - 1
+        body = fence('mock "Hold to talk" frame=phone', 'part nav Chat', 'part@mic button "Hold to talk"',
+                     'shape tap "hold" at=mic +pulse', 'shape swipe "slide to cancel" at=mic dir=left',
+                     'shape arrow "drop here to lock" from=8,6 to=mic bend=0.3', 'say "Try it."')
+        want = ("**Hold to talk**\n- Nav: Chat\n- Button: Hold to talk\n- Tap Hold to talk: hold\n"
+                "- Swipe left from Hold to talk: slide to cancel\n- Arrow to Hold to talk: drop here to lock\n\n"
+                + fence('say "Try it."'))
+        self.assertEqual(compat.downgrade(body, old), want)
+        self.assertDrawable(compat.downgrade(body, old), old)
+        # A doodle round a part says it is circled; a bare x,y with no label says nothing.
+        ring = fence('mock "Drawer"', 'part@total row Total value="$U 12"', "shape doodle at=total tone=butter", "shape tap at=2,2")
+        self.assertEqual(compat.downgrade(ring, old), "**Drawer**\n- Row: Total, $U 12\n- Circled Total\n- Tap")
+        # In a deck, the marks are among the page's points.
+        deck = fence('deck D', 'page One', 'mock Mic', 'part@mic button Talk', 'shape tap at=mic', 'page Two', 'end')
+        self.assertEqual(compat.downgrade(deck, old), fence('deck D', 'page One', 'page "Mic" points="Button: Talk"|"Tap Talk"', 'page Two', 'end'))
+
+    def test_a_drawn_mock_loses_only_the_marks_it_cannot_draw(self):
+        # A build that draws mock (DRAW_BUILD) but not the marks: the parts stay, the marks follow as words.
+        saved = compat.MARKS_BUILD
+        try:
+            compat.MARKS_BUILD = compat.DRAW_BUILD + 1
+            body = fence('mock "Hold to talk"', 'part@mic button "Hold to talk"', 'shape tap "hold" at=mic', 'say "Try it."')
+            self.assertEqual(compat.downgrade(body, compat.DRAW_BUILD),
+                             fence('mock "Hold to talk"', 'part@mic button "Hold to talk"') + "\n\n- Tap Hold to talk: hold\n\n" + fence('say "Try it."'))
+            self.assertEqual(compat.downgrade(body, compat.MARKS_BUILD), body)
+        finally:
+            compat.MARKS_BUILD = saved
+
+    def test_a_tap_or_a_swipe_in_shapes_needs_the_marks_build(self):
+        old = compat.MARKS_BUILD - 1
+        body = fence('shapes "Hold" caption="Hold, then slide."', 'shape@mic tap "hold" at=5,4', 'shape swipe "slide" at=5,4 dir=left')
+        self.assertEqual(compat.downgrade(body, old), "**Hold**\nhold, slide\nHold, then slide.")
+        self.assertEqual(compat.downgrade(body, compat.MARKS_BUILD), body)
+        # A lone shape still counts as shapes in the turn note, never as a mock.
+        self.assertIn("shapes", compat.note(compat.SHAPES_BUILD - 1))
+        self.assertEqual(compat.MEMBER_OF["shape"], "shapes")
 
 
 @unittest.skipUnless(YL.exists() and shutil.which("node"), "yuigui checkout or node not found")

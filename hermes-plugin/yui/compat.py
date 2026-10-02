@@ -17,10 +17,12 @@ something it can:
   * a `draw` (the agent's own SVG, docs/STAGE-REDESIGN.md): its words only, the
     title and the caption; the markup up to its `end` is dropped.
 
-  * marks (YUI-276): a `shapes` group with a `venn`, `contour`, `region` or
-    `doodle` shape, or with `img=`, and any `shapes` inside a `plan`: its words,
-    the title, the labels in order and the caption (a page of them in a deck
-    or plan). `bend=` needs nothing: an older build draws the line straight. A saved flow is looked up in the starter
+  * marks (YUI-276): a `shapes` group with a `venn`, `contour`, `region`,
+    `doodle`, `tap` or `swipe` shape, or with `img=`, and any `shapes` inside a
+    `plan`: its words, the title, the labels in order and the caption (a page of
+    them in a deck or plan). `bend=` needs nothing: an older build draws the
+    line straight. Gesture marks over a `mock` (its `shape` lines) become a line
+    each, "Tap Hold to talk: hold", after the mock or among its points. A saved flow is looked up in the starter
     flows (starter_flows.json, from yuigui by sync_flows.py).
 
 An unknown build (no phone has said yet) counts as older than all of them.
@@ -61,7 +63,7 @@ FLOW_BUILD = 414
 # both. Older builds get the words.
 FREE_DRAW_BUILD = 466
 MARKS_BUILD = 466
-MARK_KINDS = {"venn", "contour", "region", "doodle"}
+MARK_KINDS = {"venn", "contour", "region", "doodle", "tap", "swipe"}
 
 # First app build whose parser knows each preset (git rev-list --count of the
 # commit that added it to Packages/YuiLines/Sources/YuiLines/Presets.swift).
@@ -80,8 +82,13 @@ MIN_BUILD: Dict[str, int] = {
     "draw": FREE_DRAW_BUILD,                             # the agent's own SVG: older builds get its words
 }
 GROUPS = {"sketch": {"row", "after"}, "timeline": {"done", "now", "next"}, "shapes": {"shape"},
-          "map": {"area", "pin", "route"}, "mock": {"part"}}
-MEMBER_OF = {m: head for head, ms in GROUPS.items() for m in ms}
+          "map": {"area", "pin", "route"}, "mock": {"part", "shape"}}
+# A `shape` is a member of a mock too (its gesture marks, YUI-276), but on its own it
+# belongs to `shapes`: the first group that names a member wins.
+MEMBER_OF: Dict[str, str] = {}
+for _head, _ms in GROUPS.items():
+    for _m in _ms:
+        MEMBER_OF.setdefault(_m, _head)
 STORY = {"deck", "plan"}  # a sketch in these is the picture of a page
 QUIET = {"menu"}  # draws nothing in the chat: dropped on old builds, never named in the note
 MADE_OVER = {"flow"}  # the plugin turns it into a preset the phone runs: agents keep sending it
@@ -130,7 +137,7 @@ def note(build: Optional[int]) -> str:
         return ""
     what = ", ".join(heads)
     if marks:
-        what = (what + "; " if what else "") + "venn, contour, region or doodle shapes, or shapes img="
+        what = (what + "; " if what else "") + "venn, contour, region, doodle, tap or swipe shapes, shapes img=, or shapes over a mock"
     which = f"build {build}" if build else "an older build"
     return (f"[yui] This person's Yui app ({which}) cannot draw {what} yet: "
             "don't send those. Say it in words or use another preset.")
@@ -249,7 +256,7 @@ def _group_text(lines: List[str]) -> str:
         elif preset == "mock":
             if title:
                 out.append(f"**{title}**")
-            out.extend(f"- {p}" for p in _mock_parts(lines[i + 1:]))
+            out.extend(f"- {p}" for p in _mock_parts(lines[i + 1:]) + _mark_lines(lines[i + 1:]))
         elif preset == "part" and i == 0:
             out.extend(f"- {p}" for p in _mock_parts(lines))
         elif preset in ("area", "pin", "route") and i == 0:
@@ -474,11 +481,48 @@ def _mock_parts(lines: List[str]) -> List[str]:
     return out
 
 
+def _mark_lines(lines: List[str]) -> List[str]:
+    """A mock's gesture marks (its `shape` lines, YUI-276) in words, one each:
+    `Tap Hold to talk: hold`, `Swipe left from Hold to talk: slide to cancel`,
+    `Arrow to Hold to talk: drop here to lock`, `Circled Total`. A place that is a
+    part's id reads as that part's words; a bare x,y names no part."""
+    names = {}
+    for line in lines:
+        head, preset, words = _split(line)[1:4]
+        if preset == "part" and "@" in head:
+            names[head.split("@", 1)[1]] = " ".join(words[1:]).strip() or (words[0] if words else "")
+    out = []
+    for line in lines:
+        _, _, preset, words, props, _ = _split(line)
+        if preset != "shape" or not words:
+            continue
+        kind = words[0].lower()
+        label = " ".join(words[1:]).strip() or _unquote(props.get("label", ""))
+        place = lambda k: names.get(_unquote(props.get(k, "")), "")
+        on = place("at") or place("from")
+        if kind == "tap":
+            text = "Tap" + (f" {on}" if on else "")
+        elif kind == "swipe":
+            way = _unquote(props.get("dir", ""))
+            text = "Swipe" + (f" {way}" if way else "") + (f" from {on}" if on else "") + (f" to {place('to')}" if place("to") else "")
+        elif kind in ("arrow", "line"):
+            text = "Arrow" + (f" to {place('to')}" if place("to") else "") + (f" from {place('from')}" if place("from") and not place("to") else "")
+        elif kind == "doodle":
+            text = "Circled" + (f" {on}" if on else "")
+        else:
+            text = ""
+        line_ = text + (f": {label}" if text and label else label)
+        if line_ and line_ not in ("Arrow", "Circled"):
+            out.append(line_)
+    return out
+
+
 def _mock_page(lines: List[str]) -> str:
     """A mock inside a deck or plan, as a page with its parts as points."""
     _, _, preset, words, _, _ = _split(lines[0])
     title = " ".join(words).strip() if preset == "mock" else ""
-    return _words_page(title, "", _mock_parts(lines[1:] if preset == "mock" else lines), "The screen")
+    body = lines[1:] if preset == "mock" else lines
+    return _words_page(title, "", _mock_parts(body) + _mark_lines(body), "The screen")
 
 
 def _group_page(lines: List[str]) -> str:
@@ -689,6 +733,21 @@ def _fence(block: str, gated: set, marks: bool = False) -> List[tuple]:
     while i < len(lines):
         line = lines[i]
         _, head, preset, _, _, _ = _split(line)
+        if marks and preset == "mock" and "mock" not in gated and not head.startswith("~"):
+            j = i + 1
+            while j < len(lines) and _split(lines[j])[2] in GROUPS["mock"] and not _split(lines[j])[1].startswith("~"):
+                j += 1
+            group = lines[i:j]
+            shapes_ = [l for l in group[1:] if _split(l)[2] == "shape"]
+            if shapes_:
+                cur.extend(l for l in group if _split(l)[2] != "shape")
+                words_ = _mark_lines(group)
+                i = j
+                if words_:
+                    parts.append(("yui", cur))
+                    cur = []
+                    parts.append(("text", "\n".join(f"- {w}" for w in words_)))
+                continue
         if marks and preset in ("shapes", "shape") and not head.startswith("~"):
             j = i + 1
             if preset == "shapes":
