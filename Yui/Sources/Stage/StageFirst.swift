@@ -679,13 +679,15 @@ struct StageFirstView: View {
         return VStack(alignment: .leading, spacing: theme.spacing.s) {
             if pages > 1 { segments(pages, at: at, c) }
             if let ask = t.ask {
-                Text("\(Text("You: ").bold())\(ask.text)")
-                    .font(theme.font(theme.type.caption))
-                    .foregroundStyle(c.inkSoft)
-                    // Chris, TestFlight AKh8806F: one line cut his question too soon. Six, then the ellipsis.
-                    .lineLimit(6)
-                    .multilineTextAlignment(pages > 1 ? .leading : .trailing)
-                    .frame(maxWidth: .infinity, alignment: pages > 1 ? .leading : .trailing)
+                // Chris, TestFlight ADv4muh06N4PD2IA1sV2Fhc: not his exact words, a haiku of them (5 to 12).
+                // VoiceOver and the record keep the whole ask.
+                Text(WorkingWords.gist(ask.text))
+                    .font(theme.font(theme.type.caption, .medium).italic())
+                    .foregroundStyle(c.inkSoft.opacity(0.85))
+                    .lineLimit(2)
+                    .multilineTextAlignment(pages > 1 ? .leading : .center)
+                    .frame(maxWidth: .infinity, alignment: pages > 1 ? .leading : .center)
+                    .accessibilityLabel("You: \(ask.text)")
                     .accessibilityIdentifier("stage-you")
             }
             Group {
@@ -856,10 +858,93 @@ struct StageFirstView: View {
     private func working(_ c: Swatch) -> some View {
         VStack(spacing: theme.spacing.xl) {
             Color.clear.frame(width: 170, height: Self.blobRoom)
-            workingLine(c, big: true)
+                .overlay { if layout == .shader { shaderLabel(c) } }
+            if layout == .glass { glassCard(c) }
+            if layout == .shader { Color.clear.frame(height: 44) }
         }
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier("stage-working")
+    }
+
+    /// Which working screen: A, the words inside the blob's light and the seconds floating in a glass
+    /// bubble; B, one glass card under it. Chris picks (kanban t_01e1c6d4); -yuiWorkingLayout B shows the other.
+    private var layout: WorkingLayout {
+        let a = ProcessInfo.processInfo.arguments
+        if let i = a.firstIndex(of: "-yuiWorkingLayout"), i + 1 < a.count, a[i + 1] == "B" { return .glass }
+        return .shader
+    }
+
+    private enum WorkingLayout { case shader, glass }
+
+    /// What it is doing, the seconds and the step, as the working line reads them.
+    private func workingParts(_ now: Date) -> (word: String, took: String?) {
+        let word = WorkingNote.shown(store.doing.map { YLDoing(text: $0.text) }, pickedUp: store.pickedUpAt, now: now)
+        let start = store.pickedUpAt ?? store.waitingSince
+        return (word, start.map { WorkingNote.elapsed(now.timeIntervalSince($0)) })
+    }
+
+    /// A: the words sit in the blob, light, tinted by the shader's own colors. Each new word fades in
+    /// and out of that light. The seconds float below it in glass.
+    private func shaderLabel(_ c: Swatch) -> some View {
+        TimelineView(.periodic(from: .now, by: 1)) { ctx in
+            let p = workingParts(ctx.date)
+            VStack(spacing: theme.spacing.m) {
+                Text(p.word)
+                    .font(theme.font(theme.type.body, .semibold))
+                    .foregroundStyle(LinearGradient(colors: [.white.opacity(0.95), c.accent.opacity(0.9), .white.opacity(0.8)],
+                                                    startPoint: .topLeading, endPoint: .bottomTrailing))
+                    .blendMode(.plusLighter)
+                    .shadow(color: c.accent.opacity(0.6), radius: 10)
+                    .multilineTextAlignment(.center)
+                    .lineLimit(2)
+                    .frame(width: 230)
+                    .id(p.word)
+                    .transition(look.reduced ? .identity : .opacity.combined(with: .scale(scale: 0.92)).combined(with: .opacity))
+                    .animation(look.reduced ? nil : .easeInOut(duration: 0.7), value: p.word)
+                if let took = p.took { GlassSeconds(text: took, still: look.reduced) }
+            }
+            .offset(y: Self.blobRoom / 2 + 36)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(WorkingNote.label(since: store.waitingSince, pickedUp: store.pickedUpAt, now: ctx.date,
+                                                  doing: store.doing.map { YLDoing(text: $0.text) }))
+            .accessibilityIdentifier("stage-working-line")
+        }
+        .allowsHitTesting(false)
+    }
+
+    /// B: one glass card under the blob: the words light, the seconds a small chip inside it.
+    private func glassCard(_ c: Swatch) -> some View {
+        TimelineView(.periodic(from: .now, by: 1)) { ctx in
+            let p = workingParts(ctx.date)
+            HStack(spacing: theme.spacing.m) {
+                Text(p.word)
+                    .font(theme.font(theme.type.caption, .semibold))
+                    .foregroundStyle(c.ink.opacity(0.9))
+                    .lineLimit(1)
+                    .id(p.word)
+                    .transition(look.reduced ? .identity : .opacity)
+                    .animation(look.reduced ? nil : .easeInOut(duration: 0.5), value: p.word)
+                if let took = p.took {
+                    Text(took)
+                        .font(theme.font(theme.type.caption, .bold).monospacedDigit())
+                        .foregroundStyle(c.onAccent)
+                        .padding(.horizontal, theme.spacing.s + 2)
+                        .padding(.vertical, 3)
+                        .background(c.accent.opacity(0.85), in: Capsule())
+                        .contentTransition(look.reduced ? .identity : .numericText())
+                }
+            }
+            .padding(.horizontal, theme.spacing.l)
+            .padding(.vertical, theme.spacing.m)
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 26, style: .continuous)
+                .stroke(LinearGradient(colors: [.white.opacity(0.45), .white.opacity(0.05)], startPoint: .top, endPoint: .bottom), lineWidth: 1))
+            .shadow(color: c.accent.opacity(0.25), radius: 20, y: 8)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(WorkingNote.label(since: store.waitingSince, pickedUp: store.pickedUpAt, now: ctx.date,
+                                                  doing: store.doing.map { YLDoing(text: $0.text) }))
+            .accessibilityIdentifier("stage-working-line")
+        }
     }
 
     /// error: a small shake, grey, and Try again. The words still say what happened.
@@ -1274,4 +1359,29 @@ private struct PullHome: ViewModifier {
     }
 
     private func rubber(_ d: CGFloat) -> CGFloat { 220 * (1 - 1 / (d / 220 + 1)) * 1.4 }
+}
+
+
+/// The seconds, in a small piece of glass that drifts a little, never still (A layout).
+private struct GlassSeconds: View {
+    let text: String
+    let still: Bool
+    @State private var drift = false
+    @Environment(\.yuiTheme) private var theme
+
+    var body: some View {
+        Text(text)
+            .font(theme.font(theme.type.caption, .semibold).monospacedDigit())
+            .foregroundStyle(.white.opacity(0.9))
+            .padding(.horizontal, 12)
+            .padding(.vertical, 5)
+            .background(.ultraThinMaterial, in: Capsule())
+            .overlay(Capsule().stroke(.white.opacity(0.3), lineWidth: 0.8))
+            .contentTransition(still ? .identity : .numericText())
+            .offset(x: drift ? 22 : -22, y: drift ? -3 : 3)
+            .onAppear {
+                guard !still else { return }
+                withAnimation(.easeInOut(duration: 3.2).repeatForever(autoreverses: true)) { drift = true }
+            }
+    }
 }

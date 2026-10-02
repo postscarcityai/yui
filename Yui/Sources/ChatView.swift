@@ -3052,7 +3052,7 @@ struct WorkingNote: View {
 
     /// The agent's own words when it said what it is doing, else the working word.
     static func shown(_ doing: YLDoing?, pickedUp: Date?, now: Date) -> String {
-        doing?.text ?? word(pickedUp: pickedUp, now: now)
+        doing?.text.map(WorkingWords.friendly) ?? word(pickedUp: pickedUp, now: now)
     }
 
     /// 12s, 1m 24s, 1h 3m.
