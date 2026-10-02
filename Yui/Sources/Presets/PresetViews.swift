@@ -383,16 +383,20 @@ struct ChoosePreset: View {
                 .background(s.background, in: RoundedRectangle(cornerRadius: theme.radius.card))
                 .overlay(RoundedRectangle(cornerRadius: theme.radius.card).stroke(s.outline, lineWidth: 1.5))
                 .accessibilityIdentifier("other-field")
-            Button(action: addOther) {
-                Label("Add", systemImage: "arrow.up")
-                    .font(theme.font(theme.type.body, .bold))
-                    .foregroundStyle(s.userInk)
-                    .padding(.horizontal, theme.spacing.l)
-                    .frame(height: 44)
-                    .background(s.accent, in: Capsule())
+            HStack(spacing: theme.spacing.s) {
+                // Voice first (feedback NOTE-48549): say your own answer instead of typing it.
+                FieldMic(text: $other, label: "your answer", id: "other-mic")
+                Button(action: addOther) {
+                    Label("Add", systemImage: "arrow.up")
+                        .font(theme.font(theme.type.body, .bold))
+                        .foregroundStyle(s.userInk)
+                        .padding(.horizontal, theme.spacing.l)
+                        .frame(height: 44)
+                        .background(s.accent, in: Capsule())
+                }
+                .buttonStyle(BounceButtonStyle())
+                .accessibilityIdentifier("other-add")
             }
-            .buttonStyle(BounceButtonStyle())
-            .accessibilityIdentifier("other-add")
         }
         .transition(.opacity)
     }
