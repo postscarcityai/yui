@@ -132,6 +132,8 @@ struct ChatView: View {
     /// and the bottom anchor keeps what you are reading where it is.
     @State private var window = Self.windowStep
     @State private var nearTop = false
+    /// One older batch per arrival at the top; the next drag or a trip away re-arms it (YUI-260).
+    @State private var topGrown = false
     static let windowStep = 60
     /// The page on show (YUI-31): 1 the chat, 2 to 12 the agent's screens. Follows `store.page`.
     @State private var page: Int? = 1
@@ -976,18 +978,24 @@ struct ChatView: View {
                 geo.contentOffset.y + geo.contentInsets.top < geo.containerSize.height
             } action: { _, near in
                 nearTop = near
-                if near, store.shown.count > window { window += Self.windowStep }
+                if !near { topGrown = false }
+                if near, !topGrown, store.shown.count > window { window += Self.windowStep; topGrown = true }
             }
             // Everything held is drawn and the top is near: the next older batch comes from the server (YUI-254).
             .task(id: "\(nearTop)-\(window)-\(store.shown.count)-\(store.hasOlder)-\(store.chatID ?? "")") {
                 // Rows came in while the top stayed near: the flag never flipped, so draw them here.
-                if nearTop, store.shown.count > window { window += Self.windowStep; return }
                 guard nearTop else { return }
-                if store.shown.count > window { window += Self.windowStep; return }
+                if store.shown.count > window {
+                    if !topGrown { window += Self.windowStep; topGrown = true }
+                    return
+                }
                 guard store.hasOlder else { return }
                 await store.loadOlder()
             }
-            .onScrollPhaseChange { _, phase in settleScroll(phase) }
+            .onScrollPhaseChange { _, phase in
+                if phase == .interacting { topGrown = false }
+                settleScroll(phase)
+            }
             .onReceive(NotificationCenter.default.publisher(for: UIApplication.didReceiveMemoryWarningNotification)) { _ in
                 if atBottom { window = Self.windowStep }
             }
