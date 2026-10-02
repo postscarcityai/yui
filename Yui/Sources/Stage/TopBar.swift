@@ -55,6 +55,62 @@ struct AgentTitle: View {
     }
 }
 
+/// Hugs its content up to `cap` points wide. (`.frame(maxWidth:)` stretches a short name out to the cap.)
+private struct CappedWidth: ViewModifier {
+    let cap: CGFloat
+    private struct Cap: Layout {
+        let cap: CGFloat
+        func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+            subviews[0].sizeThatFits(ProposedViewSize(width: min(proposal.width ?? cap, cap), height: proposal.height))
+        }
+        func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+            subviews[0].place(at: bounds.origin, proposal: ProposedViewSize(width: bounds.width, height: bounds.height))
+        }
+    }
+    func body(content: Content) -> some View { Cap(cap: cap) { content } }
+}
+
+/// The menu as one pill (feedback ANG8AA-7k6WmMJEx633zmMg, Chris: "I don't actually know where I am ... the hamburger on
+/// the left, the name of the agent on the right ... the whole button just opens the drawer"): the menu icon, the
+/// agent's chip and its name. A long name truncates; `compact` (screen pills share the bar) drops the chip.
+struct MenuPill: View {
+    let agent: YuiAgent?
+    var compact = false
+    let id: String
+    var label = "Menu"
+    let action: () -> Void
+    @Environment(\.yuiTheme) private var theme
+    @Environment(\.colorScheme) private var scheme
+
+    var body: some View {
+        let c = theme.swatch(scheme)
+        let name = agent?.name ?? "Yui"
+        Button(action: action) {
+            HStack(spacing: theme.spacing.s) {
+                Image(systemName: "line.3.horizontal")
+                    .font(.system(size: 17, weight: .bold))
+                if !compact {
+                    if let agent { AgentBadge(agent: agent, size: 24) } else { YuiAvatar(size: 24) }
+                }
+                Text(name)
+                    .font(theme.font(theme.type.caption, .bold))
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .modifier(CappedWidth(cap: compact ? 72 : 132))
+            }
+            .foregroundStyle(c.ink)
+            .padding(.horizontal, 14)
+            .frame(height: 44)
+            .background(c.surface, in: Capsule())
+            .overlay(Capsule().stroke(c.outline, lineWidth: 1.5))
+            .contentShape(Capsule())
+        }
+        .buttonStyle(BounceButtonStyle())
+        .accessibilityLabel("\(label), \(name)")
+        .accessibilityIdentifier(id)
+    }
+}
+
 /// Something waiting on you puts a small dot on the menu button, no number
 /// (feedback AI3Pbaid); it goes the moment the last one is answered.
 struct WaitingDot: ViewModifier {

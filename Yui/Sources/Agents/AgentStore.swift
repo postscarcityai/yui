@@ -235,6 +235,10 @@ final class AgentStore {
             let args = ProcessInfo.processInfo.arguments
             agents = args.contains("-yuiNoAgents") ? [] : args.contains("-yuiDemoAgents") ? Self.demoCrew
                 : args.contains("-yuiDemoShared") ? Self.demoShared : Self.demo
+            // -yuiDemoLongName: the Coach has a very long name (the top bar's menu pill truncates it).
+            if args.contains("-yuiDemoLongName"), let i = agents.firstIndex(where: { $0.handle == "coach" }) {
+                agents[i].name = "Coach of the Quarterly Planning Council"
+            }
             // -yuiDemoFirstLaunch: a new person's first list, as yui-agents provisions it (YUI-145):
             // Yui and the starter crew, native, above any paired agents (-yuiDemoAgents adds some).
             // -yuiDemoWithout <handle>: that one was removed, so Add agent offers it again ("all": every one).

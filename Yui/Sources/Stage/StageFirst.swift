@@ -578,7 +578,7 @@ struct StageFirstView: View {
     private func topBar(_ c: Swatch) -> some View {
         HStack(spacing: theme.spacing.s) {
             // The drawer: the war room, the agent's controls and Settings.
-            circle("line.3.horizontal", c, label: "Menu", id: "stage-menu", action: actions.menu)
+            MenuPill(agent: agent, compact: screens.count > 1, id: "stage-menu", action: actions.menu)
                 .modifier(WaitingDot(waiting: waiting > 0, reduceMotion: reduceMotion, x: 1, y: 1))
                 .accessibilityValue(waiting > 0 ? "\(waiting) waiting on you" : "")
             // The screens as pills (YUI-193, Chris Sep 28: "some pills for the screens ... kind of

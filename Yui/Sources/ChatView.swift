@@ -280,7 +280,10 @@ struct ChatView: View {
             .toolbar {
                 menuItem(c)
                 ToolbarItem(placement: .topBarLeading) {
+                    // The name opens the drawer too: the menu and who you talk to read as one button.
                     AgentTitle(agent: store.agent, title: store.chatTitle)
+                        .contentShape(Rectangle())
+                        .onTapGesture { settleDrawer(open: true) }
                 }
                 if stageFirstOn {
                     // The record's way back to the full screen (YUI-119).
@@ -788,7 +791,7 @@ struct ChatView: View {
             .accessibilityIdentifier(id)
         }
         return HStack {
-            circle("line.3.horizontal", "Screen menu", "screen-menu") { settleDrawer(open: true) }
+            MenuPill(agent: store.agent, compact: false, id: "screen-menu", label: "Screen menu") { settleDrawer(open: true) }
                 .modifier(WaitingDot(waiting: store.waitingCount > 0, reduceMotion: reduceMotion))
             Spacer()
             circle("bubble.left", "Back to chat", "screen-back-to-chat") { store.goToPage(1) }

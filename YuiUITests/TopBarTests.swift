@@ -19,7 +19,7 @@ final class TopBarTests: XCTestCase {
         XCTAssertTrue(menu.exists && record.exists, "the stage's top bar is missing a button")
         XCTAssertFalse(app.buttons["stage-agents"].exists, "the agent pill is still in the top bar")
         XCTAssertFalse(app.descendants(matching: .any)["screen-pills"].exists, "screen pills with no screens")
-        XCTAssertLessThan(menu.frame.maxX, app.frame.width / 3, "the menu is not top left")
+        XCTAssertLessThan(menu.frame.maxX, app.frame.width / 2, "the menu is not top left")
         XCTAssertGreaterThan(record.frame.maxX, app.frame.width - 110, "the record is not top right")
         for e in [menu, record] { XCTAssertLessThan(e.frame.minY, 120, "\(e.identifier) is not at the top") }
         sleep(1)
