@@ -21,3 +21,8 @@ list@aisle-dairy-and-eggs title="Dairy and eggs" "Greek yogurt"|"Eggs" +check
 list@aisle-pantry title="Pantry" "Rice" +check
 card@groc-add "Need something else?" "Say it or type it, like: add oat milk to my groceries." cta="Add to the list"
 save groceries
+>5
+stat@trend-avg 0kcal "Daily average" sub="Log a meal and your days add up here."
+chart@trend-week bar "Calories, last 7 days" x=Mon|Tue|Wed|Thu|Fri|Sat|Sun y=0|0|0|0|0|0|0 y2=2100|2100|2100|2100|2100|2100|2100 names=Eaten|Goal unit=kcal
+chart@trend-month area "Calories, last 30 days" x=1|2 y=0|0 unit=kcal
+save calories over time

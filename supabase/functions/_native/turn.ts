@@ -32,7 +32,7 @@ import { PLAN_TABLE, applyDay, applyFirst, applyLogged, applyRunner, editDayBody
          trains, workoutAsks, type Session, type WorkoutAsk } from "./workouts.ts";
 import { ACK, type MealFix, applyFix, fixTaps, logsMeals, mealTurn, runMealJob, spoken } from "./meals.ts";
 import { ADD_BODY, GOAL, GROCERIES, LOG_BODY, MEALS as MEAL_LOG, PLAN as MEAL_PLAN, addGroceries, applyMealFix, applyPlan, applySwap, ensureTools,
-         drawnShape, fixBody, groceryText, lastPrefs, logPlanned, mealAsks, nextPlanned, planBody, plansMeals, readItems, screenLines as mealScreenLines, tickGrocery,
+         drawnShape, readShape, NEW_DAY, NEW_DAY_RULE, fixBody, groceryText, lastPrefs, logPlanned, mealAsks, nextPlanned, planBody, plansMeals, readItems, screenLines as mealScreenLines, tickGrocery,
          weekDeck, applyMealFirst, firstLine as mealFirstLine, type MealAsk } from "./mealplan.ts";
 import { applyBar, applyLearn, applyOpen, applyPracticed, applySave, applyScale, applySpeed, drawnShape as musicShape, ensureTools as ensureMusic,
          keepDraft, learnBody, logPractice, applyPracticeFirst, firstLine as musicFirstLine, practiceRedraw, musicAsks, musicPages, pasteBody, playBpm, lesson, playsMusic, practiceBody, readTake, saveBody,
@@ -231,6 +231,8 @@ async function oneTurn(store: Store, agent: NativeAgent, rows: Row[], opts: Turn
     return id;
   };
   if (real.length) await store.markDelivered(real);
+  // Basil's midnight refresh is set the first time the person is heard, on any path (a tool, a photo, a model turn).
+  if (real.length && plansMeals(agent)) await ensureNewDay(store, agent, await store.schedules(agent.id), await store.timezone(agent.userId), now, log);
 
   // Meals (YUI-103): a tap on a meal's one question is applied here, with no model turn.
   if (logsMeals(agent)) {
@@ -528,7 +530,10 @@ async function oneTurn(store: Store, agent: NativeAgent, rows: Row[], opts: Turn
   const cards = [...sourceCards(body, looked.sources), ...(looked.onYui && own ? [searchOnYui(providerLabel(own.provider))] : []), ...(looked.capped ? [searchInvite(looked.capped.why, looked.capped.limit)] : [])];
   if (cards.length && body.trim()) body = `${body.trim()}\n\`\`\`yui\n${cards.join("\n")}\n\`\`\``;
   // Basil's pages follow what the answer wrote to his log, plan, goal or grocery list (YUI-183): patches under it.
-  const pages = plansMeals(agent) ? mealPages(tchange) : [];
+  let pages = plansMeals(agent) ? mealPages(tchange) : [];
+  // Today follows the date (t_7af94763): a turn on a new day draws it again whatever it was about.
+  const drawnOn = plansMeals(agent) ? readShape(drawnShape(agent.profile))?.day : undefined;
+  if (drawnOn && drawnOn !== clk.today && !pages.includes("today")) pages = [...pages, "today"];
   if (pages.length && body.trim()) body = await withMealScreens(store, agent, body, t.store, clk, pages);
   // Gouda's pages follow what the answer wrote to his songs, practice, sessions or studio (YUI-184).
   const mpages = playsMusic(agent) ? musicPages(tchange) : [];
@@ -682,6 +687,17 @@ async function ensureMealTools(store: Store, agent: NativeAgent, tables: TableSt
   return out;
 }
 
+/** Basil's midnight check-in, set once (a person's zone known): it redraws Today for the new date with no model turn. */
+async function ensureNewDay(store: Store, agent: NativeAgent, schedules: ScheduleItem[], tzRaw: string | null | undefined, now: number,
+                            log: (m: string) => void): Promise<void> {
+  if (!tzRaw || schedules.some((s) => s.note === NEW_DAY)) return;
+  const tz = validZone(tzRaw);
+  const at = next(NEW_DAY_RULE, tz, now);
+  if (!at) return;
+  const id = await store.addSchedule({ userId: agent.userId, agentId: agent.id, note: NEW_DAY, rule: NEW_DAY_RULE, tz, nextAt: new Date(at).toISOString() });
+  if (id) log(`${agent.profile.name}: new-day refresh set for ${new Date(at).toISOString()}`);
+}
+
 /** Which of Basil's pages a table change touches. */
 function mealPages(ch: { rows: { table: string }[]; dropRows: { table: string }[]; tables: { name: string }[] }): ("today" | "week" | "groceries")[] {
   const names = new Set([...ch.rows.map((r) => r.table), ...ch.dropRows.map((r) => r.table), ...ch.tables.map((t) => t.name)]);
@@ -775,6 +791,14 @@ async function mealTools(store: Store, agent: NativeAgent, asks: MealAsk[], now:
       tables = r.store;
       text = "name" in r && r.name ? `Logged ${String(r.slot).toLowerCase()}: ${r.name}, ${(r.cal ?? 0).toLocaleString("en-US")} kcal.` : "Nothing planned is left today. Snap or say anything else you eat.";
       only = ["today"];
+    } else if (a.kind === "newday") {
+      // A refresh says nothing: the pages are patched for the date, the phone is not moved, and no push goes (not `say`).
+      const sl = mealScreenLines(tables, clk, drawnShape(agent.profile), ["today"]);
+      if (sl.lines.length) await store.reply(agent, `\`\`\`yui\n${sl.lines.join("\n")}\n\`\`\``, { native: { mealtool: a.kind } });
+      agent.profile = { ...agent.profile, mealScreens: sl.shape };
+      await store.updateAgent(agent.id, agent.profile);
+      log(`${p.name}: new day, pages drawn for ${clk.today}`);
+      continue;
     } else if (a.kind === "fixed") {
       const r = applyMealFix(tables, a.day, a.meal, a.answers, clk);
       tables = r.store;

@@ -3,13 +3,13 @@
 // store a person's rows go through (not a demo memory), and every reply is read by the real Yui Lines parser.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { runAgent, runJob } from "../src/turn.ts";
+import { runAgent, runJob, runScheduled } from "../src/turn.ts";
 import { LocalStore } from "../src/store.ts";
 import { clock, fromSeeds } from "../src/tables.ts";
 import { homeLines } from "../src/home.ts";
 import { crew } from "../src/profiles.ts";
-import { AVOID_OPTS, BUDGET_OPTS, COOK_OPTS, MEALS_OPTS, readFirstPrefs, addQty, aisleOf, allowed, itemKey, groceryScreen, mealAsks, planWeek, readItems, readPrefs,
-         recipes, screenLines, todayScreen, weekScreen } from "../src/mealplan.ts";
+import { AVOID_OPTS, BUDGET_OPTS, COOK_OPTS, MEALS_OPTS, readFirstPrefs, addQty, aisleOf, allowed, itemKey, groceryScreen, calorieDays, mealAsks, planWeek, readItems, readPrefs,
+         recipes, screenLines, todayScreen, trendScreen, weekScreen } from "../src/mealplan.ts";
 import { fakeModel, freshYui, provider } from "./helpers.ts";
 // @ts-ignore: the parser the app and the site share, as the MCP server ships it
 import { parse } from "../../supabase/functions/yui-mcp/yl.mjs";
@@ -67,8 +67,11 @@ test("Basil's home draws exactly what his tools draw from his starter tables: To
   const s = fromSeeds(crew().basil.tables);
   const clk = clock(MON, "UTC");
   const pages = home.slice(home.indexOf(">2"));
-  assert.deepEqual(pages, [">2", ...todayScreen(s, clk), "save today", ">3", ...weekScreen(s, clk), "save this week",
+  assert.deepEqual(pages.slice(0, pages.indexOf(">5")), [">2", ...todayScreen(s, clk), "save today", ">3", ...weekScreen(s, clk), "save this week",
                            ">4", ...groceryScreen(s), "save groceries"]);
+  // The trend page ships empty: the same ids as the runtime draws, its day labels filled on the first log.
+  const trend = pages.slice(pages.indexOf(">5"));
+  assert.deepEqual(trend.map((l) => l.split(" ")[0]), [">5", ...trendScreen(s, clk).map((l) => l.split(" ")[0]), "save"]);
   assert.deepEqual(home.filter((l) => l.startsWith("menu")).map((l) => l.match(/"([^"]+)"/)![1]), ["Grocery list", "This week", "Log a meal", "Plan my meals"]);
   const ops = parse(home.join("\n"), {});
   assert.deepEqual(ops.filter((o: any) => o.op === "error"), []);
@@ -365,8 +368,8 @@ test("a meal log on a stale shape ends on Today, a grocery add on Groceries, a p
   const clk = clock(MON, "America/New_York");
   const lastPage = (l: string[]) => l.filter((x) => /^>\d$/.test(x)).at(-1);
   assert.equal(lastPage(screenLines(store, clk, undefined, ["today"]).lines), ">2", "meal log, first redraw");
-  assert.equal(lastPage(screenLines(store, clk, "v1;stale;stale", ["today"]).lines), undefined, "meal log on a known shape moves nobody");
-  assert.equal(lastPage(screenLines(store, clk, "v1;stale;stale", ["today", "week", "groceries"]).lines), ">3", "plan on a changed shape");
+  assert.equal(lastPage(screenLines(store, clk, "v1;stale;stale;2026-09-28;t", ["today"]).lines), undefined, "meal log on a known shape moves nobody");
+  assert.equal(lastPage(screenLines(store, clk, "v1;stale;stale;2026-09-28;t", ["today", "week", "groceries"]).lines), ">3", "plan on a changed shape");
   assert.equal(lastPage(screenLines(store, clk, undefined, ["groceries"]).lines), ">4");
   assert.equal(lastPage(screenLines(store, clk, undefined, ["today", "week", "groceries"]).lines), ">3");
 });
@@ -479,4 +482,63 @@ test("a swap after the first plan keeps to the no-gos and the cook time", async 
   const rec = recipes(after).find((r) => r.key === now2.Recipe)!;
   assert.ok(!rec.tags.includes("dairy") && !rec.tags.includes("nuts"));
   assert.ok(rec.minutes <= 30, "dinner has nothing at 15: the next step up");
+});
+
+// ---------- t_7af94763: calories are by date ----------
+
+const TUE = MON + 24 * 3600_000;
+
+test("Today follows the date: a new day patches 0 kcal whatever the ask was about, and the day is kept in the shape", () => {
+  const store = fromSeeds(crew().basil.tables!);
+  const mon = clock(MON, "America/New_York");
+  const tue = clock(TUE, "America/New_York");
+  const logged = { ...store, tables: { ...store.tables, meals: { ...store.tables.meals, order: ["m1"], rows: { m1: { Day: mon.today, Meal: "Lunch", Food: "Bowl", Portion: "1", Cal: 390, Protein: 25, Carbs: 32, Fat: 18 } } } } };
+  const a = screenLines(logged, mon, undefined, ["today"]);
+  assert.match(a.lines.join("\n"), /stat@kcal 390kcal/);
+  assert.match(a.shape, /;2026-09-28;t$/);
+  const b = screenLines(logged, tue, a.shape, ["groceries"]);
+  assert.match(b.lines.join("\n"), /~kcal 0kcal "Calories today" sub="of 2,100\. Log a meal to start\."/, "yesterday's 390 does not carry over");
+  assert.match(b.lines.join("\n"), /~macros bar "Macros vs goal" x=Protein\|Carbs\|Fat y=0\|0\|0 /);
+  assert.match(b.shape, /;2026-09-29;t$/);
+  assert.equal(screenLines(logged, mon, a.shape, ["groceries"]).lines.some((l) => l.startsWith("~kcal")), false, "the same day patches nothing");
+});
+
+test("calories over time: the last 7 and 30 days by date, today last, the average of the days logged", () => {
+  const store = fromSeeds(crew().basil.tables!);
+  const tue = clock(TUE, "America/New_York");
+  const rows: Record<string, any> = {};
+  for (const [i, [day, cal]] of ([["2026-09-27", 1800], ["2026-09-28", 390], ["2026-08-31", 2000]] as [string, number][]).entries())
+    rows[`m${i}`] = { Day: day, Meal: "Lunch", Food: "x", Portion: "1", Cal: cal, Protein: 0, Carbs: 0, Fat: 0 };
+  const t = { ...store, tables: { ...store.tables, meals: { ...store.tables.meals, order: Object.keys(rows), rows } } };
+  assert.deepEqual(calorieDays(t, tue, 7).map((d) => d.cal), [0, 0, 0, 0, 1800, 390, 0]);
+  assert.equal(calorieDays(t, tue, 30)[0].day, "2026-08-31");
+  assert.equal(calorieDays(t, tue, 30)[0].cal, 2000);
+  const lines = trendScreen(t, tue);
+  assert.match(lines[0], /^stat@trend-avg 1\,?397kcal "Daily average" sub="Over 3 logged days of the last 30\. Goal 2,100\."/);
+  assert.match(lines[1], /^chart@trend-week bar .* x=Thu\|Fri\|Sat\|Sun\|Mon\|Tue\|Wed|x=/);
+  assert.deepEqual(parse(lines.join("\n"), {}).filter((o: any) => o.op === "error"), []);
+});
+
+test("midnight: Basil's own check-in redraws Today for the new date with no model call and no push", async () => {
+  const { store, basil } = await planned();
+  const m = noModel();
+  const est = { food: true, title: "Bowl", sure: "ok", question: null, items: [{ food: "Salmon", portion: "1", cal: 390, protein: 25, carbs: 32, fat: 18 }] };
+  const vm = fakeModel(() => JSON.stringify(est));
+  store.say(basil.id, "[yui] c1 camera photo=https://img.test/bowl.jpg", "event");
+  const r = await runAgent(store, basil.id, { provider, fetch: vm.fetch, now });
+  await runJob(store, r.jobs[0], { provider, fetch: vm.fetch, now });
+  assert.match(fence(lastReply(store, basil.id).body), /~kcal 390kcal/);
+  const sch = (await store.schedules(basil.id)).find((x: any) => x.note === "yui:new-day");
+  assert.ok(sch, "the midnight check-in is set once");
+  assert.deepEqual(sch.rule, { every: "day", at: "00:05" });
+  assert.equal(sch.nextAt, "2026-09-29T04:05:00.000Z", "00:05 in New York");
+
+  const out = await runScheduled(store, sch.id, { provider, fetch: m.fetch, now: () => TUE });
+  assert.equal(m.calls.length, 0, "no model call");
+  assert.deepEqual(out.replies, [], "no reply id handed to the push");
+  const f = fence(lastReply(store, basil.id).body);
+  assert.match(f, /\n?~kcal 0kcal "Calories today" sub="of 2,100\. Log a meal to start\."/);
+  assert.match(f, /~eaten "Tap a meal to fix it" "Log a meal" body="Nothing logged yet today\."/);
+  assert.match(f, /~trend-week bar/);
+  assert.equal((await store.schedules(basil.id)).filter((x: any) => x.note === "yui:new-day").length, 1);
 });
