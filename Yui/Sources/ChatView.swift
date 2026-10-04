@@ -829,7 +829,7 @@ struct ChatView: View {
                     manage: { settleDrawer(open: false); showAgents = true },
                     edit: { editingAgent = $0 },
                     settings: { settleDrawer(open: false); showSettings = true },
-                    newChat: startNewChat, openChat: pickChat,
+                    openChat: pickChat,
                     reduceMotion: reduceMotion, isOpen: drawerOpen)
     }
 

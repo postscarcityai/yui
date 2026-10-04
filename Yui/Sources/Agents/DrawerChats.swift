@@ -1,14 +1,13 @@
 import SwiftUI
 
 // The drawer's chats (YUI-169, spec yuigui/spec/CHATS.md sections 2 to 4, the approved mock):
-// New chat, then the list, newest activity first. A row says its title, then the last line
+// the list, newest activity first. New chat is not here: it is the button on the main screen
+// (feedback ACcggtlOlLAYOyn5wCPqjNw). A row says its title, then the last line
 // said and when; a coral dot when the agent said something you have not read; a soft coral
 // fill on the open one. Hold a row, or swipe it left, for Rename and Delete. Delete asks first.
 
 struct DrawerChats: View {
     let store: ChatStore
-    /// Starts a new chat and takes the person to it: the drawer closes.
-    let newChat: () -> Void
     /// A chat from the list: the drawer closes and it is up.
     let openChat: (String) -> Void
     @State private var renaming: String?
@@ -26,18 +25,6 @@ struct DrawerChats: View {
         let chats = store.chats
         let rows = Chats.filter(chats.items, agent: name, query: query)
         VStack(alignment: .leading, spacing: 0) {
-            Button(action: newChat) {
-                Label("New chat", systemImage: "plus")
-                    .font(theme.font(theme.type.body, .heavy))
-                    .foregroundStyle(c.onAccent)
-                    .frame(maxWidth: .infinity, minHeight: 50)
-                    .background(c.accent, in: .rect(cornerRadius: 16))
-                    .contentShape(.rect(cornerRadius: 16))
-            }
-            .buttonStyle(BounceButtonStyle())
-            .accessibilityIdentifier("drawer-new-chat")
-            .padding(.top, theme.spacing.xs)
-
             if !chats.items.isEmpty {
                 DrawerHeading(text: "Chats")
                 if chats.items.count > Chats.searchAfter { search(c) }

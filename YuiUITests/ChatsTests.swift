@@ -71,13 +71,13 @@ final class ChatsTests: XCTestCase {
         XCTAssertTrue(menu.exists && menu.isHittable, "did not page back to the chat")
         sleep(1)
 
-        // 1. The drawer: New chat, three chats, Next up, pinned screens.
+        // 1. The drawer: three chats, Next up, pinned screens. New chat is the main screen's button, not here.
         menu.tap()
-        let newChat = app.buttons["drawer-new-chat"]
-        XCTAssertTrue(newChat.waitForExistence(timeout: 5), "the drawer has no New chat")
+        let bar = app.buttons["drawer-agent-bar"]
+        XCTAssertTrue(bar.waitForExistence(timeout: 5), "no drawer")
+        XCTAssertFalse(app.buttons["drawer-new-chat"].exists, "the drawer still has a New chat button")
         let rows = ["c3", "c2", "c1"].map { app.buttons["drawer-chat-open-\($0)"] }
         for (i, r) in rows.enumerated() { XCTAssertTrue(r.waitForExistence(timeout: 5), "chat \(i) is not in the list") }
-        XCTAssertLessThan(newChat.frame.minY, rows[0].frame.minY, "New chat is above the list")
         XCTAssertLessThan(rows[0].frame.minY, rows[1].frame.minY, "newest activity first")
         XCTAssertLessThan(rows[1].frame.minY, rows[2].frame.minY)
         XCTAssertTrue(rows[0].label.contains("Tuesday's groceries") && rows[0].label.contains("Five dinners, one list"), rows[0].label)
@@ -99,7 +99,7 @@ final class ChatsTests: XCTestCase {
         rows[2].swipeLeft()
         XCTAssertTrue(app.buttons["chat-delete-c1"].waitForExistence(timeout: 3), "no Delete behind the row")
         XCTAssertTrue(app.buttons["chat-rename-c1"].exists)
-        XCTAssertTrue(newChat.exists, "the swipe closed the drawer")
+        XCTAssertTrue(bar.exists, "the swipe closed the drawer")
         sleep(1)
         shot("swipe")
         rows[2].swipeRight()
@@ -157,10 +157,10 @@ final class ChatsTests: XCTestCase {
         app.buttons["chat-sheet-keep"].tap()
         XCTAssertTrue(app.buttons["drawer-chat-open-c1"].exists)
 
-        // 7. New chat: empty, not in the list, the same one when tapped twice.
-        newChat.tap()
-        let gone2 = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: app.buttons["drawer-new-chat"])
-        XCTAssertEqual(XCTWaiter.wait(for: [gone2], timeout: 5), .completed, "New chat did not close the drawer")
+        // 7. New chat, from the main screen: empty, not in the list, the same one when tapped twice.
+        app.buttons["drawer-close"].tap()
+        XCTAssertTrue(app.buttons["record-new-chat"].waitForExistence(timeout: 5), "no New chat button top right")
+        app.buttons["record-new-chat"].tap()
         XCTAssertEqual(header.value as? String, "New chat")
         XCTAssertTrue(app.staticTexts["Say hi to Basil!"].waitForExistence(timeout: 5), "the empty chat is not today's empty screen")
         sleep(1)

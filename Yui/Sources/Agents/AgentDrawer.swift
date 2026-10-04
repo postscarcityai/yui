@@ -130,8 +130,6 @@ struct AgentDrawer: View {
     let edit: (YuiAgent) -> Void
     /// The app's Settings: the drawer is the hamburger's, and Settings lives here (YUI-122).
     var settings: () -> Void = {}
-    /// New chat (YUI-169): starts an empty one and shuts the drawer.
-    var newChat: () -> Void = {}
     /// A chat from the list: the drawer shuts and it is up.
     var openChat: (String) -> Void = { _ in }
     var reduceMotion = false
@@ -158,7 +156,7 @@ struct AgentDrawer: View {
                 Group {
                     switch tab {
                     case .home: DrawerHome(store: store, waiting: waiting, close: close, compose: compose,
-                                           newChat: newChat, openChat: openChat) { tab = .review }
+                                           openChat: openChat) { tab = .review }
                     case .review: DrawerReview(store: store, items: waiting, close: close, compose: compose)
                     case .agent: DrawerAgent(store: store, close: close, edit: edit) { words in
                         close()
@@ -172,25 +170,11 @@ struct AgentDrawer: View {
             }
             .scrollIndicators(.hidden)
             .animation(reduceMotion ? nil : theme.spring, value: tab)
-            // Switching agents lives down here, as it did before the top pill (YUI-194). Add an agent is tucked
-            // in beside it (feedback NOTE-3651): still in view without the switcher (YUI-229), no longer a slab.
-            HStack(spacing: theme.spacing.s) {
-                AgentBar(agent: store.agent) { switching = true }
-                if let add {
-                    Button { close(); add() } label: {
-                        Image(systemName: "plus")
-                            .font(theme.font(17, .bold)).foregroundStyle(c.ink)
-                            .frame(width: 52, height: 52)
-                            .glassEffect(.regular.interactive(), in: .circle)
-                            .contentShape(Circle())
-                    }
-                    .buttonStyle(BounceButtonStyle())
-                    .accessibilityLabel("Add an agent")
-                    .accessibilityIdentifier("drawer-add-agent")
-                }
-            }
-            .padding(.horizontal, theme.spacing.m)
-            .padding(.bottom, theme.spacing.s)
+            // Switching agents lives down here, as it did before the top pill (YUI-194). Add an agent is
+            // the last row of the switcher it opens, not a button in the drawer (feedback ACcggtlOlLAYOyn5wCPqjNw).
+            AgentBar(agent: store.agent) { switching = true }
+                .padding(.horizontal, theme.spacing.m)
+                .padding(.bottom, theme.spacing.s)
         }
         .background(c.background)
         .overlay {
@@ -391,7 +375,6 @@ private struct DrawerHome: View {
     let waiting: [ReviewItem]
     let close: () -> Void
     let compose: (String) -> Void
-    let newChat: () -> Void
     let openChat: (String) -> Void
     let review: () -> Void
     @State private var showFlows = false
@@ -403,7 +386,7 @@ private struct DrawerHome: View {
         let c = theme.swatch(scheme)
         let name = store.agent?.name ?? "Yui"
         VStack(alignment: .leading, spacing: theme.spacing.s) {
-            DrawerChats(store: store, newChat: newChat, openChat: openChat)
+            DrawerChats(store: store, openChat: openChat)
 
             // My flows (YUI-238): the saved flows, run from here.
             DrawerHeading(text: "Flows")
@@ -1084,16 +1067,15 @@ private struct Switcher: View {
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .accessibilityIdentifier("switch-unshared")
                     }
-                    HStack(spacing: theme.spacing.s) {
-                        if let add {
-                            Button(action: add) {
-                                Label("Add an agent", systemImage: "plus")
-                                    .font(theme.font(15, .bold)).foregroundStyle(c.onAccent)
-                                    .frame(maxWidth: .infinity).padding(.vertical, 13)
-                                    .background(c.accent, in: Capsule())
-                            }
+                    // Add an agent is the last choice in the list, a quiet row like the agents above it
+                    // (feedback AFay2IMzQwhH9XThZaipftw, ACcggtlOlLAYOyn5wCPqjNw): not often needed, so not loud.
+                    if let add {
+                        Button(action: add) { addRow(c) }
+                            .buttonStyle(BounceButtonStyle())
                             .accessibilityIdentifier("switch-add")
-                        }
+                            .rise(shown, 0, reduceMotion)
+                    }
+                    HStack(spacing: theme.spacing.s) {
                         Button(action: manage) {
                             Label("Edit list", systemImage: "list.bullet")
                                 .font(theme.font(15, .bold)).foregroundStyle(c.ink)
@@ -1138,6 +1120,19 @@ private struct Switcher: View {
         .background(c.surface, in: .rect(cornerRadius: 22))
         .overlay(RoundedRectangle(cornerRadius: 22).stroke(a.id == current?.id ? c.accent.opacity(0.6) : c.outline,
                                                            lineWidth: a.id == current?.id ? 2 : 1))
+    }
+
+    private func addRow(_ c: Swatch) -> some View {
+        HStack(spacing: theme.spacing.m) {
+            Image(systemName: "plus")
+                .font(theme.font(17, .bold)).foregroundStyle(c.inkSoft)
+                .frame(width: 40, height: 40)
+                .overlay(Circle().stroke(c.outline, style: StrokeStyle(lineWidth: 1.5, dash: [4, 3])))
+            Text("Add an agent").font(theme.font(theme.type.body, theme.strong)).foregroundStyle(c.inkSoft)
+            Spacer(minLength: 0)
+        }
+        .padding(theme.spacing.m)
+        .contentShape(.rect(cornerRadius: 22))
     }
 }
 
