@@ -101,9 +101,12 @@ struct NewGroupSheet: View {
                     ForEach(agents.agents) { a in pickRow(a, c) }
                 } header: { header("Who is in it? Pick two or more.", c) }
                 Section {
-                    TextField(suggested.isEmpty ? "Name the group" : suggested, text: $title)
-                        .accessibilityIdentifier("group-name")
-                        .submitLabel(.done)
+                    HStack {
+                        TextField(suggested.isEmpty ? "Name the group" : suggested, text: $title)
+                            .accessibilityIdentifier("group-name")
+                            .submitLabel(.done)
+                        NameMic(text: $title, id: "group-name-mic")
+                    }
                 } header: { header("Name", c) }
                 if picked.count >= 2 {
                     Section {
@@ -203,7 +206,11 @@ struct GroupsHooks: ViewModifier {
             .environment(groups)
             .task(id: account.session?.userID ?? "") {
                 groups.reset()
-                guard account.isSignedIn, account.session?.userID != "demo" else { return }
+                var demoGroup = false
+                #if DEBUG
+                demoGroup = ProcessInfo.processInfo.arguments.contains("-yuiDemoGroup")
+                #endif
+                guard account.isSignedIn, account.session?.userID != "demo" || demoGroup else { return }
                 groups.attach(account)
                 await groups.refresh()
             }

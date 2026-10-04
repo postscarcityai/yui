@@ -34,6 +34,7 @@ final class GroupTests: XCTestCase {
 
     private func say(_ app: XCUIApplication, _ words: String) {
         let field = any(app, "group-field")
+        if !field.exists, any(app, "group-type").waitForExistence(timeout: 15) { any(app, "group-type").tap() }
         XCTAssertTrue(field.waitForExistence(timeout: 15), "no group composer")
         field.tap()
         field.typeText(words)

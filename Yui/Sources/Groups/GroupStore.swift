@@ -16,6 +16,14 @@ final class GroupStore {
     func attach(_ account: Account) {
         guard client == nil else { return }
         client = GroupClient(account: account)
+        #if DEBUG
+        // -yuiDemoGroup: Yui and Coach in a group that is already open (UI tests, screenshots; use with -yuiDemoAgents).
+        if ProcessInfo.processInfo.arguments.contains("-yuiDemoGroup") {
+            groups = [GroupInfo(id: "demo-group", title: "Race week", lead: "demo-yui", members: ["demo-yui", "demo-coach"])]
+            loaded = true
+            openID = "demo-group"
+        }
+        #endif
     }
 
     func reset() {
@@ -28,6 +36,9 @@ final class GroupStore {
 
     func refresh() async {
         guard let client else { return }
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("-yuiDemoGroup") { return }
+        #endif
         do {
             groups = try await client.list()
             loaded = true
@@ -97,7 +108,7 @@ final class GroupThread {
     private let client: GroupClient
     private var cursor: String?
     private var poll: Task<Void, Never>?
-    private var failed: [String: (words: String, to: [String], echo: String?)] = [:]
+    private var failed: [String: (words: String, to: [String], echo: String?, photos: [String])] = [:]
 
     init(info: GroupInfo, client: GroupClient) {
         self.info = info
@@ -163,6 +174,17 @@ final class GroupThread {
         post(id: UUID().uuidString.lowercased(), words: words, to: to)
     }
 
+    /// Words and photos (the + in the group bar). The photos go up first, then one row carries the bucket paths.
+    /// Throws when an upload fails: nothing is added, the person keeps their photos.
+    func send(_ text: String, photos: [ComposerPhoto], members: [YuiAgent], account: Account) async throws {
+        guard !photos.isEmpty else { send(text, members: members); return }
+        let paths = try await YuiMedia(account: account, agentID: info.lead).upload(photos: photos.map(\.jpeg))
+        let words = Attachments.body(text: text.trimmingCharacters(in: .whitespacesAndNewlines), photos: paths.count)
+        let to = addressees(words, members: members)
+        replyTarget = nil
+        post(id: UUID().uuidString.lowercased(), words: words, to: to, photos: paths)
+    }
+
     /// A tap or a submit on an agent's screen: that agent's turn, nobody else's.
     func emit(_ e: YLEvent, from agent: String) {
         guard e.relays else { return }
@@ -172,10 +194,10 @@ final class GroupThread {
     func retry(_ id: String) {
         guard let f = failed[id] else { return }
         sending.removeAll { $0.id == id }
-        post(id: id, words: f.words, to: f.to, echo: f.echo)
+        post(id: id, words: f.words, to: f.to, echo: f.echo, photos: f.photos)
     }
 
-    private func post(id: String, words: String, to: [String], echo: String? = nil) {
+    private func post(id: String, words: String, to: [String], echo: String? = nil, photos: [String] = []) {
         failed[id] = nil
         if echo != nil || !words.hasPrefix("[yui]") { sending.append(.you(id: id, text: echo ?? words, to: to, at: .now)) }
         notice = nil
@@ -183,11 +205,11 @@ final class GroupThread {
         Task { [weak self] in
             guard let self else { return }
             do {
-                try await client.say(id: id, thread: thread, agent: agent, words: words, to: to, echo: echo)
+                try await client.say(id: id, thread: thread, agent: agent, words: words, to: to, echo: echo, photos: photos)
                 await refresh()
             } catch {
                 sending.removeAll { $0.id == id }
-                failed[id] = (words, to, echo)
+                failed[id] = (words, to, echo, photos)
                 notice = GroupStore.words(error)
             }
         }

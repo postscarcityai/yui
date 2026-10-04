@@ -99,9 +99,10 @@ struct GroupClient {
     }
 
     /// The person's words. `agent` is any member (the trigger picks the real one); `to` the addressed ids.
-    func say(id: String, thread: String, agent: String, words: String, to: [String], echo: String? = nil) async throws {
+    func say(id: String, thread: String, agent: String, words: String, to: [String], echo: String? = nil, photos: [String] = []) async throws {
         guard let user = account.session?.userID else { throw AccountError.signedOut }
         var meta: [String: YLValue] = ["group": .object(["to": .array(to.map { .string($0) })])]
+        if let kept = Attachments.meta(paths: photos)?.object?["photos"] { meta["photos"] = kept }
         if let echo { meta["echo"] = .string(echo) }
         try await insert(["id": .string(id), "user_id": .string(user), "agent_id": .string(agent),
                           "thread_id": .string(thread), "sender": .string("user"), "kind": .string("text"),

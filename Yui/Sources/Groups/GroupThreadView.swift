@@ -161,24 +161,7 @@ struct GroupThreadView: View {
                     .padding(.horizontal, appTheme.spacing.l)
                 }
             }
-            HStack(alignment: .bottom, spacing: appTheme.spacing.s) {
-                TextField("Message the group", text: $draft, axis: .vertical)
-                    .lineLimit(1...5)
-                    .focused($focused)
-                    .accessibilityIdentifier("group-field")
-                    .padding(.horizontal, appTheme.spacing.l).padding(.vertical, appTheme.spacing.m)
-                    .background(c.surface, in: RoundedRectangle(cornerRadius: appTheme.radius.bubble))
-                    .overlay(RoundedRectangle(cornerRadius: appTheme.radius.bubble).stroke(c.outline, lineWidth: 1))
-                Button {
-                    thread.send(draft, members: all)
-                    draft = ""
-                } label: {
-                    Image(systemName: "arrow.up.circle.fill").font(.system(size: 34)).foregroundStyle(c.accent)
-                }
-                .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                .accessibilityLabel("Send").accessibilityIdentifier("group-send")
-            }
-            .padding(.horizontal, appTheme.spacing.l)
+            GroupBar(draft: $draft, focused: $focused, thread: thread, members: all, account: account)
         }
         .padding(.vertical, appTheme.spacing.s)
         .background(c.background)
@@ -436,8 +419,11 @@ struct GroupSettings: View {
         NavigationStack {
             List {
                 Section("Name") {
-                    TextField("Group name", text: $title).onSubmit { Task { await rename() } }
-                        .accessibilityIdentifier("group-settings-name")
+                    HStack {
+                        TextField("Group name", text: $title).onSubmit { Task { await rename() } }
+                            .accessibilityIdentifier("group-settings-name")
+                        NameMic(text: $title, id: "group-settings-name-mic") { Task { await rename() } }
+                    }
                 }
                 Section {
                     Stepper(value: Binding(get: { current.maxHops }, set: { n in Task { await hops(n) } }), in: 1...5) {
