@@ -21,6 +21,11 @@ struct FormPreset: View {
     /// A key-shaped word typed into a field is held (YUI-34): Move it to Keys, or Send anyway for a mere lookalike.
     @State private var anyway = false
     @State private var moving: KeyShape?
+    /// Speak to fill: made on the first tap (an audio engine per form on screen is too much to hold
+    /// for nothing), the fields the last words reached, and what to tell the person about it.
+    @State private var talk: PushToTalk?
+    @State private var heard: Set<String> = []
+    @State private var voiceNote: String?
     @Environment(\.ylScope) private var scope
     @Environment(\.ylAnswers) private var answers
     @Environment(\.yuiTheme) private var theme
@@ -38,8 +43,10 @@ struct FormPreset: View {
         let ready = fields.allSatisfy { !$0.required || filled($0) } && !blocked
         PresetCard {
             if let t = c.string("title") { PresetTitle(text: t) }
+            if !sent, VoiceFill.canFill(fields) { voiceBar(s, fields) }
             ForEach(fields) { f in
-                FieldRow(field: f, value: Binding(get: { values[f.key] ?? f.initial }, set: { values[f.key] = $0 }))
+                FieldRow(field: f, byVoice: heard.contains(f.key),
+                         value: Binding(get: { values[f.key] ?? f.initial }, set: { values[f.key] = $0 }))
             }
             if let shape, blocked {
                 KeyHoldBanner(shape: shape, move: { moving = shape }, sendAnyway: { anyway = true })
@@ -54,6 +61,7 @@ struct FormPreset: View {
             }
         }
         .disabled(sent)
+        .onDisappear { talk?.cancel() }
         .sheet(item: $moving) { shape in
             KeyMoveSheet(text: shape.key) {
                 for (k, v) in values { if let t = v.string, t.contains(shape.key) { values[k] = .string(t.replacingOccurrences(of: shape.key, with: "")) } }
@@ -82,6 +90,88 @@ struct FormPreset: View {
             emitHosted(fields, ready: ready)
         }
         .onChange(of: anyway) { emitHosted(fields, ready: ready) }
+    }
+
+    /// Speak to fill: one mic for the whole card. Say each field's name and its answer; the words
+    /// fill the fields below, marked with a mic so the person checks them before Next.
+    private func voiceBar(_ s: Swatch, _ fields: [FormField]) -> some View {
+        let listening = talk?.listening == true
+        return VStack(alignment: .leading, spacing: theme.spacing.s) {
+            HStack(spacing: theme.spacing.m) {
+                Button { toggleTalk(fields) } label: {
+                    Image(systemName: listening ? "stop.fill" : "mic.fill")
+                        .font(.system(size: 20, weight: .bold))
+                        .foregroundStyle(s.onAccent)
+                        .frame(width: 48, height: 48)
+                        .background(s.accent, in: Circle())
+                        .overlay(Circle().stroke(s.accent.opacity(listening ? 0.35 : 0), lineWidth: 6).scaleEffect(1.18))
+                        .contentShape(Circle())
+                }
+                .buttonStyle(BounceButtonStyle())
+                .accessibilityLabel(listening ? "Stop talking" : "Talk to fill this in")
+                .accessibilityIdentifier("form-talk-\(c.ylID)")
+                .sensoryFeedback(.impact(weight: .light), trigger: listening)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(listening ? "Listening. Tap to stop." : heard.isEmpty ? "Talk it out" : "Tap to add more")
+                        .font(theme.font(theme.type.body, .bold))
+                        .foregroundStyle(s.ink)
+                    Text(voiceCaption(fields))
+                        .font(theme.font(theme.type.caption))
+                        .foregroundStyle(s.inkSoft)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("form-talk-note-\(c.ylID)")
+                }
+                Spacer(minLength: 0)
+            }
+            if listening, let words = talk?.transcript, !words.isEmpty {
+                Text(words)
+                    .font(theme.font(theme.type.body, .medium))
+                    .foregroundStyle(s.inkSoft)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("form-talk-heard-\(c.ylID)")
+            }
+        }
+    }
+
+    private func voiceCaption(_ fields: [FormField]) -> String {
+        switch talk?.phase {
+        case .denied: return "The mic is off for Yui. Type below, or turn it on in Settings."
+        case .failed: return "The mic isn't free right now. Type below."
+        default: break
+        }
+        if let voiceNote { return voiceNote }
+        let names = fields.filter { !["photo", "date", "time"].contains($0.type) }.prefix(2).map { $0.label.lowercased() }
+        return names.isEmpty ? "Say your answers." : "Say \(names.joined(separator: " and ")), then what it is."
+    }
+
+    private func toggleTalk(_ fields: [FormField]) {
+        let t = talk ?? {
+            let t = PushToTalk()
+            #if DEBUG
+            t.fakeWords = UserDefaults.standard.string(forKey: "yuiPTTFake")
+            #endif
+            talk = t
+            return t
+        }()
+        guard t.listening else {
+            voiceNote = nil
+            Task { await t.start() }
+            return
+        }
+        Task {
+            let words = await t.stop()
+            guard !words.isEmpty else { return }
+            let got = VoiceFill.fill(words, into: fields, current: values)
+            guard !got.isEmpty else {
+                voiceNote = "Didn't catch a field. Say its name first, like \(fields.first.map { "\"\($0.label.lowercased()) is...\"" } ?? "its name")."
+                return
+            }
+            withAnimation(theme.spring) {
+                for (k, v) in got { values[k] = v }
+                heard.formUnion(got.keys)
+            }
+            voiceNote = "Filled \(got.count). Check them, fix by tapping, then go on."
+        }
     }
 
     /// The first key-shaped word in what was typed.
@@ -180,6 +270,8 @@ struct FormField: Identifiable {
 
 private struct FieldRow: View {
     let field: FormField
+    /// Filled by voice: a mic beside the label, so the person knows to check it.
+    var byVoice = false
     @Binding var value: YLValue
     @State private var photo: PhotosPickerItem?
     @State private var uploading = false
@@ -194,6 +286,10 @@ private struct FieldRow: View {
                 HStack(spacing: 2) {
                     Text(field.label)
                     if field.required { Text("*").foregroundStyle(s.accent) }
+                    if byVoice {
+                        Image(systemName: "mic.fill").font(.system(size: 11, weight: .bold)).foregroundStyle(s.accent)
+                            .accessibilityLabel("Filled by voice")
+                    }
                 }
                 .font(theme.font(theme.type.caption, .bold))
                 .foregroundStyle(s.inkSoft)
