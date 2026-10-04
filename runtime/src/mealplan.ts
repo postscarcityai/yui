@@ -589,6 +589,11 @@ export function nextPlanned(store: TableStore, clk: Clock) {
 }
 
 export const LOG_A_MEAL = "Log a meal";
+
+/** Basil's own check-in just after midnight: no words, no model turn, only Today and the trend drawn for the new date. */
+export const NEW_DAY = "yui:new-day";
+export const NEW_DAY_RULE = { every: "day", at: "00:05" };
+const NEW_DAY_LINE = /^\[yui\] check-in s\S+ "yui:new-day"/;
 const mealLabel = (m: { meal: string; cal: number }) => `${m.meal}, ${kcal(m.cal)} kcal`;
 
 /** A planned meal eaten as planned: its rows in the log, from the recipe's numbers. */
@@ -710,14 +715,43 @@ export function groceryScreen(store: TableStore): string[] {
   ];
 }
 
-/** The page shapes: a new day on the plan or a new aisle redraws that page; otherwise its lines are patches. */
-export function screenShape(store: TableStore, clk: Clock): { week: string; groceries: string } {
-  return { week: planDays(store, clk).map((d) => ymd(d.day)).join(",") || "none", groceries: toGet(store).map((x) => slug(x.aisle)).join(",") || "none" };
+/** The page shapes: a new day on the plan or a new aisle redraws that page; otherwise its lines are patches. `day` is the
+ *  date Today was drawn for and `trend` that the calories-over-time page exists, so a new day or an older phone redraws them. */
+export interface Shape { week: string; groceries: string; day?: string; trend?: boolean }
+export function screenShape(store: TableStore, clk: Clock): Shape {
+  return { week: planDays(store, clk).map((d) => ymd(d.day)).join(",") || "none", groceries: toGet(store).map((x) => slug(x.aisle)).join(",") || "none",
+           day: clk.today, trend: true };
 }
-export const shapeText = (s: { week: string; groceries: string }) => `v1;${s.week};${s.groceries}`;
-export function readShape(t: string | undefined): { week: string; groceries: string } | null {
-  const m = t?.match(/^v1;([^;]*);([^;]*)$/);
-  return m ? { week: m[1], groceries: m[2] } : null;
+export const shapeText = (s: Shape) => `v1;${s.week};${s.groceries}${s.day || s.trend ? `;${s.day ?? ""}${s.trend ? ";t" : ""}` : ""}`;
+export function readShape(t: string | undefined): Shape | null {
+  const m = t?.match(/^v1;([^;]*);([^;]*)(?:;(\d{4}-\d{2}-\d{2})?(;t)?)?$/);
+  return m ? { week: m[1], groceries: m[2], day: m[3], trend: !!m[4] } : null;
+}
+
+// ---------- calories over time ----------
+
+/** Calories logged on each of the last `n` days, oldest first, today last. */
+export function calorieDays(store: TableStore, clk: Clock, n: number): { day: string; cal: number }[] {
+  const by: Record<string, number> = {};
+  for (const { row } of rowsOf(store, MEALS)) {
+    const d = String(row.Day ?? "").slice(0, 10);
+    by[d] = (by[d] ?? 0) + num(row.Cal);
+  }
+  return Array.from({ length: n }, (_, i) => { const day = shift(clk.today, i - n + 1); return { day, cal: Math.round(by[day] ?? 0) }; });
+}
+
+/** Calories over time, as its page: the last 7 days against the goal, the last 30, and the average of the days that have a log. */
+export function trendScreen(store: TableStore, clk: Clock): string[] {
+  const g = goal(store);
+  const w = calorieDays(store, clk, 7);
+  const m = calorieDays(store, clk, 30);
+  const logged = m.filter((d) => d.cal > 0);
+  const avg = logged.length ? logged.reduce((a, d) => a + d.cal, 0) / logged.length : 0;
+  return [
+    `stat@trend-avg ${kcal(avg)}kcal "Daily average" sub=${q(logged.length ? `Over ${logged.length} logged ${logged.length === 1 ? "day" : "days"} of the last 30. Goal ${kcal(g.cal)}.` : "Log a meal and your days add up here.")}`,
+    `chart@trend-week bar "Calories, last 7 days" x=${w.map((d) => weekday(d.day).slice(0, 3)).join("|")} y=${w.map((d) => d.cal).join("|")} y2=${w.map(() => g.cal).join("|")} names=Eaten|Goal unit=kcal`,
+    `chart@trend-month area "Calories, last 30 days" x=${m.map((d) => Number(d.day.slice(8))).join("|")} y=${m.map((d) => d.cal).join("|")} unit=kcal`,
+  ];
 }
 
 /**
@@ -728,7 +762,7 @@ export function drawnShape(p: { mealScreens?: string; home?: string }): string |
   if (p.mealScreens) return p.mealScreens;
   if (!/\bchoose@eaten\b/.test(p.home ?? "")) return undefined;
   const aisles = [...(p.home ?? "").matchAll(/\blist@aisle-([a-z-]+)/g)].map((m) => m[1]);
-  return shapeText({ week: /\bchoose@wk-/.test(p.home ?? "") ? "home" : "none", groceries: aisles.join(",") || "none" });
+  return shapeText({ week: /\bchoose@wk-/.test(p.home ?? "") ? "home" : "none", groceries: aisles.join(",") || "none", trend: /\bstat@trend-avg\b/.test(p.home ?? "") });
 }
 
 /**
@@ -739,11 +773,14 @@ export function drawnShape(p: { mealScreens?: string; home?: string }): string |
 export function screenLines(store: TableStore, clk: Clock, was: string | undefined, only?: ("today" | "week" | "groceries")[]): { lines: string[]; shape: string } {
   const prev = readShape(was);
   const now = screenShape(store, clk);
-  const want = new Set(only ?? ["today", "week", "groceries"]);
+  const want = new Set<string>(only ?? ["today", "week", "groceries"]);
+  // Today is about the date: a page drawn on another day is patched to this one's, whatever the ask was about.
+  if (prev?.day && prev.day !== clk.today) want.add("today");
+  if (want.has("today")) want.add("trend");
   const patch = (lines: string[]) => lines.map((l) => l.replace(/^[a-z]+@/, "~"));
   // Sending to a page brings it forward, so the pages the ask is about are sent last (a meal log ends on Today, a
   // grocery add on Groceries, a plan on the week) and pages drawn only because the phone had none go first (YUI-183b).
-  const chunks: Record<"today" | "week" | "groceries", string[]> = { today: [], week: [], groceries: [] };
+  const chunks: Record<"today" | "week" | "groceries" | "trend", string[]> = { today: [], week: [], groceries: [], trend: [] };
   if (want.has("today") || !prev) chunks.today = !prev ? [">2 clear", ">2", ...todayScreen(store, clk), "save today"] : patch(todayScreen(store, clk));
   if (want.has("week") || !prev) {
     if (!prev || prev.week !== now.week) chunks.week = [">3 clear", ">3", ...weekScreen(store, clk), "save this week"];
@@ -753,11 +790,14 @@ export function screenLines(store: TableStore, clk: Clock, was: string | undefin
     if (!prev || prev.groceries !== now.groceries) chunks.groceries = [">4 clear", ">4", ...groceryScreen(store), "save groceries"];
     else chunks.groceries = patch(groceryScreen(store));
   }
+  // The trend page is drawn once for a phone that has none, then patched; it goes first so it never brings itself forward.
+  if (want.has("trend") || !prev?.trend) chunks.trend = !prev?.trend ? [">5 clear", ">5", ...trendScreen(store, clk), "save calories over time"] : patch(trendScreen(store, clk));
   const asked = new Set(only ?? ["today", "week", "groceries"]);
-  const order = (["today", "week", "groceries"] as const).filter((k) => !asked.has(k)).concat((["today", "groceries", "week"] as const).filter((k) => asked.has(k)));
+  const order: ("trend" | "today" | "week" | "groceries")[] = ["trend", ...(["today", "week", "groceries"] as const).filter((k) => !asked.has(k)), ...(["today", "groceries", "week"] as const).filter((k) => asked.has(k))];
   const out = order.flatMap((k) => chunks[k]);
   // What wasn't redrawn keeps the old shape, so it is drawn again the next time it is touched.
-  const kept = { week: want.has("week") || !prev ? now.week : prev.week, groceries: want.has("groceries") || !prev ? now.groceries : prev.groceries };
+  const kept: Shape = { week: want.has("week") || !prev ? now.week : prev.week, groceries: want.has("groceries") || !prev ? now.groceries : prev.groceries,
+                        day: want.has("today") || !prev ? now.day : prev.day, trend: true };
   return { lines: out, shape: shapeText(kept) };
 }
 
@@ -774,6 +814,7 @@ export type MealAsk =
   | { kind: "share"; row: Row }
   | { kind: "ate"; row: Row }
   | { kind: "logmeal"; row: Row }
+  | { kind: "newday"; row: Row }
   | { kind: "fix"; row: Row; choice: string }
   | { kind: "fixed"; row: Row; day: string; meal: string; answers: Record<string, unknown> };
 
@@ -794,7 +835,8 @@ export function mealAsks(rows: Row[]): { asks: MealAsk[]; rest: Row[] } {
     const body = r.body ?? "";
     const e = /^\[yui\]\s/.test(body) ? readEvent(r) : null;
     let a: MealAsk | null = null;
-    if (!e && r.kind !== "event") {
+    if (NEW_DAY_LINE.test(body)) a = { kind: "newday", row: r };
+    else if (!e && r.kind !== "event") {
       const col = body.match(ADD_COLON);
       const add = body.match(ADD_WORDS);
       if (PLAN_WORDS.test(body)) a = { kind: "plan", row: r };

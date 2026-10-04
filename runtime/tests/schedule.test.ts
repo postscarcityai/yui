@@ -44,7 +44,7 @@ test("Basil asks about lunch every day at 12:30, and the next one is tomorrow", 
   store.say(basil.id, "ask me what I'm having for lunch every day");
   await runAgent(store, basil.id, { provider, now: () => SUNDAY_9AM,
     fetch: fakeModel(() => 'On it.\n```schedule\nevery day 12:30 "Ask what they\'re having for lunch"\n```').fetch });
-  const [s] = await store.schedules(basil.id);
+  const s = (await store.schedules(basil.id)).find((x) => x.note !== "yui:new-day")!;
   assert.equal(s.nextAt, "2026-09-27T16:30:00.000Z", "12:30 today in New York");
 
   const r = await runScheduled(store, s.id, { provider, now: () => Date.parse(s.nextAt!) + 5_000,

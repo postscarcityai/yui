@@ -492,6 +492,29 @@ private struct DeckBody: View {
 
 // MARK: - plan
 
+/// What the phone keeps of a plan nobody has sent yet: each step's own answer, the answers the plan
+/// will send, the step on screen and whether it was on the review. Gone once the plan is sent.
+struct PlanDraft: Codable, Equatable {
+    var events: [String: [String: YLValue]] = [:]
+    var answers: [String: YLValue] = [:]
+    var at = 0
+    var reviewing = false
+
+    /// Keyed by the message and the plan's id. Under `yui.runner.` so a UI test's runner reset clears it too.
+    static func key(_ scope: String, _ id: String) -> String { "yui.runner.plan.\(scope).\(id)" }
+
+    @MainActor static func load(_ scope: String, _ id: String, in d: UserDefaults = .standard) -> PlanDraft? {
+        RunnerProgress.resetIfAsked()
+        return d.data(forKey: key(scope, id)).flatMap { try? JSONDecoder().decode(PlanDraft.self, from: $0) }
+    }
+
+    func save(_ scope: String, _ id: String, in d: UserDefaults = .standard) {
+        if let data = try? JSONEncoder().encode(self) { d.set(data, forKey: Self.key(scope, id)) }
+    }
+
+    static func clear(_ scope: String, _ id: String, in d: UserDefaults = .standard) { d.removeObject(forKey: key(scope, id)) }
+}
+
 /// `plan [title] submit= review=off`, then one step per line: pages to read,
 /// then questions (YUI-51). Members send nothing themselves; the plan emits
 /// `{plan: {id: answer}}` on submit, and the chat keeps the answers as the
@@ -505,8 +528,11 @@ struct PlanPreset: View {
     /// Steps holding Next: a form with a required field still empty.
     @State private var missing: Set<String> = []
     @State private var restored = false
-    /// Where the person left it came back, once (feedback NOTE-19357): nothing is kept before that.
-    @State private var placed = false
+    /// What the person has answered and where they are, kept on the phone until the plan is sent.
+    @State private var events: [String: [String: YLValue]] = [:]
+    /// The kept answers as they stood when the plan opened: what each step restores from.
+    @State private var kept: [String: [String: YLValue]] = [:]
+    @State private var draftLoaded = false
     /// A workout (YUI-182): where the runner is, kept on the phone.
     @State private var progress = RunnerProgress()
     @Environment(\.ylComponents) private var all
@@ -567,6 +593,7 @@ struct PlanPreset: View {
                         }
                         .environment(\.ylBare, true)
                         .environment(\.ylHostedSubmit, true)
+                        .environment(\.ylAnswers, keptAnswers)
                         .environment(\.ylEmit, relay(emit, pass: false) { e in record(e, step: step, i: i, steps: steps, review: review) })
                         .frame(height: i == cur ? nil : 0, alignment: .top)
                         .clipped()
@@ -598,26 +625,42 @@ struct PlanPreset: View {
                 }
             }
         }
-        .onAppear {
-            restore(runner)
-            restorePlace(steps, runner)
+        .onAppear { loadDraft(skip: runner != nil); restore(runner) }
+        // Every answer and step is kept: leaving the screen, another agent, a kill and a relaunch all come back here.
+        .onChange(of: PlanDraft(events: events, answers: answers, at: at, reviewing: reviewing)) { _, d in
+            guard draftLoaded, !submitted, runner == nil else { return }
+            d.save(scope, c.ylID)
         }
         // The reply streams in: the moves may land after the plan first shows.
         .onChange(of: runner?.moves.count ?? 0) { restore(runner) }
-        .onChange(of: steps.count) { restorePlace(steps, runner) }
         .onChange(of: at) { _, n in
-            keepPlace(steps, runner)
             guard runner != nil, !submitted else { return }
             progress.at = n
         }
-        .onChange(of: reviewing) { keepPlace(steps, runner) }
-        .onChange(of: answers) { keepPlace(steps, runner) }
         .onChange(of: progress) { _, p in
             guard let runner, !submitted else { return }
             for m in runner.moves { answers[m.sets.ylID] = nil }
             answers.merge(p.answers(runner)) { _, new in new }
             p.save(c.ylID)
         }
+    }
+
+    /// A step reads its own kept answer first, so a form comes back typed in and a choice comes back picked.
+    private var keptAnswers: YLAnswers {
+        let kept = kept, sent = sent
+        return YLAnswers { scope, id in kept[id] ?? sent(scope, id) }
+    }
+
+    /// The plan was left half done (a relaunch, another screen, another agent): answers and step come back.
+    private func loadDraft(skip: Bool) {
+        guard !draftLoaded else { return }
+        draftLoaded = true
+        guard !skip, sent(scope, c.ylID)?["plan"] == nil, let d = PlanDraft.load(scope, c.ylID) else { return }
+        kept = d.events
+        events = d.events
+        answers.merge(d.answers) { mine, _ in mine }
+        at = d.at
+        reviewing = d.reviewing
     }
 
     /// Reopened after a send (a relaunch, a scroll back): come back sent, answers filled in.
@@ -638,39 +681,16 @@ struct PlanPreset: View {
         submitted = true
     }
 
-    /// Not sent yet: it reopens on the step the person was on, with everything they set
-    /// (feedback NOTE-19357), however it went away (the full screen, home, another agent, a
-    /// relaunch). Its questions bring back their own drafts as they show; the plan's copy of
-    /// the answers fills the review, which shows none of them. A sent plan never reopens
-    /// mid-way, and a workout keeps its own place (`RunnerProgress`).
-    private func restorePlace(_ steps: [YLComponent], _ runner: RunnerPlan?) {
-        guard !placed, !steps.isEmpty else { return }
-        placed = true
-        guard runner == nil, sent(scope, c.ylID)?["plan"] == nil,
-              let place = AnswerDrafts.shared.place(agent, scope, c.ylID) else { return }
-        // A question that already handed over its answer on appear keeps it.
-        answers.merge(place.answers) { now, _ in now }
-        if let i = place.index(in: steps.map(\.ylID)) { at = i }
-        reviewing = place.review
-    }
-
-    /// Where the person is and what they set, kept on the phone until the plan is sent.
-    private func keepPlace(_ steps: [YLComponent], _ runner: RunnerPlan?) {
-        guard placed, runner == nil, !submitted, !steps.isEmpty, sent(scope, c.ylID)?["plan"] == nil else { return }
-        let cur = min(at, steps.count - 1)
-        AnswerDrafts.shared.setPlace(agent, scope, c.ylID,
-                                     PlanPlace(step: cur > 0 ? steps[cur].ylID : nil, review: reviewing, answers: answers))
-    }
-
     private func record(_ e: YLEvent, step: YLComponent, i: Int, steps: [YLComponent], review: Bool) {
         // A form and a pick hand over every edit: all fields cleared, or every
         // pick taken off, takes the answer back.
         if step.preset == "form" || step.preset == "pick" || step.preset == "mic" {
             if e.value["missing"] != nil { missing.insert(step.ylID) } else { missing.remove(step.ylID) }
-            if YLComponent.answerValue(e) == nil { answers[step.ylID] = nil }
+            if YLComponent.answerValue(e) == nil { answers[step.ylID] = nil; events[step.ylID] = nil }
         }
         guard let v = YLComponent.answerValue(e) else { return }
         answers[step.ylID] = v
+        events[step.ylID] = e.value
         // ask and choose move on by themselves after a tap; one that came back on appear stays put (feedback NOTE-19357).
         guard !e.restored, step.preset == "ask" || step.preset == "choose" else { return }
         Task { @MainActor in
@@ -741,6 +761,7 @@ struct PlanPreset: View {
         // Sent: its place and its questions' drafts go with it (feedback NOTE-19357).
         AnswerDrafts.shared.sent(e, scope: scope, agent: agent)
         RunnerProgress.clear(c.ylID)
+        PlanDraft.clear(scope, c.ylID)
         withAnimation(theme.spring) { submitted = true; reviewing = false }
         // The first plan (Build my week): the moment to ask for notifications (YUI-230).
         if c.ylID == "first" { Task { await PushCenter.shared.firstPlanBuilt() } }

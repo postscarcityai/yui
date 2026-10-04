@@ -167,7 +167,9 @@ export function systemPrompt(p: Profile, memory: MemoryItem[], agentId: string, 
   const tz = extra.tz ?? "UTC";
   const when = [`## Now\n${nowLine(extra.now ?? Date.now(), tz)}${extra.tz ? "" : ". Their time zone is not known yet; UTC until the phone says."}`];
   const sch = extra.schedules ?? [];
-  when.push(sch.length ? "Your check-ins:\n" + sch.map((x, i) => `- [s${i + 1}] ${describe(x.rule, x.tz)}: ${x.note}`).join("\n") : "Your check-ins: none.");
+  // The runtime's own check-ins (yui:new-day, Basil's midnight page refresh) keep their number but are not the agent's to see.
+  const mine = sch.map((x, i) => (x.note.startsWith("yui:") ? "" : `- [s${i + 1}] ${describe(x.rule, x.tz)}: ${x.note}`)).filter(Boolean);
+  when.push(mine.length ? "Your check-ins:\n" + mine.join("\n") : "Your check-ins: none.");
   parts.push(when.join("\n"));
   return parts.join("\n\n");
 }

@@ -8,7 +8,7 @@ import YuiLines
 /// away. Here they outlive the view: one small defaults entry per agent, keyed by the
 /// reply (its message id), the component's YL id and a field name. A draft goes once its
 /// answer is sent, or once it is a week old, and a view never puts one over an answer that
-/// already went. A plan keeps where it was left here too (`PlanPlace`).
+/// already went. A plan keeps its own step and answers (`PlanDraft`).
 @MainActor
 final class AnswerDrafts {
     static let shared = AnswerDrafts()
@@ -138,16 +138,6 @@ final class AnswerDrafts {
         }
     }
 
-    /// Where the person left the plan `id` in reply `scope`, if it is not sent yet.
-    func place(_ agent: String, _ scope: String, _ id: String) -> PlanPlace? {
-        PlanPlace(draft(agent, scope, id, PlanPlace.field))
-    }
-
-    /// Keeps where the plan was left; the first step with nothing set keeps nothing.
-    func setPlace(_ agent: String, _ scope: String, _ id: String, _ place: PlanPlace) {
-        set(agent, scope, id, PlanPlace.field, place.value)
-    }
-
     /// The demo account (UI tests, screenshots) starts with no drafts, as the composer's do;
     /// `-yuiDraftsKeep` keeps them across a relaunch. Once per launch.
     private static var wasReset = false
@@ -157,45 +147,5 @@ final class AnswerDrafts {
         guard !wasReset, args.contains("-yuiDemoAccount"), !args.contains("-yuiDraftsKeep") else { return }
         wasReset = true
         for k in d.dictionaryRepresentation().keys where k.hasPrefix("yui.answers.") { d.removeObject(forKey: k) }
-    }
-}
-
-/// Where a plan was left (feedback NOTE-19357: Chris wants a plan to remember the step as well as the
-/// answers): the step on show by its YL id, so a step that streams in later never shifts it,
-/// the review if that was up, and every answer so far, since the review draws none of the
-/// questions that would hand theirs back. Kept under the plan's own id, so the plan's send
-/// takes it with the answers.
-struct PlanPlace: Equatable {
-    static let field = "place"
-
-    var step: String?
-    var review = false
-    var answers: [String: YLValue] = [:]
-
-    init(step: String? = nil, review: Bool = false, answers: [String: YLValue] = [:]) {
-        self.step = step
-        self.review = review
-        self.answers = answers
-    }
-
-    init?(_ v: YLValue?) {
-        guard let o = v?.object else { return nil }
-        step = o["step"]?.string
-        review = o["review"]?.bool ?? false
-        answers = o["answers"]?.object ?? [:]
-    }
-
-    /// As kept, or nil on the first step with nothing set: nothing to come back to.
-    var value: YLValue? {
-        guard step != nil || review || !answers.isEmpty else { return nil }
-        var o: [String: YLValue] = ["answers": .object(answers)]
-        if let step { o["step"] = .string(step) }
-        if review { o["review"] = .bool(true) }
-        return .object(o)
-    }
-
-    /// The step to reopen on among `ids` (the plan's steps in order), or nil when it is gone.
-    func index(in ids: [String]) -> Int? {
-        step.flatMap { s in ids.firstIndex(of: s) }
     }
 }

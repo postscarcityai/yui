@@ -176,52 +176,13 @@ final class AnswerDraftsTests: XCTestCase {
         XCTAssertEqual(drafts.draft("yui-1", "r1#0", "n1", "text"), .string("Call the dentist"))
     }
 
-    // MARK: Where a plan was left
-
-    func testAPlanKeepsItsStepReviewAndAnswersAndComesBackOnARelaunch() {
+    /// A sent plan takes its questions' drafts with it (its step and answers are PlanDraft's, cleared by the plan).
+    func testASentPlanTakesItsQuestionsDraftsWithIt() {
         let drafts = AnswerDrafts(defaults: defaults)
-        let place = PlanPlace(step: "budget", review: false, answers: ["about": form, "who": .string("Clients")])
-        drafts.setPlace("yui-1", "r1#0", "site", place)
-        let back = AnswerDrafts(defaults: defaults).place("yui-1", "r1#0", "site")
-        XCTAssertEqual(back, place)
-        XCTAssertEqual(back?.index(in: ["intro", "about", "who", "budget"]), 3, "reopens on the step it was on")
-        XCTAssertNil(back?.index(in: ["intro", "about"]), "a step that is gone reopens nowhere new")
-        XCTAssertNil(AnswerDrafts(defaults: defaults).place("yui-1", "r2#0", "site"), "another reply's plan starts at the start")
-
-        drafts.setPlace("yui-1", "r1#0", "site", PlanPlace(step: "budget", review: true, answers: ["who": .string("Press")]))
-        XCTAssertEqual(AnswerDrafts(defaults: defaults).place("yui-1", "r1#0", "site")?.review, true)
-    }
-
-    func testTheFirstStepWithNothingSetKeepsNothing() {
-        let drafts = AnswerDrafts(defaults: defaults)
-        drafts.setPlace("yui-1", "r1#0", "site", PlanPlace(step: "who", answers: [:]))
-        drafts.setPlace("yui-1", "r1#0", "site", PlanPlace())
-        XCTAssertNil(PlanPlace().value)
-        XCTAssertNil(drafts.place("yui-1", "r1#0", "site"), "back on the first step with nothing set: nothing to come back to")
-        XCTAssertNil(defaults.object(forKey: AnswerDrafts.storeKey("yui-1")))
-        // The first step with an answer still keeps the answer.
-        drafts.setPlace("yui-1", "r1#0", "site", PlanPlace(answers: ["about": form]))
-        XCTAssertEqual(drafts.place("yui-1", "r1#0", "site")?.answers["about"], form)
-        XCTAssertNil(drafts.place("yui-1", "r1#0", "site")?.step)
-    }
-
-    func testASentPlanTakesItsPlaceWithIt() {
-        let drafts = AnswerDrafts(defaults: defaults)
-        drafts.setPlace("yui-1", "r1#0", "site", PlanPlace(step: "budget", answers: ["about": form]))
         drafts.set("yui-1", "r1#0", "about", "form", form)
         let plan = YLEvent(id: "site", preset: "plan", value: ["plan": .object(["about": form])], echo: "About you: Chris")
         drafts.sent(plan, scope: "r1#0", agent: "yui-1")
-        let back = AnswerDrafts(defaults: defaults)
-        XCTAssertNil(back.place("yui-1", "r1#0", "site"), "a sent plan never reopens mid-way")
-        XCTAssertNil(back.draft("yui-1", "r1#0", "about", "form"))
-    }
-
-    func testAPlanPlaceAgesOutLikeAnyDraft() {
-        var clock = Date(timeIntervalSince1970: 1_800_000_000)
-        let drafts = AnswerDrafts(defaults: defaults, now: { clock })
-        drafts.setPlace("yui-1", "r1#0", "site", PlanPlace(step: "budget"))
-        clock += 8 * day
-        XCTAssertNil(drafts.place("yui-1", "r1#0", "site"))
+        XCTAssertNil(AnswerDrafts(defaults: defaults).draft("yui-1", "r1#0", "about", "form"))
     }
 
     /// A flow already keeps its own run (step and answers); one never sent and left for a week starts over.
