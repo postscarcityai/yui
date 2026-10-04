@@ -243,19 +243,28 @@ struct StageFirstView: View {
     /// beside it and on which side (-1 left, +1 right), the stage's width, and where the finger
     /// let go of a drag that turned the page.
     @State private var shown = 1
-    @State private var slide: CGFloat = 0
+    /// Not `@State` on this view: the finger moves it every frame, and reading it here made the
+    /// whole stage (the turn, both bars, both pages and their rows) run its body per frame. Only
+    /// each page's slot reads it (`PagerSlot`), so a drag moves the pages and nothing else.
+    @State private var motion = PagerMotion()
     @State private var beside: Int?
     @State private var side = 1
     @State private var pagerWidth: CGFloat = 0
     @State private var releasedAt: CGFloat?
     /// How far the finger has pulled the answer down toward home (YUI-195).
     @State private var pull: CGFloat = 0
+    #if DEBUG
+    /// -yuiAutoSwitch: the way it is going and how many switches it has made.
+    @State private var autoStep = 1
+    @State private var autoCount = 0
+    #endif
 
     static let small = BarButtons.small, touch = BarButtons.touch
     /// The room kept for the shader blob above the working words.
     static let blobRoom: CGFloat = 250
 
     var body: some View {
+        let _ = BodyLog.hit("StageFirst")
         let c = theme.swatch(scheme)
         let turn = model.turn(store.messages)
         VStack(spacing: 0) {
@@ -301,6 +310,9 @@ struct StageFirstView: View {
             release(min(0, x), turns: Self.turns(x, v, by: -1), toward: 1)
         })
         .onChange(of: at, initial: true) { old, new in arrive(at: new, from: old) }
+        #if DEBUG
+        .task(id: [at, screens.count]) { await autoSwitch() }
+        #endif
         .background {
             ZStack {
                 c.background
@@ -427,9 +439,10 @@ struct StageFirstView: View {
         let still = look.reduced
         ZStack {
             ForEach(pagerPages, id: \.self) { n in
-                page(n, turn, c)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .offset(x: n == shown ? slide : slide + CGFloat(side) * pagerWidth)
+                PagerSlot(motion: motion, shown: n == shown, side: side, width: pagerWidth) {
+                    page(n, turn, c)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
                     .allowsHitTesting(n == shown)
                     .accessibilityHidden(n != shown)
                     .transition(still ? .opacity : .identity)
@@ -466,13 +479,13 @@ struct StageFirstView: View {
     /// or the one before (-1) comes in from that side. Past the last screen it gives a little.
     private func follow(_ x: CGFloat, toward step: Int) {
         guard !look.reduced, shown == at else { return }
-        guard let n = neighbor(step) else { slide = x / 4; return }
+        guard let n = neighbor(step) else { motion.slide = x / 4; return }
         var t = Transaction()
         t.disablesAnimations = true
         withTransaction(t) {
-            beside = n
-            side = step
-            slide = x
+            if beside != n { beside = n }
+            if side != step { side = step }
+            motion.slide = x
         }
     }
 
@@ -500,7 +513,7 @@ struct StageFirstView: View {
         guard !look.reduced, pagerWidth > 0, screens.contains(before) || before == 1 else {
             withAnimation(look.reduced ? .easeInOut(duration: 0.25) : nil) {
                 shown = new
-                slide = 0
+                motion.slide = 0
                 beside = nil
             }
             return
@@ -512,19 +525,45 @@ struct StageFirstView: View {
         t.disablesAnimations = true
         withTransaction(t) {
             shown = new
-            slide = (released ?? 0) + step * pagerWidth
+            motion.slide = (released ?? 0) + step * pagerWidth
             beside = before
             side = forward ? -1 : 1
         }
         settle()
     }
 
+    #if DEBUG
+    /// `-yuiAutoSwitch`: the app drags its own screens, so a run times the switch with no test
+    /// polling the accessibility tree (a snapshot blocks the main thread 40 to 60 ms and reads as a
+    /// hitch). Back and forth across the screens: 18 frames of finger, then let go, a second apart.
+    /// One switch per run of the task: it restarts when the screen turns (`.task(id:)`), so each
+    /// run sees the view as it is then, not the copy it started on.
+    /// `scripts/smoothness.sh` with SMOOTH_TEST=StageSwitchSmoothnessTests reads the frames.
+    private func autoSwitch() async {
+        guard ProcessInfo.processInfo.arguments.contains("-yuiAutoSwitch"), !look.reduced,
+              screens.count > 1, autoCount < 24 else { return }
+        try? await Task.sleep(for: .seconds(autoCount == 0 ? 8 : 1))
+        if Task.isCancelled { return }
+        if neighbor(autoStep) == nil { autoStep = -autoStep }
+        let step = autoStep
+        guard neighbor(step) != nil else { return }
+        autoCount += 1
+        var x: CGFloat = 0
+        for _ in 0..<18 {
+            x -= CGFloat(step) * 14
+            follow(x, toward: step)
+            try? await Task.sleep(for: .milliseconds(16))
+        }
+        release(x, turns: true, toward: step)
+    }
+    #endif
+
     /// The page springs to the middle; the one beside it goes once it is off screen.
     private func settle() {
         withAnimation(theme.spring) {
-            slide = 0
+            motion.slide = 0
         } completion: {
-            if slide == 0 { beside = nil }
+            if motion.slide == 0 { beside = nil }
         }
     }
 
@@ -1222,6 +1261,27 @@ struct StageFirstView: View {
         }
         // The field grows out of T, bottom right, and folds back into it.
         .transition(reduceMotion ? .opacity : .scale(scale: 0.2, anchor: .bottomTrailing).combined(with: .opacity))
+    }
+}
+
+/// How far the pager's page sits off center. Observed by `PagerSlot` alone.
+@MainActor @Observable
+final class PagerMotion {
+    var slide: CGFloat = 0
+}
+
+/// One page of the pager at its place: the one on show sits `slide` off center, the one
+/// beside it a screen's width further on its `side`. It is the only view that reads the
+/// motion, so a drag frame re-runs this and moves the page; the page's own body stays put.
+private struct PagerSlot<Content: View>: View {
+    let motion: PagerMotion
+    let shown: Bool
+    let side: Int
+    let width: CGFloat
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        content.offset(x: shown ? motion.slide : motion.slide + CGFloat(side) * width)
     }
 }
 

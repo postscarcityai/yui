@@ -74,6 +74,7 @@ struct ScreenPage: View {
     @Environment(\.ylAgent) private var agentID
 
     var body: some View {
+        let _ = BodyLog.hit("ScreenPage")
         let c = theme.swatch(scheme)
         Group {
             if parts.isEmpty {

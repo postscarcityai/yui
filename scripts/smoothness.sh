@@ -6,6 +6,7 @@
 #   scripts/smoothness.sh <sim udid> [--video out.mp4] [--skip-build] [--dark] [--json out.json] [--optimized]
 # --optimized: a Debug build (the launch flags need it) compiled -O, closer to a
 # TestFlight build's speed. Its own derived data, so both kinds can sit side by side.
+# SMOOTH_TEST=StageSwitchSmoothnessTests times switching the stage's screens (the thread body column then counts StageFirst's body).
 # SMOOTH_ONLY=swipe,open runs just those steps after the launch. Needs full Xcode. Leaves the log in build/smoothness.log.
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -87,7 +88,7 @@ sleep 2
 status=0
 TEST_RUNNER_SMOOTH_ROWS=$rows TEST_RUNNER_SMOOTH_APPEARANCE=$appearance TEST_RUNNER_YUI_SHOTS=${YUI_SHOTS:-} TEST_RUNNER_SMOOTH_ONLY=${SMOOTH_ONLY:-} \
   xcodebuild -project Yui.xcodeproj -scheme Yui -destination "id=$udid" -derivedDataPath "$dd" \
-  test-without-building -only-testing:YuiUITests/SmoothnessTests >"$out" 2>&1 || status=$?
+  test-without-building -only-testing:YuiUITests/${SMOOTH_TEST:-SmoothnessTests} >"$out" 2>&1 || status=$?
 
 sleep 1
 [ -n "$rec" ] && kill -INT "$rec" && wait "$rec" 2>/dev/null || true
@@ -96,7 +97,7 @@ wait "$logger" 2>/dev/null || true
 
 grep -E "Executed|error:" "$out" | tail -5 || true
 python3 - "$log" "$out" "$json" <<'EOF'
-import json, re, sys
+import json, os, re, sys
 from datetime import datetime
 log, out, dest = sys.argv[1], sys.argv[2], sys.argv[3]
 marks = {}
@@ -129,13 +130,22 @@ for phase, m in marks.items():
         x = re.search(r"perf (\w+) ([0-9.]+) ms", s)
         if x and x.group(1) not in ("hitch", "tap"): ivs.setdefault(x.group(1), []).append(float(x.group(2)))
     body = sum(1 for s in inside if s.endswith("body thread"))
+    # SMOOTH_TEST=StageSwitchSmoothnessTests: the stage and its screens count instead of the thread.
+    bodies = {n: sum(1 for s in inside if s.endswith("body " + n)) for n in ("StageFirst", "ScreenPage")}
+    if any(bodies.values()): body = bodies["StageFirst"]
     secs = b - a
     row = {"secs": round(secs, 1), "hitch_ms_per_s": round(sum(hitch) / secs, 1), "hitches": len(hitch),
            "taps": len(taps), "tap_p50": pct(taps, .5), "tap_max": max(taps) if taps else None,
-           "thread_body": body, "intervals": {k: [round(v) for v in vs] for k, vs in ivs.items()}}
+           "thread_body": body, "screen_page_body": bodies["ScreenPage"], "intervals": {k: [round(v) for v in vs] for k, vs in ivs.items()}}
     table[phase] = row
     iv = "  ".join(f"{k} {'/'.join(str(v) for v in vs)}" for k, vs in row["intervals"].items())
-    print(f"{phase:8} {secs:5.1f} {row['hitch_ms_per_s']:10.1f} {len(hitch):7} {len(taps):4} {fmt(row['tap_p50']):>7} {fmt(row['tap_max']):>7} {body:11}  {iv}")
+    print(f"{phase:8} {secs:5.1f} {row['hitch_ms_per_s']:10.1f} {len(hitch):7} {len(taps):4} {fmt(row['tap_p50']):>7} {fmt(row['tap_max']):>7} {body:11}  {iv}" + (f"  (ScreenPage body {bodies['ScreenPage']})" if bodies["ScreenPage"] else ""))
 if dest: json.dump(table, open(dest, "w"), indent=1)
+# SMOOTH_MAX_STAGE_BODY=150: the stage's body may run that often across the auto step's 24 switches (the old
+# build ran it ~460 times, once a drag frame), or the script fails.
+cap = os.environ.get("SMOOTH_MAX_STAGE_BODY")
+if cap and "auto" in table and table["auto"]["thread_body"] > int(cap):
+    print(f"FAIL: StageFirst body ran {table['auto']['thread_body']} times across the switches, budget {cap}")
+    sys.exit(1)
 EOF
 exit $status
