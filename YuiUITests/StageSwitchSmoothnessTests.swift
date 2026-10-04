@@ -62,4 +62,44 @@ final class StageSwitchSmoothnessTests: XCTestCase {
         waitScreen(app, 1, "the pills did not end on Home")
         shot("3-after-flicks")
     }
+
+    /// A switch starts at once and costs little. The app drags its own screens 24 times
+    /// (`-yuiAutoSwitchOut`) and writes how long each took from the finger lifting to the new screen
+    /// taking over, and how often the stage's and the screens' bodies ran. It failed on the old code
+    /// twice over: the screen waited a quarter second (ChatView's `pageTurns` debounce, meant for
+    /// streamed replies) and every drag frame ran the whole stage's body again, both pages with it.
+    func testASwitchStartsAtOnceAndCostsLittle() throws {
+        let out = "/tmp/yui-switch-\(UUID().uuidString).json"
+        let app = XCUIApplication()
+        app.launchArguments = ["-yuiStageFirst", "YES", "-yuiDemoAccount", "-yuiDemoAgents", "-yuiAgent", "yui",
+                               "-appearance", "light", "-yuiDemoReply", StagePagesTests.reply,
+                               "-yuiDemoPickupAfter", "0.5", "-yuiDemoReplyAfter", "2", "-yuiAutoSwitchOut", out]
+        app.launch()
+        XCTAssertTrue(app.buttons["stage-type"].waitForExistence(timeout: 15), "no stage")
+        app.buttons["stage-type"].tap()
+        let field = app.textFields["stage-field"]
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        field.typeText("Cooking bibimbap, keep me on track")
+        app.buttons["stage-send-text"].tap()
+        waitScreens(app, 3, "the stage has no screen 3")
+        // Nothing from the test touches the app while it plays its 24 switches.
+        var result: [String: Any]?
+        for _ in 0..<120 {
+            if let data = FileManager.default.contents(atPath: out) {
+                result = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+                break
+            }
+            sleep(1)
+        }
+        let r = try XCTUnwrap(result, "the app did not finish its 24 switches")
+        let latency = (r["latencyMs"] as? [Int] ?? []).sorted()
+        let switches = Double(r["switches"] as? Int ?? 1)
+        let stage = Double(r["stageBodies"] as? Int ?? 0) / switches
+        let pages = Double(r["screenPageBodies"] as? Int ?? 0) / switches
+        print("SWITCH latency ms p50 \(latency[latency.count / 2]) max \(latency.last ?? 0); bodies per switch: stage \(stage), screens \(pages)")
+        XCTAssertLessThan(latency[latency.count / 2], 120, "a switch waits too long after the finger lifts (ms)")
+        XCTAssertLessThan(latency.last ?? 0, 250, "a switch waits too long after the finger lifts (ms, slowest)")
+        XCTAssertLessThan(stage, 10, "the stage runs its body too often per switch")
+        XCTAssertLessThan(pages, 10, "the screens run their bodies too often per switch")
+    }
 }

@@ -1766,7 +1766,14 @@ struct ChatView: View {
                 send: send,
                 removePhoto: { p in photos.removeAll { $0.id == p.id } },
                 // A hello playing sits on screen 1 (YUI-225); leaving it for a screen ends it.
-                goScreen: { if $0 != 1 { stageFirst.hello = nil }; store.goToPage($0) },
+                goScreen: { n in
+                    if n != 1 { stageFirst.hello = nil }
+                    store.goToPage(n)
+                    // The person asked: the screen turns now. `pageTurns` below waits a quarter second so
+                    // streamed lines that ask for 2 and then 3 land on 3; a tap or a swipe is not that, and
+                    // waiting made every switch start a quarter second after the finger (feedback ANRhjGE0nCBvjnHKIE2SNls).
+                    turnPage(to: n)
+                },
                 drawerDrag: { x in
                     guard !drawerOpen else { return }
                     stageFocused = false

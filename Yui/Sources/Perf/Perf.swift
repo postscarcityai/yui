@@ -249,12 +249,20 @@ final class PerfLive {
 /// test can count how often typing makes the chat re-evaluate. Off everywhere else.
 enum BodyLog {
     #if DEBUG
-    static let on = ProcessInfo.processInfo.arguments.contains("-yuiBodyLog")
+    /// `-yuiAutoSwitchOut <path>` counts without logging: the switch test reads the totals.
+    static let on = ProcessInfo.processInfo.arguments.contains("-yuiBodyLog") || counting
+    static let counting = ProcessInfo.processInfo.arguments.contains("-yuiAutoSwitchOut")
+    nonisolated(unsafe) static var counts: [String: Int] = [:]
     #else
     static let on = false
     #endif
     static func hit(_ name: String) {
-        if on { Perf.log.debug("body \(name, privacy: .public)") }
+        guard on else { return }
+        #if DEBUG
+        counts[name, default: 0] += 1
+        if counting, !ProcessInfo.processInfo.arguments.contains("-yuiBodyLog") { return }
+        #endif
+        Perf.log.debug("body \(name, privacy: .public)")
     }
 }
 

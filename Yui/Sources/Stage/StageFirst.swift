@@ -257,6 +257,7 @@ struct StageFirstView: View {
     /// -yuiAutoSwitch: the way it is going and how many switches it has made.
     @State private var autoStep = 1
     @State private var autoCount = 0
+    @State private var autoLatency: [Int] = []
     #endif
 
     static let small = BarButtons.small, touch = BarButtons.touch
@@ -538,15 +539,19 @@ struct StageFirstView: View {
     /// hitch). Back and forth across the screens: 18 frames of finger, then let go, a second apart.
     /// One switch per run of the task: it restarts when the screen turns (`.task(id:)`), so each
     /// run sees the view as it is then, not the copy it started on.
+    /// `-yuiAutoSwitchOut <path>`: after 24 switches, a JSON file with how long each took from the
+    /// finger lifting to the new screen taking over, and how often the stage's and the screens' bodies ran.
     /// `scripts/smoothness.sh` with SMOOTH_TEST=StageSwitchSmoothnessTests reads the frames.
     private func autoSwitch() async {
-        guard ProcessInfo.processInfo.arguments.contains("-yuiAutoSwitch"), !look.reduced,
+        let args = ProcessInfo.processInfo.arguments
+        guard args.contains("-yuiAutoSwitch") || args.contains("-yuiAutoSwitchOut"), !look.reduced,
               screens.count > 1, autoCount < 24 else { return }
         try? await Task.sleep(for: .seconds(autoCount == 0 ? 8 : 1))
         if Task.isCancelled { return }
         if neighbor(autoStep) == nil { autoStep = -autoStep }
         let step = autoStep
         guard neighbor(step) != nil else { return }
+        if autoCount == 0 { BodyLog.counts = [:] }
         autoCount += 1
         var x: CGFloat = 0
         for _ in 0..<18 {
@@ -554,7 +559,15 @@ struct StageFirstView: View {
             follow(x, toward: step)
             try? await Task.sleep(for: .milliseconds(16))
         }
+        let from = shown, lifted = CACurrentMediaTime()
         release(x, turns: true, toward: step)
+        while shown == from, CACurrentMediaTime() - lifted < 3 { try? await Task.sleep(for: .milliseconds(2)) }
+        autoLatency.append(Int(((CACurrentMediaTime() - lifted) * 1000).rounded()))
+        guard autoCount == 24, let i = args.firstIndex(of: "-yuiAutoSwitchOut"), args.indices.contains(i + 1) else { return }
+        let out: [String: Any] = ["switches": autoCount, "latencyMs": autoLatency,
+                                  "stageBodies": BodyLog.counts["StageFirst"] ?? 0,
+                                  "screenPageBodies": BodyLog.counts["ScreenPage"] ?? 0]
+        try? JSONSerialization.data(withJSONObject: out).write(to: URL(fileURLWithPath: args[i + 1]))
     }
     #endif
 
