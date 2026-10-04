@@ -9,13 +9,13 @@ final class PresetFamiliesTests: XCTestCase {
     private var log = ""
     private var tag = ""
 
-    private func launch(_ tag: String, _ lines: [String], appearance: String = "light") {
+    private func launch(_ tag: String, _ lines: [String], appearance: String = "light", extra: [String] = []) {
         self.tag = tag
         log = FileManager.default.temporaryDirectory.appending(path: "yui19-\(tag).jsonl").path
         try? FileManager.default.removeItem(atPath: log)
         app = XCUIApplication()
         app.launchArguments = ["-yuiDemoAccount", "-yuiDemoAgents", "-yuiAgent", "wizard", "-appearance", appearance,
-                               "-yuiThemeDemo", lines.joined(separator: "\\n"), "-yuiEventLog", log]
+                               "-yuiThemeDemo", lines.joined(separator: "\\n"), "-yuiEventLog", log] + extra
         app.launch()
     }
 
@@ -157,6 +157,38 @@ final class PresetFamiliesTests: XCTestCase {
         shot("7-gallery-row")
         attachEvents()
     }
+
+    /// Voice first (t_e9220c7d): the storyboard's comment field and the image edit's "What should
+    /// change?" field each carry a mic. Saying fills the field; nothing sends until Send.
+    private func commentMics(appearance: String) throws {
+        launch("comment-mics-\(appearance)", [
+            #"storyboard "Launch reel" /demo/s1.jpg|Hook /demo/s2.jpg|Problem"#,
+            #"image /demo/g1.jpg "Fix the wheel" +edit"#,
+        ], appearance: appearance, extra: ["-yuiPTTFake", "Faster cut"])
+        XCTAssertTrue(app.staticTexts["Launch reel"].waitForExistence(timeout: 20), "the storyboard never arrived")
+        let commentMic = app.buttons["comment-mic-0"].firstMatch
+        scrollTo(commentMic)
+        XCTAssertTrue(commentMic.exists, "no mic on the comment field")
+        sleep(2)
+        shot("1-comment-mic")
+        commentMic.tap()
+        commentMic.tap()
+        let field = app.textFields["Comment on this frame"].firstMatch
+        let said = NSPredicate(format: "value == %@", "Faster cut")
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: said, object: field)], timeout: 5), .completed,
+                       "the words never reached the comment field")
+        XCTAssertTrue(events().isEmpty, "saying a comment must not send it")
+        let editMic = app.buttons["edit-mic"].firstMatch
+        scrollTo(editMic)
+        XCTAssertTrue(editMic.exists, "no mic on the What should change field")
+        app.swipeUp()
+        sleep(1)
+        shot("2-edit-mic")
+        attachEvents()
+    }
+
+    func testCommentMics() throws { try commentMics(appearance: "light") }
+    func testCommentMicsDark() throws { try commentMics(appearance: "dark") }
 
     // MARK: data and science
 

@@ -239,11 +239,14 @@ struct GroupBar: View {
     }
 }
 
-/// A mic that fills a name field (renaming or creating a group can be said, not typed).
-/// Tap and say it; tap again to stop. The name is what was heard, without a closing period.
+/// A mic that fills a text field (renaming or creating a group, or commenting on a photo, can be
+/// said, not typed). Tap and say it; tap again to stop. The words are what was heard, without a
+/// closing period. `append` adds to what is already typed instead of replacing it.
 struct NameMic: View {
     @Binding var text: String
     let id: String
+    var label = "Say the name"
+    var append = false
     /// Runs once the words are in the field (a rename saves itself, as on Return).
     var done: () -> Void = {}
     @State private var talk = PushToTalk()
@@ -257,7 +260,11 @@ struct NameMic: View {
                 Task {
                     var heard = await talk.stop()
                     while let last = heard.last, ".!?,".contains(last) { heard.removeLast() }
-                    if !heard.isEmpty { text = heard; done() }
+                    if !heard.isEmpty {
+                        let had = text.trimmingCharacters(in: .whitespacesAndNewlines)
+                        text = append && !had.isEmpty ? had + " " + heard : heard
+                        done()
+                    }
                 }
             } else {
                 Task { await talk.start() }
@@ -274,7 +281,7 @@ struct NameMic: View {
                 .contentShape(Circle())
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(talk.listening ? "Stop talking" : "Say the name")
+        .accessibilityLabel(talk.listening ? "Stop talking" : label)
         .accessibilityIdentifier(id)
         .onDisappear { talk.cancel() }
         #if DEBUG

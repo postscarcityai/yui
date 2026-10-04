@@ -681,6 +681,8 @@ struct StoryboardPreset: View {
                 .padding(.vertical, theme.spacing.s)
                 .background(s.background, in: Capsule())
                 .overlay(Capsule().stroke(s.outline, lineWidth: 1))
+            NameMic(text: Binding(get: { drafts[i] ?? "" }, set: { drafts[i] = $0 }),
+                    id: "comment-mic-\(i)", label: "Say a comment", append: true)
             if !(drafts[i] ?? "").trimmingCharacters(in: .whitespaces).isEmpty {
                 Button("Send comment", systemImage: "arrow.up") { send(i, pos: pos) }
                     .labelStyle(.iconOnly)
@@ -754,6 +756,7 @@ struct ImageEditPreset: View {
                     .padding(.vertical, theme.spacing.m)
                     .background(s.background, in: .rect(cornerRadius: theme.radius.pill))
                     .overlay(RoundedRectangle(cornerRadius: theme.radius.pill).stroke(s.outline, lineWidth: 1.5))
+                NameMic(text: $instruction, id: "edit-mic", label: "Say what should change", append: true)
                 if marked {
                     Button("Clear mark", systemImage: "arrow.uturn.backward", action: clear)
                         .labelStyle(.iconOnly)
