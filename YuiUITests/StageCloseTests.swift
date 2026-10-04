@@ -2,31 +2,28 @@ import XCTest
 
 /// A way out of every full-screen answer (YUI-195, TestFlight feedback: "I don't wanna take any
 /// action. I don't want to burn any tokens so I need a default way to just cancel this and get
-/// back to the home screen"). Close mid-plan, Back home at the end, pull the card down: each one
+/// back to the home screen"). Back home at the end, pull the card down: each one
 /// goes home and sends nothing (the record still holds one message of theirs and no working
 /// state ever starts), and the plan opens again from its chip in the chat.
 /// Screenshots go to `YUI_SHOTS` when set, and always into the result bundle.
 final class StageCloseTests: XCTestCase {
     private let said = "OK, yeah go ahead and release that."
 
-    func testCloseMidPlanLight() throws { try closeMidPlan(appearance: "light") }
-    func testCloseMidPlanDark() throws { try closeMidPlan(appearance: "dark") }
+    func testNoXMidPlanLight() throws { try noX(appearance: "light") }
+    func testNoXMidPlanDark() throws { try noX(appearance: "dark") }
     func testBackHomeAtTheEndLight() throws { try backHome(appearance: "light") }
     func testBackHomeAtTheEndDark() throws { try backHome(appearance: "dark") }
     func testPullDownToDismissLight() throws { try pullDown(appearance: "light") }
     func testPullDownToDismissDark() throws { try pullDown(appearance: "dark") }
 
-    private func closeMidPlan(appearance: String) throws {
+    /// TestFlight feedback (t_df765e5c): no X in the bottom left, only back and next.
+    private func noX(appearance: String) throws {
         let app = launch(appearance)
         try play(app)
+        XCTAssertFalse(app.buttons["stage-close"].exists, "the X is back")
+        XCTAssertTrue(app.buttons["stage-back"].exists && app.buttons["stage-next"].exists, "back and next are missing")
         XCTAssertFalse(app.buttons["stage-home"].exists, "Back home belongs at the end, not on the first page")
         shot("1-mid-plan", appearance)
-        app.buttons["stage-close"].tap()
-        try assertHome(app)
-        shot("2-home", appearance)
-        try assertNothingSent(app)
-        try assertReopens(app)
-        shot("3-reopened", appearance)
     }
 
     private func backHome(appearance: String) throws {
@@ -77,7 +74,6 @@ final class StageCloseTests: XCTestCase {
         app.buttons["stage-send-text"].tap()
         let both = app.descendants(matching: .any).matching(NSPredicate(format: "identifier == 'stage-segments' AND label == 'Part 1 of 2'")).firstMatch
         XCTAssertTrue(both.waitForExistence(timeout: 25), "the reply never grew to its two parts")
-        XCTAssertTrue(app.buttons["stage-close"].waitForExistence(timeout: 3), "no close on the plan")
     }
 
     /// The agent's home: no answer on screen, and the greeting or its shortcuts in its place.

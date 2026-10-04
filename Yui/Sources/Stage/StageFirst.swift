@@ -1099,7 +1099,7 @@ struct StageFirstView: View {
         }
     }
 
-    // MARK: Bottom bar: back and on at the left, + T and the mic at the right
+    // MARK: Bottom bar: back and on at the left (never an X; the pull-down and Back home close the answer), + T and the mic at the right
 
     @ViewBuilder private func bottom(_ turn: StageTurn?, _ c: Swatch) -> some View {
         VStack(alignment: .trailing, spacing: theme.spacing.s) {
@@ -1122,9 +1122,6 @@ struct StageFirstView: View {
                 let pages = turn?.pages ?? 0
                 let arrows = pages > 1 && !mic.live
                 HStack(spacing: 8) {
-                    if closable(turn), !atEnd(turn) {
-                        small("xmark", c, filled: false, label: "Close", id: "stage-close") { goHome() }
-                    }
                     if arrows {
                         let at = min(model.at, pages - 1)
                         small("chevron.left", c, filled: false, label: "Back", id: "stage-back") { step(-1) }
