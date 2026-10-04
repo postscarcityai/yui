@@ -21,6 +21,8 @@ struct MicPreset: View {
     @Environment(\.ylAnswers) private var answers
     @Environment(\.ylEmit) private var emit
     @Environment(\.ylHostedSubmit) private var hosted
+    @Environment(\.ylPageVoice) private var pageVoice
+    @Environment(\.ylStepActive) private var stepActive
     @Environment(\.yuiTheme) private var theme
     @Environment(\.colorScheme) private var scheme
 
@@ -94,9 +96,29 @@ struct MicPreset: View {
             emit(words.isEmpty ? c.event([:]) : c.event(["transcript": .string(words)], echo: words))
         }
         // Reopened: a sent mic comes back with its words; in a plan, the plan's answer holds them.
-        .onAppear(perform: restore)
-        .onDisappear { talk?.cancel() }
+        .onAppear { restore(); registerVoice() }
+        .onChange(of: text) { registerVoice() }
+        .onChange(of: stepActive) { registerVoice() }
+        // Words the stage's mic heard add to what is there, as a tap on this mic does.
+        .onChange(of: pageVoice?.fill, initial: true) { _, f in
+            guard let f, f.id == c.ylID, let heard = f.words else { return }
+            Task { @MainActor in
+                guard pageVoice?.fill == f else { return }
+                let had = text.trimmingCharacters(in: .whitespacesAndNewlines)
+                text = had.isEmpty ? heard : had + (had.last.map { ".!?,".contains($0) } == true ? " " : ". ") + heard
+                pageVoice?.consume(f)
+            }
+        }
+        .onDisappear {
+            talk?.cancel()
+            pageVoice?.clear(c.ylID)
+        }
         .task { if c.flag("auto"), !sent, text.isEmpty { toggle() } }
+    }
+
+    private func registerVoice() {
+        guard let pageVoice else { return }
+        if stepActive, !sent { pageVoice.register(.words(id: c.ylID, current: text)) } else { pageVoice.clear(c.ylID) }
     }
 
     private var note: String {

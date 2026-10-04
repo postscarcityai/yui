@@ -32,6 +32,8 @@ struct FormPreset: View {
     @Environment(\.colorScheme) private var scheme
     @Environment(\.ylEmit) private var emit
     @Environment(\.ylHostedSubmit) private var hosted
+    @Environment(\.ylPageVoice) private var pageVoice
+    @Environment(\.ylStepActive) private var stepActive
 
     private var fields: [FormField] { (c.props["fields"]?.array ?? []).compactMap(FormField.init) }
 
@@ -61,7 +63,27 @@ struct FormPreset: View {
             }
         }
         .disabled(sent)
-        .onDisappear { talk?.cancel() }
+        .onDisappear {
+            talk?.cancel()
+            pageVoice?.clear(c.ylID)
+        }
+        .onAppear { registerVoice(fields) }
+        .onChange(of: values) { registerVoice(fields) }
+        .onChange(of: stepActive) { registerVoice(fields) }
+        .onChange(of: sent) { registerVoice(fields) }
+        // Words the stage's mic heard: they land after the page is back and has restored itself.
+        .onChange(of: pageVoice?.fill, initial: true) { _, f in
+            guard let f, f.id == c.ylID else { return }
+            Task { @MainActor in
+                guard pageVoice?.fill == f else { return }
+                withAnimation(theme.spring) {
+                    for (k, v) in f.values { values[k] = v }
+                    heard.formUnion(f.values.keys)
+                }
+                voiceNote = "Filled \(f.values.count). Check them, fix by tapping, then go on."
+                pageVoice?.consume(f)
+            }
+        }
         .sheet(item: $moving) { shape in
             KeyMoveSheet(text: shape.key) {
                 for (k, v) in values { if let t = v.string, t.contains(shape.key) { values[k] = .string(t.replacingOccurrences(of: shape.key, with: "")) } }
@@ -96,13 +118,15 @@ struct FormPreset: View {
     /// fill the fields below, marked with a mic so the person checks them before Next.
     private func voiceBar(_ s: Swatch, _ fields: [FormField]) -> some View {
         let listening = talk?.listening == true
+        // Beside the stage's bar the page's mic is one slim row: the bar is the big mic, this one stays for a tap on the page.
+        let slim = pageVoice != nil
         return VStack(alignment: .leading, spacing: theme.spacing.s) {
             HStack(spacing: theme.spacing.m) {
                 Button { toggleTalk(fields) } label: {
                     Image(systemName: listening ? "stop.fill" : "mic.fill")
                         .font(.system(size: 20, weight: .bold))
                         .foregroundStyle(s.onAccent)
-                        .frame(width: 48, height: 48)
+                        .frame(width: slim ? 36 : 48, height: slim ? 36 : 48)
                         .background(s.accent, in: Circle())
                         .overlay(Circle().stroke(s.accent.opacity(listening ? 0.35 : 0), lineWidth: 6).scaleEffect(1.18))
                         .contentShape(Circle())
@@ -112,9 +136,11 @@ struct FormPreset: View {
                 .accessibilityIdentifier("form-talk-\(c.ylID)")
                 .sensoryFeedback(.impact(weight: .light), trigger: listening)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(listening ? "Listening. Tap to stop." : heard.isEmpty ? "Talk it out" : "Tap to add more")
-                        .font(theme.font(theme.type.body, .bold))
-                        .foregroundStyle(s.ink)
+                    if !slim || listening {
+                        Text(listening ? "Listening. Tap to stop." : heard.isEmpty ? "Talk it out" : "Tap to add more")
+                            .font(theme.font(theme.type.body, .bold))
+                            .foregroundStyle(s.ink)
+                    }
                     Text(voiceCaption(fields))
                         .font(theme.font(theme.type.caption))
                         .foregroundStyle(s.inkSoft)
@@ -130,6 +156,16 @@ struct FormPreset: View {
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityIdentifier("form-talk-heard-\(c.ylID)")
             }
+        }
+    }
+
+    /// The stage's mic fills this page while it is the one on show.
+    private func registerVoice(_ fields: [FormField]) {
+        guard let pageVoice else { return }
+        if stepActive, !sent, VoiceFill.canFill(fields) {
+            pageVoice.register(.form(id: c.ylID, fields: fields, current: values))
+        } else {
+            pageVoice.clear(c.ylID)
         }
     }
 

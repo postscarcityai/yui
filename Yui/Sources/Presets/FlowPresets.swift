@@ -25,7 +25,8 @@ struct StageCenter<Content: View>: View {
     var body: some View {
         GeometryReader { geo in
             ScrollView {
-                content.frame(maxWidth: .infinity, minHeight: geo.size.height, alignment: .leading)
+                content.frame(maxWidth: .infinity, minHeight: geo.size.height, alignment: .topLeading)
+                    .padding(.top, 8)
             }
             .scrollBounceBehavior(.basedOnSize)
             .scrollIndicators(.hidden)
@@ -592,6 +593,7 @@ struct PlanPreset: View {
                         }
                         .environment(\.ylBare, true)
                         .environment(\.ylHostedSubmit, true)
+                        .environment(\.ylStepActive, i == cur)
                         .environment(\.ylAnswers, keptAnswers)
                         .environment(\.ylEmit, relay(emit, pass: false) { e in record(e, step: step, i: i, steps: steps, review: review) })
                         .frame(height: i == cur ? nil : 0, alignment: .top)

@@ -1417,7 +1417,7 @@ struct ChatView: View {
             if cancel {
                 talk.cancel()
             } else {
-                Task { let words = await talk.stop(); if !words.isEmpty { composer.draft = words; send() } }
+                Task { let words = await talk.stop(); if !words.isEmpty { composer.draft = words; spokenSend = true; send() } }
             }
         } else if !micStarting {
             // A quick tap: hands-free (YUI-14). Holding still talks once and sends on let go.
@@ -1455,6 +1455,7 @@ struct ChatView: View {
         case .send(let words):
             handsFreeWords = words
             composer.draft = words
+            spokenSend = true
             send()
             // send() clears the composer once the words are out; still there means they didn't go.
             handsFreeDo(composer.hasWords ? .sendFailed : .sent)
@@ -1568,6 +1569,9 @@ struct ChatView: View {
         if datas.count > room { flash("Up to \(Attachments.maxPhotos) photos in one message.") }
     }
 
+    /// Set by the mic just before `send()`: these words were said, so a page may take them.
+    @State private var spokenSend = false
+
     private func send() {
         // send_bubble (YUI-102): the tap to the frame with the bubble. Photo sends wait on
         // the upload before their bubble, so they are not timed.
@@ -1582,6 +1586,13 @@ struct ChatView: View {
         }
         keySendAnyway = false
         keyHeld = nil
+        // Said, not typed, on a page with fields (t_7d424132): the words fill the page, marked, and wait for Next.
+        let spoken = spokenSend
+        spokenSend = false
+        if spoken, photos.isEmpty, stageFirst.open, stageFirst.pageVoice.hear(text) {
+            clearComposer()
+            return
+        }
         // Picks waiting on the stage's last page (YUI-208): the words go in with them, one answer.
         if photos.isEmpty, stageFirst.open, let bundle = stageFirst.bundle, bundle(text) {
             clearComposer()

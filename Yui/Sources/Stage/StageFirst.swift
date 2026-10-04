@@ -40,6 +40,8 @@ final class StageFirstModel {
     /// Picks waiting on the last page (YUI-208): set while the questions are up with something picked. Words
     /// the person types or says then go with them as one answer; nil means the words go alone.
     @ObservationIgnored var bundle: ((String) -> Bool)?
+    /// What the page on show can fill from spoken words (t_7d424132).
+    let pageVoice = PageVoice()
     /// Rows in the record when it was last looked at: the count on its button is the rest.
     var seen = 0
     /// The last move went back a chunk: the next one comes on from the other side (YUI-120).
@@ -332,6 +334,11 @@ struct StageFirstView: View {
         // The stage opens from the mic: a wash of the agent's color out of the bottom right.
         .overlay { StageWash(color: c.accent, look: look, trigger: model.opened).ignoresSafeArea() }
         .environment(\.ylOnStage, true)
+        .environment(\.ylPageVoice, model.pageVoice)
+        .onChange(of: mic.live, initial: true) { model.pageVoice.listening = mic.live }
+        // Another turn or a hello: the page that took the voice is gone.
+        .onChange(of: model.ask) { model.pageVoice.reset() }
+        .onChange(of: model.hello) { model.pageVoice.reset() }
         .onChange(of: mic.words) { voice &+= 1 }
         // The reply came in: one beat of found, then the first chunk (Stage motion).
         .onChange(of: turn?.pages ?? 0) { old, new in
@@ -1021,8 +1028,8 @@ struct StageFirstView: View {
                 if atEnd(t) { pageEnd(c) }
             }
             .padding(.vertical, theme.spacing.m)
-            // A short page sits in the middle of the phone, where the thumb is, not pinned under the bar.
-            .frame(maxWidth: .infinity, minHeight: geo.size.height, alignment: .leading)
+            // A short page sits under its title, close to the fields, with no empty band over them.
+            .frame(maxWidth: .infinity, minHeight: geo.size.height, alignment: .topLeading)
         }
         .scrollBounceBehavior(.basedOnSize)
         .scrollIndicators(.hidden)
