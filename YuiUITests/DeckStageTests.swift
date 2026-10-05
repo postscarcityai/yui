@@ -30,7 +30,7 @@ final class DeckStageTests: XCTestCase {
     page "Like notes on a guitar" body="One string plays many notes. Each note is a particle: light, matter, gravity."
     shapes h=8
     shape@pegl dot at=0.8,3.4 tone=ink
-    shape@bit path "One string" pts=0.8,3.4|3,2.4|5,3.4|7,4.4|9.2,3.4 tone=mint +pulse
+    shape@bit path pts=0.8,3.4|3,2.4|5,3.4|7,4.4|9.2,3.4 tone=mint +pulse
     shape@pegr dot at=9.2,3.4 tone=ink
     shape@light pill "Light" at=2,6.4 tone=butter
     shape@matter pill "Matter" at=5,6.4 tone=lavender
@@ -39,7 +39,7 @@ final class DeckStageTests: XCTestCase {
     shapes h=8
     shape@bit circle "?" at=2.6,4 size=1.6 tone=mint +dash +pulse
     shape@lab box "Biggest collider" at=7.4,4 size=3.4 tone=lavender +fill
-    shape arc "too small to see" from=lab to=bit bend=-0.3 tone=mute +dash
+    shape arc "too small" from=lab to=bit bend=-0.3 tone=mute +dash
     choose "In string theory, what is everything made of?" "Tiny dots"|"Tiny wiggling strings"|"Atoms" answer="Tiny wiggling strings"
     """
 
@@ -94,8 +94,11 @@ final class DeckStageTests: XCTestCase {
             sleep(2 + pause)
             shot(String(format: "%02d", i + 1))
         }
-        // The quiz is the last page; a tap on the drawing's right half turns to it.
-        next.tap()
+        // The quiz is the last page: one more swipe, or a tap on the drawing's right half.
+        stage.coordinate(withNormalizedOffset: CGVector(dx: 0.88, dy: 0.35))
+            .press(forDuration: 0.05, thenDragTo: stage.coordinate(withNormalizedOffset: CGVector(dx: 0.08, dy: 0.35)),
+                   withVelocity: 260, thenHoldForDuration: 0.1)
+        if !app.buttons["Tiny wiggling strings"].waitForExistence(timeout: 3) { next.tap() }
         XCTAssertTrue(app.buttons["Tiny wiggling strings"].waitForExistence(timeout: 5), "the quiz is not the last page")
         sleep(1 + pause)
         shot("06-quiz")

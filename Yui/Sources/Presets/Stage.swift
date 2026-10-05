@@ -84,8 +84,9 @@ struct StageView: View {
                 header(c)
                 if immersive {
                     // A deck, plan or walkthrough alone is the screen: it pages itself (YUI-82).
+                    // A paged deck is the stage itself and runs edge to edge (feedback ANhbech_).
                     YLItemsView(items: YLItem.layout(components, pills: nil))
-                        .padding(.horizontal, theme.spacing.l)
+                        .padding(.horizontal, edge ? 0 : theme.spacing.l)
                         .padding(.bottom, theme.spacing.s)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
@@ -119,6 +120,11 @@ struct StageView: View {
     /// One deck, plan or narrate and nothing else: it gets the whole height.
     private var immersive: Bool {
         components.count == 1 && ["deck", "plan", "flow", "narrate"].contains(components[0].preset)
+    }
+
+    /// A paged deck alone draws edge to edge; a scrolling one keeps its margins.
+    private var edge: Bool {
+        immersive && components[0].preset == "deck" && components[0].string("layout") != "scroll"
     }
 
     /// A timeline reads top down like a page, so it starts at the top (YUI-112).

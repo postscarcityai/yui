@@ -57,6 +57,8 @@ struct MorphStage: View {
                 // A soft light behind the drawing, so the stage has depth and no edge.
                 RadialGradient(colors: [s.accent.opacity(scheme == .dark ? 0.16 : 0.10), .clear], center: .init(x: 0.5, y: 0.3),
                                startRadius: 0, endRadius: max(W, H) * 0.6)
+                    // Faded in from the top, so the light has no edge under the header.
+                    .mask(LinearGradient(colors: [.clear, .black], startPoint: .top, endPoint: .init(x: 0.5, y: 0.22)))
                     .allowsHitTesting(false)
                     .accessibilityHidden(true)
                 MorphCanvas(pages: morphs, scroll: scroll, opened: opened, still: still)
@@ -207,9 +209,11 @@ struct MorphStage: View {
         HStack(spacing: 0) {
             Button("Previous page") { turn(to: i - 1) }
                 .buttonStyle(ClearTurn())
+                .accessibilityLabel("Previous page")
                 .disabled(i == 0)
             Button("Next page") { turn(to: i + 1) }
                 .buttonStyle(ClearTurn())
+                .accessibilityLabel("Next page")
                 .disabled(i >= pages.count - 1)
         }
     }
