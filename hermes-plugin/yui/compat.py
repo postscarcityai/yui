@@ -57,12 +57,12 @@ FLOW_BUILD = 414
 # The stage redesign: `draw`, the agent's own SVG up to `end` (docs/STAGE-REDESIGN.md), and
 # YUI-276's marks (venn, contour, region and doodle shapes, `shapes img=`, a plan that takes
 # `shapes`). Builds are numbered by commit count (git rev-list --count, scripts/testflight.sh).
-# `draw` reached main at 450 (ac0f3a9, the merge of pull request 6) and the marks at 465
-# (7295a64 on claude/elegant-johnson-stn1u8, the newest commit found when these were set,
-# Oct 2 2026). Both gates are the next build after it, 466, the first build that can carry
-# both. Older builds get the words.
+# `draw` reached main at 450 (ac0f3a9, the merge of pull request 6); no build between it and
+# 466 was ever made from main, so 466 gates it. The marks reached main with the merge of pull
+# request 7 (92fffc7), whose count is 492: main had moved on to 461 by then, so a build numbered
+# 466 to 491 can exist without them. Older builds get the words.
 FREE_DRAW_BUILD = 466
-MARKS_BUILD = 466
+MARKS_BUILD = 492
 MARK_KINDS = {"venn", "contour", "region", "doodle", "tap", "swipe"}
 
 # First app build whose parser knows each preset (git rev-list --count of the
