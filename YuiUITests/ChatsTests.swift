@@ -81,17 +81,18 @@ final class ChatsTests: XCTestCase {
         XCTAssertTrue(rows[0].label.contains("Tuesday's groceries") && rows[0].label.contains("Five dinners, one list"), rows[0].label)
         XCTAssertTrue(rows[0].label.contains("New reply"), "no dot on the unread chat: \(rows[0].label)")
         XCTAssertFalse(rows[1].label.contains("New reply"))
-        XCTAssertTrue(rows[2].label.hasPrefix("Hi Basil"), "the first chat is called Hi Basil: \(rows[2].label)")
+        XCTAssertTrue(rows[2].label.hasPrefix("Earlier"), "the first, untitled chat reads Earlier once there are more: \(rows[2].label)")
         XCTAssertTrue(rows[2].label.contains("3d"), rows[2].label)
-        let next = app.buttons["drawer-next-up"]
-        XCTAssertTrue(next.exists, "no Next up")
-        XCTAssertGreaterThan(next.frame.minY, rows[2].frame.maxY - 1, "Next up sits under the chats")
-        let pin = app.buttons["drawer-pin-calories"]
-        XCTAssertTrue(pin.exists, "no pinned screen")
-        XCTAssertGreaterThan(pin.frame.minY, next.frame.maxY - 1, "pinned screens come last")
-        XCTAssertEqual(pin.frame.minY, app.buttons["drawer-pin-dinners"].frame.minY, accuracy: 2, "one row, sideways")
+        // Home is the chats only (Chris, Oct 5): no Next up, no pinned screens under them.
+        XCTAssertFalse(app.buttons["drawer-next-up"].exists, "Home still has Next up")
+        XCTAssertFalse(app.buttons["drawer-pin-calories"].exists, "a pinned screen on Home")
         sleep(1)
         shot("drawer")
+        app.buttons["drawer-tab-agent"].tap()
+        let pin = app.buttons["drawer-pin-calories"]
+        XCTAssertTrue(pin.waitForExistence(timeout: 3), "no pinned screen under Agent")
+        XCTAssertEqual(pin.frame.minY, app.buttons["drawer-pin-dinners"].frame.minY, accuracy: 2, "one row, sideways")
+        app.buttons["drawer-tab-home"].tap()
 
         // 2. Swipe a row left: Rename and Delete behind it. The drawer stays open.
         rows[2].swipeLeft()

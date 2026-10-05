@@ -64,10 +64,14 @@ final class DrawerTests: XCTestCase {
         waitHittable(close, "the drawer did not settle open")
         // It stops short: the drawer's right edge sits inside the screen.
         XCTAssertLessThan(close.frame.maxX, app.frame.maxX - 20, "the drawer covers the whole width")
-        XCTAssertTrue(app.buttons["drawer-pin-workout"].waitForExistence(timeout: 3), "no pinned workout on Home")
-        XCTAssertTrue(app.buttons["drawer-next-up"].exists, "no next-up for the open question")
+        // Home is the chats only: the pinned workout sits under Agent > More, and no Next up (Review counts it).
+        XCTAssertFalse(app.buttons["drawer-next-up"].exists, "Home still has Next up")
+        XCTAssertFalse(app.buttons["drawer-pin-workout"].exists, "a pinned screen on Home")
         sleep(1)
         shot("1-home")
+        app.buttons["drawer-tab-agent"].tap()
+        XCTAssertTrue(app.buttons["drawer-pin-workout"].waitForExistence(timeout: 3), "no pinned workout under Agent")
+        app.buttons["drawer-tab-home"].tap()
 
         // A drag left on the drawer closes it.
         app.coordinate(withNormalizedOffset: CGVector(dx: 0.7, dy: 0.5))

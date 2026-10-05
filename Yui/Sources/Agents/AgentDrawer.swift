@@ -6,11 +6,11 @@ import YuiLines
 // with everything about the agent you're talking to. A drag to the right on the
 // chat pulls it out and it follows the finger; it stops short of the right edge
 // so the chat stays in view, and a tap on that sliver or a drag back closes it.
-// Tabs: Home (pinned screens, what's next, the agent's backlog and screens,
-// shortcuts), Review (what's waiting on you, answered in place), Controls, About.
+// Tabs: Home (the chats, nothing else), Review (what's waiting on you, answered in place),
+// Agent (who it is, then More: flows, pinned screens and its backlog).
 // The agent sits at the bottom; a tap there opens the switcher, which springs up (YUI-194, back as it was).
 // The agent fills three lists itself with `menu` lines (YUI-86): review items
-// sit under the thread's asks in Review, backlog and shortcuts on Home.
+// sit under the thread's asks in Review, backlog under Agent > More, shortcuts as chips over the bar.
 
 enum Drawer {
     /// Share of the screen the drawer covers. One constant, so it can shrink later.
@@ -166,8 +166,7 @@ struct AgentDrawer: View {
             ScrollView {
                 Group {
                     switch tab {
-                    case .home: DrawerHome(store: store, waiting: waiting, close: close, compose: compose,
-                                           openChat: openChat) { tab = .review }
+                    case .home: DrawerHome(store: store, openChat: openChat)
                     case .review: DrawerReview(store: store, items: waiting, close: close, compose: compose)
                     case .agent: DrawerAgent(store: store, close: close, edit: edit) { words in
                         close()
@@ -383,11 +382,21 @@ private struct DrawerRow: View {
 
 private struct DrawerHome: View {
     let store: ChatStore
-    let waiting: [ReviewItem]
-    let close: () -> Void
-    let compose: (String) -> Void
     let openChat: (String) -> Void
-    let review: () -> Void
+
+    var body: some View {
+        DrawerChats(store: store, openChat: openChat)
+            .accessibilityIdentifier("drawer-home")
+    }
+}
+
+// MARK: More (on the Agent tab)
+
+/// Flows, pinned screens and the agent's backlog, in one quiet list on the Agent tab. They left Home (Chris, TestFlight Oct 5: "I just wanna keep the first screen just to the
+/// chats ... make it cleaner"); Next up left with them, Review's count already says it.
+private struct DrawerMore: View {
+    let store: ChatStore
+    let close: () -> Void
     @State private var showFlows = false
     @Environment(\.openURL) private var openURL
     @Environment(\.yuiTheme) private var theme
@@ -396,47 +405,10 @@ private struct DrawerHome: View {
     var body: some View {
         let c = theme.swatch(scheme)
         VStack(alignment: .leading, spacing: theme.spacing.s) {
-            DrawerChats(store: store, openChat: openChat)
-
-            // My flows (YUI-238): the saved flows, run from here.
-            DrawerHeading(text: "Flows")
-            DrawerRow(icon: "point.topleft.down.to.point.bottomright.curvepath.fill", title: "My flows",
-                      sub: "Run, see and remove your saved flows", tint: c.mint) { showFlows = true }
-                .accessibilityIdentifier("drawer-my-flows")
-
-            let count = waiting.count + store.menu.review.count
-            if let next = waiting.first.map({ ($0.title, $0.kicker) })
-                ?? store.menu.review.first.map({ ($0.label, $0.sub ?? "For you") }) {
-                DrawerHeading(text: "Next up for you")
-                Button(action: review) {
-                    HStack(spacing: theme.spacing.m) {
-                        Image(systemName: "hand.point.up.left.fill")
-                            .font(theme.font(17, .bold)).foregroundStyle(c.onAccent)
-                            .frame(width: 38, height: 38).background(c.accent, in: Circle())
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(next.0).font(theme.font(theme.type.body, .bold)).foregroundStyle(c.ink)
-                                .lineLimit(2).multilineTextAlignment(.leading)
-                            Text(next.1).font(theme.font(theme.type.caption)).foregroundStyle(c.inkSoft)
-                        }
-                        Spacer(minLength: 0)
-                        Text("\(count)")
-                            .font(theme.font(13, .heavy)).foregroundStyle(c.onAccent)
-                            .frame(minWidth: 26, minHeight: 26).background(c.accent, in: Circle())
-                    }
-                    .padding(theme.spacing.m)
-                    .background(c.accent.opacity(0.12), in: .rect(cornerRadius: 20))
-                    .overlay(RoundedRectangle(cornerRadius: 20).stroke(c.accent.opacity(0.4), lineWidth: 1.5))
-                }
-                .buttonStyle(BounceButtonStyle())
-                .accessibilityLabel("Next up: \(next.0). \(count) waiting on you")
-                .accessibilityIdentifier("drawer-next-up")
-            }
-
-            // Pinned screens show once there is one. Empty, the section was a dashed box of
-            // instructions in the one place a person comes to get somewhere.
+            // Pinned screens show once there is one, as tiles: they are pictures, not rows.
             let pinned = store.shelf.screens
             if !pinned.isEmpty {
-                DrawerHeading(text: "Pinned screens")
+                DrawerHeading(text: "Pinned")
                 ScrollView(.horizontal) {
                     HStack(spacing: theme.spacing.m) {
                         ForEach(Array(pinned.enumerated()), id: \.element.name) { i, s in
@@ -451,13 +423,19 @@ private struct DrawerHome: View {
                 .scrollClipDisabled()
             }
 
-            // What the agent is working on for you (`menu backlog`).
-            let backlog = store.menu.backlog
-            if !backlog.isEmpty {
-                DrawerHeading(text: "Backlog")
-                ForEach(backlog) { item in
-                    DrawerRow(icon: MenuAction.icon(item, fallback: "hourglass"), title: item.label, sub: item.sub,
-                              tint: c.lavender, trailing: MenuAction.trailing(item)) {
+            // One heading, one short list: My flows, then what the agent is working on (`menu backlog`).
+            // Cut, not moved (Chris, Oct 5: "cutting beats moving"): the shortcuts are the chips over
+            // the bar, the screens are the pills beside the chat, the host's commands are a "/" away.
+            DrawerHeading(text: "More")
+            VStack(spacing: 0) {
+                QuietRow(icon: "point.topleft.down.to.point.bottomright.curvepath.fill", title: "My flows",
+                         tint: c.mint) { showFlows = true }
+                    .accessibilityHint("Run, see and remove your saved flows")
+                    .accessibilityIdentifier("drawer-my-flows")
+                ForEach(store.menu.backlog) { item in
+                    hairline(c)
+                    QuietRow(icon: MenuAction.icon(item, fallback: "hourglass"), title: item.label, sub: item.sub,
+                             tint: c.lavender, trailing: MenuAction.trailing(item)) {
                         MenuAction.open(item, bucket: "backlog", store: store, close: close, openURL: openURL)
                     }
                     .contextMenu {
@@ -466,46 +444,10 @@ private struct DrawerHome: View {
                     .accessibilityIdentifier("drawer-backlog-\(item.id)")
                 }
             }
-
-            let screens = store.screens.dropFirst()
-            if !screens.isEmpty {
-                DrawerHeading(text: "Screens")
-                ForEach(Array(screens), id: \.self) { n in
-                    DrawerRow(icon: "rectangle.portrait.on.rectangle.portrait.fill", title: store.pageTitle(n),
-                              sub: "Beside the chat", tint: c.mint) {
-                        close()
-                        store.openScreen(n)
-                    }
-                    .accessibilityIdentifier("drawer-screen-\(n)")
-                }
-            }
-
-            // The agent's own shortcuts (`menu shortcut`) first, then the host's commands.
-            let mine = store.menu.shortcuts
-            let shortcuts = (store.agent?.commands ?? []).prefix(6)
-            if !shortcuts.isEmpty || !mine.isEmpty {
-                DrawerHeading(text: "Shortcuts")
-                ForEach(mine) { item in
-                    DrawerRow(icon: "sparkles", title: item.label, sub: item.sub, tint: c.butter,
-                              trailing: item.say?.hasSuffix(" ") == true ? "pencil" : "paperplane.fill") {
-                        close()
-                        // A `show=` that was saved from a page goes to that live page (YUI-168).
-                        AgentHome.tap(item, store: store, goPage: { store.openScreen($0) }, compose: compose)
-                    }
-                    .contextMenu {
-                        Button("Remove", systemImage: "minus.circle", role: .destructive) { store.removeFromMenu(item.id) }
-                    }
-                    .accessibilityHint(item.say?.hasSuffix(" ") == true ? "Starts a message to finish" : "Sends it as your message")
-                    .accessibilityIdentifier("drawer-shortcut-\(item.id)")
-                }
-                ForEach(Array(shortcuts)) { cmd in
-                    DrawerRow(icon: "bolt.fill", title: cmd.description.isEmpty ? "/\(cmd.name)" : cmd.description,
-                              sub: "/\(cmd.name)\(cmd.args.map { " " + $0 } ?? "")", tint: c.butter) {
-                        close()
-                        if cmd.args == nil { _ = store.send("/\(cmd.name)") } else { compose("/\(cmd.name) ") }
-                    }
-                }
-            }
+            .background(c.surface.opacity(0.6), in: .rect(cornerRadius: 18))
+            .overlay(RoundedRectangle(cornerRadius: 18).stroke(c.outline.opacity(0.7), lineWidth: 1))
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("drawer-more")
         }
         .sheet(isPresented: $showFlows) {
             MyFlowsView(run: { r in
@@ -516,6 +458,48 @@ private struct DrawerHome: View {
             }, dismiss: { showFlows = false })
             .presentationDetents([.large])
         }
+    }
+
+    private func hairline(_ c: Swatch) -> some View {
+        Rectangle().fill(c.outline.opacity(0.6)).frame(height: 1).padding(.leading, 52)
+    }
+}
+
+/// A row in More: a small tinted symbol, the title, at most one quiet line, a faint glyph. No card of its own.
+private struct QuietRow: View {
+    let icon: String
+    let title: String
+    var sub: String?
+    var tint: Color
+    var trailing: String = "chevron.right"
+    let action: () -> Void
+    @Environment(\.yuiTheme) private var theme
+    @Environment(\.colorScheme) private var scheme
+
+    var body: some View {
+        let c = theme.swatch(scheme)
+        Button(action: action) {
+            HStack(spacing: theme.spacing.m) {
+                Image(systemName: icon)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(c.ink.opacity(0.85))
+                    .frame(width: 28, height: 28)
+                    .background(tint.opacity(0.45), in: .rect(cornerRadius: 9))
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(title).font(theme.font(theme.type.body, .semibold)).foregroundStyle(c.ink)
+                        .lineLimit(1)
+                    if let sub, !sub.isEmpty {
+                        Text(sub).font(theme.font(theme.type.caption)).foregroundStyle(c.inkSoft).lineLimit(1)
+                    }
+                }
+                Spacer(minLength: 0)
+                Image(systemName: trailing).font(.system(size: 12, weight: .semibold)).foregroundStyle(c.inkSoft.opacity(0.7))
+            }
+            .padding(.horizontal, theme.spacing.m)
+            .frame(minHeight: 52)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 }
 
@@ -826,6 +810,7 @@ private struct DrawerAgent: View {
             if let agent = store.agent {
                 identity(agent, c)
                 if said(agent) { says(agent, c) }
+                DrawerMore(store: store, close: close)
                 facts(agent, c)
                 if agent.isShared {
                     Label("Shared by \(agent.sharedBy ?? "its owner")", systemImage: "person.2.fill")

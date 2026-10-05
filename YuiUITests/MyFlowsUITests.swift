@@ -39,8 +39,12 @@ final class MyFlowsUITests: XCTestCase {
     private func myFlows(_ look: String) throws {
         appearance = look
         let app = launch()
+        // My flows lives under Agent > More: Home is the chats only (Chris, Oct 5).
+        let tab = el(app, "drawer-tab-agent")
+        waitFor(tab, "the drawer has no Agent tab")
+        tab.tap()
         let open = el(app, "drawer-my-flows")
-        waitFor(open, "the drawer has no My flows row")
+        waitFor(open, "Agent has no My flows row")
         open.tap()
 
         // The list: a starter, and the hub's variant under its base.

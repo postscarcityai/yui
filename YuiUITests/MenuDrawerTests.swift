@@ -59,17 +59,20 @@ final class MenuDrawerTests: XCTestCase {
         let menu = app.buttons["Agent menu"]
         XCTAssertEqual(menu.value as? String, "1 waiting on you", "the review item is not counted")
 
-        // Home: next up, the backlog and the agent's shortcuts.
+        // Home is the chats only (Chris, Oct 5); the backlog sits under Agent > More. The shortcuts left the
+        // drawer: they are the chips over the bar.
         menu.tap()
         let close = app.buttons["drawer-close"]
         XCTAssertTrue(close.waitForExistence(timeout: 5), "the menu button did not open the drawer")
         waitHittable(close, "the drawer did not settle open")
-        XCTAssertTrue(app.buttons["drawer-next-up"].exists, "no next-up for the review item")
-        XCTAssertTrue(app.buttons["drawer-backlog-deload"].exists, "no backlog item")
+        XCTAssertFalse(app.buttons["drawer-next-up"].exists, "Home still has Next up")
+        XCTAssertFalse(app.buttons["drawer-backlog-deload"].exists, "a backlog row on Home")
+        XCTAssertFalse(app.buttons["drawer-shortcut-log"].exists, "a shortcut row on Home")
+        app.buttons["drawer-tab-agent"].tap()
+        XCTAssertTrue(app.buttons["drawer-backlog-deload"].waitForExistence(timeout: 3), "no backlog item")
         XCTAssertTrue(app.buttons["drawer-backlog-trip"].exists, "no second backlog item")
-        let log = app.buttons["drawer-shortcut-log"]
-        let start = app.buttons["drawer-shortcut-start-the-workout"]
-        XCTAssertTrue(log.exists && start.exists, "no agent shortcuts")
+        XCTAssertEqual(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'drawer-shortcut-'")).count, 0,
+                       "a shortcut row in the drawer")
         // Newest first: the trip was added after the deload plan.
         XCTAssertLessThan(app.buttons["drawer-backlog-trip"].frame.minY, app.buttons["drawer-backlog-deload"].frame.minY)
         sleep(1)
@@ -91,26 +94,19 @@ final class MenuDrawerTests: XCTestCase {
         sleep(1)
         shot("3b-no-dot")
 
-        // A shortcut with say= ending in a space goes in the composer to finish.
-        menu.tap()
-        XCTAssertTrue(close.waitForExistence(timeout: 5))
-        waitHittable(close, "the drawer did not settle open again")
-        if !app.buttons["drawer-shortcut-log"].isHittable { app.buttons["drawer-tab-home"].tap() }
-        waitHittable(app.buttons["drawer-shortcut-log"], "the log shortcut is not on Home")
-        app.buttons["drawer-shortcut-log"].tap()
-        waitGone(close, "the shortcut did not close the drawer")
+        // A shortcut chip with say= ending in a space goes in the composer to finish.
+        waitHittable(app.buttons["home-chip-log"], "the log shortcut is not a chip over the bar")
+        app.buttons["home-chip-log"].tap()
         let field = app.textFields["composer"].exists ? app.textFields["composer"] : app.textViews["composer"]
         let typed = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value BEGINSWITH %@", "Log a meal:"), object: field)
         XCTAssertEqual(XCTWaiter.wait(for: [typed], timeout: 5), .completed, "the shortcut did not fill the composer")
         sleep(1)
         shot("4-composer")
 
-        // A plain shortcut sends its label as the person's message.
-        menu.tap()
-        XCTAssertTrue(close.waitForExistence(timeout: 5))
-        waitHittable(app.buttons["drawer-shortcut-start-the-workout"], "the workout shortcut is not tappable")
-        app.buttons["drawer-shortcut-start-the-workout"].tap()
-        waitGone(close, "the shortcut did not close the drawer")
+        // A plain shortcut chip sends its label as the person's message.
+        if app.keyboards.count > 0 { app.swipeDown() }
+        waitHittable(app.buttons["home-chip-start-the-workout"], "the workout shortcut is not a chip")
+        app.buttons["home-chip-start-the-workout"].tap()
         XCTAssertTrue(app.staticTexts["Start the workout"].waitForExistence(timeout: 5), "the shortcut was not sent")
         XCTAssertTrue(app.staticTexts["Here we go."].waitForExistence(timeout: 8), "the agent did not answer the shortcut")
         sleep(1)

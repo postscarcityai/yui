@@ -57,14 +57,20 @@ final class WarRoomDrawerTests: XCTestCase {
         let close = app.buttons["drawer-close"]
         XCTAssertTrue(close.waitForExistence(timeout: 5), "the menu button did not open the drawer")
         waitHittable(close, "the drawer did not settle open")
-        XCTAssertTrue(app.buttons["drawer-next-up"].exists, "no next-up for the asks")
+        // Home is the chats only (Chris, Oct 5): the war room rows sit under Agent > More.
+        XCTAssertFalse(app.buttons["drawer-next-up"].exists, "Home still has Next up")
+        XCTAssertFalse(app.buttons["drawer-backlog-status"].exists, "a backlog row on Home")
+        sleep(1)
+        shot("1-home")
+        app.buttons["drawer-tab-agent"].tap()
+        XCTAssertTrue(app.buttons["drawer-backlog-status"].waitForExistence(timeout: 3), "no status row under Agent")
         let order = ["status", "lane-APP", "lane-SITE", "next-0", "next-1", "next-2", "links"].map { app.buttons["drawer-backlog-\($0)"] }
         for e in order { XCTAssertTrue(e.exists, "missing Home row \(e.identifier)") }
         for (a, b) in zip(order, order.dropFirst()) {
             XCTAssertLessThan(a.frame.minY, b.frame.minY, "\(a.identifier) should sit above \(b.identifier)")
         }
         sleep(1)
-        shot("1-home")
+        shot("1b-agent-more")
 
         // Review: the asks, a tap goes back to the host and closes the drawer.
         app.buttons["drawer-tab-review"].tap()

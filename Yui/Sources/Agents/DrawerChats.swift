@@ -26,9 +26,9 @@ struct DrawerChats: View {
         let rows = Chats.filter(chats.items, agent: name, query: query)
         VStack(alignment: .leading, spacing: 0) {
             if !chats.items.isEmpty {
-                DrawerHeading(text: "Chats")
+                // Home is the chats and nothing else (Chris, Oct 5), so no heading over them: just air.
                 if chats.items.count > Chats.searchAfter { search(c) }
-                VStack(spacing: 2) {
+                VStack(spacing: 4) {
                     ForEach(rows) { chat in row(chat, c) }
                     if chats.more, query.isEmpty {
                         // The list shows the newest 30 and loads more as you scroll.
@@ -105,7 +105,7 @@ struct DrawerChats: View {
         .scrollIndicators(.hidden)
         .scrollTargetBehavior(.viewAligned)
         .scrollDisabled(renaming == chat.id)
-        .background(open ? c.accent.opacity(0.18) : .clear, in: .rect(cornerRadius: 16))
+        .background(open ? c.accent.opacity(0.14) : .clear, in: .rect(cornerRadius: 16))
         .contextMenu {
             Button("Rename", systemImage: "pencil") { startRename(chat, label) }
             Button("Delete", systemImage: "trash", role: .destructive) { deleting = chat }
@@ -137,7 +137,7 @@ struct DrawerChats: View {
                         .font(theme.font(theme.type.caption)).foregroundStyle(c.inkSoft)
                 }
             }
-            .padding(.horizontal, theme.spacing.m).padding(.vertical, 10)
+            .padding(.horizontal, theme.spacing.m).padding(.vertical, 14)
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(.rect(cornerRadius: 16))
         }
