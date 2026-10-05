@@ -641,7 +641,8 @@ struct PlanPreset: View {
         }
         .onChange(of: progress) { _, p in
             guard let runner, !submitted else { return }
-            for m in runner.moves { answers[m.sets.ylID] = nil }
+            for m in runner.applying(p.edits).moves { answers[m.sets.ylID] = nil }
+            answers["edits"] = nil
             answers.merge(p.answers(runner)) { _, new in new }
             p.save(c.ylID)
         }
@@ -769,8 +770,14 @@ struct PlanPreset: View {
         for step in steps where step.preset != "page" { if let v = answers[step.ylID] { plan[step.ylID] = v } }
         // The reps of a set that went to failure: no step of their own, the runtime reads them by id.
         for (id, v) in answers where id.hasSuffix("-fail") { plan[id] = v }
+        // Edited in the runner: added moves answer by their own ids, and `edits` says what changed.
+        for (id, v) in answers where id == "edits" || id.hasPrefix("add") { plan[id] = v }
+        var echo = YLComponent.foldText(steps, answers)
+        if let changes = answers["edits"]?.array?.compactMap(\.string), !changes.isEmpty {
+            echo += (echo.isEmpty ? "" : "\n") + "Changed: " + changes.joined(separator: "; ")
+        }
         // The echo is the fold-back: the chat shows it as the person's own message.
-        let e = c.event(["plan": .object(plan)], echo: YLComponent.foldText(steps, answers))
+        let e = c.event(["plan": .object(plan)], echo: echo)
         emit(e)
         // Sent: its place and its questions' drafts go with it (feedback NOTE-19357).
         AnswerDrafts.shared.sent(e, scope: scope, agent: agent)

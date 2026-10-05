@@ -71,6 +71,7 @@ targets:
         NSMicrophoneUsageDescription: So you can talk to your agents, and so the tuner can hear the note you play. Your voice turns into text on your phone, and only the text is sent. The tuner listens only while it is open; nothing is recorded or sent.
         NSBluetoothAlwaysUsageDescription: Yui uses Bluetooth only when you pair a MIDI keyboard, so it can play the keys. Nothing else is looked for or sent.
         NSSpeechRecognitionUsageDescription: Your words turn into text right on your phone. The audio never leaves it.
+        NSAppleMusicUsageDescription: So you can play, pause and skip your music from a workout without leaving it. Yui only reads what is playing; nothing is sent.
         # yui://agent/<id>/thread opens that agent's thread (push taps, links from other channels).
         CFBundleURLTypes:
           - CFBundleURLName: com.yuigui.app

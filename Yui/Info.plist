@@ -33,6 +33,8 @@
 	<string>1</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
+	<key>NSAppleMusicUsageDescription</key>
+	<string>So you can play, pause and skip your music from a workout without leaving it. Yui only reads what is playing; nothing is sent.</string>
 	<key>NSBluetoothAlwaysUsageDescription</key>
 	<string>Yui uses Bluetooth only when you pair a MIDI keyboard, so it can play the keys. Nothing else is looked for or sent.</string>
 	<key>NSCameraUsageDescription</key>

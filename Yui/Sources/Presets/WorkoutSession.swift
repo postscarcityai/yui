@@ -270,10 +270,15 @@ struct TimedSessionView: View {
     @State private var talk = PushToTalk()
     @State private var clock = Timer.publish(every: 0.25, on: .main, in: .common).autoconnect()
     @State private var feel: String?
+    /// The move open in the edit sheet, by tag.
+    @State private var editing: String?
+    @State private var music = NowPlaying()
     @Environment(\.yuiTheme) private var theme
     @Environment(\.colorScheme) private var scheme
 
-    private var engine: SessionEngine { SessionEngine(runner) }
+    /// The plan as edited in the runner (swaps, sets, added moves): what the session runs.
+    private var live: RunnerPlan { runner.applying(progress.edits) }
+    private var engine: SessionEngine { SessionEngine(live) }
 
     var body: some View {
         let s = theme.swatch(scheme)
@@ -289,8 +294,11 @@ struct TimedSessionView: View {
             var p = progress
             if engine.tick(&p) { progress = p }
         }
-        .onAppear { UIApplication.shared.isIdleTimerDisabled = true; startLog() }
-        .onDisappear { UIApplication.shared.isIdleTimerDisabled = false; if talk.listening { talk.cancel() } }
+        .onAppear { UIApplication.shared.isIdleTimerDisabled = true; startLog(); music.start() }
+        .onDisappear { UIApplication.shared.isIdleTimerDisabled = false; if talk.listening { talk.cancel() }; music.stop() }
+        .sheet(isPresented: Binding(get: { editing != nil }, set: { if !$0 { editing = nil } })) {
+            if let tag = editing { RunnerEditSheet(base: runner, tag: tag, progress: $progress) }
+        }
         .onChange(of: progress.run?.step) { _, _ in startLog() }
     }
 
@@ -306,13 +314,14 @@ struct TimedSessionView: View {
     private func running(_ run: SessionRun, _ s: Swatch) -> some View {
         let e = engine
         let step = e.steps[min(run.step, e.steps.count - 1)]
-        let m = runner.moves[step.move]
+        let m = live.moves[step.move]
         let resting = step.kind == .rest
         let logging = step.kind == .log
         let accent = resting ? s.mint : step.kind == .fail ? s.butter : s.accent
         return VStack(alignment: .leading, spacing: theme.spacing.m) {
             ProgressView(value: Double(run.step), total: Double(e.steps.count)).tint(s.accent)
                 .accessibilityIdentifier("session-progress")
+            MusicStrip(music: music)
             HStack {
                 Text(resting ? "Rest" : logging ? "Log" : step.kind == .fail ? "To failure" : "Work")
                     .font(theme.font(theme.type.caption, .heavy)).textCase(.uppercase)
@@ -322,7 +331,7 @@ struct TimedSessionView: View {
                     .accessibilityIdentifier("session-phase")
                     .accessibilityLabel(resting ? "Rest" : logging ? "Log" : step.kind == .fail ? "To failure" : "Work")
                 Spacer()
-                Text("Move \(step.move + 1) of \(runner.moves.count) · Set \(step.set) of \(m.labels.count)")
+                Text("Move \(step.move + 1) of \(live.moves.count) · Set \(step.set) of \(m.labels.count)")
                     .font(theme.font(theme.type.caption, .heavy)).foregroundStyle(s.inkSoft)
                     .accessibilityIdentifier("session-where")
             }
@@ -337,7 +346,7 @@ struct TimedSessionView: View {
         .onChange(of: run.step) { _, _ in
             // Changes of step ring: the gap between work and rest is heard, not watched.
             AudioServicesPlaySystemSound(1005)
-            failReps = Int(runner.moves[min(step.move, runner.moves.count - 1)].nudges.first { $0.ylID.hasSuffix("-reps") }?.number("value") ?? 8)
+            failReps = Int(live.moves[min(step.move, live.moves.count - 1)].nudges.first { $0.ylID.hasSuffix("-reps") }?.number("value") ?? 8)
         }
     }
 
@@ -490,7 +499,7 @@ struct TimedSessionView: View {
                     .accessibilityIdentifier("session-next")
             }
             // On a rest the cue is for the move coming up.
-            let cueFor = step.kind == .rest ? (e.nextWork(after: run.step).map { runner.moves[$0.move] } ?? m) : m
+            let cueFor = step.kind == .rest ? (e.nextWork(after: run.step).map { live.moves[$0.move] } ?? m) : m
             Text(SessionEngine.cue(cueFor))
                 .font(theme.font(theme.type.body, .bold)).foregroundStyle(s.inkSoft)
                 .fixedSize(horizontal: false, vertical: true)
@@ -531,6 +540,15 @@ struct TimedSessionView: View {
             }
             OptionPill(text: "Skip move", fill: s.lavender, grow: true) { change { e.skipMove(&$0) } }
                 .accessibilityIdentifier("session-skip")
+            // Edit the move on screen; on a rest, the one coming up.
+            let focus = step.kind == .rest ? (e.nextWork(after: run.step) ?? step) : step
+            Button { editing = live.moves[focus.move].tag } label: {
+                Image(systemName: "slider.horizontal.3").font(theme.font(theme.type.body, .black)).foregroundStyle(s.ink)
+                    .frame(width: 50, height: 50).background(s.butter, in: Circle())
+            }
+            .buttonStyle(BounceButtonStyle())
+            .accessibilityLabel("Edit \(live.moves[focus.move].name)")
+            .accessibilityIdentifier("session-edit")
         }
     }
 
@@ -562,6 +580,17 @@ struct TimedSessionView: View {
             HStack(spacing: theme.spacing.m) {
                 stat("\(sets.done) of \(sets.of)", "Sets done", id: "session-sets", s)
                 stat(SessionEngine.clock(time), "Time", id: "session-time", s)
+            }
+            let changes = runner.changes(progress.edits, progress)
+            if !changes.isEmpty {
+                VStack(alignment: .leading, spacing: theme.spacing.xs) {
+                    Text("Changed on the fly").font(theme.font(theme.type.caption, .heavy)).textCase(.uppercase).foregroundStyle(s.inkSoft)
+                    ForEach(changes, id: \.self) { c in
+                        Label(c, systemImage: "pencil").font(theme.font(theme.type.body, .semibold)).foregroundStyle(s.ink)
+                    }
+                }
+                .accessibilityElement(children: .combine)
+                .accessibilityIdentifier("session-changes")
             }
             if logged {
                 Label("Logged. Nice work.", systemImage: "checkmark.circle.fill")

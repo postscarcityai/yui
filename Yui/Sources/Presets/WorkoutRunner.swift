@@ -16,8 +16,8 @@ import YuiLines
 /// One move of a runner plan: its sets pick and the slides nudged on the same page.
 struct RunnerMove: Equatable {
     let sets: YLComponent
-    /// The set rows, "Set 1".."Set N", without Skip.
-    let labels: [String]
+    /// The set rows, "Set 1".."Set N", without Skip. Edited in the runner: as many as it has now.
+    var labels: [String]
     let skip: String?
     /// reps (or secs) first, then lb, when the plan has them.
     let nudges: [YLComponent]
@@ -29,10 +29,12 @@ struct RunnerMove: Equatable {
     var fail = false
     /// Arnold's call on the load and why, from the log (feedback NOTE-35460). Nil: none yet.
     var why: String? = nil
+    /// The move it was swapped for in the runner. Nil: the plan's own.
+    var title: String? = nil
 
     /// The move's own name in ids: "e1" for `e1-sets`.
     var tag: String { sets.ylID.hasSuffix("-sets") ? String(sets.ylID.dropLast(5)) : sets.ylID }
-    var name: String { sets.string("title") ?? sets.prompt }
+    var name: String { title ?? sets.string("title") ?? sets.prompt }
 }
 
 /// A plan read as a workout, or nil when it is some other plan.
@@ -102,6 +104,8 @@ struct RunnerProgress: Codable, Equatable {
     var rest: RestClock?
     /// The timed session (YUI-220): where its clock is. Nil until Start.
     var run: SessionRun?
+    /// Changes made in the runner: swaps, sets, reps, weight, added moves. Nil: the plan as sent.
+    var edits: RunnerEdits?
 
     static func key(_ plan: String) -> String { "yui.runner.\(plan)" }
 
@@ -129,9 +133,12 @@ struct RunnerProgress: Codable, Equatable {
     }
 
     /// The plan answers it stands for: ticked sets as picks, every nudge as its number.
+    /// Edited, the moves are the plan as edited (an added move answers by its own ids) and `edits` says what changed.
     func answers(_ runner: RunnerPlan) -> [String: YLValue] {
         var out: [String: YLValue] = [:]
-        for m in runner.moves {
+        let changes = runner.changes(edits, self)
+        if !changes.isEmpty { out["edits"] = .array(changes.map(YLValue.string)) }
+        for m in runner.applying(edits).moves {
             if let t = ticked[m.sets.ylID], !t.isEmpty { out[m.sets.ylID] = .array(t.map(YLValue.string)) }
             for n in m.nudges { if let v = values[n.ylID] ?? n.number("value") { out[n.ylID] = .number(v) } }
             // The reps of the set that went to failure (the session's Stop).
