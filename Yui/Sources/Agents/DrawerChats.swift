@@ -78,6 +78,8 @@ struct DrawerChats: View {
                 Button("Clear search", systemImage: "xmark.circle.fill") { query = "" }
                     .labelStyle(.iconOnly).foregroundStyle(c.inkSoft)
             }
+            NameMic(text: $query, id: "drawer-chat-search-mic", label: "Say what to search")
+                .padding(.vertical, -6)
         }
         .padding(.horizontal, theme.spacing.m).padding(.vertical, 10)
         .background(c.surface, in: Capsule())
@@ -146,19 +148,23 @@ struct DrawerChats: View {
     }
 
     private func rename(_ chat: ChatInfo, _ c: Swatch) -> some View {
-        TextField("Chat title", text: $title)
-            .font(theme.font(theme.type.body, .heavy)).foregroundStyle(c.ink)
-            .focused($typing)
-            .submitLabel(.done)
-            .onSubmit { finishRename(chat) }
-            .onChange(of: title) { if title.count > Chats.titleMax { title = String(title.prefix(Chats.titleMax)) } }
-            .onChange(of: typing) { was, now in if was, !now, renaming == chat.id { finishRename(chat) } }
-            .padding(.horizontal, theme.spacing.m)
+        HStack(spacing: theme.spacing.xs) {
+            TextField("Chat title", text: $title)
+                .font(theme.font(theme.type.body, .heavy)).foregroundStyle(c.ink)
+                .focused($typing)
+                .submitLabel(.done)
+                .onSubmit { finishRename(chat) }
+                .onChange(of: title) { if title.count > Chats.titleMax { title = String(title.prefix(Chats.titleMax)) } }
+                .onChange(of: typing) { was, now in if was, !now, renaming == chat.id { finishRename(chat) } }
+                .accessibilityIdentifier("chat-rename-field")
+            NameMic(text: $title, id: "chat-rename-mic", label: "Say the chat title")
+                .padding(.vertical, -6)
+        }
+            .padding(.leading, theme.spacing.m).padding(.trailing, theme.spacing.xs)
             .frame(height: 44)
             .background(c.surface, in: .rect(cornerRadius: 12))
             .overlay(RoundedRectangle(cornerRadius: 12).stroke(c.accent, lineWidth: 2))
             .padding(.horizontal, theme.spacing.xs).padding(.vertical, 6)
-            .accessibilityIdentifier("chat-rename-field")
     }
 
     /// Swiped left: Rename and Delete, behind the row.
