@@ -78,6 +78,9 @@ final class ShapesSceneTests: XCTestCase {
                 // Callouts and brackets (YUI-297).
                 XCTAssertEqual(it.leader, j["leader"] as? Bool ?? false, "\(w) leader")
                 near(it.side, j["side"], "\(w) side")
+                // Hand drawn shapes and marks (YUI-299).
+                XCTAssertEqual(it.hand, j["hand"] as? Bool ?? false, "\(w) hand")
+                XCTAssertEqual(it.mark, j["mark"] as? String, "\(w) mark")
             }
             let frames = try XCTUnwrap(c["frames"] as? [String: [[String: Any]]])
             for (key, list) in frames {

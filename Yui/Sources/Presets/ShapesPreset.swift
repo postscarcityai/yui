@@ -155,6 +155,15 @@ struct ShapesCanvas: View {
             var c = base
             c.opacity = f.o
             let bow = { (a: [Double], b: [Double]) in it.bend.map { ShapesModel.control(a, b, $0) } }
+            if let mark = it.mark, let pts = it.pts {
+                // A hand drawn mark (YUI-299): the points come from the scene, the stroke draws on (a check and a hatch are straight strokes).
+                let hatch = mark == "scribble" && it.fill
+                var path = mark == "check" || hatch ? polyline(pts, u: u) : curve(pts, closed: false, u: u)
+                path = path.trimmedPath(from: 0, to: f.d)
+                c.stroke(path, with: .color(color.opacity(hatch ? 0.55 : 1)),
+                         style: StrokeStyle(lineWidth: lw * (hatch ? 1.1 : 1.3), lineCap: .round, lineJoin: .round))
+                continue
+            }
             if let a = f.a, let b = f.b, it.kind == "swipe" {
                 // A finger sliding from a to b (YUI-276): a trail that thickens and darkens toward the
                 // fingertip, which travels with the trace. +pulse swipes again, once a breath.
@@ -207,7 +216,16 @@ struct ShapesCanvas: View {
                 var line = Path()
                 line.move(to: P(a))
                 let h: [Double], dir: [Double]
-                if let q = bow(a, b) {
+                if it.hand {
+                    // +hand (YUI-299): the whole curve roughened, then traced on; the head rides the true tip.
+                    let q = bow(a, b) ?? [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2]
+                    let along = (0...12).map { ShapesModel.bent(a, q, b, Double($0) / 12).p }
+                    line = curve(ShapesModel.rough(along, seed: it.i, amp: ShapesModel.hand * scene.w, step: .infinity), closed: false, u: u)
+                    if !it.dash { line = line.trimmedPath(from: 0, to: f.d) }
+                    let e = ShapesModel.bent(a, q, b, f.d)
+                    h = e.p
+                    dir = e.dir
+                } else if let q = bow(a, b) {
                     // The first d of the curve is itself a curve: a to bent(d), its control a d of the way to q.
                     let e = ShapesModel.bent(a, q, b, f.d)
                     h = e.p
@@ -253,7 +271,7 @@ struct ShapesCanvas: View {
                     c.stroke(path, with: .color(color),
                              style: StrokeStyle(lineWidth: lw * 1.6, lineCap: .round, lineJoin: .round, dash: it.dash ? dash : []))
                 default:
-                    var path = curve(pts, closed: false, u: u)
+                    var path = curve(it.hand ? ShapesModel.rough(pts, seed: it.i, amp: ShapesModel.hand * scene.w) : pts, closed: false, u: u)
                     if !it.dash { path = path.trimmedPath(from: 0, to: f.d) }
                     c.stroke(path, with: .color(color), style: StrokeStyle(lineWidth: lw, lineCap: .round, dash: it.dash ? dash : []))
                 }
@@ -340,7 +358,11 @@ struct ShapesCanvas: View {
                     }
                 }
             } else if it.kind != "text" {
-                let shape = outline(it.kind, scaled, seed: it.i, center: cen, u: u)
+                // +hand (YUI-299): the true outline roughened, scaled with the shape's grow.
+                let shape = it.hand
+                    ? curve(ShapesModel.handOutline(it.kind, sz, seed: it.i, amp: ShapesModel.hand * scene.w).map { [$0[0] * f.s, $0[1] * f.s] },
+                            closed: true, u: u, center: cen)
+                    : outline(it.kind, scaled, seed: it.i, center: cen, u: u)
                 if it.fill { c.fill(shape, with: .color(color.opacity((it.kind == "dot" ? 1 : 0.18) * f.d))) }
                 let stroke = it.dash || f.d >= 1 ? shape : shape.trimmedPath(from: 0, to: f.d)
                 c.stroke(stroke, with: .color(color), style: StrokeStyle(lineWidth: lw, lineJoin: .round, dash: it.dash ? dash : []))
@@ -381,6 +403,13 @@ struct ShapesCanvas: View {
             let t = Text(l).font(theme.font(fs * u, weight)).foregroundColor(color)
             ctx.draw(t, at: CGPoint(x: p[0] * u, y: (y0 + Double(k) * lh) * u), anchor: .center)
         }
+    }
+
+    private func polyline(_ pts: [[Double]], u: CGFloat) -> Path {
+        var path = Path()
+        path.move(to: CGPoint(x: pts[0][0] * u, y: pts[0][1] * u))
+        for q in pts.dropFirst() { path.addLine(to: CGPoint(x: q[0] * u, y: q[1] * u)) }
+        return path
     }
 
     private func curve(_ pts: [[Double]], closed: Bool, u: CGFloat, center: [Double] = [0, 0]) -> Path {

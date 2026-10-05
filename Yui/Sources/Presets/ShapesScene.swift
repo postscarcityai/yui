@@ -13,7 +13,12 @@ enum ShapesModel {
     static let connectors: Set<String> = ["line", "arrow", "swipe", "arc", "bracket"]
     /// Kinds drawn through points: an open curve, a closed outline, a hand-drawn stroke (YUI-276).
     static let traced: Set<String> = ["path", "region", "doodle"]
-    static let kinds: Set<String> = closed.union(connectors).union(traced)
+    /// Marks (YUI-299) are drawn on top of the picture, hand drawn and animated on: a scribble fills or rings
+    /// a spot, an underline sits under a shape, a check is a tick.
+    static let marks: Set<String> = ["scribble", "underline", "check"]
+    static let kinds: Set<String> = closed.union(connectors).union(traced).union(marks)
+    /// The kinds +hand roughens: closed outlines, lines, arrows, arcs and paths (the hub's list).
+    static let handed: Set<String> = ["circle", "box", "pill", "blob", "line", "arrow", "arc", "path"]
     static let tones: Set<String> = ["accent", "mint", "lavender", "butter", "ink", "mute"]
 
     /// Default sizes in canvas units, width and height.
@@ -41,6 +46,12 @@ enum ShapesModel {
     // The clock, in seconds.
     static let step = 0.35
     static let durations: [Motion: Double] = [.fade: 0.35, .grow: 0.5, .draw: 0.7]
+    /// A mark draws on in half a second.
+    static let markDur = 0.5
+    /// The hand: how far a hand drawn stroke strays from its true line, as a share of the drawing's
+    /// width, and how far apart its wobble points sit (canvas units).
+    static let hand = 0.009
+    static let handStep = 0.35
     static let move = 0.8
     static let pulse = 1.6
     /// Label size as a share of the drawing's width, so text reads the same at any w.
@@ -85,6 +96,10 @@ enum ShapesModel {
         var side: Double? = nil
         /// A callout's leader: the line from its box to where `to=` points (YUI-297).
         var leader = false
+        /// +hand: a seeded roughened stroke (YUI-299).
+        var hand = false
+        /// A mark's kind (scribble, underline, check); its `pts` are already roughened (YUI-299).
+        var mark: String? = nil
     }
 
     struct Scene: Equatable {
@@ -187,7 +202,7 @@ enum ShapesModel {
         if truthy(p["draw"]) { return .draw }
         if truthy(p["grow"]) { return .grow }
         // Lines, arrows, paths, regions, doodles and contours trace themselves on unless told otherwise.
-        if traces.contains(kind) { return .draw }
+        if traces.contains(kind) || marks.contains(kind) { return .draw }
         // A tap lands: it springs up.
         if kind == "tap" { return .grow }
         return .fade
@@ -234,6 +249,8 @@ enum ShapesModel {
                             tone: tones.contains(tn) ? tn : kind == "text" ? "ink" : "accent",
                             fill: truthy(p["fill"]) || kind == "dot" || kind == "venn", dash: truthy(p["dash"]),
                             motion: motion(p, kind), pulse: truthy(p["pulse"]), start: t)
+            // +hand: a seeded roughened stroke (the seed is the part's place in the scene).
+            if truthy(p["hand"]), handed.contains(kind) { item.hand = true }
             if s.closed {
                 var at = point(p["at"])
                 var sz = (size(p["size"], kind, p) ?? sizeOf(kind, p)).map { $0 * k }
@@ -254,6 +271,14 @@ enum ShapesModel {
                 if kind == "callout", p["to"] != nil, p["to"] != .bool(true), let to = end(p["to"], nil, parts, s.i, 1) {
                     item.from = .ref(s.i); item.to = to; item.leader = true
                 }
+            } else if marks.contains(kind) {
+                // A mark sits on a shape written before it (to=id) or at a place (at=).
+                guard let pts = markPoints(kind, p, items, parts, W, s.i) else { continue }
+                item.mark = kind
+                item.pts = pts
+                item.tone = tones.contains(tn) ? tn : kind == "check" ? "mint" : "accent"
+                item.fill = kind == "scribble" && truthy(p["fill"])
+                item.motion = .draw
             } else if traced.contains(kind) {
                 var pts = (p["pts"]?.array ?? []).compactMap { point($0) }
                 // A doodle with no points but a place is a ring scribbled round it (YUI-276).
@@ -278,7 +303,7 @@ enum ShapesModel {
                 if kind == "bracket" { item.side = (num(p["bend"]) ?? 1) < 0 ? -1 : 1 }
                 else if kind == "arc" || p["bend"] != nil { item.bend = clamp(num(p["bend"]) ?? bendDefault, -2, 2) }
             }
-            item.dur = durations[item.motion]!
+            item.dur = item.mark != nil ? markDur : durations[item.motion]!
             items.append(item)
             t += step
         }
@@ -462,6 +487,127 @@ enum ShapesModel {
             let ang = 2 * Double.pi * Double(k) / Double(n) - .pi / 2
             let r = 1 + 0.13 * sin(Double(seed + 1) * 12.9898 + Double(k) * 78.233)
             return [cos(ang) * (w / 2) * r * 0.94, sin(ang) * (h / 2) * r * 0.94]
+        }
+    }
+
+    // MARK: the hand (YUI-299)
+
+    /// A smooth noise in [-1, 1] along a stroke, so a line drifts like a hand instead of buzzing; the same
+    /// seed gives the same stroke on every renderer.
+    static func wobble(_ seed: Int, _ k: Int) -> Double {
+        0.6 * sin(Double(seed + 1) * 12.9898 + Double(k) * 0.9) + 0.4 * sin(Double(seed + 1) * 78.233 + Double(k) * 2.1)
+    }
+
+    private static func r3(_ v: Double) -> Double { (v * 1000).rounded() / 1000 }
+
+    /// A polyline roughened: every segment is cut into steps of about `step` and each point is pushed `amp`
+    /// times wobble sideways. Open strokes end where they started (the last point is pushed too); closed ones
+    /// join up. step `.infinity` keeps the points you gave it.
+    static func rough(_ pts: [[Double]], seed: Int, amp: Double, closed: Bool = false, step: Double = handStep) -> [[Double]] {
+        var out: [[Double]] = []
+        let n = pts.count
+        let segs = closed ? n : n - 1
+        var k = 0
+        for s in 0..<max(0, segs) {
+            let a = pts[s], b = pts[(s + 1) % n]
+            let dx = b[0] - a[0], dy = b[1] - a[1]
+            let len = hypot(dx, dy) == 0 ? 1 : hypot(dx, dy)
+            let m = step.isFinite ? max(1, Int((len / step).rounded(.up))) : 1
+            for j in 0..<m {
+                let t = Double(j) / Double(m), o = amp * wobble(seed, k)
+                k += 1
+                out.append([r3(a[0] + dx * t - dy / len * o), r3(a[1] + dy * t + dx / len * o)])
+            }
+        }
+        if !closed {
+            let a = n >= 2 ? pts[n - 2] : pts[0], b = pts[n - 1]
+            let len = hypot(b[0] - a[0], b[1] - a[1]) == 0 ? 1 : hypot(b[0] - a[0], b[1] - a[1])
+            let o = amp * wobble(seed, k)
+            out.append([r3(b[0] - (b[1] - a[1]) / len * o), r3(b[1] + (b[0] - a[0]) / len * o)])
+        }
+        return out
+    }
+
+    /// A closed shape's true outline as points around (0, 0), roughened: a circle as an ellipse, a box and
+    /// a pill as their rectangle and stadium. Join with `smooth(_, closed: true)`.
+    static func handOutline(_ kind: String, _ sz: [Double], seed: Int, amp: Double) -> [[Double]] {
+        let w = sz[0], h = sz[1]
+        let x = w / 2, y = h / 2
+        switch kind {
+        case "blob":
+            return rough(blobPoints(w, h, seed: seed), seed: seed, amp: amp, closed: true, step: .infinity)
+        case "circle":
+            let n = 20
+            return rough((0..<n).map { j in
+                let a = 2 * Double.pi * Double(j) / Double(n) - .pi / 2
+                return [cos(a) * x, sin(a) * y]
+            }, seed: seed, amp: amp, closed: true, step: .infinity)
+        case "pill":
+            let r = y, cx = max(0, x - r)
+            func arc(_ c: Double, _ a0: Double) -> [[Double]] {
+                (0..<7).map { j in [c + cos(a0 + Double.pi * Double(j) / 6) * r, sin(a0 + Double.pi * Double(j) / 6) * r] }
+            }
+            return rough(arc(cx, -.pi / 2) + arc(-cx, .pi / 2), seed: seed, amp: amp, closed: true)
+        default:
+            return rough([[-x, -y], [x, -y], [x, y], [-x, y]], seed: seed, amp: amp, closed: true)
+        }
+    }
+
+    /// A mark's points in canvas units, already roughened (the numbers are in spec/shapes/scenes.json).
+    /// `to=` names a closed shape written before it; with no to=, at= (and size=) place it.
+    private static func markPoints(_ kind: String, _ p: [String: YLValue], _ items: [Item], _ parts: [Part],
+                                   _ W: Double, _ i: Int) -> [[Double]]? {
+        var tgt: Item?
+        if case .string(let name)? = p["to"] {
+            guard let hit = parts.first(where: { $0.closed && $0.id == name && $0.i < i }),
+                  let it = items.first(where: { $0.i == hit.i && $0.at != nil }) else { return nil }
+            tgt = it
+        }
+        let at = point(p["at"])
+        let amp = hand * W
+        let seed = i
+        let sz = size(p["size"], "box")
+        switch kind {
+        case "scribble":
+            let box: [Double]
+            if let t = tgt, let a = t.at, let s = t.size { box = [a[0], a[1], s[0] + 0.5, s[1] + 0.5] }
+            else if let at { box = [at[0], at[1]] + (sz ?? [2, 1.2]) }
+            else { return nil }
+            let cx = box[0], cy = box[1], bw = box[2], bh = box[3]
+            if truthy(p["fill"]) {
+                // Back and forth strokes down the box.
+                let rows = Int(clamp((bh / 0.2).rounded(), 3, 14))
+                var pts: [[Double]] = []
+                for r in 0...rows {
+                    let y = cy - bh / 2 + bh * Double(r) / Double(rows)
+                    pts.append(r % 2 == 1 ? [cx + bw / 2, y] : [cx - bw / 2, y])
+                    pts.append(r % 2 == 1 ? [cx - bw / 2, y] : [cx + bw / 2, y])
+                }
+                return rough(pts, seed: seed, amp: amp * 0.5)
+            }
+            // Two loops round the spot, the second a little wider, ending open.
+            let n = 44
+            let pts: [[Double]] = (0...n).map { j in
+                let a = -Double.pi / 2 + 2.15 * 2 * Double.pi * Double(j) / Double(n)
+                let g = 1 + 0.08 * (Double(j) / Double(n)) * 2
+                return [cx + cos(a) * (bw / 2) * g, cy + sin(a) * (bh / 2) * g]
+            }
+            return rough(pts, seed: seed, amp: amp * 0.6, closed: false, step: .infinity)
+        case "underline":
+            let c: [Double]
+            if let t = tgt, let a = t.at, let s = t.size { c = [a[0], a[1] + s[1] / 2 + 0.2, s[0] * 0.95] }
+            else if let at { c = [at[0], at[1], sz?[0] ?? 2] }
+            else { return nil }
+            return rough([[c[0] - c[2] / 2, c[1] + 0.03], [c[0] + c[2] / 2, c[1] - 0.04]], seed: seed, amp: amp * 0.7)
+        default:
+            // check: a short stroke down, a long one up.
+            let s = num(p["size"]) ?? 1
+            let c: [Double]
+            if let t = tgt, let a = t.at, let z = t.size { c = [a[0] + z[0] / 2 + 0.6 * s, a[1]] }
+            else if let at { c = at }
+            else { return nil }
+            return rough([[c[0] - 0.4 * s, c[1] + 0.02 * s], [c[0] - 0.12 * s, c[1] + 0.34 * s], [c[0] + 0.42 * s, c[1] - 0.36 * s]],
+                         seed: seed, amp: amp * 0.4, closed: false, step: 0.18)
         }
     }
 
