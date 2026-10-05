@@ -1,7 +1,7 @@
 import XCTest
 
 /// The screens have no dots (YUI-168, Chris: "let the user rely on instinct that they can
-/// swipe"). VoiceOver's `page-position` element says where you are ("Screen 3", "3 of 5")
+/// swipe"). VoiceOver's `page-position` element says where you are (the screen's name, "3 of 5"; `page-shown-N` carries the number)
 /// and pages when adjusted; the tests read where they are from it and move with swipes.
 extension XCUIApplication {
     var pagePosition: XCUIElement { descendants(matching: .any)["page-position"].firstMatch }
@@ -9,8 +9,9 @@ extension XCUIApplication {
     /// The screen on show: 1 on the chat or the home, else the screen's number. Nil with only one screen.
     var screenShown: Int? {
         guard pagePosition.exists else { return nil }
-        let label = pagePosition.label
-        return label.hasPrefix("Screen ") ? Int(label.dropFirst("Screen ".count)) : 1
+        let shown = descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH 'page-shown-'")).firstMatch
+        guard shown.exists else { return 1 }
+        return Int(shown.identifier.dropFirst("page-shown-".count)) ?? 1
     }
 
     /// How many screens there are: the N in "2 of N". 1 when there is only the one.

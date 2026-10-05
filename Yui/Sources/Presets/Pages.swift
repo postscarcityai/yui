@@ -84,7 +84,7 @@ struct ScreenPage: View {
                         .foregroundStyle(c.onAccent)
                         .frame(width: 64, height: 64)
                         .background(c.accent.opacity(0.85), in: Circle())
-                    Text("Screen \(number)")
+                    Text("Empty page")
                         .font(theme.font(theme.type.title, theme.strong))
                         .foregroundStyle(c.ink)
                     Text("Nothing here yet. \(agent?.name ?? "Your agent") puts things here that should stay while you chat, like a timer or a list.")

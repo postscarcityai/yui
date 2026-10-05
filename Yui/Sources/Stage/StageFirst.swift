@@ -227,8 +227,8 @@ struct StageFirstView: View {
     /// something on. A swipe apart, with a pill each in the top bar (YUI-193).
     var screens: [Int] = [1]
     var screen = 1
-    /// What a screen's pill says: its title, or "Screen N".
-    var screenTitle: (Int) -> String = { "Screen \($0)" }
+    /// What a screen's pill says (`ScreenName`).
+    var screenTitle: (Int) -> String = { _ in "Page" }
     var style: [String: String] = [:]
     /// How this agent moves (YUI-120): its character and the look said in words. Reduce Motion gives the still look.
     let look: MotionLook

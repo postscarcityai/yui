@@ -235,12 +235,14 @@ struct HomeHead: View {
 
 /// Where the person is among the screens, for VoiceOver only: the screens have no dots
 /// (Chris, Sep 27: "i don't think we need the little slider dots anymore"), so this reads
-/// "Screen 2 of 4" and swiping up or down on it pages, like the dots' adjustable action did.
+/// "Home, 1 of 4" and swiping up or down on it pages, like the dots' adjustable action did.
 struct PagePosition: View {
     let page: Int
     let screens: [Int]
     /// What screen 1 is: the home on the stage, the chat in the chat.
     var first = "Home"
+    /// What each other screen is called, the same as its tab.
+    var title: (Int) -> String = { _ in "Page" }
     let go: (Int) -> Void
 
     var body: some View {
@@ -249,7 +251,7 @@ struct PagePosition: View {
             .frame(maxWidth: .infinity)
             .frame(height: 1)
             .accessibilityElement()
-            .accessibilityLabel(i == 0 ? first : "Screen \(page)")
+            .accessibilityLabel(i == 0 ? first : title(page))
             .accessibilityValue("\(i + 1) of \(screens.count)")
             .accessibilityHint("Swipe up or down to change screens")
             .accessibilityAddTraits(.updatesFrequently)
@@ -261,6 +263,11 @@ struct PagePosition: View {
                 }
             }
             .accessibilityIdentifier("page-position")
+            // The number on show, for the tests: the label above is the screen's name now.
+            .background {
+                Color.clear.frame(width: 1, height: 1).accessibilityElement()
+                    .accessibilityIdentifier("page-shown-\(page)").accessibilityHidden(false)
+            }
     }
 }
 
@@ -271,7 +278,7 @@ struct PagePosition: View {
 /// their titles. The one on show is filled in the agent's accent and scrolls into view as the
 /// screens turn; a tap on a pill goes to that screen. The row scrolls sideways and fades out at
 /// the right edge when it overflows.
-/// VoiceOver hears the pills as buttons, and `page-position` still says "Screen 2, 2 of 4"
+/// VoiceOver hears the pills as buttons, and `page-position` still says "Lunch, 2 of 4"
 /// and pages when adjusted.
 struct ScreenPills: View {
     let screens: [Int]
@@ -332,7 +339,7 @@ struct ScreenPills: View {
             }
         }
         .frame(height: 44)
-        .background { PagePosition(page: page, screens: screens, go: go) }
+        .background { PagePosition(page: page, screens: screens, title: title, go: go) }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("screen-pills")
     }

@@ -472,7 +472,7 @@ private struct DrawerHome: View {
                 DrawerHeading(text: "Screens")
                 ForEach(Array(screens), id: \.self) { n in
                     DrawerRow(icon: "rectangle.portrait.on.rectangle.portrait.fill", title: store.pageTitle(n),
-                              sub: "Screen \(n)", tint: c.mint) {
+                              sub: "Beside the chat", tint: c.mint) {
                         close()
                         store.openScreen(n)
                     }
@@ -559,15 +559,23 @@ private struct PinnedTile: View {
 }
 
 extension ChatStore {
-    /// What a screen beside the chat is called: its first title, else "Screen n".
+    /// What a screen beside the chat is called: its saved name, else its first title, else a
+    /// word for what is on it. Never "Screen n" (`ScreenName`).
     func pageTitle(_ n: Int) -> String {
+        var saved: String?
+        var titles: [String] = []
+        var kinds: [String] = []
         for m in pool.reversed() {
             guard let yl = m.yl else { continue }
-            if let t = yl.top.first(where: { $0.page == n })?.string("title") ?? yl.top.first(where: { $0.page == n })?.string("q") {
-                return t
+            let here = yl.onPage(n, style: style)
+            if saved == nil, let key = here.first?.screen { saved = yl.screenNames[key] }
+            for c in here {
+                if let t = c.string("title") ?? c.string("q") ?? c.string("label") { titles.append(t) }
+                kinds.append(c.preset)
             }
+            if saved != nil || !titles.isEmpty { break }
         }
-        return "Screen \(n)"
+        return ScreenName.pick(saved: saved, titles: titles, kinds: kinds)
     }
 }
 

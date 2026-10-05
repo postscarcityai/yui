@@ -46,6 +46,8 @@ struct YLScreen: Equatable, Sendable {
     private var saved: [String: SavedScreen] = [:]
     /// Screens this reply named with `save` (`>3 ... save this week`): standing pages, like the home's (YUI-183).
     private(set) var namedScreens: Set<String> = []
+    /// The `save` name each of those screens got, for its tab (`ScreenName`).
+    private(set) var screenNames: [String: String] = [:]
     /// This reply's saves and forgets, in order, for the thread's shelf (YUI-32).
     private(set) var shelfOps: [ShelfOp] = []
     /// This reply's `menu` lines, in order, for the agent's drawer (YUI-86). They draw nothing here.
@@ -93,7 +95,7 @@ struct YLScreen: Equatable, Sendable {
                                    stage: node.screen == "full")
             saved[name] = shot
             shelfOps.append(.save(shot))
-            if node.screen != "full" { namedScreens.insert(node.screen) }
+            if node.screen != "full" { namedScreens.insert(node.screen); screenNames[node.screen] = name }
         case .show:
             guard let shot = saved[node.name ?? ""] else {
                 errors.append(YLNode(op: .error, screen: node.screen, message: "show: nothing saved as \"\(node.name ?? "")\"",

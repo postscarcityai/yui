@@ -230,7 +230,7 @@ struct ChatView: View {
                         // swipe"): VoiceOver still hears where it is and pages with a swipe up or down.
                         let screens = store.screens
                         if pagedChat, screens.count > 1 {
-                            PagePosition(page: page ?? 1, screens: screens, first: "Chat") { store.goToPage($0) }
+                            PagePosition(page: page ?? 1, screens: screens, first: "Chat", title: { store.pageTitle($0) }) { store.goToPage($0) }
                         }
                         // Screens are for reading: the composer stays with the chat,
                         // unless the agent keeps it on this screen (`>2 talk`).
