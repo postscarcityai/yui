@@ -91,6 +91,60 @@ final class PlanFormOneSendTests: XCTestCase {
         shot("3-sent")
     }
 
+    /// Forms keep your answers (feedback NOTE-19357): paging away from the questions and back
+    /// draws them again, with what was typed and picked still there, and Send carries it.
+    func testStageFormKeepsItsAnswersAcrossPages() throws {
+        let log = FileManager.default.temporaryDirectory.appending(path: "yui-plan-form-keep.jsonl").path
+        try? FileManager.default.removeItem(atPath: log)
+        let app = XCUIApplication()
+        app.launchArguments = ["-yuiStageFirst", "YES", "-yuiDemoAccount", "-yuiDemoAgents", "-yuiAgent", "yui",
+                               "-appearance", "dark", "-yuiDemoReply", Self.brandSite,
+                               "-yuiDemoPickupAfter", "0.5", "-yuiDemoReplyAfter", "2", "-yuiEventLog", log]
+        app.launch()
+
+        XCTAssertTrue(app.buttons["stage-type"].waitForExistence(timeout: 15), "no stage")
+        app.buttons["stage-type"].tap()
+        let field = app.textFields["stage-field"]
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        field.typeText("Interview me for a personal brand site.")
+        app.buttons["stage-send-text"].tap()
+
+        let questions = app.descendants(matching: .any)["stage-questions"]
+        for _ in 0..<6 where !questions.waitForExistence(timeout: 4) {
+            if app.buttons["stage-next"].exists { app.buttons["stage-next"].tap() }
+        }
+        XCTAssertTrue(questions.exists, "no questions screen")
+        let name = app.textFields["Name"]
+        XCTAssertTrue(name.waitForExistence(timeout: 5), "the form never showed")
+        name.tap(); name.typeText("Chris\n")
+        app.buttons["Clients"].tap()
+        shot("8-before-paging")
+
+        // A page back and on again: the questions are drawn anew.
+        let back = app.buttons["stage-back"]
+        XCTAssertTrue(back.waitForExistence(timeout: 5))
+        back.tap()
+        let gone = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: questions)
+        XCTAssertEqual(XCTWaiter.wait(for: [gone], timeout: 5), .completed, "back did not leave the questions")
+        app.buttons["stage-next"].tap()
+        XCTAssertTrue(name.waitForExistence(timeout: 5), "the questions did not come back")
+        XCTAssertEqual(name.value as? String, "Chris", "the form lost what was typed")
+        shot("9-after-paging")
+
+        let send = app.buttons["stage-send"]
+        XCTAssertTrue(send.isEnabled, "Send forgot the answers that came back")
+        send.tap()
+        XCTAssertTrue(app.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH 'Sent. It'"))
+            .firstMatch.waitForExistence(timeout: 5), "Send did not go")
+        let events = (try? String(contentsOfFile: log, encoding: .utf8)) ?? ""
+        let plan = events.split(separator: "\n").compactMap {
+            try? JSONSerialization.jsonObject(with: Data($0.utf8)) as? [String: Any]
+        }.first { $0["plan"] != nil }?["plan"] as? [String: Any] ?? [:]
+        let form = plan.values.compactMap { $0 as? [String: Any] }.first ?? [:]
+        XCTAssertEqual(form["name"] as? String, "Chris", "Send did not carry the kept form: \(events)")
+        XCTAssertTrue(plan.values.contains { $0 as? String == "Clients" }, "Send did not carry the kept pick: \(plan)")
+    }
+
     /// The paged plan: a form step moves on with Next, no Submit inside it.
     func testPagerFormMovesOnWithNext() throws {
         let reply = [

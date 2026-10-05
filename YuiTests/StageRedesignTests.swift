@@ -100,6 +100,17 @@ final class StageRedesignTests: XCTestCase {
         XCTAssertTrue(html.contains("--accent:\(p.accent)"))
     }
 
+    /// Marks in free SVG (YUI-276): `rough` draws a part by hand, `wash` tints a fill so overlaps read darker.
+    func testAFreeDrawingCanLookHandDrawn() {
+        let html = DrawPage.html("<svg viewBox=\"0 0 360 240\"><path class=\"draw rough accent\" d=\"M10 10 L300 200\"/></svg>",
+                                 palette: YuiTheme.yui.palette(for: .light), dark: false, good: "#13875a", bad: "#c93c2c", still: false)
+        XCTAssertTrue(html.contains("<filter id=\"yui-rough\""))
+        XCTAssertTrue(html.contains(".rough{filter:url(#yui-rough)}"))
+        XCTAssertTrue(html.contains(".wash{fill-opacity:.18}"))
+        // The filter's own box never takes the drawing's place.
+        XCTAssertTrue(html.contains("body>svg:not(.yui-defs)"))
+    }
+
     func testADrawParsesIntoOneComponentWithItsMarkup() {
         let yl = YLScreen("say Tap a push.\ndraw \"Push tap\"\n<svg viewBox=\"0 0 4 3\">\n<circle cx=\"2\" cy=\"1\" r=\"1\"/>\n</svg>\nend")
         let draw = yl.components.first { $0.preset == "draw" }

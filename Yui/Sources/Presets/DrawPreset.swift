@@ -18,7 +18,10 @@ import YuiLines
 //   colors    var(--ink) --soft --accent --mint --lavender --butter --good --bad,
 //             or the classes .ink .soft .accent .mint .lavender .butter .good .bad
 //             (stroke) and .fill-accent ... (fill)
-//   lines     a shape with no stroke of its own is a 1.5 pt line in ink, no fill
+//   lines     a shape with no stroke of its own is a 1.5 pt line in ink, no fill;
+//             class="rough" makes any part look drawn by hand, "wash" makes a fill a
+//             soft see-through tint, so overlaps read darker, as in a Venn (YUI-276).
+//             The wobble is sized for a viewBox a few hundred units wide, as in the example.
 //   motion    class="draw" traces a line on, "pop" springs a part up, "fade" brings
 //             it in, "pulse" keeps it breathing; parts with one of these come on in
 //             the order they are written, a beat apart
@@ -57,7 +60,7 @@ struct DrawDrawing: View {
                                          still: reduceMotion)
                 // The shape is set here, by a clear box the canvas lies over: a web view has no size of its own.
                 Color.clear
-                    .aspectRatio(DrawPage.ratio(props["ratio"]?.string, source: source), contentMode: .fit)
+                    .aspectRatio(DrawPage.ratio(props["ratio"].flatMap { $0.string ?? $0.number.map { String($0) } }, source: source), contentMode: .fit)
                     .frame(maxWidth: .infinity)
                     .overlay { DrawCanvas(html: page) }
                     // Its taps are the page's: a tap turns the page, a swipe changes the screen.
@@ -111,7 +114,8 @@ enum DrawPage {
         :root{--ink:\(p.ink);--soft:\(p.inkSoft);--accent:\(p.accent);--mint:\(p.mint);--lavender:\(p.lavender);--butter:\(p.butter);--good:\(good);--bad:\(bad);--ground:\(p.background);color-scheme:\(dark ? "dark" : "light")}
         html,body{margin:0;padding:0;height:100%;background:transparent;color:var(--ink);overflow:hidden;
           font:600 15px -apple-system,system-ui,sans-serif;-webkit-user-select:none;-webkit-text-size-adjust:none}
-        body>svg,body>canvas{display:block;width:100%;height:100%;overflow:visible}
+        body>svg:not(.yui-defs),body>canvas{display:block;width:100%;height:100%;overflow:visible}
+        .yui-defs{position:absolute;width:0;height:0;overflow:hidden}
         :where(svg text){fill:var(--ink);stroke:none;font-family:-apple-system,system-ui,sans-serif}
         :where(svg :is(path,line,polyline,polygon,rect,circle,ellipse):not([fill])){fill:none}
         :where(svg :is(path,line,polyline,polygon,rect,circle,ellipse):not([stroke])){stroke:var(--ink);stroke-width:1.5}
@@ -121,6 +125,7 @@ enum DrawPage {
         svg text:is(.ink,.soft,.accent,.mint,.lavender,.butter,.good,.bad){stroke:none}
         svg text.soft{fill:var(--soft)}svg text.accent{fill:var(--accent)}svg text.mint{fill:var(--mint)}svg text.good{fill:var(--good)}svg text.bad{fill:var(--bad)}svg text.butter{fill:var(--butter)}svg text.lavender{fill:var(--lavender)}
         .dash{stroke-dasharray:5 5}
+        .wash{fill-opacity:.18}.rough{filter:url(#yui-rough)}
         .draw,.pop,.fade{animation-delay:calc(var(--i,0)*.22s + .1s);animation-fill-mode:both}
         .draw{animation-name:yui-draw;animation-duration:.8s;animation-timing-function:ease-in-out}
         .pop{animation-name:yui-pop;animation-duration:.5s;animation-timing-function:cubic-bezier(.3,1.6,.5,1);transform-box:fill-box;transform-origin:center}
@@ -132,6 +137,9 @@ enum DrawPage {
         @keyframes yui-pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.08)}}
         \(still ? "*{animation:none!important;transition:none!important}" : "")
         </style></head><body>
+        <svg class="yui-defs" aria-hidden="true"><filter id="yui-rough" filterUnits="userSpaceOnUse" x="-10%" y="-10%" width="120%" height="120%">
+        <feTurbulence type="fractalNoise" baseFrequency="0.035" numOctaves="2" seed="7"/>
+        <feDisplacementMap in="SourceGraphic" scale="2.5" xChannelSelector="R" yChannelSelector="G"/></filter></svg>
         \(source)
         <script>
         (function(){var i=0;document.querySelectorAll('.draw,.pop,.fade,.pulse').forEach(function(e){

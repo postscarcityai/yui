@@ -756,7 +756,8 @@ struct ImageEditPreset: View {
                     .padding(.vertical, theme.spacing.m)
                     .background(s.background, in: .rect(cornerRadius: theme.radius.pill))
                     .overlay(RoundedRectangle(cornerRadius: theme.radius.pill).stroke(s.outline, lineWidth: 1.5))
-                NameMic(text: $instruction, id: "edit-mic", label: "Say what should change", append: true)
+                // Voice first (feedback NOTE-48549): say what should change.
+                FieldMic(text: $instruction, label: "what should change", id: "edit-mic")
                 if marked {
                     Button("Clear mark", systemImage: "arrow.uturn.backward", action: clear)
                         .labelStyle(.iconOnly)

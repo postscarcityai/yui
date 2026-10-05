@@ -58,7 +58,31 @@ const LINE: Record<string, string> = {
   shape: "shape circle Solo +pulse",
   query: 'table create meals Day:date Cal:number:kcal\nput meals Day=today Cal=640\nquery meals where=Day=today sum=Cal as stat "Today"',
   custom: 'custom {"type":"text","text":"hi"}',
+  diagram: 'diagram "How an ask ships"\nflowchart LR\n  a[Ask] --> b[Build]\nend',
+  mock: 'mock "Agents" frame=phone\npart nav Agents action=Edit\nend',
+  part: "part nav Agents action=Edit",
+  map: 'map "Karakorum"\npin@ka Karakorum 47.2,102.8\nend',
+  area: "area Raided PL|HU +dash",
+  pin: "pin Karakorum 47.2,102.8",
+  route: "route East 47.2,102.8|37.6,127 +arrow",
+  loop: 'loop 96 "Boom bap" p=x...x.x.|....x...|..x...x.|xxxxxxxx',
+  drums: 'drums 2x2 "Pads"',
+  keys: 'keys C major "Keys"',
+  chords: "chords G I-V-vi-IV",
+  tuner: "tuner guitar",
+  metronome: 'metronome 90 "Click"',
+  draw: 'draw "Push tap" caption="Tap the banner. The answer plays itself."\n<svg viewBox="0 0 10 10"><circle cx="5" cy="5" r="4"/></svg>\nend',
 };
+
+test("draw in Telegram: the caption, else the title, else it waits in the app", async () => {
+  const svg = '\n<svg viewBox="0 0 10 10"><circle cx="5" cy="5" r="4"/></svg>\nend';
+  const cap = await renderYL('draw "Push tap" caption="Tap the banner."' + svg, opts());
+  assert.equal(cap.messages[0].text, "Tap the banner.");
+  const title = await renderYL('draw "Push tap"' + svg, opts());
+  assert.equal(title.messages[0].text, "Push tap");
+  const bare = await renderYL("draw" + svg, opts());
+  assert.ok(appMsg(bare.messages), "a bare drawing opens in Yui");
+});
 
 test("every preset in yl.mjs has a Telegram mapping and a test line", () => {
   for (const p of [...PRESETS, "custom"]) {
@@ -220,6 +244,16 @@ test("shapes: title, the labels as a chain with the arrows between, the caption"
   const loose = await renderYL('shapes "Parts"\nshape@a box A\nshape@b box B\nshape arrow from=a to=b +dash\nshape path pts=1,4|3,4\nshape dot', opts());
   assert.equal(loose.messages[0].text, "<b>Parts</b>\nA · B"); // a trailing arrow and unlabelled parts are left out
   assert.equal((await renderYL(LINE.shape, opts())).messages[0].text, "Solo");
+});
+
+test("gesture marks (YUI-276): a mock's tap and swipe go with it to the app, a tap in shapes is its label", async () => {
+  const r = await renderYL('mock "Hold to talk"\npart@mic button "Hold to talk"\nshape tap "hold" at=mic +pulse\nshape swipe "slide to cancel" at=mic dir=left', opts());
+  assert.equal(r.messages.length, 1); // the one Open in Yui message
+  const adds = parse('mock "Hold to talk"\npart@mic button "Hold to talk"\nshape tap "hold" at=mic +pulse\nshape swipe "slide to cancel" at=mic dir=left').filter((o: any) => o.op === "add");
+  assert.deepEqual(adds.map((o: any) => r.placed[o.id]), ["app", "member", "member", "member"]);
+  assert.deepEqual(r.errors, []);
+  const s = await renderYL('shapes "Hold"\nshape tap hold at=5,4\nshape swipe slide at=5,4 dir=left', opts());
+  assert.equal(s.messages[0].text, "<b>Hold</b>\nhold · slide");
 });
 
 test("agent tables: table create and put send nothing, a query opens in Yui", async () => {

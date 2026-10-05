@@ -36,7 +36,9 @@ typealias Props = [String: YLValue]
 // from items=a|b|c) and any other key= the line gave. A view collects a mock's
 // parts with `components.filter { $0.inGroup == mock.ylID && $0.preset == "part" }`.
 // Defaults (frame "phone", kind "text") are the view's job; `resolved` is not
-// computed in Swift.
+// computed in Swift. A mock also takes `shape` lines, gesture marks drawn over
+// its screen (a tap, a swipe, an arrow, a doodle ring), placed by a part's id or
+// x,y on the screen (YUI-276).
 
 let presets: Set<String> = [
     "timer", "ask", "choose", "pick", "slide", "form",
@@ -59,12 +61,13 @@ let presets: Set<String> = [
 /// a sketch (the picture of the page before it).
 let groups: [String: Set<String>] = [
     "deck": ["page", "ask", "choose", "pick", "sketch", "shapes", "diagram", "mock", "draw", "map", "math", "chart", "stat", "calc"],
-    "plan": ["page", "ask", "choose", "pick", "slide", "form", "mic", "camera", "sketch", "diagram", "mock", "draw", "map"],
+    // A plan takes `shapes` too, so a drawing reaches every screen a deck does (YUI-276).
+    "plan": ["page", "ask", "choose", "pick", "slide", "form", "mic", "camera", "sketch", "shapes", "diagram", "mock", "draw", "map"],
     "narrate": ["page", "compare", "image", "video", "card", "stat", "chart", "math", "storyboard", "gallery", "deck"],
     "timeline": ["done", "now", "next"],
     "sketch": ["row", "after"],
     "shapes": ["shape"],
-    "mock": ["part"],
+    "mock": ["part", "shape"],
     "map": ["area", "pin", "route"],
 ]
 
@@ -135,7 +138,8 @@ private let listProps: [String: [String]] = [
     "project": ["facts", "next"],
     "pick": ["answer"],
     "game": ["items"],
-    "shape": ["pts"],
+    // A Venn's sets and its pair overlaps (YUI-276).
+    "shape": ["pts", "sets", "pairs"],
     "part": ["items"],
     "area": ["codes", "pts"],
     "route": ["pts"],

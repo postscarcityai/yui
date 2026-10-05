@@ -8,7 +8,8 @@ import YuiLines
 ///
 /// In a plan or the stage's questions the host has the one Send: every change hands it
 /// `{transcript}` (nothing while the box is empty). On its own it sends once, with the
-/// words as the person's reply.
+/// words as the person's reply. Words not sent yet are kept on the phone until they go
+/// (feedback NOTE-19357).
 struct MicPreset: View {
     let c: YLComponent
     @State private var text = ""
@@ -19,6 +20,7 @@ struct MicPreset: View {
     @FocusState private var typing: Bool
     @Environment(\.ylScope) private var scope
     @Environment(\.ylAnswers) private var answers
+    @Environment(\.ylAgent) private var agent
     @Environment(\.ylEmit) private var emit
     @Environment(\.ylHostedSubmit) private var hosted
     @Environment(\.ylPageVoice) private var pageVoice
@@ -85,12 +87,14 @@ struct MicPreset: View {
                     sent = true
                     typing = false
                     emit(c.event(["transcript": .string(words)], echo: words))
+                    AnswerDrafts.shared.clear(agent, scope, c.ylID)
                 }
                 .disabled(words.isEmpty || sent)
                 .accessibilityIdentifier("mic-send-\(id)")
             }
         }
         .onChange(of: text) {
+            if restored, !sent { AnswerDrafts.shared.set(agent, scope, c.ylID, "text", .string(text)) }
             guard hosted, restored || !text.isEmpty else { return }
             let words = text.trimmingCharacters(in: .whitespacesAndNewlines)
             emit(words.isEmpty ? c.event([:]) : c.event(["transcript": .string(words)], echo: words))
@@ -132,14 +136,16 @@ struct MicPreset: View {
     private func restore() {
         defer { restored = true }
         guard !restored, text.isEmpty else { return }
-        if hosted, let g = c.inGroup, let v = answers(scope, g)?["plan"]?[c.ylID]?.string {
+        let plan = hosted ? c.inGroup.flatMap { answers(scope, $0)?["plan"] } : nil
+        if let plan {
+            if let v = plan[c.ylID]?.string { text = v }
+        } else if let v = answers(scope, c.ylID)?["transcript"]?.string {
+            // Hosted, the host's own copy (a flow's step, or a stage question that went).
             text = v
-        } else if hosted, let v = answers(scope, c.ylID)?["transcript"]?.string {
-            // A flow or plan step that went away and came back, or a relaunch.
+            sent = !hosted
+        } else if let v = AnswerDrafts.shared.draft(agent, scope, c.ylID, "text")?.string {
+            // Words never sent come back (feedback NOTE-19357); hosted, the change hands them to the host.
             text = v
-        } else if !hosted, let v = answers(scope, c.ylID)?["transcript"]?.string {
-            text = v
-            sent = true
         }
     }
 

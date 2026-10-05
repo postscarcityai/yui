@@ -31,9 +31,11 @@ final class AddAgentOneCommandTests: XCTestCase {
         XCTAssertTrue(app.buttons["drawer-agent-bar"].waitForExistence(timeout: 20), "no drawer")
         sleep(1)
         shot("01-drawer")
-        // In the drawer itself, in view without scrolling.
-        let row = app.buttons["drawer-add-agent"]
-        XCTAssertTrue(row.waitForExistence(timeout: 5), "no Add an agent row in the drawer")
+        // The last row of the agent switcher, not a button in the drawer.
+        XCTAssertFalse(app.buttons["drawer-add-agent"].exists, "Add an agent is still a drawer button")
+        app.buttons["drawer-agent-bar"].tap()
+        let row = app.buttons["switch-add"]
+        XCTAssertTrue(row.waitForExistence(timeout: 5), "no Add an agent row in the switcher")
         XCTAssertTrue(row.isHittable, "Add an agent is not in view")
         row.tap()
 

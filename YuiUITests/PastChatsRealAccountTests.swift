@@ -27,7 +27,7 @@ final class PastChatsRealAccountTests: XCTestCase {
         func openDrawer() {
             let menu = app.buttons["Agent menu"].firstMatch
             if menu.waitForExistence(timeout: 5) { menu.tap() } else { app.swipeRight() }
-            XCTAssertTrue(any("drawer-new-chat").waitForExistence(timeout: 8), "no drawer")
+            XCTAssertTrue(any("drawer-agent-bar").waitForExistence(timeout: 8), "no drawer")
         }
 
         app.launchArguments = ["-yuiRefreshToken", rt, "-yuiUserID", user, "-appearance", tag,

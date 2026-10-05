@@ -485,19 +485,25 @@ final class ChatStore {
     /// Files an answer under the reply that drew it: the newest message with a
     /// component of that id and preset. YL ids repeat across replies (`n1` in
     /// every one), and a later reply's `n1` owns every answer after it lands.
-    private func record(id: String, preset: String, value: [String: YLValue]) {
+    /// Returns the reply it was filed under.
+    @discardableResult
+    private func record(id: String, preset: String, value: [String: YLValue]) -> String? {
         // A tapped review item in the drawer: no component to file it under,
         // but it stops waiting on the person (the menu button's dot).
         if preset == "menu" {
-            guard value["bucket"] == .string("review") else { return }
+            guard value["bucket"] == .string("review") else { return nil }
             menu.markSeen(id)
             if let agentID = agent?.id { menu.store(agentID: agentID) }
-            return
+            return nil
         }
         guard let m = pool.last(where: { $0.yl?.components.contains { $0.ylID == id && $0.preset == preset } == true })
-        else { return }
+        else { return nil }
         answers[m.id, default: [:]][id] = value
+        return m.id
     }
+
+    /// Unsent answers kept on the phone (feedback NOTE-19357): one sent from here takes its draft with it.
+    @ObservationIgnored lazy var drafts = AnswerDrafts.shared
 
     /// An event row (history, outbox or a live tap) as an answer: only answers carry an echo.
     private func record(meta: YLValue?) {
@@ -507,7 +513,9 @@ final class ChatStore {
     }
 
     func receive(_ e: YLEvent) {
-        if e.echo != nil { record(id: e.id, preset: e.preset, value: e.value) }
+        if e.echo != nil, let scope = record(id: e.id, preset: e.preset, value: e.value) {
+            drafts.sent(e, scope: scope, agent: agent?.id ?? "")
+        }
         #if DEBUG
         // `-yuiEventLog <path>`: UI tests read back the events a tap sent.
         if let path = UserDefaults.standard.string(forKey: "yuiEventLog"),

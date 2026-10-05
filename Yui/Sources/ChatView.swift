@@ -782,8 +782,7 @@ struct ChatView: View {
                     .font(.system(size: 17, weight: .bold))
                     .foregroundStyle(c.ink)
                     .frame(width: 44, height: 44)
-                    .background(c.surface, in: Circle())
-                    .overlay(Circle().stroke(c.outline, lineWidth: 1.5))
+                    .glassEffect(.regular.interactive(), in: .circle)
                     .contentShape(Circle())
             }
             .buttonStyle(BounceButtonStyle())
@@ -830,7 +829,7 @@ struct ChatView: View {
                     manage: { settleDrawer(open: false); showAgents = true },
                     edit: { editingAgent = $0 },
                     settings: { settleDrawer(open: false); showSettings = true },
-                    newChat: startNewChat, openChat: pickChat,
+                    openChat: pickChat,
                     reduceMotion: reduceMotion, isOpen: drawerOpen)
     }
 
@@ -1314,8 +1313,7 @@ struct ChatView: View {
                 .font(theme.font(theme.type.title, .black))
                 .foregroundStyle(c.ink)
                 .frame(width: 46, height: 46)
-                .background(c.surface, in: Circle())
-                .overlay(Circle().stroke(c.outline, lineWidth: 1.5))
+                .glassEffect(.regular.interactive(), in: .circle)
         }
         .disabled(sending || photos.count >= Attachments.maxPhotos)
         .accessibilityLabel("Attach")
@@ -1357,7 +1355,7 @@ struct ChatView: View {
                     .font(theme.font(theme.type.title, .black))
                     .foregroundStyle(c.onAccent)
                     .frame(width: 46, height: 46)
-                    .background(c.accent, in: Circle())
+                    .glassEffect(.regular.tint(c.accent).interactive(), in: .circle)
             }
             .buttonStyle(BounceButtonStyle())
             .disabled(sending)
@@ -1368,8 +1366,7 @@ struct ChatView: View {
                 .foregroundStyle(talk.listening ? c.onAccent : c.ink)
                 .symbolEffect(.variableColor.iterative, isActive: talk.listening && !reduceMotion)
                 .frame(width: 46, height: 46)
-                .background(talk.listening ? c.accent : c.surface, in: Circle())
-                .overlay(Circle().stroke(talk.listening ? .clear : c.outline, lineWidth: 1.5))
+                .glassEffect(talk.listening ? .regular.tint(c.accent).interactive() : .regular.interactive(), in: .circle)
                 .scaleEffect(talk.listening ? 1.25 : 1)
                 .contentShape(Circle())
                 // The trash is the one in the listening bar on the left; the mic stays where it is.
@@ -1538,8 +1535,7 @@ struct ChatView: View {
                 .font(theme.font(theme.type.title, .black))
                 .foregroundStyle(c.ink)
                 .frame(width: 46, height: 46)
-                .background(c.surface, in: Circle())
-                .overlay(Circle().stroke(c.outline, lineWidth: 1.5))
+                .glassEffect(.regular.interactive(), in: .circle)
         }
         .buttonStyle(BounceButtonStyle())
         .accessibilityLabel("Stop talking")

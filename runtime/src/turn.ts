@@ -28,7 +28,7 @@ import { type Clock, type TableStore, LIMITS, applyHeld, applyTables, asText, ch
          readQueries, tablesPrompt } from "./tables.ts";
 import type { NativeAgent, OwnKey, Row, ScheduleItem } from "./types.ts";
 import { PLAN_TABLE, applyDay, applyFirst, applyLogged, applyRunner, editDayBody, firstBody, firstLine, logBody, loggedLine, progressShape, screenLines, session, splitDays, startReply,
-         trains, workoutAsks, type Session, type WorkoutAsk } from "./workouts.ts";
+         trains, workoutAsks, wrapUp, type Session, type WorkoutAsk } from "./workouts.ts";
 import { ACK, type MealFix, applyFix, fixTaps, logsMeals, mealTurn, runMealJob, spoken } from "./meals.ts";
 import { ADD_BODY, GOAL, GROCERIES, LOG_BODY, MEALS as MEAL_LOG, PLAN as MEAL_PLAN, addGroceries, applyMealFix, applyPlan, applySwap, ensureTools,
          drawnShape, readShape, NEW_DAY, NEW_DAY_RULE, fixBody, groceryText, lastPrefs, logPlanned, mealAsks, nextPlanned, planBody, plansMeals, readItems, screenLines as mealScreenLines, tickGrocery,
@@ -1328,9 +1328,8 @@ async function workoutTools(store: Store, agent: NativeAgent, asks: WorkoutAsk[]
       }
       const r = applyRunner(tables, s, a.answers, clk);
       tables = r.store;
-      text = loggedLine(s.focus, r.items);
-      if (r.feel === "Hard") text += " Felt hard? Next time we keep the weight and own the reps.";
-      else if (r.feel === "Easy") text += " Felt easy? Add 5 lb next time.";
+      // The wrap-up: what went up, next time's numbers and the streak (feedback NOTE-35460).
+      text = wrapUp(tables, s, r.items, r.feel, clk);
     } else if (a.kind === "logged") {
       const r = applyLogged(tables, a.answers, clk);
       tables = r.store;

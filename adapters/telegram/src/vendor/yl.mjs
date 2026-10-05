@@ -19,6 +19,8 @@
 //   { op: "talk",  screen, props: { on }, line }  `>2 talk`: page 2 keeps the composer (`talk off` takes it away)
 //   { op: "doing", screen, props: { text?, step?, of? }, line }  what the agent is doing, in the working
 //                                             row (`doing off`: props { off: true })
+//   { op: "visual", screen, props: { look?, tone?, react? }, line }  a live shader behind the stage
+//                                             (`visual off`: props { off: true })
 //   { op: "menu",  screen, id, props: { bucket, label, sub?, say?, show?, url? }, line }
 //                                             an item in the agent's drawer (`menu done id`: props { done: true })
 //   { op: "table", screen, name, cols: [{ name, type, unit? }], line }  `table create`: an agent table on the phone (spec/TABLES.md)
@@ -26,13 +28,15 @@
 //   { op: "error", screen, message, line }
 // A `flow` head is an add; the Mermaid lines after it are buffered and its
 // `end` (or the end of the input) gives one patch on the flow with the graph
-// (spec/FLOWS.md). Call finish() after the last line (parse and flush do).
+// (spec/FLOWS.md). A `diagram` head reads Mermaid the same way, and a `draw`
+// head reads its own markup (SVG) up to `end`, kept as `source`.
+// Call finish() after the last line (parse and flush do).
 // `props` holds only what the line actually said. Defaults live in resolve().
 // An add that joins an open group (a page under a deck) also carries `in`,
 // the group's id.
 
 import { emptyStore, write as writeTable } from "./tables.mjs";
-import { FONTS, MOTIONS, PAPERS, RADII, SETS, WEIGHTS } from "./look.mjs";
+import { FONTS, MOTION_KEYS, MOTIONS, PAPERS, RADII, SETS, WEIGHTS, mergeTheme } from "./look.mjs";
 
 export const PRESETS = [
   "timer", "ask", "choose", "pick", "slide", "form",
@@ -43,23 +47,28 @@ export const PRESETS = [
   "timeline", "done", "now", "next",
   "sketch", "row", "after",
   "shapes", "shape",
+  "diagram", "mock", "part", "draw",
+  "map", "area", "pin", "route",
   "game", "flow",
   "query",
+  "loop", "drums", "keys", "chords", "tuner", "metronome",
 ];
 // Not presets, but valid line heads.
-export const CORE = ["say", "custom", "save", "show", "forget", "clear", "end", "theme", "close", "talk", "menu", "put", "doing"];
+export const CORE = ["say", "custom", "save", "show", "forget", "clear", "end", "theme", "close", "talk", "menu", "put", "doing", "visual"];
 
 // Groups: a group head collects the lines that follow it on the same screen,
 // as long as each one is a member preset. Anything else ends the group, and
 // so does `end`. Comments, blank lines and error lines do not. A narrate
 // can hold another group (a deck), a deck or plan a sketch (a page's picture).
 export const GROUPS = {
-  deck: ["page", "ask", "choose", "pick", "sketch", "shapes", "math", "chart", "stat", "calc"],
-  plan: ["page", "ask", "choose", "pick", "slide", "form", "mic", "camera", "sketch"],
+  deck: ["page", "ask", "choose", "pick", "sketch", "shapes", "diagram", "mock", "draw", "map", "math", "chart", "stat", "calc"],
+  plan: ["page", "ask", "choose", "pick", "slide", "form", "mic", "camera", "sketch", "shapes", "diagram", "mock", "draw", "map"],
   narrate: ["page", "compare", "image", "video", "card", "stat", "chart", "math", "storyboard", "gallery", "deck"],
   timeline: ["done", "now", "next"],
   sketch: ["row", "after"],
   shapes: ["shape"],
+  mock: ["part", "shape"],
+  map: ["area", "pin", "route"],
 };
 
 // A timeline's rows. A patch's `kind=` moves one to another of these.
@@ -483,6 +492,68 @@ const P = {
     return o;
   },
 
+  // diagram [title...] (caption=): a Mermaid block up to `end`, read by the
+  // parser (see the diagram section below), so the head takes a title only.
+  diagram(pos) { return P.calc(pos); },
+  // draw [title...] (caption= ratio=): markup up to `end`, kept whole by the
+  // parser (see the draw section below), so the head takes a title only.
+  draw(pos) { return P.calc(pos); },
+  // mock [title...] (frame= url= dark), then `part KIND [text...]` lines: the
+  // first bare word is the kind, wherever it sits (as in shape and game).
+  mock(pos) { return P.calc(pos); },
+  part(pos) {
+    const o = {};
+    const text = [];
+    for (const t of pos) {
+      if (o.kind === undefined && !t.parts && !t.quoted && GAME_WORD.test(t.text)) o.kind = t.text;
+      else text.push(t);
+    }
+    if (text.length) o.text = joinText(text);
+    return o;
+  },
+
+  // map [title...] (caption= fit= center= zoom=), then area, pin and route
+  // lines. Places stay as written ("47.9,106.9"); the renderer reads them.
+  // area [label...] [CN|MN|RU] [pts=lat,lon|...]: bare two or three capital
+  // letters, or options that all are, are country codes; options that are
+  // all lat,lon points are a drawn outline. The rest is the label.
+  map(pos) { return P.calc(pos); },
+  area(pos) {
+    const o = {};
+    const text = [];
+    for (const t of pos) {
+      if (!t.quoted && !t.parts && ISO.test(t.text)) (o.codes ||= []).push(t.text);
+      else if (!t.quoted && t.parts && t.parts.every((x) => ISO.test(x))) (o.codes ||= []).push(...t.parts);
+      else if (o.pts === undefined && !t.quoted && t.parts && t.parts.every((x) => LATLON.test(x))) o.pts = t.parts;
+      else text.push(t);
+    }
+    if (text.length) o.label = joinText(text);
+    return o;
+  },
+  // pin [label...] [lat,lon]: the first bare lat,lon is where it goes.
+  pin(pos) {
+    const o = {};
+    const text = [];
+    for (const t of pos) {
+      if (o.at === undefined && !t.quoted && !t.parts && LATLON.test(t.text)) o.at = t.text;
+      else text.push(t);
+    }
+    if (text.length) o.label = joinText(text);
+    return o;
+  },
+  // route [label...] [a|b|c]: the first options are its stops, each a
+  // lat,lon or a pin's id.
+  route(pos) {
+    const o = {};
+    const text = [];
+    for (const t of pos) {
+      if (o.pts === undefined && !t.quoted && t.parts) o.pts = t.parts;
+      else text.push(t);
+    }
+    if (text.length) o.label = joinText(text);
+    return o;
+  },
+
   // game KIND [title...]: the first bare word (not quoted, not options) is
   // the kind, wherever it sits; the rest is the title.
   game(pos) {
@@ -495,9 +566,55 @@ const P = {
     if (text.length) o.title = joinText(text);
     return o;
   },
+
+  // Music (spec/MUSIC.md). Each takes its one special positional, wherever
+  // it sits, and the rest of the positional text is the title.
+  // loop [BPM] [title...]: the first bare number (96 or 96bpm) is the tempo.
+  loop(pos) { return music(pos, { bpm: BPM }); },
+  metronome(pos) { return music(pos, { bpm: BPM }); },
+  // drums [RxC] [title...]: 2x2, 4x4 (1 to 4 each way).
+  drums(pos) { return music(pos, { grid: GRID }); },
+  // keys [KEY] [SCALE] [title...]: C, F#, Bb, Am.
+  keys(pos) { return music(pos, { key: KEY, scale: SCALE }); },
+  // chords [KEY] [I-V-vi-IV | C|G|Am|F] [title...]
+  chords(pos) {
+    const o = music(pos, { key: KEY, prog: ROMAN }, (t, o) => {
+      if (t.parts && o.chords === undefined) { o.chords = t.parts; return true; }
+      return false;
+    });
+    if (typeof o.prog === "string") o.prog = o.prog.split("-");
+    return o;
+  },
+  // tuner [guitar|ukulele|bass|chromatic] [title...]
+  tuner(pos) { return music(pos, { instrument: INSTRUMENT }); },
 };
 
+// Music positionals: `specs` maps a prop to the test its bare token must
+// pass; the first bare token that passes a still-empty prop's test fills it.
+const BPM = /^(\d+(?:\.\d+)?)(?:bpm)?$/i;
+const GRID = /^[1-4]x[1-4]$/i;
+const KEY = /^[A-G][#b]?m?$/;
+const SCALE = /^(major|minor|pentatonic|blues|dorian|mixolydian|chromatic)$/;
+const ROMAN = /^[b#]?[ivIV]+[a-z0-9+]*(?:-[b#]?[ivIV]+[a-z0-9+]*)+$/;
+const INSTRUMENT = /^(guitar|ukulele|bass|chromatic)$/;
+function music(pos, specs, extra) {
+  const o = {};
+  const text = [];
+  for (const t of pos) {
+    const bare = !t.quoted && !t.parts;
+    const k = bare && Object.keys(specs).find((k) => o[k] === undefined && specs[k].test(t.text));
+    if (k === "bpm") o.bpm = Number(t.text.match(BPM)[1]);
+    else if (k) o[k] = t.text;
+    else if (!(extra && extra(t, o))) text.push(t);
+  }
+  if (text.length) o.title = joinText(text);
+  return o;
+}
+
 const GAME_WORD = /^[a-z][a-z0-9_-]*$/i;
+// A country code (ISO 3166 alpha-2 or alpha-3) and a lat,lon place.
+const ISO = /^[A-Z]{2,3}$/;
+const LATLON = /^-?\d+(\.\d+)?,-?\d+(\.\d+)?$/;
 // Game kinds this renderer can play. Any other kind still parses; the
 // renderer says the game is not in this version (spec section 4, game).
 export const GAMES = ["tictactoe", "snake", "memory"];
@@ -548,7 +665,14 @@ const LISTS = {
   project: ["facts", "next"],
   pick: ["answer"],
   game: ["items"],
-  shape: ["pts"],
+  shape: ["pts", "sets", "pairs"],
+  part: ["items"],
+  area: ["codes", "pts"],
+  route: ["pts"],
+  loop: ["rows", "p"],
+  drums: ["pads"],
+  chords: ["chords"],
+  tuner: ["strings"],
 };
 const asList = (v) => (Array.isArray(v) ? v : String(v).split("|")).map((x) => (typeof x === "string" ? x : String(x)));
 // Highlight boxes: hl=x,y,w,h|x,y,w,h in percent of the image. A box that is
@@ -570,6 +694,8 @@ function normalize(preset, o) {
   for (const k of LISTS[preset] || []) if (o[k] !== undefined && o[k] !== true) o[k] = asList(o[k]);
   if (preset === "compare" && o.hl !== undefined) o.hl = boxes(o.hl);
   if (preset === "game") for (const k of ["x", "o"]) if (o[k] !== undefined) o[k] = cellList(o[k]);
+  // prog=I-V-vi-IV and prog=I|V|vi|IV are the same list.
+  if (preset === "chords" && o.prog !== undefined && o.prog !== true) o.prog = asList(o.prog).flatMap((c) => c.split("-")).filter(Boolean);
   if (preset === "chart") chartSeries(o);
   if (preset === "stat" && o.spark !== undefined && !Array.isArray(o.spark)) o.spark = [o.spark];
   if (preset === "step" && o.time !== undefined) o.time = seconds(o.time) ?? o.time;
@@ -691,6 +817,8 @@ const SHAPES = [
   ["(((", [")))"]], ["([", ["])"]], ["[[", ["]]"]], ["[(", [")]"]], ["((", ["))"]], ["{{", ["}}"]],
   ["[/", ["/]", "\\]"]], ["[\\", ["\\]", "/]"]], ["[", ["]"]], ["(", [")"]], ["{", ["}"]], [">", ["]"]],
 ];
+// A node's shape by its opener, for a diagram (a plain [box] is the default).
+const NODE_SHAPE = { "(((": "double", "([": "stadium", "[[": "subroutine", "[(": "cylinder", "((": "circle", "{{": "hexagon", "[/": "slant", "[\\": "slant", "(": "round", "{": "diamond", ">": "flag" };
 // Links: `-- text -->` first, then plain arrows with an optional |label|.
 const TEXT_LINK = /^\s*<?(?:--|==|-\.)(?![->=.])\s*(.*?)\s*(?:-{2,}>|={2,}>|\.-+>|-{3,}|={3,}|\.-+)(?=[\s\w])/;
 const LINK = /^\s*(<?)(-{2,}>|-{3,}|={2,}>|={3,}|-\.+->|-\.+-|--[ox]|==[ox]|~{3,})/;
@@ -742,6 +870,7 @@ function readNode(s) {
   const shape = SHAPES.find(([open]) => rest.startsWith(open));
   if (shape) {
     const [open, closers] = shape;
+    if (NODE_SHAPE[open]) node.shape = NODE_SHAPE[open];
     let body = rest.slice(open.length);
     let end = -1, len = 0;
     const from = body.trimStart().startsWith('"') ? body.indexOf('"', body.indexOf('"') + 1) + 1 : 0;
@@ -774,8 +903,14 @@ function readNodes(s) {
 
 function addNode(f, n) {
   const had = f.nodes.get(n.id);
-  if (!had) f.nodes.set(n.id, { id: n.id, ...(n.label !== undefined ? { label: n.label } : {}), order: f.nodes.size });
-  else if (n.label !== undefined) had.label = n.label;
+  const shape = f.drawn && n.shape ? { shape: n.shape } : {};
+  if (!had) f.nodes.set(n.id, { id: n.id, ...(n.label !== undefined ? { label: n.label } : {}), ...shape, order: f.nodes.size });
+  else {
+    if (n.label !== undefined) had.label = n.label;
+    Object.assign(had, shape);
+  }
+  // A diagram's subgraph holds the nodes first written inside it.
+  if (f.stack?.length && !f.groups.some((g) => g.nodes.includes(n.id))) f.stack[f.stack.length - 1].nodes.push(n.id);
 }
 
 // One Mermaid line of an open flow. Returns an error message or null.
@@ -791,19 +926,32 @@ function flowStatement(f, t) {
     if (step) f.steps.set(m[1], step);
     return null;
   }
-  if (/^subgraph(\s|$)/.test(t)) { f.depth++; return null; }
+  if (/^subgraph(\s|$)/.test(t)) {
+    f.depth++;
+    if (f.drawn) {
+      const m = t.match(/^subgraph\s+(\w+)\s*(?:\[(.*)\])?\s*$/) || t.match(/^subgraph\s+(.+?)\s*$/);
+      const label = m ? unlabel(m[2] ?? m[1]) : "";
+      const g = { id: m && /^\w+$/.test(m[1]) ? m[1] : `g${f.groups.length + 1}`, ...(label ? { label } : {}), nodes: [] };
+      if (f.stack.length) g.in = f.stack[f.stack.length - 1].id;
+      f.groups.push(g);
+      f.stack.push(g);
+    }
+    return null;
+  }
   if (FLOW_SKIP.test(t) || FLOW_HEADER.test(t)) return null;
   for (const st of statements(t)) {
     let g = readNodes(st);
     if (!g) continue;
     g.nodes.forEach((n) => addNode(f, n));
     for (;;) {
-      let rest = g.rest, label, hidden = false;
+      let rest = g.rest, label, hidden = false, how = "", both = false;
       const tl = rest.match(TEXT_LINK);
-      if (tl) { label = tl[1]; rest = rest.slice(tl[0].length); }
+      if (tl) { label = tl[1]; const t0 = tl[0].trim().replace(/^</, ""); how = t0.slice(0, 2) + (t0.match(/\S+$/)?.[0] ?? ""); both = tl[0].trim().startsWith("<"); rest = rest.slice(tl[0].length); }
       else {
         const l = rest.match(LINK);
         if (!l) break;
+        how = l[2];
+        both = l[1] === "<";
         hidden = l[2].startsWith("~");
         rest = rest.slice(l[0].length);
         const p = rest.match(PIPE);
@@ -817,6 +965,12 @@ function flowStatement(f, t) {
           const e = { from: a.id, to: b.id };
           const text = label === undefined ? "" : unlabel(label);
           if (text) e.label = text;
+          if (f.drawn) {
+            if (how.includes("=")) e.line = "thick";
+            else if (how.includes(".")) e.line = "dash";
+            if (!how.endsWith(">")) e.plain = true;
+            if (both) e.both = true;
+          }
           f.edges.push(e);
         }
       }
@@ -875,6 +1029,157 @@ function flowGraph(f) {
     return when ? { ...e, when } : e;
   });
   return clean({ dir: f.dir, start, nodes, edges, source: f.src.join("\n") });
+}
+
+// ---------- diagram (spec/YL.md, diagram) ----------
+// A Mermaid block between `diagram` and `end`, drawn static. The first
+// Mermaid line says which: a flowchart (read by the flow reader above, plus
+// node shapes, link styles and subgraphs), a sequenceDiagram or a
+// stateDiagram. Any other Mermaid type keeps only its `source`. The end gives
+// one patch: { type, ...the drawing, source }.
+const DGM_HEADER = /^(flowchart|graph|sequenceDiagram|stateDiagram(?:-v2)?)(?=\s|;|$)/;
+const DGM_OTHER = /^(classDiagram(?:-v2)?|erDiagram|journey|gantt|pie|mindmap|timeline|gitGraph|quadrantChart|requirementDiagram|C4\w+|sankey-beta|xychart-beta|block-beta)(?=\s|$)/;
+const SEQ_BLOCK = /^(loop|alt|opt|par|critical|break|rect)(?=\s|$)/;
+const SEQ_MSG = /^([\w.]+)\s*(<<-->>|<<->>|-->>|->>|--\)|-\)|--x|-x|-->|->)\s*([+-]?)\s*([\w.]+)\s*(?::\s*(.*))?$/;
+const SEQ_HEAD = { ">>": "arrow", ">": "none", ")": "async", "x": "cross" };
+
+function newDiagram(head) {
+  return { id: head.id, screen: head.screen, src: [], kind: null, depth: 0 };
+}
+
+// Starts the reader once the header is known.
+function diagramStart(d, header) {
+  const h = header.match(DGM_HEADER);
+  if (!h) { d.kind = "other"; return; }
+  d.dir = (header.split(/\s+/)[1] || "TD").replace(/;$/, "").toUpperCase();
+  if (h[1] === "flowchart" || h[1] === "graph") {
+    d.kind = "flow";
+    d.f = { nodes: new Map(), edges: [], steps: new Map(), depth: 0, drawn: true, groups: [], stack: [] };
+  } else if (h[1] === "sequenceDiagram") {
+    d.kind = "sequence";
+    d.actors = new Map();
+    d.steps = [];
+    d.open = 0;
+  } else {
+    d.kind = "state";
+    d.nodes = new Map();
+    d.edges = [];
+    d.groups = [];
+    d.stack = [];
+    d.note = false;
+  }
+}
+
+function seqActor(d, id, label, actor) {
+  const a = d.actors.get(id);
+  if (!a) d.actors.set(id, { id, ...(label ? { label } : {}), ...(actor ? { actor: true } : {}) });
+  else { if (label) a.label = label; if (actor) a.actor = true; }
+}
+
+function seqLine(d, t) {
+  let m = t.match(/^(participant|actor)\s+([\w.]+)(?:\s+as\s+(.+))?$/);
+  if (m) { seqActor(d, m[2], m[3] ? unlabel(m[3]) : "", m[1] === "actor"); return; }
+  if (/^autonumber(\s|$)/.test(t)) { d.numbered = true; return; }
+  if (/^(activate|deactivate|title|box|create|destroy|link|links|properties|details)(\s|$)/.test(t)) return;
+  m = t.match(/^Note\s+(right of|left of|over)\s+([\w.]+)(?:\s*,\s*([\w.]+))?\s*:\s*(.*)$/i);
+  if (m) {
+    const on = [m[2], ...(m[3] ? [m[3]] : [])];
+    on.forEach((x) => seqActor(d, x));
+    d.steps.push({ type: "note", side: m[1].toLowerCase().replace(/ of$/, ""), on, text: unlabel(m[4]) });
+    return;
+  }
+  m = t.match(/^(loop|alt|opt|par|critical|break|rect)(?:\s+(.*))?$/);
+  if (m) { d.open++; d.steps.push({ type: "open", block: m[1], ...(m[2] ? { text: unlabel(m[2]) } : {}) }); return; }
+  m = t.match(/^(else|and|option)(?:\s+(.*))?$/);
+  if (m) { d.steps.push({ type: "else", ...(m[2] ? { text: unlabel(m[2]) } : {}) }); return; }
+  m = t.match(SEQ_MSG);
+  if (m) {
+    seqActor(d, m[1]);
+    seqActor(d, m[4]);
+    const head = SEQ_HEAD[m[2].replace(/^<*-+/, "")] || "arrow";
+    const e = { type: "msg", from: m[1], to: m[4], text: unlabel(m[5] || "") };
+    if (m[2].startsWith("--") || m[2].startsWith("<<--")) e.line = "dash";
+    if (head !== "arrow") e.head = head;
+    if (m[2].startsWith("<<")) e.both = true;
+    d.steps.push(e);
+  }
+}
+
+// [*] is the start when a transition leaves it and the end when one reaches
+// it: _start and _end, with the composite state appended inside one.
+function stateAdd(d, id, patch = {}) {
+  const had = d.nodes.get(id);
+  if (!had) d.nodes.set(id, { id, ...patch });
+  else Object.assign(had, patch);
+  if (d.stack.length && !d.groups.some((g) => g.nodes.includes(id))) d.stack[d.stack.length - 1].nodes.push(id);
+}
+
+function stateLine(d, t) {
+  if (d.note) { if (/^end\s+note$/i.test(t)) d.note = false; return; }
+  if (/^note\s/i.test(t)) { if (!/:/.test(t)) d.note = true; return; }
+  if (/^(direction|classDef|class|style|click|accTitle|accDescr|hide)(\s|$)/.test(t)) {
+    const m = t.match(/^direction\s+(\w+)/);
+    if (m) d.dir = m[1].toUpperCase();
+    return;
+  }
+  if (t === "}") { d.stack.pop(); return; }
+  let m = t.match(/^state\s+(?:"([^"]*)"\s+as\s+(\w+)|(\w+))\s*(<<(?:choice|fork|join)>>)?\s*(\{)?$/);
+  if (m) {
+    const id = m[2] || m[3];
+    const patch = {};
+    if (m[1]) patch.label = m[1];
+    if (m[4]) patch.shape = m[4].slice(2, -2);
+    stateAdd(d, id, patch);
+    if (m[5]) {
+      const g = { id, ...(d.nodes.get(id).label ? { label: d.nodes.get(id).label } : {}), nodes: [] };
+      if (d.stack.length) g.in = d.stack[d.stack.length - 1].id;
+      d.groups.push(g);
+      d.stack.push(g);
+    }
+    return;
+  }
+  m = t.match(/^(\[\*\]|\w+)\s*(<?-->)\s*(\[\*\]|\w+)\s*(?::\s*(.*))?$/);
+  if (m) {
+    const scope = d.stack.length ? `_${d.stack[d.stack.length - 1].id}` : "";
+    const end = (x, as) => (x === "[*]" ? `${as}${scope}` : x);
+    const from = end(m[1], "_start"), to = end(m[3], "_end");
+    if (m[1] === "[*]") stateAdd(d, from, { shape: "start" });
+    else stateAdd(d, from);
+    if (m[3] === "[*]") stateAdd(d, to, { shape: "end" });
+    else stateAdd(d, to);
+    const e = { from, to };
+    if (m[4]) e.label = unlabel(m[4]);
+    d.edges.push(e);
+    return;
+  }
+  m = t.match(/^(\w+)\s*:\s*(.+)$/);
+  if (m) { stateAdd(d, m[1]); const n = d.nodes.get(m[1]); if (!n.label) n.label = unlabel(m[2]); }
+}
+
+// ---------- draw (spec/YL.md, draw) ----------
+// The agent's own markup (SVG, with CSS or a script to move it) between `draw`
+// and a line that is only `end`. Not YL and not read: the end gives one patch
+// with `source`, the lines as written. If the first line after the head does
+// not open a tag, the draw stays empty and that line is read as YL. A drawing
+// past DRAW_LINES lines or DRAW_CHARS characters is cut (later lines dropped,
+// its `end` still closes it). Characters are counted as code points.
+export const DRAW_LINES = 600;
+export const DRAW_CHARS = 60000;
+
+// The patch props a diagram's end gives.
+function diagramGraph(d) {
+  const src = d.src.join("\n");
+  if (d.kind === "flow") {
+    const nodes = [...d.f.nodes.values()].map(({ order, ...n }) => n);
+    return clean({ type: "flow", dir: d.dir, nodes, edges: d.f.edges, groups: d.f.groups.length ? d.f.groups : undefined, source: src });
+  }
+  if (d.kind === "sequence") {
+    return clean({ type: "sequence", actors: [...d.actors.values()], steps: d.steps, numbered: d.numbered, source: src });
+  }
+  if (d.kind === "state") {
+    return clean({ type: "state", dir: d.dir, nodes: [...d.nodes.values()], edges: d.edges, groups: d.groups.length ? d.groups : undefined, source: src });
+  }
+  return { type: "other", source: src };
 }
 
 // ---------- flow variants (spec/FLOWS.md, section 9) ----------
@@ -1081,14 +1386,17 @@ export class Parser {
     this.open = []; // open groups, innermost last: { id, preset, screen }
     this.flowHead = null; // a flow head just added: { id, screen }
     this.flow = null; // an open flow's Mermaid, being read
+    this.dgm = null; // an open diagram's Mermaid, being read
+    this.drw = null; // an open draw's markup, being read
   }
 
   // Group bookkeeping for one parsed op. Errors (and null) leave groups open.
   group(op) {
     // A theme line restyles the app, a menu line fills the drawer and a data
     // line (table create, put) writes to the phone and a doing line sits in
-    // the working row, not on the screen: they leave groups alone.
-    if (!op || op.op === "error" || op.op === "theme" || op.op === "menu" || op.op === "table" || op.op === "put" || op.op === "doing") return op;
+    // the working row and a visual behind the stage, not on the screen: they
+    // leave groups alone.
+    if (!op || op.op === "error" || op.op === "theme" || op.op === "menu" || op.op === "table" || op.op === "put" || op.op === "doing" || op.op === "visual") return op;
     // Closing the stage ends whatever group was open on it, like `>2` would.
     if (op.op === "close") { this.open = []; return op; }
     if (op.op === "end") {
@@ -1106,6 +1414,14 @@ export class Parser {
 
   line(src) {
     if (this.flow) return this.flowLine(src);
+    if (this.dgm) {
+      const op = this.dgmLine(src);
+      if (op !== undefined) return op;
+    }
+    if (this.drw) {
+      const op = this.drwLine(src);
+      if (op !== undefined) return op;
+    }
     if (this.flowHead) {
       // The line after a flow head decides: a Mermaid header starts the
       // chart (inline flow), anything else leaves it a saved flow by name.
@@ -1118,6 +1434,8 @@ export class Parser {
       if (FLOW_HEADER.test(t)) { this.flow = newFlow(h, src.replace(/\r$/, "")); return null; }
     }
     const op = this.group(this.parseLine(src));
+    if (op && op.op === "add" && op.preset === "diagram") this.dgm = newDiagram(op);
+    if (op && op.op === "add" && op.preset === "draw") this.drw = { id: op.id, screen: op.screen, src: [], chars: 0 };
     if (op && op.op === "add" && op.preset === "flow") {
       // `as=` makes it a variant of the saved flow it names: its lines follow.
       if (op.props.as !== undefined) this.flow = newVariant(op);
@@ -1129,7 +1447,78 @@ export class Parser {
   // Ends the input: an open flow gives its graph now.
   finish() {
     this.flowHead = null;
+    if (this.dgm) return this.dgmDone("");
+    if (this.drw) return this.drwDone("");
     return this.flow ? this.flowDone("") : null;
+  }
+
+  // One line of an open diagram: Mermaid, not YL. undefined means the line is
+  // not the diagram's (no Mermaid header came), so the caller reads it as YL.
+  // A nested block's `end` (subgraph, loop, alt...) closes that block first,
+  // then the diagram.
+  dgmLine(src) {
+    const d = this.dgm;
+    const line = src.replace(/\r$/, "");
+    const t = line.trim();
+    if (!d.kind) {
+      if (!t || /^#(\s|$)/.test(t)) return null;
+      if (t.startsWith("%%")) { d.src.push(line); return null; }
+      if (!DGM_HEADER.test(t) && !DGM_OTHER.test(t)) { this.dgm = null; return undefined; }
+      d.src.push(line);
+      diagramStart(d, t);
+      return null;
+    }
+    if (/^end\s*;?$/.test(t) && d.kind !== "state") {
+      const open = d.kind === "flow" ? d.f.depth : d.kind === "sequence" ? d.open : 0;
+      if (open > 0) {
+        d.src.push(line);
+        if (d.kind === "flow") { d.f.depth--; d.f.stack.pop(); } else { d.open--; d.steps.push({ type: "close" }); }
+        return null;
+      }
+      return this.dgmDone(line);
+    }
+    if (/^end\s*;?$/.test(t)) {
+      if (!d.note) return this.dgmDone(line);
+    }
+    d.src.push(line);
+    if (!t || d.kind === "other") return null;
+    if (d.kind === "flow") flowStatement(d.f, t);
+    else if (d.kind === "sequence") seqLine(d, t);
+    else stateLine(d, t);
+    return null;
+  }
+
+  dgmDone(line) {
+    const d = this.dgm;
+    this.dgm = null;
+    if (!d.kind) return null;
+    return { op: "patch", screen: d.screen, target: d.id, props: diagramGraph(d), line };
+  }
+
+  // One line of an open draw: markup, not YL. undefined means the line is not
+  // the draw's (no tag opened after the head), so the caller reads it as YL.
+  drwLine(src) {
+    const d = this.drw;
+    const line = src.replace(/\r$/, "");
+    const t = line.trim();
+    if (t === "end") return this.drwDone(line);
+    if (!d.src.length) {
+      if (!t) return null;
+      if (!t.startsWith("<")) { this.drw = null; return undefined; }
+    }
+    const n = [...line].length;
+    if (d.src.length < DRAW_LINES && d.chars + n <= DRAW_CHARS) {
+      d.src.push(line);
+      d.chars += n + 1;
+    }
+    return null;
+  }
+
+  drwDone(line) {
+    const d = this.drw;
+    this.drw = null;
+    if (!d.src.length) return null;
+    return { op: "patch", screen: d.screen, target: d.id, props: { source: d.src.join("\n") }, line };
   }
 
   // One line of an open flow: Mermaid, not YL. `end` closes a subgraph
@@ -1237,6 +1626,7 @@ export class Parser {
       return { op: "talk", screen, props: { on: word === "on" }, line };
     }
     if (head === "doing") return doingLine(screen, tokens, line);
+    if (head === "visual") return visualLine(screen, tokens, line);
 
     // Agent tables (spec/TABLES.md): `table create` and `put` write to the phone.
     if (head === "put") return putLine(screen, tokens, line);
@@ -1288,6 +1678,45 @@ export function doingOf(ops) {
   return now;
 }
 
+// ---------- visual (spec section 5, The visual; spec/VISUAL.md) ----------
+// `visual aurora tone=mint react=voice`: a live shader behind the stage's
+// chunks, or alone on it. One look at most, from VISUAL_LOOKS; `tone=` is
+// accent, a theme set name or #RRGGBB; `react=` is what it listens to.
+// `visual off` takes it away. Anything else (a flag, another key, a word that
+// is not a look) is an error, so the line never draws something half right.
+export const VISUAL_LOOKS = ["orb", "aurora", "waves", "grain", "bloom"];
+export const VISUAL_REACT = ["voice", "music", "mic", "off"];
+const HEX6 = /^#[0-9a-fA-F]{6}$/;
+function visualLine(screen, tokens, line) {
+  const bad = (m) => ({ op: "error", screen, message: `visual: ${m}`, line });
+  if (tokens.length === 1 && !tokens[0].quoted && tokens[0].raw === "off") return { op: "visual", screen, props: { off: true }, line };
+  const props = {};
+  for (const t of tokens) {
+    if (t.key !== undefined) {
+      if (t.key !== "tone" && t.key !== "react") return bad("takes a look, tone= and react=, nothing else");
+      if (t.vquoted && t.vquoted.length > 1) return bad(`${t.key}= takes one value`);
+      const v = t.value;
+      if (t.key === "tone" && !(v === "accent" || Object.hasOwn(SETS, v) || HEX6.test(v))) return bad("tone= is accent, a theme set name or #RRGGBB");
+      if (t.key === "react" && !VISUAL_REACT.includes(v)) return bad("react= is voice, music, mic or off");
+      props[t.key] = v;
+      continue;
+    }
+    if (!t.quoted && !t.parts && /^\+[a-z][\w-]*$/i.test(t.raw)) return bad("takes no flags");
+    if (t.quoted || t.parts || !VISUAL_LOOKS.includes(t.raw)) return bad(`the look is one of ${VISUAL_LOOKS.join(", ")}`);
+    if (props.look) return bad("one look at a time");
+    props.look = t.raw;
+  }
+  return { op: "visual", screen, props, line };
+}
+
+// The visual after these ops: the newest visual's props, or null when there
+// is none or the last one was `visual off`.
+export function visualOf(ops) {
+  let now = null;
+  for (const o of ops) if (o && o.op === "visual") now = o.props.off ? null : { ...o.props };
+  return now;
+}
+
 // ---------- menu (spec section 5, The drawer) ----------
 // `menu review@dana "Invite Dana?" sub="requested yesterday"` puts an item in
 // one of three drawer sections; `menu done dana` takes it out. No @id counter,
@@ -1315,6 +1744,10 @@ const APP_KEYS = {
   font: (v) => FONTS.includes(v),
   weight: (v) => WEIGHTS.includes(v),
   motion: (v) => MOTIONS.includes(v),
+  pace: (v) => MOTION_KEYS.pace.includes(v),
+  ease: (v) => MOTION_KEYS.ease.includes(v),
+  enter: (v) => MOTION_KEYS.enter.includes(v),
+  pulse: (v) => MOTION_KEYS.pulse.includes(v),
 };
 const STYLE_KEYS = ["screen", "gallery", "chart", "buttons"];
 function appTheme(screen, tokens, line) {
@@ -1466,7 +1899,7 @@ export class StreamParser {
 // ---------- the stage ----------
 // The stage is a full-screen layer over the chat (spec section 5, The stage).
 // These presets open there unless they say +inline.
-export const STAGE = ["timer", "camera", "mic", "deck", "plan", "game", "flow"];
+export const STAGE = ["timer", "camera", "mic", "deck", "plan", "game", "flow", "loop", "drums", "keys", "chords", "tuner"];
 
 // A timer with rounds or rest. Workouts always open on the stage.
 export function isWorkout(preset, props = {}) {
@@ -1499,6 +1932,18 @@ export function pageOf(screen) {
   return Number.isInteger(n) && String(n) === screen && n >= 2 && n <= MAX_PAGE ? n : 1;
 }
 
+// A quiet event that still goes (YUI-185b, RELAY.md Events): a tick on a
+// named checklist (an @id the agent wrote, not n1) on a page (2 to 12) of a
+// native agent. Its runtime keeps that list in its tables (Penny's Today,
+// Basil's groceries), so the tick goes to it with no echo and no working row,
+// and it answers with patches only. Everywhere else a tick stays on the phone.
+// The app's twin is YLEvent.keepsPage and ChatStore's quietTick.
+export function quietToAgent(ev, { screen, native } = {}) {
+  if (!native || !ev || ev.preset !== "list" || typeof ev.checked !== "boolean") return false;
+  if (!ev.id || AUTO_ID.test(ev.id)) return false;
+  return pageOf(String(screen ?? "1")) > 1;
+}
+
 // Ids that last (spec section 5): explicit ids on a page (2 to 12) or on a
 // component that came back from a saved screen, id -> preset, newest last.
 // Hand them to the next reply's parser so `~need-t_x +lock` can reach one
@@ -1528,6 +1973,37 @@ export function talking(ops) {
     else if (o.op === "clear" || o.op === "talk") on.delete(n);
   }
   return [...on].sort((a, b) => a - b);
+}
+
+// Which page a reply brings forward (spec section 5, Pages): the page of its
+// last add that lands on a page, or null to leave the person where they are.
+// Patches, `clear` and adds that open on the stage never move them. A reply
+// with something for the chat that also redraws a named page (`>4 clear`, its
+// lines, `save groceries`) keeps them on what it said: the redraw keeps the
+// page current, like a patch (YUI-183). A redraw alone still brings it forward.
+// The app's twin is ChatStore.pageUpdate.
+export function pageForward(ops, style = {}) {
+  const redrawn = new Set(ops.filter((o) => o.op === "clear").map((o) => o.screen));
+  const saved = new Set(standingPages(ops));
+  const says = ops.some((o) => o.op === "add" && pageOf(o.screen) === 1);
+  for (let i = ops.length - 1; i >= 0; i--) {
+    const o = ops[i];
+    if (o.op !== "add" || pageOf(o.screen) === 1 || onStage(o, style)) continue;
+    if (says && redrawn.has(o.screen) && saved.has(o.screen)) continue;
+    return pageOf(o.screen);
+  }
+  return null;
+}
+
+// Pages a reply named with `save` (`>3 ... save this week`): standing pages,
+// like the home's (spec section 5, Pages; YUI-183). Their pickers are tools
+// you use when you like, not asks waiting on you. Only pages 2 to 12 stand;
+// a save from the chat or the stage makes a shelf item, not a page. Screen
+// names in line order. The app's twin is YLScreen.namedScreens.
+export function standingPages(ops) {
+  const out = [];
+  for (const o of ops) if (o.op === "save" && pageOf(o.screen) !== 1 && !out.includes(o.screen)) out.push(o.screen);
+  return out;
 }
 
 // What the person typed on a page, as the agent reads it (spec section 7):
@@ -1649,6 +2125,25 @@ export function resolve(preset, props) {
       r.kind = String(p.kind ?? "box").toLowerCase();
       return r;
     }
+    case "diagram":
+      return { title: "", caption: "", ...p };
+    case "draw":
+      return { title: "", caption: "", ...p };
+    case "mock":
+      return { title: "", frame: "phone", ...p };
+    case "part": {
+      const r = { text: "", items: [], ...p };
+      r.kind = String(p.kind ?? "text").toLowerCase();
+      return r;
+    }
+    case "map":
+      return { title: "", caption: "", fit: "auto", ...p };
+    case "area":
+      return { label: "", codes: [], pts: [], ...p };
+    case "pin":
+      return { label: "", ...p };
+    case "route":
+      return { label: "", pts: [], ...p };
     case "game": {
       // Cells outside 1-9 are ignored, and a cell both marks claim is x's.
       const cells = (v) => [...new Set((v || []).filter((n) => Number.isInteger(n) && n >= 1 && n <= 9))];
@@ -1658,10 +2153,39 @@ export function resolve(preset, props) {
       r.o = cells(p.o).filter((n) => !r.x.includes(n));
       return r;
     }
+    // Music (spec/MUSIC.md). Sounds are words from the sound bank.
+    case "loop":
+      return { title: "", bpm: 96, swing: 0, steps: 8, rows: KIT.slice(0, 8), p: [], sound: "pluck", play: false, ...p };
+    case "drums": {
+      const r = { title: "", bpm: 96, record: false, ...p };
+      r.grid = String(p.grid ?? "2x2").toLowerCase();
+      const [rs, cs] = r.grid.split("x").map(Number);
+      if (!p.pads) r.pads = KIT.slice(0, rs * cs);
+      return r;
+    }
+    case "keys": {
+      const r = { title: "", key: "C", sound: "keys", octave: 4, send: false, ...p };
+      if (p.scale === undefined) r.scale = /m$/.test(r.key) ? "minor" : "major";
+      return r;
+    }
+    case "chords": {
+      const r = { title: "", key: "C", chords: [], strum: "down", sound: "pluck", send: false, ...p };
+      if (p.prog === undefined) r.prog = p.chords ? [] : ["I", "V", "vi", "IV"];
+      return r;
+    }
+    case "tuner":
+      return { title: "", instrument: "guitar", tuning: "standard", a4: 440, strings: [], ...p };
+    case "metronome":
+      return { title: "", bpm: 100, beats: 4, sub: 1, play: false, ...p };
     default:
       return p;
   }
 }
+
+// The drum kit in pad order: a 2x2 gets the first four, a 4x4 all sixteen,
+// a looper's rows the first eight (spec/MUSIC.md, section 4).
+export const KIT = ["kick", "snare", "clap", "hat", "open", "rim", "tom", "shaker",
+  "crash", "cow", "snap", "conga", "pop", "sweep", "tick", "bell"];
 
 // ---------- screen state ----------
 // Reduces ops into screens. Components keep their key across patches so a
@@ -1759,11 +2283,14 @@ export function apply(state, op, style = {}) {
     // The working row, not a screen: the newest doing wins, `doing off` clears it.
     case "doing":
       s.doing = doingOf([op]); break;
+    // The stage's backdrop, not a screen: the newest visual wins, `visual off` clears it.
+    case "visual":
+      s.visual = visualOf([op]); break;
     case "theme":
       // An app restyle is only a proposal until the person taps Apply: it
       // waits in `restyle` and leaves the agent's own look alone.
       if (op.props.scope === "app") { const { scope, ...rest } = op.props; s.restyle = rest; break; }
-      s.theme = op.props.name ? { ...op.props } : { ...(s.theme || {}), ...op.props }; break;
+      s.theme = mergeTheme(s.theme, op.props); break;
     // Agent tables (spec/TABLES.md) live in the agent's store, not on a screen.
     // Every query on screen reads it, so a put redraws them. `style.today`
     // pins the date words for tests; otherwise it is this device's date.
@@ -1801,6 +2328,7 @@ export function toJSON(ops) {
       case "close": return { close: true };
       case "talk": return { talk: o.props.on, ...scr };
       case "doing": return { doing: o.props };
+      case "visual": return { visual: o.props };
       case "menu": return { menu: o.id, ...o.props };
       case "table": return { table: o.name, cols: o.cols };
       case "put": return { put: o.table, ...(o.key !== undefined ? { key: o.key } : {}), ...o.values, ...(o.delete ? { delete: true } : {}) };

@@ -159,4 +159,34 @@ final class WorkoutSessionTests: XCTestCase {
         XCTAssertEqual(back.ticked["e1-sets"], ["Set 1"])
         d.removePersistentDomain(forName: "yui.tests.session")
     }
+
+    /// Arnold's load call (feedback NOTE-35460), as runnerLines sends it in `why`: on a move's first set and the rest before it.
+    func testTheLoadCallShowsOnAMovesFirstSetAndTheRestBeforeIt() throws {
+        let r = try runner("""
+        plan@wk-20261005-mon "Full body A" submit="Finish workout"
+        page "Full body A" body="2 moves, about 40 minutes. Rest about 90 seconds between sets. Up today: Goblet squat to 30 lb." points="Goblet squat 2x10"|"Push-up 2x10"
+        pick@e1-sets "Goblet squat: sets done" "Set 1"|"Set 2"|Skip tag="1 of 2" title="Goblet squat" cue="Chest tall." work=40 why="Last time 25 lb for 3x12, felt easy: try 30."
+        slide@e1-reps "Goblet squat: reps per set" 1-30 value=10
+        slide@e1-lb "Goblet squat: weight in lb" 0-300 value=30 step=5 unit=lb
+        pick@e2-sets "Push-up: sets done" "Set 1"|"Set 2"|Skip tag="2 of 2" title=Push-up work=40 why="Last time 2x9, every rep: try 10 a set."
+        slide@e2-reps "Push-up: reps per set" 1-30 value=10
+        choose@feel "How did it feel?" Easy|"Just right"|Hard
+        end
+        """)
+        XCTAssertEqual(r.moves[0].why, "Last time 25 lb for 3x12, felt easy: try 30.")
+        XCTAssertEqual(r.rest, 90, "the line after the rest leaves it alone")
+        let e = SessionEngine(r, fast: false)
+        XCTAssertEqual(e.steps.map { "\($0.kind)-\($0.move)-\($0.set)" },
+                       ["work-0-1", "rest-0-1", "work-0-2", "rest-0-2", "work-1-1", "rest-1-1", "work-1-2"])
+        XCTAssertEqual(e.why(at: 0), "Last time 25 lb for 3x12, felt easy: try 30.")
+        XCTAssertNil(e.why(at: 1), "the rest before set 2 is about set 2")
+        XCTAssertNil(e.why(at: 2))
+        XCTAssertEqual(e.why(at: 3), "Last time 2x9, every rep: try 10 a set.", "the rest before the next move says its call")
+        XCTAssertEqual(e.why(at: 4), "Last time 2x9, every rep: try 10 a set.")
+        XCTAssertNil(e.why(at: 5))
+        XCTAssertNil(e.why(at: 6))
+        XCTAssertNil(e.why(at: 99))
+        // A plan with no call (an older runtime): no line.
+        XCTAssertNil(SessionEngine(try runner(), fast: false).why(at: 0))
+    }
 }

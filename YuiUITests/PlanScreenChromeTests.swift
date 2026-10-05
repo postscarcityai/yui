@@ -90,14 +90,17 @@ final class PlanScreenChromeTests: XCTestCase {
         XCTAssertTrue(menu.waitForExistence(timeout: 8) || close.exists, "no header control after the plan was built")
         XCTAssertTrue(onScreen(menu) || onScreen(close), "the header controls are off screen or unhittable after the plan was built")
 
-        // The drawer shows Add an agent.
+        // The drawer's agent switcher ends with Add an agent.
         if onScreen(close) { close.tap(); sleep(1) }
         let opener = app.buttons.matching(NSPredicate(format: "identifier == 'screen-menu' OR label == 'Agent menu'")).firstMatch
         XCTAssertTrue(onScreen(opener), "no menu button to open the drawer")
         opener.tap()
-        let add = app.buttons["drawer-add-agent"]
-        XCTAssertTrue(add.waitForExistence(timeout: 10) && add.isHittable, "no Add an agent in the drawer")
-        XCTAssertTrue(app.staticTexts["Add an agent"].exists || add.label.contains("Add an agent"), "the drawer row is not named Add an agent")
+        let agentBar = app.buttons["drawer-agent-bar"]
+        XCTAssertTrue(agentBar.waitForExistence(timeout: 10), "no agent bar in the drawer")
+        agentBar.tap()
+        let add = app.buttons["switch-add"]
+        XCTAssertTrue(add.waitForExistence(timeout: 10) && add.isHittable, "no Add an agent in the switcher")
+        XCTAssertTrue(add.label.contains("Add an agent"), "the switcher row is not named Add an agent")
         shot("drawer")
     }
 }

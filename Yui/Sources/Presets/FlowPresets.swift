@@ -538,6 +538,7 @@ struct PlanPreset: View {
     @State private var progress = RunnerProgress()
     @Environment(\.ylComponents) private var all
     @Environment(\.ylAnswers) private var sent
+    @Environment(\.ylAgent) private var agent
     @Environment(\.ylScope) private var scope
     @Environment(\.ylEmit) private var emit
     @Environment(\.ylOnStage) private var onStage
@@ -692,8 +693,8 @@ struct PlanPreset: View {
         guard let v = YLComponent.answerValue(e) else { return }
         answers[step.ylID] = v
         events[step.ylID] = e.value
-        // ask and choose move on by themselves after a tap.
-        guard step.preset == "ask" || step.preset == "choose" else { return }
+        // ask and choose move on by themselves after a tap; one that came back on appear stays put (feedback NOTE-19357).
+        guard !e.restored, step.preset == "ask" || step.preset == "choose" else { return }
         Task { @MainActor in
             try? await Task.sleep(for: .milliseconds(450))
             withAnimation(theme.spring) {
@@ -757,7 +758,10 @@ struct PlanPreset: View {
         // The reps of a set that went to failure: no step of their own, the runtime reads them by id.
         for (id, v) in answers where id.hasSuffix("-fail") { plan[id] = v }
         // The echo is the fold-back: the chat shows it as the person's own message.
-        emit(c.event(["plan": .object(plan)], echo: YLComponent.foldText(steps, answers)))
+        let e = c.event(["plan": .object(plan)], echo: YLComponent.foldText(steps, answers))
+        emit(e)
+        // Sent: its place and its questions' drafts go with it (feedback NOTE-19357).
+        AnswerDrafts.shared.sent(e, scope: scope, agent: agent)
         RunnerProgress.clear(c.ylID)
         PlanDraft.clear(scope, c.ylID)
         withAnimation(theme.spring) { submitted = true; reviewing = false }

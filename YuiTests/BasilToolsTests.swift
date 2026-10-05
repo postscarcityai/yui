@@ -136,7 +136,7 @@ save groceries
 
     func testAPlanLandsOnHisPagesAndNothingWaitsOnYou() throws {
         let store = thread()
-        XCTAssertEqual(store.screens, [1, 2, 3, 4])
+        XCTAssertEqual(store.screens, [1, 2, 3, 4, 5])
         // Today: patched in place, the next planned meal with I ate it.
         let today = page(store, 2)
         XCTAssertEqual(today.map(\.ylID), ["kcal", "macros", "next-meal", "eaten"])

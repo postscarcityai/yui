@@ -145,7 +145,8 @@ test("Finish writes a row per move, ticks the day, and draws the pages once; the
 
   const r = lastReply(store, arnold.id);
   assert.deepEqual(r.meta.turn, [done]);
-  assert.match(r.body, /^Logged Full body A: 3 moves, 8 sets\. Nice work\. Felt easy\? Add 5 lb next time\./);
+  // The wrap-up (feedback NOTE-35460): every rep done goes up next time, the short push-ups hold, the streak.
+  assert.match(r.body, /^Logged Full body A: 3 moves, 8 sets\. Nice work\. Next time: Goblet squat 30 lb and Dumbbell row 35 lb\. Hold steady on Push-up until every rep is there\. First week of your streak\.\n/);
   const first = fence(r.body);
   assert.match(first, /^>2 clear\n>2\nstat@week-done "1 of 5"/m, "the first time the pages are drawn again");
   assert.match(first, /list@days title="This week" "✓ Mon Full body A" "Tue Easy cardio"/);
@@ -157,12 +158,13 @@ test("Finish writes a row per move, ticks the day, and draws the pages once; the
   lines(r.body, homeIds());
   assert.equal((await store.agent(arnold.id))!.profile.workoutScreens, "dumbbell-row,goblet-squat");
 
-  // A week later: the runner starts from the weight they lifted, and Finish only patches.
+  // A week later: the runner starts a step up from the weight they lifted with every rep (feedback NOTE-35460,
+  // where it used to repeat it), and Finish only patches.
   store.say(arnold.id, "Start today's workout");
   await runAgent(store, arnold.id, { provider, fetch: m.fetch, now: () => NEXT_MON });
   const runner = lines(lastReply(store, arnold.id).body);
-  assert.equal(runner.find((o: any) => o.id === "e1-lb").props.value, 25);
-  assert.equal(runner.find((o: any) => o.id === "e3-lb").props.value, 30);
+  assert.equal(runner.find((o: any) => o.id === "e1-lb").props.value, 30);
+  assert.equal(runner.find((o: any) => o.id === "e3-lb").props.value, 35);
   tap(store, arnold.id, "wk-20261005-mon", "plan", { plan: { "e1-lb": 30, "e3-lb": 35, feel: "Just right" } });
   await runAgent(store, arnold.id, { provider, fetch: m.fetch, now: () => NEXT_MON });
   const second = lastReply(store, arnold.id).body;
@@ -171,7 +173,8 @@ test("Finish writes a row per move, ticks the day, and draws the pages once; the
   assert.match(fence(second), /^~days title="This week" "✓ Mon Full body A"/m);
   assert.match(fence(second), /^~streak "2 weeks"/m);
   assert.match(fence(second), /^~lift-goblet-squat line "Goblet squat, top set" x="Sep 28"\|"Oct 5" y=25\|30 unit=lb$/m);
-  assert.match(second, /^Logged Full body A: 4 moves, 12 sets\. Nice work\.$/m, "an untouched plan counts every set");
+  assert.match(second, /^Logged Full body A: 4 moves, 12 sets\. Nice work\. /, "an untouched plan counts every set");
+  assert.match(second, / Up today: Goblet squat 25 to 30 lb and Dumbbell row 30 to 35 lb\. Next time: Goblet squat 35 lb, Push-up 9 reps and Dumbbell row 40 lb\. 2 weeks in a row\.\n/);
   lines(second, { ...homeIds(), "lift-dumbbell-row": "chart", "lift-goblet-squat": "chart" }); // the ids the first Finish left on page 4
   assert.equal(m.calls.length, 0);
 });
@@ -183,7 +186,7 @@ test("the Send from an older app (its line only, no meta) logs the same", async 
   await runAgent(store, arnold.id, { provider, fetch: noModel().fetch, now: () => MON });
   const t = (await store.tables(arnold.id)).tables.workouts;
   assert.deepEqual(t.rows["2026-09-28-goblet-squat"], { Day: "2026-09-28", Session: "Full body A", Exercise: "Goblet squat", Sets: 2, Reps: 8, Weight: 35, Feel: "Hard", Source: "runner" });
-  assert.match(lastReply(store, arnold.id).body, /Felt hard\? Next time we keep the weight and own the reps\./);
+  assert.match(lastReply(store, arnold.id).body, /Felt hard, so next time hold steady on Goblet squat, Push-up and Dumbbell row and own the reps\./);
 });
 
 test("Log today's workout: a short plan; their own words log each move, yesterday lands on yesterday", async () => {
@@ -505,4 +508,143 @@ test("the Send reads the failure reps: the set that went to failure is the set l
   await runAgent(again.store, again.arnold.id, { provider, fetch: noModel().fetch, now: () => MON });
   const rows2 = Object.values((await again.store.tables(again.arnold.id)).tables.workouts.rows) as any[];
   assert.ok(rows2.length > 0 && rows2.every((r) => r.Reps !== 11));
+});
+
+// ---------- feedback NOTE-35460: a real coach for workouts ----------
+
+/** A store holding only a log, from rows. */
+function logStore(rows: Record<string, unknown>[]) {
+  const r: Record<string, any> = {};
+  rows.forEach((x, i) => (r[`k${i}`] = x));
+  return { tables: { workouts: { name: "workouts", cols: [], rows: r, order: Object.keys(r), next: 1 } } } as any;
+}
+
+test("the load is Arnold's call from the log: every rep goes up, hard or short holds, short twice drops", async () => {
+  const { coachLoad, loadStep } = await import("../src/workouts.ts");
+  const bench = { name: "Bench press", sets: 3, reps: 8 };
+  const day = "2026-10-05";
+  const row = (d: string, reps: number, lb: number | undefined, feel = "Just right", sets = 3, ex = "Bench press") =>
+    ({ Day: d, Exercise: ex, Sets: sets, Reps: reps, ...(lb != null ? { Weight: lb } : {}), Feel: feel });
+  // Never logged: a light start from the gear, said so.
+  assert.deepEqual(coachLoad(logStore([]), bench, day, "Barbell, bench", false),
+                   { lb: 45, trend: "first", why: "First time on this one: start light at 45 lb and go up once every rep is smooth." });
+  // Every set and rep: up a step, with last time in the reason.
+  assert.deepEqual(coachLoad(logStore([row("2026-09-28", 8, 135, "Easy")]), bench, day, "Barbell", false),
+                   { lb: 140, trend: "up", why: "Last time 135 lb for 3x8, felt easy: try 140." });
+  assert.equal(coachLoad(logStore([row("2026-09-28", 8, 135)]), bench, day, "Barbell", false).why, "Last time 135 lb for 3x8, every rep: try 140.");
+  assert.equal(loadStep("Squat"), 10);
+  assert.equal(loadStep("Deadlift"), 10);
+  assert.equal(loadStep("Goblet squat"), 5);
+  assert.equal(coachLoad(logStore([row("2026-09-28", 5, 135, "Easy", 5, "Squat")]), { name: "Squat", sets: 5, reps: 5 }, day, "Barbell", false).lb, 145);
+  // Felt hard: the same weight.
+  assert.deepEqual(coachLoad(logStore([row("2026-09-28", 8, 135, "Hard")]), bench, day, "Barbell", false),
+                   { lb: 135, trend: "hold", why: "Last time 135 lb for 3x8, felt hard: stay at 135 and own it." });
+  // Reps or sets short: hold. Short twice running at that weight: down about 10%, to a 5.
+  assert.deepEqual(coachLoad(logStore([row("2026-09-28", 6, 135)]), bench, day, "Barbell", false),
+                   { lb: 135, trend: "hold", why: "Last time 135 lb for 3x6, short of 3x8: stay at 135 and get every rep." });
+  assert.equal(coachLoad(logStore([row("2026-09-28", 8, 135, "Easy", 2)]), bench, day, "Barbell", false).trend, "hold", "two of three sets is short");
+  assert.deepEqual(coachLoad(logStore([row("2026-09-21", 7, 135), row("2026-09-28", 6, 135)]), bench, day, "Barbell", false),
+                   { lb: 120, trend: "drop", why: "Last time 135 lb for 3x6, short of 3x8 again: drop to 120 and build back up." });
+  assert.equal(coachLoad(logStore([row("2026-09-21", 7, 130), row("2026-09-28", 6, 135)]), bench, day, "Barbell", false).trend, "hold",
+               "short at a new weight is a first miss");
+  // The newest row counts; rows on or after the day never do.
+  assert.equal(coachLoad(logStore([row("2026-09-28", 8, 140), row("2026-09-21", 8, 100), row("2026-10-05", 2, 200)]), bench, day, "Barbell", false).lb, 145);
+  // A weight written on the split is the plan; bands and bodyweight kits never carry one.
+  assert.deepEqual(coachLoad(logStore([row("2026-09-28", 8, 135)]), { ...bench, lb: 115 }, day, "Barbell", false), { lb: 115 });
+  assert.equal(coachLoad(logStore([row("2026-09-28", 8, 135)]), bench, day, "Barbell", true).lb, undefined);
+  // Bodyweight: a rep a set when every rep was there, the target again when short, five over the target at most.
+  const push = { name: "Push-up", sets: 3, reps: 8 };
+  const pu = (reps: number, feel = "Just right") => logStore([{ Day: "2026-09-28", Exercise: "Push-up", Sets: 3, Reps: reps, Feel: feel }]);
+  assert.deepEqual(coachLoad(logStore([]), push, day, "None", false), {});
+  assert.deepEqual(coachLoad(pu(9), push, day, "None", false), { reps: 10, trend: "up", why: "Last time 3x9, every rep: try 10 a set." });
+  assert.deepEqual(coachLoad(pu(6), push, day, "None", false), { reps: 8, trend: "hold", why: "Last time 3x6: aim for 3x8 again." });
+  assert.deepEqual(coachLoad(pu(10, "Hard"), push, day, "None", false), { reps: 10, trend: "hold", why: "Last time 3x10, felt hard: same again, cleaner." });
+  assert.deepEqual(coachLoad(pu(13), push, day, "None", false),
+                   { reps: 13, trend: "top", why: "Last time 3x13, every rep. That's strong: ask me for a harder version." });
+  // The wrap-up reads the same rule for next time.
+  const { wrapUp } = await import("../src/workouts.ts");
+  const s = { id: "wk-20261005-mon", day, from: "mon", focus: "Push", minutes: 30, workout: "Push-up 3x8", moves: [{ n: 1, name: "Push-up", sets: 3, reps: 13 }] };
+  const log = logStore([{ Day: "2026-09-28", Exercise: "Push-up", Sets: 3, Reps: 12, Feel: "Easy" }, { Day: day, Exercise: "Push-up", Sets: 3, Reps: 13, Feel: "Easy" }]);
+  assert.equal(wrapUp(log, s, [{ exercise: "Push-up", sets: 3, reps: 13 }], "Easy", clock(NEXT_MON, "UTC")),
+               "Logged Push: 1 move, 3 sets. Nice work. Up today: Push-up 12 to 13 reps. Push-up is at the top of the reps: ask me for a harder version. 2 weeks in a row.");
+  // Timed: the seconds stay; a carry keeps the weight it was done at.
+  assert.deepEqual(coachLoad(logStore([{ Day: "2026-09-28", Exercise: "Plank", Sets: 3, Seconds: 30 }]), { name: "Plank", sets: 3, reps: 0, secs: 30 }, day, "None", false), {});
+  assert.deepEqual(coachLoad(logStore([{ Day: "2026-09-28", Exercise: "Farmer carry", Sets: 3, Seconds: 40, Weight: 50 }]),
+                             { name: "Farmer carry", sets: 3, reps: 0, secs: 40 }, day, "Dumbbells", false), { lb: 50 });
+});
+
+test("the runner says the call: why on each move's page and in the timed session, what went up on the first page", async () => {
+  const { store, byHandle } = await freshYui();
+  const arnold = await byHandle("arnold");
+  const m = noModel();
+  store.say(arnold.id, "Start today's workout");
+  await runAgent(store, arnold.id, { provider, fetch: m.fetch, now: () => MON });
+  const first = lines(lastReply(store, arnold.id).body);
+  const squat1 = first.find((o: any) => o.id === "e1-sets");
+  assert.equal(squat1.props.why, "First time on this one: start light at 20 lb and go up once every rep is smooth.");
+  assert.match(squat1.props.body, /Target 3 x 10 at 20 lb\. First time on this one: start light at 20 lb/);
+  assert.equal(first.find((o: any) => o.id === "e2-sets").props.why, undefined, "push-ups with no log: nothing to call yet");
+  assert.doesNotMatch(lastReply(store, arnold.id).body, /Up today/);
+
+  tap(store, arnold.id, "wk-20260928-mon", "plan", {
+    plan: { "e1-sets": ["Set 1", "Set 2", "Set 3"], "e1-reps": 12, "e1-lb": 25, "e2-sets": ["Set 1", "Set 2", "Set 3"], "e2-reps": 9, "e3-lb": 30, feel: "Easy" },
+  });
+  await runAgent(store, arnold.id, { provider, fetch: m.fetch, now: () => MON });
+
+  store.say(arnold.id, "Start today's workout");
+  await runAgent(store, arnold.id, { provider, fetch: m.fetch, now: () => NEXT_MON });
+  const reply = lastReply(store, arnold.id);
+  assert.match(reply.body, /^Full body A\. 4 moves, one set at a time\. Let's go\. Up today: Goblet squat to 30 lb, Push-up to 10 reps and Dumbbell row to 35 lb\.\n/);
+  const ops = lines(reply.body);
+  const page = ops.find((o: any) => o.preset === "page");
+  assert.match(page.props.body, /Rest about 90 seconds between sets\. Up today: Goblet squat to 30 lb, Push-up to 10 reps and Dumbbell row to 35 lb\.$/,
+               "the app still reads the rest from the first page");
+  const squat = ops.find((o: any) => o.id === "e1-sets");
+  assert.equal(squat.props.why, "Last time 25 lb for 3x12, felt easy: try 30.");
+  assert.match(squat.props.body, /Target 3 x 10 at 30 lb\. Last time 25 lb for 3x12, felt easy: try 30\. Tick each set/);
+  assert.equal(ops.find((o: any) => o.id === "e1-lb").props.value, 30);
+  assert.equal(ops.find((o: any) => o.id === "e2-sets").props.why, "Last time 3x9, every rep: try 10 a set.");
+  assert.equal(ops.find((o: any) => o.id === "e2-reps").props.value, 10, "the reps slider starts at the call");
+  assert.equal(ops.find((o: any) => o.id === "e4-sets").props.why, undefined, "a plank keeps its seconds");
+  for (const o of ops) for (const v of Object.values(o.props ?? {})) if (typeof v === "string") assert.doesNotMatch(v, /\u2014/);
+  assert.equal(reply.meta.native.workout.moves[0].trend, "up", "the call rides with the session");
+
+  // Sent as the call stood: the wrap-up says what went up and what comes next; Today still shows today's numbers.
+  tap(store, arnold.id, "wk-20261005-mon", "plan", { plan: { feel: "Just right" } });
+  await runAgent(store, arnold.id, { provider, fetch: m.fetch, now: () => NEXT_MON });
+  const wrap = lastReply(store, arnold.id).body;
+  assert.match(wrap, /^Logged Full body A: 4 moves, 12 sets\. Nice work\. Up today: Goblet squat 25 to 30 lb, Push-up 9 to 10 reps and Dumbbell row 30 to 35 lb\. Next time: Goblet squat 35 lb, Push-up 11 reps and Dumbbell row 40 lb\. 2 weeks in a row\.\n/);
+  assert.match(fence(wrap), /^~sets title="Full body A" "Goblet squat 3 x 10 at 30 lb" "Push-up 3 x 10"/m);
+  lines(wrap, { ...homeIds(), "lift-dumbbell-row": "chart", "lift-goblet-squat": "chart" });
+  assert.equal(m.calls.length, 0);
+});
+
+test("short twice at one weight: the wrap-up says lighter next time, and the next runner starts lighter", async () => {
+  const { store, byHandle } = await freshYui();
+  const arnold = await byHandle("arnold");
+  const m = noModel();
+  const short = { "e1-sets": ["Set 1", "Set 2"], "e1-lb": 30, feel: "Just right" };
+  tap(store, arnold.id, "wk-20260928-mon", "plan", { plan: short });
+  await runAgent(store, arnold.id, { provider, fetch: m.fetch, now: () => MON });
+  assert.match(lastReply(store, arnold.id).body, /Hold steady on Goblet squat until every rep is there\./);
+
+  store.say(arnold.id, "Start today's workout");
+  await runAgent(store, arnold.id, { provider, fetch: m.fetch, now: () => NEXT_MON });
+  const held = lines(lastReply(store, arnold.id).body);
+  assert.equal(held.find((o: any) => o.id === "e1-lb").props.value, 30);
+  assert.equal(held.find((o: any) => o.id === "e1-sets").props.why, "Last time 30 lb for 2x10, short of 3x10: stay at 30 and get every rep.");
+
+  tap(store, arnold.id, "wk-20261005-mon", "plan", { plan: short });
+  await runAgent(store, arnold.id, { provider, fetch: m.fetch, now: () => NEXT_MON });
+  assert.match(lastReply(store, arnold.id).body, /Lighter next time: Goblet squat 25 lb, then build back up\./);
+
+  const MON3 = Date.parse("2026-10-12T15:00:00Z");
+  store.say(arnold.id, "Start today's workout");
+  await runAgent(store, arnold.id, { provider, fetch: m.fetch, now: () => MON3 });
+  const body = lastReply(store, arnold.id).body;
+  assert.match(body, /Lighter today: Goblet squat to 25 lb, then build back up\./);
+  const ops = lines(body);
+  assert.equal(ops.find((o: any) => o.id === "e1-lb").props.value, 25);
+  assert.equal(ops.find((o: any) => o.id === "e1-sets").props.why, "Last time 30 lb for 2x10, short of 3x10 again: drop to 25 and build back up.");
+  assert.equal(m.calls.length, 0);
 });

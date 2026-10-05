@@ -12,7 +12,17 @@ something it can:
   * inside a deck or plan: a `page` whose points are those rows.
 
   * a `flow` (YUI-155, feedback AMLn-Gg3): the plan it walks by default, the
-    same questions and one submit. A saved flow is looked up in the starter
+    same questions and one submit.
+
+  * a `draw` (the agent's own SVG, docs/STAGE-REDESIGN.md): its words only, the
+    title and the caption; the markup up to its `end` is dropped.
+
+  * marks (YUI-276): a `shapes` group with a `venn`, `contour`, `region`,
+    `doodle`, `tap` or `swipe` shape, or with `img=`, and any `shapes` inside a
+    `plan`: its words, the title, the labels in order and the caption (a page of
+    them in a deck or plan). `bend=` needs nothing: an older build draws the
+    line straight. Gesture marks over a `mock` (its `shape` lines) become a line
+    each, "Tap Hold to talk: hold", after the mock or among its points. A saved flow is looked up in the starter
     flows (starter_flows.json, from yuigui by sync_flows.py).
 
 An unknown build (no phone has said yet) counts as older than all of them.
@@ -44,6 +54,16 @@ MAP_BUILD = 219  # YUI-158 step 2: maps drawn and pinched (the app commit's coun
 DRAW_BUILD = 1_000_000
 # YUI-115: the app runs flows from this build (the runtime commit's count); older builds get a plan.
 FLOW_BUILD = 414
+# The stage redesign: `draw`, the agent's own SVG up to `end` (docs/STAGE-REDESIGN.md), and
+# YUI-276's marks (venn, contour, region and doodle shapes, `shapes img=`, a plan that takes
+# `shapes`). Builds are numbered by commit count (git rev-list --count, scripts/testflight.sh).
+# `draw` reached main at 450 (ac0f3a9, the merge of pull request 6) and the marks at 465
+# (7295a64 on claude/elegant-johnson-stn1u8, the newest commit found when these were set,
+# Oct 2 2026). Both gates are the next build after it, 466, the first build that can carry
+# both. Older builds get the words.
+FREE_DRAW_BUILD = 466
+MARKS_BUILD = 466
+MARK_KINDS = {"venn", "contour", "region", "doodle", "tap", "swipe"}
 
 # First app build whose parser knows each preset (git rev-list --count of the
 # commit that added it to Packages/YuiLines/Sources/YuiLines/Presets.swift).
@@ -59,10 +79,16 @@ MIN_BUILD: Dict[str, int] = {
     "map": MAP_BUILD, "area": MAP_BUILD, "pin": MAP_BUILD, "route": MAP_BUILD,  # YUI-158: places on a map
     "diagram": DRAW_BUILD, "mock": DRAW_BUILD, "part": DRAW_BUILD,  # DRAW-2: a Mermaid diagram, a UI mock
     "flow": FLOW_BUILD,                                  # YUI-115: older builds get a plan
+    "draw": FREE_DRAW_BUILD,                             # the agent's own SVG: older builds get its words
 }
 GROUPS = {"sketch": {"row", "after"}, "timeline": {"done", "now", "next"}, "shapes": {"shape"},
-          "map": {"area", "pin", "route"}, "mock": {"part"}}
-MEMBER_OF = {m: head for head, ms in GROUPS.items() for m in ms}
+          "map": {"area", "pin", "route"}, "mock": {"part", "shape"}}
+# A `shape` is a member of a mock too (its gesture marks, YUI-276), but on its own it
+# belongs to `shapes`: the first group that names a member wins.
+MEMBER_OF: Dict[str, str] = {}
+for _head, _ms in GROUPS.items():
+    for _m in _ms:
+        MEMBER_OF.setdefault(_m, _head)
 STORY = {"deck", "plan"}  # a sketch in these is the picture of a page
 QUIET = {"menu"}  # draws nothing in the chat: dropped on old builds, never named in the note
 MADE_OVER = {"flow"}  # the plugin turns it into a preset the phone runs: agents keep sending it
@@ -106,10 +132,14 @@ def too_new(build: Optional[int]) -> set:
 def note(build: Optional[int]) -> str:
     """A line for the agent's turn, or "" when the phone draws everything."""
     heads = sorted({MEMBER_OF.get(p, p) for p in too_new(build) - QUIET - MADE_OVER})
-    if not heads:
+    marks = build is None or build < MARKS_BUILD
+    if not heads and not marks:
         return ""
+    what = ", ".join(heads)
+    if marks:
+        what = (what + "; " if what else "") + "venn, contour, region, doodle, tap or swipe shapes, shapes img=, or shapes over a mock"
     which = f"build {build}" if build else "an older build"
-    return (f"[yui] This person's Yui app ({which}) cannot draw {', '.join(heads)} yet: "
+    return (f"[yui] This person's Yui app ({which}) cannot draw {what} yet: "
             "don't send those. Say it in words or use another preset.")
 
 
@@ -226,7 +256,7 @@ def _group_text(lines: List[str]) -> str:
         elif preset == "mock":
             if title:
                 out.append(f"**{title}**")
-            out.extend(f"- {p}" for p in _mock_parts(lines[i + 1:]))
+            out.extend(f"- {p}" for p in _mock_parts(lines[i + 1:]) + _mark_lines(lines[i + 1:]))
         elif preset == "part" and i == 0:
             out.extend(f"- {p}" for p in _mock_parts(lines))
         elif preset in ("area", "pin", "route") and i == 0:
@@ -254,6 +284,12 @@ def _shapes_chain(lines: List[str]) -> str:
             continue
         kind = words[0].lower()
         label = " ".join(words[1:]).strip() or _unquote(props.get("label", ""))
+        if kind == "venn":
+            # As describe() in yuigui's shapes.mjs: "Chat and Drawing overlap: Yui".
+            sets = [x for x in _unquote(props.get("sets", "")).split("|") if x][:3]
+            if sets:
+                both = f"{', '.join(sets[:-1])} and {sets[-1]} overlap" if len(sets) > 1 else sets[0]
+                label = both + (f": {label}" if label else "")
         if kind in CONNECT:
             if not props.get("from") and not props.get("to"):
                 joined = True
@@ -361,6 +397,31 @@ def _diagram_words(lines: List[str]) -> tuple:
     return used, title, _graph_lines(graph), cap, ""
 
 
+def _draw_extent(lines: List[str], i: int) -> int:
+    """Index just past the draw whose head is lines[i], read the way every Yui Lines
+    parser reads it: blank lines after the head are skipped, a first line that does
+    not open a tag (`<`) leaves the draw empty (that line is YL), and otherwise the
+    markup runs to a line that is only `end`, or to the end of the fence."""
+    started = False
+    for k in range(i + 1, len(lines)):
+        t = lines[k].strip()
+        if t == "end":
+            return k + 1
+        if not started:
+            if not t:
+                continue
+            if not t.startswith("<"):
+                return i + 1
+            started = True
+    return len(lines)
+
+
+def _draw_words(lines: List[str]) -> tuple:
+    """(lines it takes, title, caption) for the draw whose head is lines[0]."""
+    _, _, _, words, props, _ = _split(lines[0])
+    return _draw_extent(lines, 0), " ".join(words).strip(), _unquote(props.get("caption", ""))
+
+
 def _graph_lines(g: dict) -> List[str]:
     if g.get("type") == "sequence":
         names = {a["id"]: a.get("label") or a["id"] for a in g.get("actors", [])}
@@ -420,11 +481,48 @@ def _mock_parts(lines: List[str]) -> List[str]:
     return out
 
 
+def _mark_lines(lines: List[str]) -> List[str]:
+    """A mock's gesture marks (its `shape` lines, YUI-276) in words, one each:
+    `Tap Hold to talk: hold`, `Swipe left from Hold to talk: slide to cancel`,
+    `Arrow to Hold to talk: drop here to lock`, `Circled Total`. A place that is a
+    part's id reads as that part's words; a bare x,y names no part."""
+    names = {}
+    for line in lines:
+        head, preset, words = _split(line)[1:4]
+        if preset == "part" and "@" in head:
+            names[head.split("@", 1)[1]] = " ".join(words[1:]).strip() or (words[0] if words else "")
+    out = []
+    for line in lines:
+        _, _, preset, words, props, _ = _split(line)
+        if preset != "shape" or not words:
+            continue
+        kind = words[0].lower()
+        label = " ".join(words[1:]).strip() or _unquote(props.get("label", ""))
+        place = lambda k: names.get(_unquote(props.get(k, "")), "")
+        on = place("at") or place("from")
+        if kind == "tap":
+            text = "Tap" + (f" {on}" if on else "")
+        elif kind == "swipe":
+            way = _unquote(props.get("dir", ""))
+            text = "Swipe" + (f" {way}" if way else "") + (f" from {on}" if on else "") + (f" to {place('to')}" if place("to") else "")
+        elif kind in ("arrow", "line"):
+            text = "Arrow" + (f" to {place('to')}" if place("to") else "") + (f" from {place('from')}" if place("from") and not place("to") else "")
+        elif kind == "doodle":
+            text = "Circled" + (f" {on}" if on else "")
+        else:
+            text = ""
+        line_ = text + (f": {label}" if text and label else label)
+        if line_ and line_ not in ("Arrow", "Circled"):
+            out.append(line_)
+    return out
+
+
 def _mock_page(lines: List[str]) -> str:
     """A mock inside a deck or plan, as a page with its parts as points."""
     _, _, preset, words, _, _ = _split(lines[0])
     title = " ".join(words).strip() if preset == "mock" else ""
-    return _words_page(title, "", _mock_parts(lines[1:] if preset == "mock" else lines), "The screen")
+    body = lines[1:] if preset == "mock" else lines
+    return _words_page(title, "", _mock_parts(body) + _mark_lines(body), "The screen")
 
 
 def _group_page(lines: List[str]) -> str:
@@ -606,16 +704,71 @@ def somewhere_to_go(body: str) -> str:
     return body.rstrip() + "\n\n```yui\n" + FALLBACK + "\n```"
 
 
-def _fence(block: str, gated: set) -> List[tuple]:
-    """Split one fence body into ("yui", lines) and ("text", str) parts."""
+def _needs_marks(group: List[str], in_plan: bool) -> bool:
+    """Whether a shapes group (or a lone shape) needs a YUI-276 build: a mark kind,
+    a picture under it, or a place in a plan."""
+    _, _, preset, _, props, _ = _split(group[0])
+    if preset == "shapes" and ("img" in props or in_plan):
+        return True
+    return any(_split(l)[2] == "shape" and (_split(l)[3][:1] or [""])[0].lower() in MARK_KINDS for l in group)
+
+
+def _marks_words(group: List[str]) -> tuple:
+    """(title, the labels in order, caption) of a shapes group or a lone shape."""
+    _, _, preset, words, props, _ = _split(group[0])
+    if preset != "shapes":
+        return "", _shapes_chain(group), ""
+    return " ".join(words).strip(), _shapes_chain(group[1:]), _unquote(props.get("caption", ""))
+
+
+def _fence(block: str, gated: set, marks: bool = False) -> List[tuple]:
+    """Split one fence body into ("yui", lines) and ("text", str) parts. `marks`: the
+    phone predates MARKS_BUILD."""
     lines = block.split("\n")
     parts: List[tuple] = []
     cur: List[str] = []
     story = False  # inside a deck/plan group
+    in_plan = False  # and that group is a plan
     i = 0
     while i < len(lines):
         line = lines[i]
         _, head, preset, _, _, _ = _split(line)
+        if marks and preset == "mock" and "mock" not in gated and not head.startswith("~"):
+            j = i + 1
+            while j < len(lines) and _split(lines[j])[2] in GROUPS["mock"] and not _split(lines[j])[1].startswith("~"):
+                j += 1
+            group = lines[i:j]
+            shapes_ = [l for l in group[1:] if _split(l)[2] == "shape"]
+            if shapes_:
+                cur.extend(l for l in group if _split(l)[2] != "shape")
+                words_ = _mark_lines(group)
+                i = j
+                if words_:
+                    parts.append(("yui", cur))
+                    cur = []
+                    parts.append(("text", "\n".join(f"- {w}" for w in words_)))
+                continue
+        if marks and preset in ("shapes", "shape") and not head.startswith("~"):
+            j = i + 1
+            if preset == "shapes":
+                while j < len(lines) and _split(lines[j])[2] == "shape" and not _split(lines[j])[1].startswith("~"):
+                    j += 1
+            group = lines[i:j]
+            if _needs_marks(group, story and in_plan):
+                title_, chain, cap = _marks_words(group)
+                i = j
+                if story:
+                    page = _words_page(title_, cap, [chain] if chain else [], "The picture")
+                    if page:
+                        cur.append(SCREEN.match(line).group(1) + page if SCREEN.match(line) else page)
+                    continue
+                text = "\n".join(([f"**{title_}**"] if title_ else []) + ([chain] if chain else []) + ([cap] if cap else []))
+                if cur and any(l.strip() for l in cur):
+                    parts.append(("yui", cur))
+                cur = []
+                if text:
+                    parts.append(("text", text))
+                continue
         if preset == "flow" and "flow" in gated and not head.startswith("~"):
             end = _flow_extent(lines, i)
             cur.extend(flow_plan(lines[i:end]) or [FALLBACK])
@@ -623,6 +776,7 @@ def _fence(block: str, gated: set) -> List[tuple]:
             continue
         if preset in STORY and not head.startswith("~"):
             story = True
+            in_plan = preset == "plan"
         elif preset == "end":
             story = False
         if preset not in gated:
@@ -634,6 +788,21 @@ def _fence(block: str, gated: set) -> List[tuple]:
             continue
         group = [line]
         members = GROUPS.get(preset, set())
+        if preset == "draw":
+            used, title_, cap = _draw_words(lines[i:])
+            i += used
+            if story:
+                page = _words_page(title_, cap, [], "The drawing")
+                if page:
+                    cur.append(SCREEN.match(line).group(1) + page if SCREEN.match(line) else page)
+                continue
+            text = "\n".join(([f"**{title_}**"] if title_ else []) + ([cap] if cap else []))
+            if cur and any(l.strip() for l in cur):
+                parts.append(("yui", cur))
+            cur = []
+            if text:
+                parts.append(("text", text))
+            continue
         if preset == "diagram":
             used, title_, points, cap, source = _diagram_words(lines[i:])
             i += used
@@ -739,11 +908,12 @@ def downgrade(body: str, build: Optional[int]) -> str:
     if build is None or build < DECK_PICTURES_BUILD:
         body = FENCE.sub(lambda m: "```yui\n" + _lift(m.group(1).rstrip("\n")) + "\n```", body)
     gated = too_new(build)
-    if not gated:
+    marks = build is None or build < MARKS_BUILD
+    if not gated and not marks:
         return body
 
     def one(m: re.Match) -> str:
-        parts = _fence(m.group(1).rstrip("\n"), gated)
+        parts = _fence(m.group(1).rstrip("\n"), gated, marks)
         out = []
         for kind, v in parts:
             out.append("```yui\n" + "\n".join(v).strip("\n") + "\n```" if kind == "yui" else v)

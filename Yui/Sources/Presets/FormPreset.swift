@@ -14,6 +14,9 @@ extension EnvironmentValues {
 /// `{form: {...}}` once the person has set any field (nothing while all are empty),
 /// plus `missing: true` while a required field is empty, so the host's Send
 /// carries it and waits for it.
+/// What the person set is kept on the phone until it goes (feedback NOTE-19357):
+/// the stage paging away, going home, another agent, the record or a relaunch
+/// brings the form back as they left it.
 struct FormPreset: View {
     let c: YLComponent
     @State private var values: [String: YLValue] = [:]
@@ -26,8 +29,12 @@ struct FormPreset: View {
     @State private var talk: PushToTalk?
     @State private var heard: Set<String> = []
     @State private var voiceNote: String?
+    /// What was held or kept came back, once, on appear. Hosted, the host hears nothing before it,
+    /// so an empty first pass never wipes the answer it holds.
+    @State private var settled = false
     @Environment(\.ylScope) private var scope
     @Environment(\.ylAnswers) private var answers
+    @Environment(\.ylAgent) private var agent
     @Environment(\.yuiTheme) private var theme
     @Environment(\.colorScheme) private var scheme
     @Environment(\.ylEmit) private var emit
@@ -42,7 +49,7 @@ struct FormPreset: View {
         let fields = fields
         let shape = keyShape(fields)
         let blocked = shape.map { $0.isKnown || !anyway } ?? false
-        let ready = fields.allSatisfy { !$0.required || filled($0) } && !blocked
+        let ready = isReady(fields)
         PresetCard {
             if let t = c.string("title") { PresetTitle(text: t) }
             if !sent, VoiceFill.canFill(fields) { voiceBar(s, fields) }
@@ -58,6 +65,7 @@ struct FormPreset: View {
                            grow: true) {
                     sent = true
                     emit(event(fields))
+                    AnswerDrafts.shared.clear(agent, scope, c.ylID)
                 }
                 .disabled(!ready)
             }
@@ -102,16 +110,51 @@ struct FormPreset: View {
             restore(form, fields)
             sent = true
         }
-        .onAppear {
-            guard hosted, values.isEmpty, let g = c.inGroup,
-                  let form = answers(scope, g)?["plan"]?[c.ylID]?.object else { return }
+        .onAppear { settle(fields) }
+        // Hosted, the host's copy can land after the form shows (a flow loading its run).
+        .onChange(of: held) { _, form in
+            guard settled, hosted, values.isEmpty, let form else { return }
             restore(form, fields)
         }
         // No debounce: a Send right after the last key must carry it.
-        .onChange(of: values, initial: true) {
-            emitHosted(fields, ready: ready)
+        .onChange(of: values) {
+            keep()
+            if settled { emitHosted(fields) }
         }
-        .onChange(of: anyway) { emitHosted(fields, ready: ready) }
+        .onChange(of: anyway) { if settled { emitHosted(fields) } }
+    }
+
+    /// What this form already holds. Hosted: a sent plan's answer, else the host's own copy
+    /// (a flow's step, or a stage question that went). On its own: the answer it sent.
+    private var held: [String: YLValue]? {
+        if !hosted { return answers(scope, c.ylID)?["form"]?.object }
+        if let g = c.inGroup, let form = answers(scope, g)?["plan"]?[c.ylID]?.object { return form }
+        return answers(scope, c.ylID)?["form"]?.object
+    }
+
+    /// On appear, once (feedback NOTE-19357): hosted, what the host holds comes back, else what
+    /// the person set and never sent. A draft never covers an answer that went. Hosted, the host
+    /// then hears the form as it stands, so its Send carries what came back.
+    private func settle(_ fields: [FormField]) {
+        guard !settled else { return }
+        settled = true
+        if values.isEmpty, !sent {
+            if hosted, let form = held { restore(form, fields) }
+            else if held == nil, let form = AnswerDrafts.shared.draft(agent, scope, c.ylID, "form")?.object { restore(form, fields) }
+        }
+        emitHosted(fields)
+    }
+
+    /// The fields as they stand, kept on the phone until they go (feedback NOTE-19357).
+    private func keep() {
+        guard settled, !sent, held == nil else { return }
+        AnswerDrafts.shared.set(agent, scope, c.ylID, "form", .object(values))
+    }
+
+    /// Every required field set, and no key-shaped word held.
+    private func isReady(_ fields: [FormField]) -> Bool {
+        let blocked = keyShape(fields).map { $0.isKnown || !anyway } ?? false
+        return fields.allSatisfy { !$0.required || filled($0) } && !blocked
     }
 
     /// Speak to fill: one mic for the whole card. Say each field's name and its answer; the words
@@ -216,7 +259,7 @@ struct FormPreset: View {
         return nil
     }
 
-    private func emitHosted(_ fields: [FormField], ready: Bool) {
+    private func emitHosted(_ fields: [FormField]) {
         do {
             guard hosted else { return }
             // Just mounted with nothing typed yet, over an answer kept on the phone: handing over
@@ -232,7 +275,7 @@ struct FormPreset: View {
             // A date or a slider starts with a value; only what the person set counts.
             let any = fields.contains { values[$0.key] != nil && filled($0) }
             var e = any ? event(fields) : c.event([:])
-            if !ready { e.value["missing"] = .bool(true) }
+            if !isReady(fields) { e.value["missing"] = .bool(true) }
             emit(e)
         }
     }
@@ -411,13 +454,10 @@ private struct FieldRow: View {
             .keyboardType(keyboard)
             .textContentType(content)
             .textInputAutocapitalization(["email", "url"].contains(field.type) ? .never : .sentences)
-            if field.type == "voice" {
-                // The keyboard's dictation key does speech to text until the `mic` preset lands.
-                Image(systemName: "mic.fill")
-                    .foregroundStyle(s.userInk)
-                    .frame(width: 34, height: 34)
-                    .background(s.accent, in: Circle())
-                    .accessibilityHidden(true)
+            // Speak to fill a form (feedback NOTE-40679): every field of words has a mic that works, not only
+            // `voice`, whose mic used to be a picture. Emails, links, phones and numbers keep the keyboard.
+            if ["text", "long", "voice"].contains(field.type) {
+                FieldMic(text: text, label: field.label, id: "field-mic-\(field.key)")
             }
         }
         .padding(.horizontal, theme.spacing.l)
@@ -452,5 +492,75 @@ private struct FieldRow: View {
         case .bool(let b): b ? "yes" : "no"
         default: nil
         }
+    }
+}
+
+/// Tap to talk into a field, tap again to stop (NOTE-40679). The words show in the field as they are heard,
+/// after anything already in it, so a person can talk, stop, fix a word and talk again. Speech stays on the
+/// phone (PushToTalk); the listener is made on the first tap, not one per field on screen.
+struct FieldMic: View {
+    @Binding var text: String
+    let label: String
+    let id: String
+    @State private var talk: PushToTalk?
+    /// What the field held when the talking started: heard words go after it.
+    @State private var base = ""
+    @Environment(\.yuiTheme) private var theme
+    @Environment(\.colorScheme) private var scheme
+
+    private var listening: Bool { talk?.listening == true }
+    private var denied: Bool { talk?.phase == .denied || talk?.phase == .failed }
+
+    var body: some View {
+        let s = theme.swatch(scheme)
+        Button { toggle() } label: {
+            Image(systemName: listening ? "stop.fill" : denied ? "mic.slash.fill" : "mic.fill")
+                .font(.system(size: 15, weight: .bold))
+                .foregroundStyle(listening ? s.onAccent : s.ink)
+                .symbolEffect(.pulse, isActive: listening)
+                .frame(width: 34, height: 34)
+                .glassEffect(listening ? .regular.tint(s.accent).interactive() : .regular.interactive(), in: .circle)
+                .frame(width: 44, height: 44)
+                .contentShape(Circle())
+        }
+        .buttonStyle(BounceButtonStyle())
+        .sensoryFeedback(.impact(weight: .light), trigger: listening)
+        .accessibilityLabel(listening ? "Stop talking" : "Talk to fill \(label)")
+        .accessibilityHint(denied ? "The mic is off for Yui. Turn it on in Settings, or type." : "")
+        .accessibilityIdentifier(id)
+        .onChange(of: talk?.transcript ?? "") { _, heard in
+            if listening { text = Self.join(base, heard) }
+        }
+        .onDisappear { talk?.cancel() }
+    }
+
+    private func toggle() {
+        let t = talk ?? {
+            let t = PushToTalk()
+            #if DEBUG
+            t.fakeWords = UserDefaults.standard.string(forKey: "yuiPTTFake")
+            #endif
+            talk = t
+            return t
+        }()
+        if t.listening {
+            Task {
+                let heard = await t.stop()
+                text = Self.join(base, heard)
+            }
+        } else {
+            base = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            Task { await t.start() }
+        }
+    }
+
+    /// The words after what was there, as MicPreset joins a second talk: a full stop between them unless one is there,
+    /// and a capital after it.
+    static func join(_ had: String, _ heard: String) -> String {
+        let heard = heard.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !heard.isEmpty else { return had }
+        guard !had.isEmpty else { return heard }
+        if had.last.map({ ".!?,".contains($0) }) == true { return had + " " + heard }
+        return had + ". " + heard.prefix(1).uppercased() + heard.dropFirst()
     }
 }

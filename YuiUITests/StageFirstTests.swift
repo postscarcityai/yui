@@ -112,6 +112,41 @@ final class StageFirstTests: XCTestCase {
         XCTAssertTrue(app.descendants(matching: .any)["stage-first"].waitForExistence(timeout: 5), "the stage did not come back")
     }
 
+    /// Three looks, then the question (feedback NOTE-42080, web YUI-277): the looks sit small above it, each a
+    /// button with its option, and a tap on one is the answer, as a tap on its option would be.
+    func testComparePicturesPickTheLook() throws {
+        let reply = [
+            "plan \"Pick a look\"",
+            "page \"Look A: Hand drawn\"", "sketch frame=bubble", "row \"Wobbly lines\" +hi",
+            "page \"Look B: Clean lines\"", "sketch frame=bubble", "row \"Crisp lines\" +hi",
+            "page \"Look C: Chalk\"", "sketch frame=bubble", "row \"Chalk lines\" +hi",
+            "choose \"Which drawing look should Yui use?\" \"A\"|\"B\"|\"C\"|\"You decide\"",
+            "end",
+        ].joined(separator: "\\n")
+        let app = launch("light", reply: reply)
+        send(app, "Which look should you use?")
+        let questions = app.descendants(matching: .any)["stage-questions"]
+        for _ in 0..<8 where !questions.waitForExistence(timeout: 4) {
+            if app.buttons["stage-next"].exists { app.buttons["stage-next"].tap() }
+        }
+        XCTAssertTrue(questions.exists, "no questions screen")
+        let b = app.buttons["stage-compare-1"]
+        XCTAssertTrue(b.waitForExistence(timeout: 5), "no pictures above the question")
+        XCTAssertTrue(app.buttons["stage-compare-0"].exists && app.buttons["stage-compare-2"].exists, "not all three looks")
+        XCTAssertFalse(app.buttons["stage-compare-3"].exists, "You decide names no page")
+        XCTAssertEqual(b.label, "B, Look B: Clean lines")
+        let go = app.buttons["stage-send"]
+        XCTAssertFalse(go.isEnabled, "Send before any answer")
+        sleep(1)
+        shot("compare-1-looks", "light")
+        b.tap()
+        XCTAssertTrue(go.isEnabled, "the picture did not answer the question")
+        XCTAssertTrue(b.isSelected, "the picture does not show it is picked")
+        shot("compare-2-picked", "light")
+        go.tap()
+        XCTAssertTrue(text(app, "Sent. It's in the chat.").waitForExistence(timeout: 5), "Send did not go")
+    }
+
     // MARK: Helpers
 
     private func launch(_ appearance: String, reply: String) -> XCUIApplication {
