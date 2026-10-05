@@ -99,6 +99,14 @@ struct Shelf: Codable, Equatable, Sendable {
         removed[name] = at
     }
 
+    /// Yui's old crew page saved itself as "your crew" (t_5b44f121): it comes off the shelf once.
+    /// Only when every part is a crew card, so a screen the person or an agent saved by that name stays.
+    mutating func dropRoster() -> Bool {
+        guard let s = entries["your crew"], !s.parts.isEmpty, s.parts.allSatisfy({ $0.ylID.hasPrefix("crew-") }) else { return false }
+        remove("your crew")
+        return true
+    }
+
     // MARK: On the phone
 
     static func file(agentID: String) -> URL {

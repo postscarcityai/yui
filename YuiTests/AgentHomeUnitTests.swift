@@ -28,6 +28,55 @@ import YuiLines
         return store
     }
 
+    /// Yui's home is two chips and the chat, no page (t_5b44f121, Chris: "Remove this screen").
+    func testYuisHomeIsChipsOnly() {
+        let store = load("yui")
+        XCTAssertEqual(AgentHome.chips(store).map(\.label), ["Add an agent", "What's new"])
+        XCTAssertEqual(store.screens, [1])
+        XCTAssertNil(store.shelf["your crew"])
+    }
+
+    /// The home Yui wrote before then: its crew page never forms, its chips stay.
+    func testAnOldYuiHomeLosesOnlyItsCrewPage() {
+        let old = "```yui\nmenu shortcut@new \"What's new\" say=\"What's new in Yui?\"\nmenu shortcut@add \"Add an agent\" say=\"Make me a new agent: \"\n>2\n"
+            + "card@crew-arnold Arnold \"Workouts built around your week and body\" sub=Trainer url=yui://agent/demo-arnold/thread cta=Open\n"
+            + "card@crew-basil Basil \"Eat better without counting everything\" sub=Nutritionist url=yui://agent/demo-basil/thread cta=Open\n"
+            + "save your crew\n```"
+        let store = ChatStore()
+        store.load([ThreadRow(id: "home-yui", sender: "agent", body: old, kind: "text",
+                              meta: .object(["native": .string("home")]), createdAt: "2026-09-28T10:00:00Z")])
+        XCTAssertEqual(AgentHome.chips(store).map(\.label), ["Add an agent", "What's new"])
+        XCTAssertEqual(store.screens, [1], "the crew page is still there")
+        XCTAssertNil(store.shelf["your crew"], "the crew page is still on the shelf")
+    }
+
+    /// Only the crew lines go: a route with something else under it, and every other agent's home, stay whole.
+    func testWithoutRosterKeepsEverythingElse() {
+        XCTAssertEqual(ChatStore.withoutRoster(">2\ncard@crew-a A\n>3\nlist@x \"One\"\nsave your crew"), ">3\nlist@x \"One\"")
+        XCTAssertEqual(ChatStore.withoutRoster(">2\nstat@s 1 One\ncard@crew-a A"), ">2\nstat@s 1 One")
+        for a in AgentStore.demoStarters where a.handle != "yui" {
+            let y = String(AgentStore.demoHome[a.handle]!.dropFirst(7).dropLast(4))
+            XCTAssertEqual(ChatStore.withoutRoster(y), y, a.handle)
+        }
+    }
+
+    /// A phone that kept the old crew page on its shelf drops it once; a "your crew" of something else stays.
+    func testTheShelfDropsTheOldCrewPageOnly() {
+        func shelf(_ yl: String) -> Shelf {
+            let store = ChatStore()
+            store.load([ThreadRow(id: "r1", sender: "agent", body: "```yui\n\(yl)\n```", kind: "text", meta: nil, createdAt: "2026-09-28T10:00:00Z")])
+            return store.shelf
+        }
+        var crew = shelf(">2\ncard@crew-arnold Arnold \"Trains\" cta=Open\ncard@crew-basil Basil \"Feeds\" cta=Open\nsave your crew")
+        XCTAssertNotNil(crew["your crew"])
+        XCTAssertTrue(crew.dropRoster())
+        XCTAssertNil(crew["your crew"])
+        XCTAssertFalse(crew.dropRoster(), "it drops once")
+        var mine = shelf(">2\nlist@team \"Sam\" \"Ana\"\nsave your crew")
+        XCTAssertFalse(mine.dropRoster())
+        XCTAssertNotNil(mine["your crew"])
+    }
+
     func testArnoldsHomeFillsChipsPagesAndShelfButNotTheRecord() {
         let store = load("arnold")
         XCTAssertEqual(AgentHome.chips(store).map(\.label), ["Start a workout", "My split", "Log a workout", "Progress"])

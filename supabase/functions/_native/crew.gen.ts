@@ -2817,6 +2817,6 @@ export const CREW: Record<string, Profile> = {
         ]
       }
     ],
-    "home": "# Yui's home (YUI-168, yuigui spec/HOME.md): your crew, one tap each. {arnold} is that agent's id,\n# filled in when the home is played; a line naming an agent the person doesn't have is left out.\nmenu shortcut@new \"What's new\" say=\"What's new in Yui?\"\nmenu shortcut@add \"Add an agent\" say=\"Make me a new agent: \"\n>2\ncard@crew-arnold Arnold \"Workouts built around your week and body\" sub=Trainer url=yui://agent/{arnold}/thread cta=Open\ncard@crew-basil Basil \"Eat better without counting everything\" sub=Nutritionist url=yui://agent/{basil}/thread cta=Open\ncard@crew-gouda Gouda \"Beats, chords and practice, right on screen\" sub=Musician url=yui://agent/{gouda}/thread cta=Open\ncard@crew-penny Penny \"Get your week out of your head\" sub=Planner url=yui://agent/{penny}/thread cta=Open\ncard@crew-quill Quill \"Learn anything fast, then get quizzed\" sub=\"Study buddy\" url=yui://agent/{quill}/thread cta=Open\nsave your crew"
+    "home": "# Yui's home (YUI-168, yuigui spec/HOME.md): two chips and a calm chat, no starter screens.\n# The crew lives in the agent list (the Yui pill), never on a page here (Chris, TestFlight 2026-10-05: \"Remove this screen\").\nmenu shortcut@new \"What's new\" say=\"What's new in Yui?\"\nmenu shortcut@add \"Add an agent\" say=\"Make me a new agent: \""
   }
 };

@@ -1,11 +1,4 @@
-# Yui's home (YUI-168, yuigui spec/HOME.md): your crew, one tap each. {arnold} is that agent's id,
-# filled in when the home is played; a line naming an agent the person doesn't have is left out.
+# Yui's home (YUI-168, yuigui spec/HOME.md): two chips and a calm chat, no starter screens.
+# The crew lives in the agent list (the Yui pill), never on a page here (Chris, TestFlight 2026-10-05: "Remove this screen").
 menu shortcut@new "What's new" say="What's new in Yui?"
 menu shortcut@add "Add an agent" say="Make me a new agent: "
->2
-card@crew-arnold Arnold "Workouts built around your week and body" sub=Trainer url=yui://agent/{arnold}/thread cta=Open
-card@crew-basil Basil "Eat better without counting everything" sub=Nutritionist url=yui://agent/{basil}/thread cta=Open
-card@crew-gouda Gouda "Beats, chords and practice, right on screen" sub=Musician url=yui://agent/{gouda}/thread cta=Open
-card@crew-penny Penny "Get your week out of your head" sub=Planner url=yui://agent/{penny}/thread cta=Open
-card@crew-quill Quill "Learn anything fast, then get quizzed" sub="Study buddy" url=yui://agent/{quill}/thread cta=Open
-save your crew

@@ -19,7 +19,7 @@ test("every starter has a home: its shortcuts in chip order and its starter scre
     gouda: { chips: ["Learn a song", "Log practice", "Jam", "Tune up"], pages: ["2", "3", "4", "5", "6"] },
     penny: { chips: ["Plan my week", "Add a to-do", "What's next?", "Evening review"], pages: ["2", "3"] },
     quill: { chips: ["Review my cards", "Learn something new", "Walk me through a problem", "What's due?"], pages: ["2", "3", "4"] },
-    yui: { chips: ["Add an agent", "What's new"], pages: ["2"] },
+    yui: { chips: ["Add an agent", "What's new"], pages: [] },
   };
   for (const [b, w] of Object.entries(want)) {
     const home = crew()[b].home!;
@@ -42,7 +42,7 @@ test("the checks turn down a home with too few or too many chips, a chat route, 
   assert.match(checkHome('menu shortcut "A"\n>2\nlist x').join(), /2 to 4 shortcuts, has 1/);
   assert.match(checkHome(two + 'menu shortcut "C"\nmenu shortcut "D"\nmenu shortcut "E"\n>2\nlist x').join(), /has 5/);
   assert.match(checkHome(two + ">full\nlist x").join(), /not >full/);
-  assert.match(checkHome(two + "list x").join(), /at least one starter screen/);
+  assert.deepEqual(checkHome(two), [], "chips alone are a home: Yui's is a calm chat (t_5b44f121)");
   assert.match(checkHome(two + ">2\n>2 clear").join(), /never clears/);
   assert.match(checkHome(two + '>2\ncard "A — B"').join(), /no em dashes/);
   const files = (home: string) => (f: string) => ({
@@ -53,8 +53,12 @@ test("the checks turn down a home with too few or too many chips, a chat route, 
 });
 
 test("the row's body: comments out, the person's agents filled in, a line for one they don't have left out", () => {
-  const body = homeBody(crew().yui, { arnold: "a-1", basil: "b-2", gouda: "g-3", penny: "p-4" })!;
+  // A home that names the person's other agents (Yui's old crew page did, until t_5b44f121).
+  const roster = '# who to open\nmenu shortcut@new "New" say="Hi"\nmenu shortcut@add "Add" say="Add"\n>2\n' +
+    ["Arnold", "Basil", "Gouda", "Penny", "Quill"].map((n) => `card@crew-${n.toLowerCase()} ${n} url=yui://agent/{${n.toLowerCase()}}/thread cta=Open`).join("\n");
+  const body = homeBody({ home: roster }, { arnold: "a-1", basil: "b-2", gouda: "g-3", penny: "p-4" })!;
   assert.ok(body.startsWith("```yui\nmenu shortcut@new") && body.endsWith("\n```"));
+  assert.match(body, /Basil/);
   assert.doesNotMatch(body, /^#/m);
   assert.match(body, /url=yui:\/\/agent\/a-1\/thread/);
   assert.doesNotMatch(body, /Quill/, "no Quill in this list, so no card for Quill");
@@ -72,7 +76,8 @@ test("homes to write: each native agent once, a crew agent from before homes get
   ];
   const out = homesToWrite(rows, (b) => crew()[b]?.home);
   assert.deepEqual(out.map((h) => h.agentId), ["y", "b", "l"], "Arnold's is written, a custom agent without one gets none");
-  assert.match(out[0].body, /yui:\/\/agent\/a\/thread/, "Yui's crew page opens the person's own Arnold");
+  assert.doesNotMatch(out[0].body, /^>\d/m, "Yui's home is chips only, no roster page (t_5b44f121)");
+  assert.doesNotMatch(out[0].body, /crew-/);
   assert.match(out[1].body, /list@aisle-produce title="Produce" "Spinach"\|"Berries" \+check/);
 });
 
@@ -115,9 +120,9 @@ test("Arnold's kickoff is the first plan (YUI-217): goal, days, time, gear, expe
   assert.match(a.soul, /~days "Mon Push" "Wed Pull"/, "and This week is patched from it");
 });
 
-test("Yui's crew cards open an agent, they are not hand-offs (YUI-144)", () => {
-  const home = homeBody(crew().yui, { arnold: "a-1", basil: "b-2", gouda: "g-3", penny: "p-4", quill: "q-5" });
+test("a card that opens an agent is not a hand-off (YUI-144)", () => {
+  const home = homeBody({ home: 'menu shortcut "A"\nmenu shortcut "B"\n>2\ncard@crew-arnold Arnold url=yui://agent/{arnold}/thread cta=Open' }, { arnold: "a-1" });
   assert.match(home!, /yui:\/\/agent\/a-1\/thread/);
-  assert.deepEqual(cards(home!.includes("```yui") ? home! : "```yui\n" + home + "\n```"), []);
+  assert.deepEqual(cards(home!), []);
   assert.deepEqual(cards('```yui\ncard "Basil" body="x" url=yui://agent/basil\n```').map((c) => c.target), ["basil"]);
 });

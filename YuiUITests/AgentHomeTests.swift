@@ -209,28 +209,62 @@ final class AgentHomeTests: XCTestCase {
         XCTAssertTrue(app.buttons["drawer-close"].waitForExistence(timeout: 5), "a drag right on the home did not open the drawer")
     }
 
-    /// Yui's home: her crew, one tap each.
-    func testYuiCrewPage() throws {
-        let app = launch("yui", "light")
+    /// Yui's home is a calm chat: two chips, no page of agent cards (Chris on TestFlight, 2026-10-05:
+    /// "Remove this screen", t_5b44f121). The crew is one tap away in the agent list, where it always was.
+    func testYuiHomeHasNoCrewPageDark() throws { try yuiHome("dark") }
+    func testYuiHomeHasNoCrewPageLight() throws { try yuiHome("light") }
+
+    private func yuiHome(_ appearance: String, rows: URL? = nil) throws {
+        let app = launch("yui", appearance, rows: rows)
         XCTAssertTrue(app.buttons["home-chip-add"].waitForExistence(timeout: 15), "no Add an agent chip")
-        shot("yui-light-1-home")
-        app.swipeLeft()
-        let crew = app.descendants(matching: .any)["stage-screen-2"]
-        XCTAssertTrue(crew.staticTexts["Gouda"].waitForExistence(timeout: 5), "no crew page")
+        XCTAssertTrue(app.buttons["home-chip-new"].exists, "no What's new chip")
+        XCTAssertFalse(app.buttons["screen-pill-2"].exists, "a second page is back on Yui's home")
+        XCTAssertFalse(app.staticTexts["Workouts built around your week and body"].exists, "the crew cards are on screen")
         sleep(1)
-        shot("yui-light-2-crew")
-        crew.buttons.matching(NSPredicate(format: "label == 'Open'")).element(boundBy: 2).tap()
-        sleep(2)
-        shot("yui-light-3-gouda-opened")
-        XCTAssertTrue(app.buttons["home-chip-jam"].waitForExistence(timeout: 8), "Open on Gouda's card did not open Gouda")
+        shot("yui-\(appearance)-1-home")
+        app.swipeLeft()
+        XCTAssertFalse(app.descendants(matching: .any)["stage-screen-2"].waitForExistence(timeout: 2), "a swipe found a crew page")
+        // The agents are where Chris wants them: the agent list in the drawer, every one of them.
+        app.buttons["stage-menu"].tap()
+        let bar = app.buttons["drawer-agent-bar"]
+        XCTAssertTrue(bar.waitForExistence(timeout: 5), "no agent bar in the drawer")
+        bar.tap()
+        for name in ["Arnold", "Basil", "Gouda", "Penny", "Quill"] {
+            let row = app.buttons.matching(NSPredicate(format: "label == %@ OR label BEGINSWITH %@", name, name + ",")).firstMatch
+            XCTAssertTrue(row.waitForExistence(timeout: 5), "\(name) is not in the agent list")
+        }
+        sleep(1)
+        shot("yui-\(appearance)-2-agents")
+        // A -yuiThreadRows file is every thread's rows, so Gouda's own home only opens on the demo rows.
+        guard rows == nil else { return }
+        app.buttons.matching(NSPredicate(format: "label == %@ OR label BEGINSWITH %@", "Gouda", "Gouda,")).firstMatch.tap()
+        XCTAssertTrue(app.buttons["home-chip-jam"].waitForExistence(timeout: 8), "Gouda did not open from the list")
+    }
+
+    /// Someone whose Yui wrote the old home (the crew on page 2, saved as "your crew") opens the new
+    /// build: the page is gone, the chips stay, nothing else moves.
+    func testAnOldCrewPageIsDroppedOnLaunch() throws {
+        let old = "```yui\nmenu shortcut@new \"What's new\" say=\"What's new in Yui?\"\nmenu shortcut@add \"Add an agent\" say=\"Make me a new agent: \"\n>2\n"
+            + [("arnold", "Arnold", "Workouts built around your week and body", "Trainer"),
+               ("basil", "Basil", "Eat better without counting everything", "Nutritionist"),
+               ("gouda", "Gouda", "Beats, chords and practice, right on screen", "Musician"),
+               ("penny", "Penny", "Get your week out of your head", "Planner")]
+                .map { "card@crew-\($0.0) \($0.1) \"\($0.2)\" sub=\($0.3) url=yui://agent/demo-\($0.0)/thread cta=Open" }
+                .joined(separator: "\n") + "\nsave your crew\n```"
+        let f = FileManager.default.temporaryDirectory.appending(path: "old-home-\(UUID().uuidString).json")
+        let rows: [[String: Any]] = [["id": "home-yui", "sender": "agent", "kind": "text", "body": old,
+                                      "meta": ["native": "home"], "created_at": "2026-09-28T10:00:00+00:00"]]
+        try JSONSerialization.data(withJSONObject: rows).write(to: f)
+        try yuiHome("dark", rows: f)
     }
 
     // MARK: helpers
 
-    private func launch(_ agent: String, _ appearance: String, waiting: Bool = false) -> XCUIApplication {
+    private func launch(_ agent: String, _ appearance: String, waiting: Bool = false, rows: URL? = nil) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments = ["-yuiStageFirst", "YES", "-yuiDemoAccount", "-yuiDemoHome", "-yuiAgent", agent,
                                "-appearance", appearance] + (waiting ? ["-yuiDemoWaiting"] : [])
+            + (rows.map { ["-yuiThreadRows", $0.path] } ?? [])
         app.launch()
         return app
     }

@@ -608,6 +608,24 @@ final class ChatStore {
         }
     }
 
+    /// Yui's home used to put the whole crew on a page of cards (`>2`, `card@crew-*`, `save your crew`).
+    /// Chris, on TestFlight: "Remove this screen" (t_5b44f121). The agents live in the agent list now, so a
+    /// home row written before then loads without those lines, and the page never forms. Nothing else moves.
+    static func withoutRoster(_ yl: String) -> String {
+        let lines = yl.components(separatedBy: "\n").filter {
+            let l = $0.trimmingCharacters(in: .whitespaces)
+            return !l.hasPrefix("card@crew-") && l != "save your crew"
+        }
+        // A bare route left with nothing under it before the next route or the end goes too.
+        let route = { (l: String) in l.trimmingCharacters(in: .whitespaces).range(of: #"^>\S+$"#, options: .regularExpression) != nil }
+        let blank = { (l: String) in l.trimmingCharacters(in: .whitespaces).isEmpty }
+        let kept = lines.indices.filter { i in
+            guard route(lines[i]) else { return true }
+            return lines[(i + 1)...].first { !blank($0) }.map { !route($0) } ?? false
+        }
+        return kept.map { lines[$0] }.joined(separator: "\n")
+    }
+
     /// A reply's saves and forgets onto the shelf, stamped with the reply's time.
     private func file(_ ops: [ShelfOp], at: Date) {
         var changed = false
@@ -821,6 +839,7 @@ final class ChatStore {
         client = agent.map { ThreadClient(account: account, agentID: $0.id) }
         self.account = account
         shelf = agent.map { Shelf.load(agentID: $0.id) } ?? Shelf()
+        if shelf.dropRoster(), let agent { shelf.store(agentID: agent.id) }
         publishWidgets()
         menu = agent.map { AgentMenu.load(agentID: $0.id) } ?? AgentMenu()
         resetThread()
@@ -1398,7 +1417,7 @@ final class ChatStore {
                     var screen = YLScreen()
                     let known = lastingIds
                     let at = YuiTime.date(row.createdAt) ?? .now
-                    let nodes = YuiLines.parse(y, known: known)
+                    let nodes = YuiLines.parse(home ? Self.withoutRoster(y) : y, known: known)
                     for node in nodes {
                         if !history { clearPage(node) }
                         // A patch for something an earlier reply drew (`~choose +lock`

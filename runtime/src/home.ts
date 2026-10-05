@@ -1,5 +1,5 @@
 // An agent's home (YUI-168, yuigui spec/HOME.md): its shortcuts (`menu shortcut`)
-// and its starter screens (`>2`, `>3` ... with lasting @ids), written once as a
+// and any starter screens (`>2`, `>3` ... with lasting @ids), written once as a
 // row in its thread. The app draws the chips over the bar and the screens a swipe
 // away; the agent keeps them current with patches after that.
 import type { Profile } from "./types.ts";
@@ -24,7 +24,6 @@ export function checkHome(text: string): string[] {
   const routes = lines.filter((l) => /^>\S+/.test(l)).map((l) => l.slice(1).split(/\s/)[0]);
   const bad = routes.filter((r) => !/^([2-9]|1[0-2])$/.test(r));
   if (bad.length) out.push(`home.yui routes only to screens 2 to 12, not >${bad.join(", >")}`);
-  if (!routes.length) out.push("home.yui needs at least one starter screen (>2)");
   if (lines.some((l) => /^>([2-9]|1[0-2])\s+clear\b/.test(l))) out.push("home.yui never clears a screen");
   if (/—/.test(text)) out.push("no em dashes");
   return out;
