@@ -35,7 +35,7 @@ struct CrewPickView: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: theme.spacing.m) {
-                    Wordmark(height: 48)
+                    Wordmark(height: 48, centered: false)
                     Text("Hi, I'm Yui.\nLet's pick your crew.")
                         .font(theme.font(theme.type.title, .bold)).foregroundStyle(c.ink)
                         .accessibilityIdentifier("crew-pick-title")

@@ -1,7 +1,9 @@
 import AuthenticationServices
 import SwiftUI
 
-/// First screen for a signed-out user: the coral wordmark, what Yui needs (your own agent), one button.
+/// First screen for a signed-out user: the coral wordmark, what Yui is in one breath, one button.
+/// A new person gets Yui and a crew to pick from, so nothing here asks them to bring an agent first;
+/// bringing one is a row in the crew picker.
 struct SignInView: View {
     @Environment(Account.self) private var account
     @Environment(\.yuiTheme) private var theme
@@ -17,19 +19,17 @@ struct SignInView: View {
             Spacer()
             Wordmark(height: 120)
             VStack(spacing: theme.spacing.s) {
-                Text("Your agents, in your pocket.")
+                Text("Ask out loud. See the answer.")
                     .font(theme.font(theme.type.title, .bold))
                     .foregroundStyle(c.ink)
-                Text("Connect the agent you already run, like Hermes. It answers here with screens you can tap.")
+                    .accessibilityAddTraits(.isHeader)
+                    .accessibilityIdentifier("sign-in-title")
+                Text("Yui and a crew of agents answer with screens you can tap, not walls of text. You can bring your own agent too.")
                     .font(theme.font(theme.type.body))
                     .foregroundStyle(c.inkSoft)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             .multilineTextAlignment(.center)
-            HStack(spacing: theme.spacing.s) {
-                ForEach(["mint", "lavender", "butter"], id: \.self) { token in
-                    Circle().fill(c.color(token: token)).frame(width: 12, height: 12)
-                }
-            }
             Spacer()
             VStack(spacing: theme.spacing.m) {
                 SignInWithAppleButton(.signIn) { request in
@@ -82,7 +82,15 @@ struct SignInView: View {
         }
         .padding(theme.spacing.xl)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(c.background)
+        .background {
+            // The same soft wash of color the stage wears, so the first screen and the app are one place.
+            ZStack {
+                c.background
+                RadialGradient(colors: [c.accent.opacity(scheme == .dark ? 0.16 : 0.10), .clear],
+                               center: .top, startRadius: 0, endRadius: 520)
+            }
+            .ignoresSafeArea()
+        }
         .sheet(isPresented: $askCode) {
             ReviewCodeSheet()
                 .presentationDetents([.medium])

@@ -17,7 +17,7 @@ final class TopBarGateTests: XCTestCase {
             XCTAssertFalse(app.buttons["Agent menu"].exists, "the menu shows \(why)")
             XCTAssertFalse(app.buttons["Full screen"].exists, "the full screen button shows \(why)")
         }
-        let signIn = app.staticTexts["Your agents, in your pocket."]
+        let signIn = app.staticTexts["sign-in-title"]
 
         // 1. Reinstalled over an old session: Sign in, nothing that says you have an account.
         launch(app, appearance, ["-yuiReinstalled"])

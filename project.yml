@@ -50,7 +50,10 @@ targets:
       path: Yui/Info.plist
       properties:
         CFBundleDisplayName: Yui
-        UILaunchScreen: {}
+        # The launch screen is Yui's own paper (cream, or plum in the dark), not the system's white or black:
+        # no flash of another color before the first screen draws.
+        UILaunchScreen:
+          UIColorName: LaunchBackground
         ITSAppUsesNonExemptEncryption: false
         # Settings > About this build (YUI-92).
         YuiCommit: $(YUI_COMMIT)
