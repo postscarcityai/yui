@@ -10,7 +10,12 @@ import XCTest
 /// start() gets past the ask and installs the tap and the recognizer as on the phone.
 @MainActor
 final class PushToTalkTests: XCTestCase {
-    func testHoldingTheMicDoesNotCrash() async {
+    func testHoldingTheMicDoesNotCrash() async throws {
+        // Never asked yet: start() would put up the system's ask, which no unit test can answer,
+        // and the whole run would sit on it. Skip until the simulator has an answer either way.
+        try XCTSkipIf(SFSpeechRecognizer.authorizationStatus() == .notDetermined
+                      || AVAudioApplication.shared.recordPermission == .undetermined,
+                      "speech or mic not asked yet on this simulator: grant both first")
         let ptt = PushToTalk()
         await ptt.start()
         // The simulator may have no usable mic or recognizer; any phase is fine, a trap is not.

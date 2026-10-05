@@ -55,7 +55,7 @@ final class FirstLaunchTests: XCTestCase {
         XCTAssertEqual(app.state, .runningForeground, "the app died after Cancel")
     }
 
-    /// Gouda's hello is an answer on its stage, a beat to play and a pick, never "1 thing is
+    /// Gouda's hello is an answer on its stage, a few taps to a practice plan, never "1 thing is
     /// waiting on you" in the drawer's Review (YUI-165, Chris on build 244: "this is the total
     /// wrong place for this. This is not something for me to review").
     func testTheHelloIsNotAReviewAsk() throws {
@@ -63,7 +63,7 @@ final class FirstLaunchTests: XCTestCase {
             tag = look
             let app = XCUIApplication()
             launch(app, ["-yuiAgent", "gouda"])
-            let pick = app.buttons["Make a beat"].firstMatch
+            let pick = app.buttons["Guitar"].firstMatch
             XCTAssertTrue(pick.waitForExistence(timeout: 20), "Gouda's hello is not on screen")
             sleep(2)
             shot("10-gouda-hello")

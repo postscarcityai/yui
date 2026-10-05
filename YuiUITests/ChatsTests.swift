@@ -53,12 +53,9 @@ final class ChatsTests: XCTestCase {
                                "-yuiChats", try chatsFile().path, "-yuiThemeDemo", Self.reply]
         app.launch()
 
-        // The chat you are in is the newest one, under the agent's name.
-        let header = app.buttons["chat-header"]
-        XCTAssertTrue(header.waitForExistence(timeout: 20), "no chat header")
-        XCTAssertEqual(header.value as? String, "Tuesday's groceries", "the header does not say which chat this is")
-        XCTAssertTrue(app.buttons["Chat"].exists || app.buttons["record-new-chat"].exists)
-        XCTAssertTrue(app.buttons["record-new-chat"].exists, "no New chat button top right")
+        // The top bar names no chat (the agent chip and its dropdown went, feedback AJw_G3S2):
+        // which chat is open is the drawer's to say, checked there.
+        XCTAssertTrue(app.buttons["record-new-chat"].waitForExistence(timeout: 20), "no New chat button top right")
         // The reply lands and its screens come forward: a drag right pages back to the chat.
         XCTAssertTrue(app.descendants(matching: .any)["page-3"].staticTexts["Dinners"].waitForExistence(timeout: 25),
                       "the demo reply never landed")
@@ -78,6 +75,7 @@ final class ChatsTests: XCTestCase {
         XCTAssertFalse(app.buttons["drawer-new-chat"].exists, "the drawer still has a New chat button")
         let rows = ["c3", "c2", "c1"].map { app.buttons["drawer-chat-open-\($0)"] }
         for (i, r) in rows.enumerated() { XCTAssertTrue(r.waitForExistence(timeout: 5), "chat \(i) is not in the list") }
+        XCTAssertTrue(rows[0].isSelected, "the chat you are in, the newest one, is not the marked one")
         XCTAssertLessThan(rows[0].frame.minY, rows[1].frame.minY, "newest activity first")
         XCTAssertLessThan(rows[1].frame.minY, rows[2].frame.minY)
         XCTAssertTrue(rows[0].label.contains("Tuesday's groceries") && rows[0].label.contains("Five dinners, one list"), rows[0].label)
@@ -145,7 +143,7 @@ final class ChatsTests: XCTestCase {
         app.buttons["chat-sheet-delete"].tap()
         let openGone = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: app.buttons["drawer-chat-open-c3"])
         XCTAssertEqual(XCTWaiter.wait(for: [openGone], timeout: 5), .completed, "the open chat stayed")
-        XCTAssertEqual(header.value as? String, "Hi Basil", "the next newest did not open")
+        XCTAssertTrue(app.buttons["drawer-chat-open-c1"].isSelected, "the next newest did not open")
 
         // 6. The only chat is cleared, not deleted.
         app.buttons["drawer-chat-open-c1"].press(forDuration: 1.2)
@@ -161,13 +159,11 @@ final class ChatsTests: XCTestCase {
         app.buttons["drawer-close"].tap()
         XCTAssertTrue(app.buttons["record-new-chat"].waitForExistence(timeout: 5), "no New chat button top right")
         app.buttons["record-new-chat"].tap()
-        XCTAssertEqual(header.value as? String, "New chat")
         XCTAssertTrue(app.staticTexts["Say hi to Basil!"].waitForExistence(timeout: 5), "the empty chat is not today's empty screen")
         sleep(1)
         shot("new-chat")
         app.buttons["record-new-chat"].tap()
         sleep(1)
-        XCTAssertEqual(header.value as? String, "New chat")
         menu.tap()
         XCTAssertTrue(app.buttons["drawer-chat-open-c1"].waitForExistence(timeout: 5))
         XCTAssertEqual(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "drawer-chat-open-")).count, 1,
@@ -181,10 +177,12 @@ final class ChatsTests: XCTestCase {
         input.typeText("What should I eat before a run")
         app.buttons["Send"].tap()
         XCTAssertTrue(app.staticTexts["What should I eat before a run"].waitForExistence(timeout: 5))
-        XCTAssertEqual(header.value as? String, "New chat", "the title comes from the server, not the phone")
         menu.tap()
         XCTAssertEqual(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "drawer-chat-open-")).count, 2,
                        "the chat was not saved once something was said")
+        XCTAssertTrue(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label BEGINSWITH %@",
+                                                       "drawer-chat-open-", "New chat")).firstMatch.exists,
+                      "the title comes from the server, not the phone")
         sleep(1)
         shot("after-new")
     }
