@@ -198,14 +198,16 @@ async function synthetic(store: Store, agent: NativeAgent, line: string, opts: T
 
 /**
  * A turn the person can stop (YUI-190): its writes ask about a Stop first and its model call
- * ends when one lands. Stopped, it wrote nothing and its rows are handled.
+ * ends when one lands. Stopped, it wrote nothing and its rows are handled. Only a Stop sent at or after the
+ * newest row counts: an older Stop was meant for older work, and a Stop is never marked handled, so an
+ * old batch (rows left unhandled for days) must not let it cancel a fresh question.
  */
 async function stoppable(store: Store, agent: NativeAgent, rows: Row[], opts: TurnOptions, log: (m: string) => void,
                          run: (store: Store, opts: TurnOptions) => Promise<{ handled: boolean }>): Promise<{ handled: boolean }> {
   const real = rows.filter((r) => !r.id.startsWith(SYNTHETIC));
   if (!real.length) return run(store, opts);
   const who = (real[0] as Row & { user_id?: string }).user_id ?? agent.userId;
-  const g = guard(store, agent.id, who, real[0].created_at, { fetch: opts.fetch, poll: opts.stopPoll, chat: chatOf(real[0]) });
+  const g = guard(store, agent.id, who, real[real.length - 1].created_at, { fetch: opts.fetch, poll: opts.stopPoll, chat: chatOf(real[0]) });
   try {
     return await run(g.store, { ...opts, fetch: g.fetch, signal: g.signal });
   } catch (e) {

@@ -137,6 +137,21 @@ test("a stop before the turn began, or from someone else, stops nothing", async 
   assert.equal(store.data.rows.find((x) => x.id === r.replies[0])!.body, "Here's a beat.");
 });
 
+test("an old Stop never cancels a later question, even when an older ask is still unhandled", async () => {
+  const { store, byHandle } = await freshYui();
+  const gouda = await byHandle("gouda");
+  const old = store.say(gouda.id, "an ask nobody answered");
+  store.data.rows.find((x) => x.id === old)!.created_at = "2026-09-29T23:00:00.000Z";
+  store.data.rows.push({ id: store.id("row"), agent_id: gouda.id, sender: "user", kind: "control", body: "stop", meta: { op: "stop" },
+                         created_at: "2026-09-29T23:07:00.000Z" } as any);
+  const fresh = store.say(gouda.id, "make me a beat");
+  const m = fakeModel(() => "Here's a beat.");
+  const r = await runAgent(store, gouda.id, { provider, fetch: m.fetch });
+  assert.equal(r.replies.length, 1, "the fresh question is answered");
+  assert.equal(store.data.rows.find((x) => x.id === r.replies[0])!.body, "Here's a beat.");
+  assert.ok(store.data.rows.find((x) => x.id === fresh)!.handled_at);
+});
+
 test("isStop reads only the person's stop control", () => {
   assert.equal(isStop({ kind: "control", sender: "user", meta: { op: "stop" } }), true);
   assert.equal(isStop({ kind: "control", sender: "agent", meta: { op: "stop" } }), false);
