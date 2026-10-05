@@ -56,7 +56,7 @@ struct YuiApp: App {
             }
             .preferredColorScheme(appearance.colorScheme)
             .environment(PushCenter.shared)
-            .overlay(alignment: .bottom) { if PushCenter.shared.nudge { PushNudge() } }
+            .overlay(alignment: .bottom) { if PushCenter.shared.nudge { PushNudge(agent: agents.selected?.name) } }
             .task { await account.checkAppleCredential() }
             // Signed in with an agent: register for pushes. Sign out unregisters (Account.willSignOut).
             // A new account asks for notifications once its first agent exists, not on the first screen.
@@ -179,14 +179,18 @@ extension EnvironmentValues {
 }
 
 /// "Want a nudge when Arnold checks in?" (YUI-230): shown once, after the first plan is built.
+/// It names the agent whose plan it was: Basil, Gouda, Penny and Quill build first plans too, and
+/// a person who never met Arnold was asked about him.
 private struct PushNudge: View {
+    /// The agent on show when the plan went. Nil: "your agent".
+    var agent: String?
     @Environment(\.appTheme) private var theme
     @Environment(\.colorScheme) private var scheme
 
     var body: some View {
         let s = theme.swatch(scheme)
         VStack(alignment: .leading, spacing: theme.spacing.s) {
-            Text("Want a nudge when Arnold checks in?").font(theme.font(theme.type.body, .heavy)).foregroundStyle(s.ink)
+            Text("Want a nudge when \(agent ?? "your agent") checks in?").font(theme.font(theme.type.body, .heavy)).foregroundStyle(s.ink)
             HStack(spacing: theme.spacing.s) {
                 OptionPill(text: "Not now", fill: s.lavender, grow: true) { PushCenter.shared.answerNudge(yes: false) }
                 OptionPill(text: "Yes", fill: s.accent, ink: s.onAccent, grow: true) { PushCenter.shared.answerNudge(yes: true) }
