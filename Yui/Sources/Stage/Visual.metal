@@ -99,7 +99,7 @@ static float roundBox(float2 p, float h, float k) {
 // weights (eased by StageVisual.swift) blend them, so it morphs:
 //   idle a perfect circle that breathes     thinking a soft flower of five lobes, turning
 //   reading a football on its side          running a rounded square, a quarter turn a beat
-//   searching a drop whose point sweeps     talking a tall pill that stretches with the voice
+//   searching a drop whose point sways      talking a tall pill that stretches with the voice
 //   done the circle, one pop and one ring
 // The voice is `level` (after the look's envelope): it swells the blob and the pill.
 //
@@ -119,8 +119,9 @@ fragment float4 visualOrb(VisualVertex in [[stage_in]], constant VisualUniforms 
     float idle = clamp(1.0 - think - read - run - search - talk - done, 0.0, 1.0);
     float R = max(u.orb.z, 0.0005) * (1.0 + 0.08 * v + 0.10 * u.bands.x);
 
-    // Searching leans the whole blob toward where its point looks.
-    float look = t * 1.3 + 0.6 * sin(t * 0.65);
+    // Searching leans the whole blob toward where its point looks. The point sways from side to
+    // side across the top, like a head looking around: it never swings down over the words under it.
+    float look = 1.5707963 + 1.05 * sin(t * 0.9) + 0.3 * sin(t * 2.3);
     float2 q = p - float2(cos(look), sin(look)) * 0.22 * R * search;
     float a = atan2(q.y, q.x), r = length(q);
 
@@ -132,9 +133,9 @@ fragment float4 visualOrb(VisualVertex in [[stage_in]], constant VisualUniforms 
     float turn = (floor(beat) + sstep(0.0, 0.3, fract(beat))) * 1.5707963;
     float squeeze = 1.0 - 0.06 * exp(-fract(beat) * 7.0);
     float dRun = roundBox(rot(q, turn) / squeeze, 0.86 * R, 0.34 * R) * squeeze;
-    float dSearch = r - R * (0.86 + 0.58 * pow(max(cos(a - look), 0.0), 9.0));
+    float dSearch = r - R * (0.86 + 0.50 * pow(max(cos(a - look), 0.0), 9.0));
     // The pill breathes with the voice, slowly: no ripple chasing every syllable.
-    float dTalk = length(q / float2(0.80 - 0.06 * v, 1.14 + 0.20 * v)) - R;
+    float dTalk = length(q / float2(0.80 - 0.06 * v, 1.10 + 0.14 * v)) - R;
     dTalk -= 0.022 * R * v * sin(a * 2.0 + t * 2.2);
     float pop = 1.0 + 0.14 * exp(-since * 4.0) * cos(since * 13.0);
     float dDone = r - R * pop;

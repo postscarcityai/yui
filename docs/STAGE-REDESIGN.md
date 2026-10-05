@@ -76,9 +76,20 @@ The app half is here (Swift parser, renderer, tests). Agents cannot send `draw` 
 6. Mirror the label packing in `site/lib/yl/chunks.mjs` (`packPages`): consecutive label lines join into one chunk, and a ledger starts its own page.
 7. Telegram fallback: the caption, or the title.
 
+## Oct 4: the orb, the working screen, and the picks
+
+Chris, Oct 4: "the shaders are ok but I think they could be cleaner", "the UI is getting a little cluttered", and for the three cards waiting on a pick: decide. What was decided and built:
+
+1. **The orb is drawn clean.** A crisp edge a pixel wide, a body of solid color lit from the upper left (a glint, a thin rim), a halo that falls off smoothly, no film grain. `Visual.metal`, `visualOrb`.
+2. **The orb has a place in the layout.** A layout keeps room for it with `OrbSlot(size:)` and the shader draws it exactly there: it is the agent's face on the home and on a greeting (the badge is no longer drawn over it), the hero while the agent works, and it listens over the words while the mic is open. It glides between those places. With a page of words or one of the agent's screens up it tucks away, a soft wash of the agent's color is all that is left behind the text, and the renderer stops drawing until something changes. `StageVisual.swift`: `OrbSpot`, `OrbSlot`, `StageVisualHost`, `OrbPlace`. Other looks (`aurora`, `waves`, `grain`, `bloom`) are as they were, scrim and all.
+3. **The working screen** (ADv4muh0, t_01e1c6d4): layout A, the one with no card on the stage. The ask is a gist of 5 to 12 words (`WorkingWords.gist`; VoiceOver and the record keep all of it), the doing words are light type the agent's color runs through, the seconds float in a small piece of glass, and a tool's plain words are said in a friendlier voice (`WorkingWords.voice`: "Running a command" reads "Tinkering away"). Layout B (one glass card) was not taken.
+4. **The drawing look** (YUI-267, t_b62a024c): main keeps the blueprint look above. Directions A, B and C were built before it landed and are kept on the branch `archive/yui-267-directions`. One idea of A's came across: a `sketch frame=phone` reads as a phone (the time, the island, the bars and battery, a home bar).
+5. **One mic per job.** `FieldMic` and `NameMic` are one button (`Chat/FieldMic.swift`). A form on the stage draws no mic of its own: the bar's mic fills the page and the card keeps the line that says how.
+
+For the hub: the web's `site/lib/visual/actionshader.mjs` still draws the orb the old way (a soft edge, grain, one fixed place). Port `visualOrb` when the web stage gets layouts that place it, or leave the web as it is: nothing on the wire changed.
+
 ## Next, in order
 
 1. Ship `draw` through the hub (above), then score a live day of replies.
-2. Gesture marks on `mock` (`part touch`, `part swipe`): gap 2 in `docs/research/yl-visual-gaps.md`, and what "push tap" needed.
-3. The working state (ADv4muh0): the doing words in glass, named for what the agent is doing.
-4. A short summary of the ask over the answer, written by the agent (a `re "..."` line), in place of the first two lines of it.
+2. A short summary of the ask over the answer, written by the agent (a `re "..."` line), in place of the gist the app trims for itself.
+3. The orb's words in the shader itself (the doing words lit by the orb, not only tinted by its color), if the plain version does not feel alive enough on a phone.
