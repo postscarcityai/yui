@@ -155,7 +155,7 @@ fragment float4 visualOrb(VisualVertex in [[stage_in]], constant VisualUniforms 
 
     // Inside: the three colors run across it along the light, bent by a slow flow of two
     // soft waves (no fine octaves: detail in there read as clouds on a planet, not as light).
-    // The deep color is pulled halfway back to the tone, so the hues stay neighbors.
+    // The deep color is pulled more than halfway back to the tone, so the hues stay neighbors.
     // Thinking turns the flow over faster.
     float ts = t * (0.10 + 0.22 * think);
     float2 bend = float2(noise(n * 0.9 + float2(ts, -0.6 * ts)), noise(n * 1.1 + float2(5.2 - 0.5 * ts, 1.7 + 0.8 * ts)));
@@ -163,7 +163,7 @@ fragment float4 visualOrb(VisualVertex in [[stage_in]], constant VisualUniforms 
                + 0.38 * noise(n * 1.3 - 0.8 * bend + float2(4.1 - 0.2 * ts, 2.7 + 0.25 * ts));
     float lit = clamp(0.5 + 0.5 * dot(n, float2(-0.55, 0.83)), 0.0, 1.0);
     float g = clamp(lit * 0.9 + (flow - 0.5) * 0.55 + 0.04, 0.0, 1.0);
-    float3 deep = mix(u.c, u.a, 0.45);
+    float3 deep = mix(u.c, u.a, 0.55);
     float3 inside = mix(deep, u.a, sstep(0.0, 0.5, g));
     inside = mix(inside, u.b, sstep(0.45, 1.0, g) * 0.9);
     // Glass: a soft glint where the light lands, a thin bright rim just inside the edge,

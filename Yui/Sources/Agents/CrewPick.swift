@@ -53,7 +53,15 @@ struct CrewPickView: View {
                 .padding(.top, theme.spacing.l)
                 .padding(.bottom, theme.spacing.xl)
             }
-            .background(c.background)
+            .background {
+                // The wash the sign-in screen and the stage wear: one place from the first screen on.
+                ZStack {
+                    c.background
+                    RadialGradient(colors: [c.accent.opacity(scheme == .dark ? 0.16 : 0.10), .clear],
+                                   center: .top, startRadius: 0, endRadius: 520)
+                }
+                .ignoresSafeArea()
+            }
             .safeAreaInset(edge: .bottom) {
                 PillButton(title: startTitle, working: working) { Task { await start() } }
                     .accessibilityIdentifier("crew-start")

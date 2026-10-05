@@ -476,7 +476,7 @@ private struct DrawerHome: View {
                 DrawerHeading(text: "Shortcuts")
                 ForEach(mine) { item in
                     DrawerRow(icon: "sparkles", title: item.label, sub: item.sub, tint: c.butter,
-                              trailing: item.say?.hasSuffix(" ") == true ? "text.cursor" : "paperplane.fill") {
+                              trailing: item.say?.hasSuffix(" ") == true ? "pencil" : "paperplane.fill") {
                         close()
                         // A `show=` that was saved from a page goes to that live page (YUI-168).
                         AgentHome.tap(item, store: store, goPage: { store.openScreen($0) }, compose: compose)

@@ -682,21 +682,24 @@ struct StageFirstView: View {
             GlassEffectContainer {
                 HStack(spacing: theme.spacing.s) {
                     circle("bubble.left", c, label: "Chat", id: "stage-record", action: actions.record)
-                        .overlay(alignment: .topTrailing) {
-                            if unread > 0 {
-                                Text(unread > 99 ? "99+" : "\(unread)")
-                                    .font(.system(size: 11, weight: .heavy).monospacedDigit())
-                                    .foregroundStyle(c.onAccent)
-                                    .padding(.horizontal, 5)
-                                    .frame(minWidth: 20, minHeight: 20)
-                                    .background(c.accent, in: Capsule())
-                                    .offset(x: 2, y: -2)
-                                    .allowsHitTesting(false)
-                                    .accessibilityHidden(true)
-                            }
-                        }
                         .accessibilityValue(unread > 0 ? "\(unread) new" : "")
                     circle("square.and.pencil", c, label: "New chat", id: "stage-new-chat", action: actions.newChat)
+                }
+            }
+            // The count sits over the container, at the chat button's corner. Inside it the glass
+            // drew over the badge and only a sliver of it showed.
+            .overlay(alignment: .topLeading) {
+                if unread > 0 {
+                    Text(unread > 99 ? "99+" : "\(unread)")
+                        .font(.system(size: 11, weight: .heavy).monospacedDigit())
+                        .foregroundStyle(c.onAccent)
+                        .padding(.horizontal, 5)
+                        .frame(minWidth: 20, minHeight: 20)
+                        .background(c.accent, in: Capsule())
+                        .frame(width: 44, alignment: .trailing)
+                        .offset(x: 2, y: -2)
+                        .allowsHitTesting(false)
+                        .accessibilityHidden(true)
                 }
             }
         }
