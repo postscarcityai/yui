@@ -154,6 +154,7 @@ struct ShapesCanvas: View {
             let color = tone(it.tone, s)
             var c = base
             c.opacity = f.o
+            let bow = { (a: [Double], b: [Double]) in it.bend.map { ShapesModel.control(a, b, $0) } }
             if let a = f.a, let b = f.b, it.kind == "swipe" {
                 // A finger sliding from a to b (YUI-276): a trail that thickens and darkens toward the
                 // fingertip, which travels with the trace. +pulse swipes again, once a breath.
@@ -162,7 +163,7 @@ struct ShapesCanvas: View {
                     d = ((t - it.start - it.dur) / ShapesModel.pulse).truncatingRemainder(dividingBy: 1)
                 }
                 let at = { (x: Double) -> [Double] in
-                    f.q.map { ShapesModel.bent(a, $0, b, x).p } ?? [a[0] + (b[0] - a[0]) * x, a[1] + (b[1] - a[1]) * x]
+                    bow(a, b).map { ShapesModel.bent(a, $0, b, x).p } ?? [a[0] + (b[0] - a[0]) * x, a[1] + (b[1] - a[1]) * x]
                 }
                 let n = 12
                 for i in 0..<n where d > 0 {
@@ -185,12 +186,28 @@ struct ShapesCanvas: View {
                 }
                 continue
             }
-            if let a = f.a, let b = f.b {
-                // A line or an arrow, traced from a toward b: straight, or bent through q (YUI-276).
+            if let a = f.a, let b = f.b, it.kind == "bracket" {
+                // A bracket (YUI-297): tick, spine, tick, traced on; its label beyond the spine, on the side the ticks are not.
+                let br = ShapesModel.bracket(a, b, side: it.side ?? 1, depth: ShapesModel.tick * (sw / 0.075))
+                var path = Path()
+                path.move(to: P(br.pts[0]))
+                for q in br.pts.dropFirst() { path.addLine(to: P(q)) }
+                if !it.dash { path = path.trimmedPath(from: 0, to: f.d) }
+                c.stroke(path, with: .color(color), style: StrokeStyle(lineWidth: lw, lineCap: .round, lineJoin: .round, dash: it.dash ? dash : []))
+                if !it.label.isEmpty {
+                    var tc = c; tc.opacity = f.o * f.d
+                    let off = fs * 0.9 + abs(br.n[0]) * Double(it.label.utf16.count) * ShapesModel.glyph * fs * 0.9 / 2
+                    label(tc, it.label, at: [(a[0] + b[0]) / 2 - br.n[0] * off, (a[1] + b[1]) / 2 - br.n[1] * off], fs: fs * 0.9,
+                          width: ShapesModel.labelWidth(it, k: scene.k), u: u, color: s.ink, weight: .bold)
+                }
+                continue
+            }
+            if let a = f.a, let b = f.b, f.c == nil {
+                // A line, arrow or arc, traced from a toward b: straight, or bent through q (YUI-276).
                 var line = Path()
                 line.move(to: P(a))
                 let h: [Double], dir: [Double]
-                if let q = f.q {
+                if let q = bow(a, b) {
                     // The first d of the curve is itself a curve: a to bent(d), its control a d of the way to q.
                     let e = ShapesModel.bent(a, q, b, f.d)
                     h = e.p
@@ -204,7 +221,7 @@ struct ShapesCanvas: View {
                 let len = max(hypot(dir[0], dir[1]), 1e-9)
                 let ux = dir[0] / len, uy = dir[1] / len
                 c.stroke(line, with: .color(color), style: StrokeStyle(lineWidth: lw, lineCap: .round, dash: it.dash ? dash : []))
-                if it.kind == "arrow" && f.d > 0.05 {
+                if (it.kind == "arrow" || it.kind == "arc") && f.d > 0.05 {
                     let k = 0.34 * (sw / 0.07), sn = sin(0.5), cs = cos(0.5)
                     var head = Path()
                     head.move(to: P([h[0] - k * (ux * cs - uy * sn), h[1] - k * (uy * cs + ux * sn)]))
@@ -215,7 +232,7 @@ struct ShapesCanvas: View {
                 if !it.label.isEmpty {
                     var tc = c; tc.opacity = f.o * f.d
                     // Over the middle of the line, or the top of the bow.
-                    let m = f.q.map { ShapesModel.bent(a, $0, b, 0.5).p } ?? [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2]
+                    let m = bow(a, b).map { ShapesModel.bent(a, $0, b, 0.5).p } ?? [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2]
                     label(tc, it.label, at: [m[0], m[1] - fs * 0.75], fs: fs * 0.9,
                           width: ShapesModel.labelWidth(it, k: scene.k), u: u, color: s.ink, weight: .bold)
                 }
@@ -262,6 +279,14 @@ struct ShapesCanvas: View {
             }
             guard let cen = f.c, let sz = it.size else { continue }
             let scaled = [sz[0] * f.s, sz[1] * f.s]
+            if it.leader, let a = f.a, let b = f.b {
+                // A callout's leader (YUI-297): a straight line from the box to what it points at, ending in a dot.
+                var lead = Path()
+                lead.move(to: P(a)); lead.addLine(to: P(b))
+                c.stroke(lead, with: .color(color), style: StrokeStyle(lineWidth: lw, lineCap: .round, dash: it.dash ? dash : []))
+                let r = sw * 1.6
+                c.fill(Path(ellipseIn: CGRect(x: (b[0] - r) * u, y: (b[1] - r) * u, width: 2 * r * u, height: 2 * r * u)), with: .color(color))
+            }
             if it.kind == "venn" {
                 // Circles washed in their tones, so where they overlap reads darker; a label in each part (YUI-276).
                 let v = ShapesModel.venn(it, center: cen, s: f.s, fs: fs)

@@ -100,13 +100,13 @@ final class ShapesMarksTests: XCTestCase {
         let sc = try scene("shapes\nshape region A pts=1,1|2,1|2,2\nshape region B pts=1,1|2,2\nshape arrow from=1,1 to=3,1 bend=5")
         XCTAssertEqual(sc.items.map(\.kind), ["region", "arrow"])
         XCTAssertEqual(sc.items.first?.fill, false)
-        XCTAssertEqual(sc.items.last?.bend, 1)
+        XCTAssertEqual(sc.items.last?.bend, 2)
     }
 
     func testABentArrowRunsThroughItsControlPoint() throws {
         let sc = try scene("shapes w=10 h=6\nshape arrow from=1,3 to=9,3 bend=0.25")
         let f = try XCTUnwrap(ShapesModel.frame(sc, at: .infinity).first)
-        near(f.q, [5, -1], "the middle stands off a quarter of the length, to the left of the way it goes")
+        near(f.a.flatMap { a in f.b.map { ShapesModel.control(a, $0, 0.25) } }, [5, -1], "the middle stands off a quarter of the length, to the left of the way it goes")
         let mid = ShapesModel.bent([0, 0], [5, -5], [10, 0], 0.5)
         near(mid.p, [5, -2.5], "halfway")
         near(mid.dir, [10, 0], "heading")

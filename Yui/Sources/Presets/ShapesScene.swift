@@ -8,8 +8,9 @@ import YuiLines
 // Pure values, no SwiftUI: ShapesPreset draws what frame(at:) returns.
 
 enum ShapesModel {
-    static let closed: Set<String> = ["circle", "box", "pill", "dot", "blob", "text", "venn", "contour", "tap"]
-    static let connectors: Set<String> = ["line", "arrow", "swipe"]
+    static let closed: Set<String> = ["circle", "box", "pill", "dot", "blob", "text", "venn", "contour", "tap", "callout"]
+    /// `arc` is an arrow that bends; `bracket` spans two places with a label beyond it (YUI-297).
+    static let connectors: Set<String> = ["line", "arrow", "swipe", "arc", "bracket"]
     /// Kinds drawn through points: an open curve, a closed outline, a hand-drawn stroke (YUI-276).
     static let traced: Set<String> = ["path", "region", "doodle"]
     static let kinds: Set<String> = closed.union(connectors).union(traced)
@@ -18,7 +19,7 @@ enum ShapesModel {
     /// Default sizes in canvas units, width and height.
     static let defaultSize: [String: [Double]] = ["circle": [2, 2], "box": [3, 2], "pill": [3, 1.2], "dot": [0.5, 0.5],
                                                   "blob": [2.6, 2.2], "text": [3, 0.9],
-                                                  "venn": [5.2, 3.2], "contour": [3.2, 2.4], "doodle": [2.4, 1.6], "tap": [0.9, 0.9]]
+                                                  "venn": [5.2, 3.2], "contour": [3.2, 2.4], "doodle": [2.4, 1.6], "tap": [0.9, 0.9], "callout": [2.6, 1]]
     /// Short labels the new kinds draw are capped: at most three words and 18 characters, whole words
     /// while they fit, then "…" (YUI-276).
     static let capWords = 3, capChars = 18
@@ -26,12 +27,15 @@ enum ShapesModel {
     /// A swipe with dir= and no to= runs this far that way.
     static let swipe = 3.0
     static let dirs: [String: [Double]] = ["left": [-1, 0], "right": [1, 0], "up": [0, -1], "down": [0, 1]]
+    /// How far an arc bends by default (a share of its length, the side is the sign), and how deep a bracket's ticks run (YUI-297).
+    static let bendDefault = 0.35
+    static let tick = 0.3
     /// A Venn of three sets is rounder than one of two.
     static let venn3: [Double] = [4.8, 4.56]
     /// Kinds whose height keeps their proportions when size= is one number.
-    static let keeps: Set<String> = ["pill", "box", "text", "venn", "contour", "doodle"]
+    static let keeps: Set<String> = ["pill", "box", "text", "venn", "contour", "doodle", "callout"]
     /// Kinds that trace themselves on unless told otherwise.
-    static let traces: Set<String> = ["line", "arrow", "path", "region", "doodle", "contour", "swipe"]
+    static let traces: Set<String> = ["line", "arrow", "path", "region", "doodle", "contour", "swipe", "arc", "bracket"]
     /// A Venn's circles take the shape's tone, then the next ones in this order.
     static let cycle = ["accent", "mint", "lavender", "butter"]
     // The clock, in seconds.
@@ -42,7 +46,7 @@ enum ShapesModel {
     /// Label size as a share of the drawing's width, so text reads the same at any w.
     static let label = 0.042
     /// How much of a closed shape's width its label may use.
-    static let share: [String: Double] = ["circle": 0.78, "blob": 0.74, "box": 0.88, "pill": 0.8]
+    static let share: [String: Double] = ["circle": 0.78, "blob": 0.74, "box": 0.88, "pill": 0.8, "callout": 0.88]
     static let rowMin = 0.7
     static let glyph = 0.56
     static let line = 1.15
@@ -77,6 +81,10 @@ enum ShapesModel {
         var rings: Int? = nil
         /// A connector's bow: the share of its length its middle stands off, + to the left of the way it goes.
         var bend: Double? = nil
+        /// A bracket's side: 1 puts the ticks up when it runs left to right, -1 the other way (YUI-297).
+        var side: Double? = nil
+        /// A callout's leader: the line from its box to where `to=` points (YUI-297).
+        var leader = false
     }
 
     struct Scene: Equatable {
@@ -105,8 +113,6 @@ enum ShapesModel {
         var c: [Double]? = nil
         var a: [Double]? = nil
         var b: [Double]? = nil
-        /// A bent connector's control point: it runs a to b as a curve through q (YUI-276).
-        var q: [Double]? = nil
     }
 
     // MARK: values as the JS model reads them
@@ -244,6 +250,10 @@ enum ShapesModel {
                     if !pairs.isEmpty { item.pairs = pairs }
                 }
                 if kind == "contour" { item.rings = Int(clamp((num(p["rings"]) ?? 4).rounded(), 2, 8)) }
+                // A callout points at where `to=` says: a shape's id or a point (YUI-297).
+                if kind == "callout", p["to"] != nil, p["to"] != .bool(true), let to = end(p["to"], nil, parts, s.i, 1) {
+                    item.from = .ref(s.i); item.to = to; item.leader = true
+                }
             } else if traced.contains(kind) {
                 var pts = (p["pts"]?.array ?? []).compactMap { point($0) }
                 // A doodle with no points but a place is a ring scribbled round it (YUI-276).
@@ -265,7 +275,8 @@ enum ShapesModel {
                     item.to = end(p["to"], nil, parts, s.i, 1)
                 }
                 if item.from == nil || item.to == nil { continue }
-                if let bend = num(p["bend"]), bend != 0 { item.bend = clamp(bend, -1, 1) }
+                if kind == "bracket" { item.side = (num(p["bend"]) ?? 1) < 0 ? -1 : 1 }
+                else if kind == "arc" || p["bend"] != nil { item.bend = clamp(num(p["bend"]) ?? bendDefault, -2, 2) }
             }
             item.dur = durations[item.motion]!
             items.append(item)
@@ -290,7 +301,7 @@ enum ShapesModel {
             if let given = size(s.p["size"], s.kind, s.p) { sz = given }
             else {
                 switch s.kind {
-                case "box":
+                case "box", "callout":
                     let w = max(2.25, widest / share["box"]! + 0.3)
                     sz = [w, max(1.5, lines(lab, w * share["box"]!) * line * fs + 0.5)]
                 case "pill":
@@ -393,19 +404,25 @@ enum ShapesModel {
             let B: Frame? = if case .ref(let r) = to { now[r] } else { nil }
             let a0 = A?.c ?? { if case .pt(let p) = from { p } else { [0, 0] } }()
             let b0 = B?.c ?? { if case .pt(let p) = to { p } else { [0, 0] } }()
-            if let bend = out[j].item.bend {
-                // A curve through q, its control point: its middle stands off bend times its length (YUI-276).
-                let dx = b0[0] - a0[0], dy = b0[1] - a0[1]
-                let q = [(a0[0] + b0[0]) / 2 + 2 * bend * dy, (a0[1] + b0[1]) / 2 - 2 * bend * dx]
-                out[j].q = q
-                out[j].a = A.map { edge($0, toward: q) } ?? a0
-                out[j].b = B.map { edge($0, toward: q) } ?? b0
-            } else {
-                out[j].a = A.map { edge($0, toward: b0) } ?? a0
-                out[j].b = B.map { edge($0, toward: a0) } ?? b0
-            }
+            out[j].a = A.map { edge($0, toward: b0) } ?? a0
+            out[j].b = B.map { edge($0, toward: a0) } ?? b0
         }
         return out
+    }
+
+    /// A bent connector's control point: its middle stands off `bend` times its length, + to the left of the way it goes.
+    static func control(_ a: [Double], _ b: [Double], _ bend: Double) -> [Double] {
+        let dx = b[0] - a[0], dy = b[1] - a[1]
+        return [(a[0] + b[0]) / 2 + 2 * bend * dy, (a[1] + b[1]) / 2 - 2 * bend * dx]
+    }
+
+    /// A bracket from a to b: tick, spine, tick, the ticks to `side` (1: up when a to b runs left to right).
+    /// The corner points, and the unit direction the ticks point so the label can sit on the other side.
+    static func bracket(_ a: [Double], _ b: [Double], side: Double, depth: Double) -> (pts: [[Double]], n: [Double]) {
+        let dx = b[0] - a[0], dy = b[1] - a[1]
+        let len = hypot(dx, dy) == 0 ? 1 : hypot(dx, dy)
+        let n = [dy / len * side, -dx / len * side]
+        return ([[a[0] + n[0] * depth, a[1] + n[1] * depth], a, b, [b[0] + n[0] * depth, b[1] + n[1] * depth]], n)
     }
 
     /// A point on a curved connector, `t` from 0 (a) to 1 (b), and the way it heads there.
@@ -801,14 +818,14 @@ enum ShapesModel {
             return it.label.isEmpty ? it.kind : it.label
         }
         var joined = Set<Int>()
-        for it in sc.items where it.from != nil && name(it.from) != nil && name(it.to) != nil {
+        for it in sc.items where it.from != nil && !it.leader && name(it.from) != nil && name(it.to) != nil {
             if case .ref(let a)? = it.from { joined.insert(a) }
             if case .ref(let b)? = it.to { joined.insert(b) }
         }
         var bits: [String] = []
         var tail: Int? = nil
         for it in sc.items {
-            if it.from != nil {
+            if it.from != nil && !it.leader {
                 guard let a = name(it.from), let b = name(it.to) else {
                     // A swipe says so: "swipe, slide to cancel" (YUI-276).
                     let words = it.kind == "swipe" ? ["swipe", it.label].filter { !$0.isEmpty }.joined(separator: ", ") : it.label

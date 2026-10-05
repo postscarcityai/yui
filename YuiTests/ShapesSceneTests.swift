@@ -75,6 +75,9 @@ final class ShapesSceneTests: XCTestCase {
                 XCTAssertEqual(it.pairs ?? [], j["pairs"] as? [String] ?? [], "\(w) pairs")
                 XCTAssertEqual(it.rings, j["rings"] as? Int, "\(w) rings")
                 near(it.bend, j["bend"], "\(w) bend")
+                // Callouts and brackets (YUI-297).
+                XCTAssertEqual(it.leader, j["leader"] as? Bool ?? false, "\(w) leader")
+                near(it.side, j["side"], "\(w) side")
             }
             let frames = try XCTUnwrap(c["frames"] as? [String: [[String: Any]]])
             for (key, list) in frames {
@@ -85,7 +88,6 @@ final class ShapesSceneTests: XCTestCase {
                     let w = "\(name) t=\(key) #\(f.item.i)"
                     near(f.o, j["o"], "\(w) o"); near(f.s, j["s"], "\(w) s"); near(f.d, j["d"], "\(w) d")
                     near(f.c, j["c"], "\(w) c"); near(f.a, j["a"], "\(w) a"); near(f.b, j["b"], "\(w) b")
-                    near(f.q, j["q"], "\(w) q")
                 }
             }
             let labels = c["labels"] as? [String: [String]] ?? [:]

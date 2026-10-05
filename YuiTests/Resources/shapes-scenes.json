@@ -653,7 +653,7 @@
     ]
    },
    "marks": {},
-   "text": "How an ask reaches your phone. You → Board → Lane → Phone (ships). You ask, it lands on the board."
+   "text": "How an ask reaches your phone. You \u2192 Board \u2192 Lane \u2192 Phone (ships). You ask, it lands on the board."
   },
   {
    "name": "a crowded row scales down, labels wrap",
@@ -1306,7 +1306,7 @@
     ]
    },
    "marks": {},
-   "text": "Heat pump loop. Outside air → Outdoor coil → Compressor → Indoor coil"
+   "text": "Heat pump loop. Outside air \u2192 Outdoor coil \u2192 Compressor \u2192 Indoor coil"
   },
   {
    "name": "placed shapes, ids, a dashed arrow, a path",
@@ -1768,7 +1768,7 @@
     ]
    },
    "marks": {},
-   "text": "Where the time goes. drawing, Thinking → dot. Most of it is thinking."
+   "text": "Where the time goes. drawing, Thinking \u2192 dot. Most of it is thinking."
   },
   {
    "name": "move, lines between points, a shape kept on the canvas",
@@ -2562,7 +2562,7 @@
     ]
    },
    "marks": {},
-   "text": "Six → Two"
+   "text": "Six \u2192 Two"
   },
   {
    "name": "a lone shape",
@@ -3358,7 +3358,7 @@
      }
     ]
    },
-   "text": "Both → Done"
+   "text": "Both \u2192 Done"
   },
   {
    "name": "a region, a contour and curved connectors",
@@ -3568,12 +3568,8 @@
        5.6
       ],
       "b": [
-       4.4514,
-       2.2114
-      ],
-      "q": [
-       1.68,
-       0.8
+       4.4611,
+       3.8002
       ]
      },
      {
@@ -3588,10 +3584,6 @@
       "b": [
        9,
        0.5
-      ],
-      "q": [
-       5,
-       3.7
       ]
      }
     ],
@@ -3622,12 +3614,8 @@
        5.6
       ],
       "b": [
-       4.4514,
-       2.2114
-      ],
-      "q": [
-       1.68,
-       0.8
+       4.4611,
+       3.8002
       ]
      },
      {
@@ -3642,10 +3630,6 @@
       "b": [
        9,
        0.5
-      ],
-      "q": [
-       5,
-       3.7
       ]
      }
     ],
@@ -3676,12 +3660,8 @@
        5.6
       ],
       "b": [
-       4.4514,
-       2.2114
-      ],
-      "q": [
-       1.68,
-       0.8
+       4.4611,
+       3.8002
       ]
      },
      {
@@ -3696,10 +3676,6 @@
       "b": [
        9,
        0.5
-      ],
-      "q": [
-       5,
-       3.7
       ]
      }
     ],
@@ -3730,12 +3706,8 @@
        5.6
       ],
       "b": [
-       4.4514,
-       2.2114
-      ],
-      "q": [
-       1.68,
-       0.8
+       4.4611,
+       3.8002
       ]
      },
      {
@@ -3750,10 +3722,6 @@
       "b": [
        9,
        0.5
-      ],
-      "q": [
-       5,
-       3.7
       ]
      }
     ],
@@ -3784,12 +3752,8 @@
        5.6
       ],
       "b": [
-       4.4514,
-       2.2114
-      ],
-      "q": [
-       1.68,
-       0.8
+       4.4611,
+       3.8002
       ]
      },
      {
@@ -3804,10 +3768,6 @@
       "b": [
        9,
        0.5
-      ],
-      "q": [
-       5,
-       3.7
       ]
      }
     ]
@@ -4053,10 +4013,6 @@
       "b": [
        7,
        3
-      ],
-      "q": [
-       10.6,
-       6.1
       ]
      }
     ],
@@ -4085,10 +4041,6 @@
       "b": [
        7,
        3
-      ],
-      "q": [
-       10.6,
-       6.1
       ]
      }
     ],
@@ -4117,10 +4069,6 @@
       "b": [
        7,
        3
-      ],
-      "q": [
-       10.6,
-       6.1
       ]
      }
     ],
@@ -4149,10 +4097,6 @@
       "b": [
        7,
        3
-      ],
-      "q": [
-       10.6,
-       6.1
       ]
      }
     ],
@@ -4181,10 +4125,6 @@
       "b": [
        7,
        3
-      ],
-      "q": [
-       10.6,
-       6.1
       ]
      }
     ]
@@ -4258,7 +4198,7 @@
       "i": 0,
       "id": "n2",
       "kind": "venn",
-      "label": "The people who…",
+      "label": "The people who\u2026",
       "tone": "accent",
       "fill": true,
       "dash": false,
@@ -4274,12 +4214,12 @@
        4.56
       ],
       "sets": [
-       "Product design…",
-       "Engineering and…",
+       "Product design\u2026",
+       "Engineering and\u2026",
        "Words"
       ],
       "pairs": [
-       "Mocks and…",
+       "Mocks and\u2026",
        "Sketch",
        "Docs"
       ],
@@ -4289,7 +4229,7 @@
       "i": 1,
       "id": "n3",
       "kind": "region",
-      "label": "A very long…",
+      "label": "A very long\u2026",
       "tone": "accent",
       "fill": false,
       "dash": false,
@@ -4320,7 +4260,7 @@
       "i": 2,
       "id": "n4",
       "kind": "contour",
-      "label": "The highest point…",
+      "label": "The highest point\u2026",
       "tone": "accent",
       "fill": false,
       "dash": false,
@@ -4487,15 +4427,15 @@
     "0": [
      "The",
      "people",
-     "who…"
+     "who\u2026"
     ],
     "1": [
-     "A very long…"
+     "A very long\u2026"
     ],
     "2": [
      "The",
      "highest",
-     "point…"
+     "point\u2026"
     ]
    },
    "marks": {
@@ -4505,11 +4445,11 @@
        2.5251,
        2.1006
       ],
-      "text": "Product design…",
+      "text": "Product design\u2026",
       "width": 1.5834,
       "lines": [
        "Product",
-       "design…"
+       "design\u2026"
       ],
       "fs": 0.3856
      },
@@ -4518,11 +4458,11 @@
        5.4749,
        2.1006
       ],
-      "text": "Engineering and…",
+      "text": "Engineering and\u2026",
       "width": 1.5834,
       "lines": [
        "Engineering",
-       "and…"
+       "and\u2026"
       ],
       "fs": 0.2999
      },
@@ -4543,11 +4483,11 @@
        4,
        2.6541
       ],
-      "text": "The people who…",
+      "text": "The people who\u2026",
       "width": 0.7454,
       "lines": [
        "The",
-       "people who…"
+       "people who\u2026"
       ],
       "fs": 0.3528,
       "middle": true
@@ -4557,11 +4497,11 @@
        4,
        1.9806
       ],
-      "text": "Mocks and…",
+      "text": "Mocks and\u2026",
       "width": 0.9342,
       "lines": [
        "Mocks",
-       "and…"
+       "and\u2026"
       ],
       "fs": 0.3213
      },
@@ -4598,7 +4538,7 @@
       ],
       "width": 4.5633,
       "lines": [
-       "A very long…"
+       "A very long\u2026"
       ],
       "fs": 0.4536
      }
@@ -4611,13 +4551,13 @@
       ],
       "lines": [
        "The",
-       "highest point…"
+       "highest point\u2026"
       ],
       "fs": 0.3528
      }
     ]
    },
-   "text": "Who does what. Product design…, Engineering and… and Words overlap: The people who…, A very long…, The highest point…"
+   "text": "Who does what. Product design\u2026, Engineering and\u2026 and Words overlap: The people who\u2026, A very long\u2026, The highest point\u2026"
   },
   {
    "name": "a tap and swipes, one by its direction",
@@ -4786,10 +4726,6 @@
       "b": [
        5,
        1.5
-      ],
-      "q": [
-       3.8,
-       3
       ]
      }
     ],
@@ -4830,10 +4766,6 @@
       "b": [
        5,
        1.5
-      ],
-      "q": [
-       3.8,
-       3
       ]
      }
     ],
@@ -4874,10 +4806,6 @@
       "b": [
        5,
        1.5
-      ],
-      "q": [
-       3.8,
-       3
       ]
      }
     ],
@@ -4918,10 +4846,6 @@
       "b": [
        5,
        1.5
-      ],
-      "q": [
-       3.8,
-       3
       ]
      }
     ],
@@ -4962,10 +4886,6 @@
       "b": [
        5,
        1.5
-      ],
-      "q": [
-       3.8,
-       3
       ]
      }
     ]
@@ -5111,6 +5031,1409 @@
    "labels": {},
    "marks": {},
    "text": "Fix this"
+  },
+  {
+   "name": "drawing kit: a Venn, filled circles that cross blend",
+   "input": "shapes w=10 h=7\nshape circle at=3.8,2.6 size=4 tone=accent +fill +draw\nshape circle at=6.2,2.6 size=4 tone=mint +fill +draw\nshape circle at=5,4.6 size=4 tone=lavender +fill +draw\nshape text Yui at=5,3.5",
+   "members": [
+    {
+     "id": "n2",
+     "props": {
+      "kind": "circle",
+      "fill": true,
+      "draw": true,
+      "at": "3.8,2.6",
+      "size": 4,
+      "tone": "accent"
+     }
+    },
+    {
+     "id": "n3",
+     "props": {
+      "kind": "circle",
+      "fill": true,
+      "draw": true,
+      "at": "6.2,2.6",
+      "size": 4,
+      "tone": "mint"
+     }
+    },
+    {
+     "id": "n4",
+     "props": {
+      "kind": "circle",
+      "fill": true,
+      "draw": true,
+      "at": "5,4.6",
+      "size": 4,
+      "tone": "lavender"
+     }
+    },
+    {
+     "id": "n5",
+     "props": {
+      "kind": "text",
+      "label": "Yui",
+      "at": "5,3.5"
+     }
+    }
+   ],
+   "head": {
+    "w": 10,
+    "h": 7
+   },
+   "scene": {
+    "w": 10,
+    "h": 7,
+    "fs": 0.42,
+    "title": "",
+    "caption": "",
+    "items": [
+     {
+      "i": 0,
+      "id": "n2",
+      "kind": "circle",
+      "label": "",
+      "tone": "accent",
+      "fill": true,
+      "dash": false,
+      "motion": "draw",
+      "pulse": false,
+      "start": 0,
+      "at": [
+       3.8,
+       2.6
+      ],
+      "size": [
+       4,
+       4
+      ],
+      "dur": 0.7,
+      "blend": true
+     },
+     {
+      "i": 1,
+      "id": "n3",
+      "kind": "circle",
+      "label": "",
+      "tone": "mint",
+      "fill": true,
+      "dash": false,
+      "motion": "draw",
+      "pulse": false,
+      "start": 0.35,
+      "at": [
+       6.2,
+       2.6
+      ],
+      "size": [
+       4,
+       4
+      ],
+      "dur": 0.7,
+      "blend": true
+     },
+     {
+      "i": 2,
+      "id": "n4",
+      "kind": "circle",
+      "label": "",
+      "tone": "lavender",
+      "fill": true,
+      "dash": false,
+      "motion": "draw",
+      "pulse": false,
+      "start": 0.7,
+      "at": [
+       5,
+       4.6
+      ],
+      "size": [
+       4,
+       4
+      ],
+      "dur": 0.7,
+      "blend": true
+     },
+     {
+      "i": 3,
+      "id": "n5",
+      "kind": "text",
+      "label": "Yui",
+      "tone": "ink",
+      "fill": false,
+      "dash": false,
+      "motion": "fade",
+      "pulse": false,
+      "start": 1.05,
+      "at": [
+       5,
+       3.5
+      ],
+      "size": [
+       3,
+       0.9
+      ],
+      "dur": 0.35
+     }
+    ],
+    "total": 1.4
+   },
+   "frames": {
+    "2": [
+     {
+      "i": 0,
+      "o": 1,
+      "s": 1,
+      "d": 1,
+      "c": [
+       3.8,
+       2.6
+      ]
+     },
+     {
+      "i": 1,
+      "o": 1,
+      "s": 1,
+      "d": 1,
+      "c": [
+       6.2,
+       2.6
+      ]
+     },
+     {
+      "i": 2,
+      "o": 1,
+      "s": 1,
+      "d": 1,
+      "c": [
+       5,
+       4.6
+      ]
+     },
+     {
+      "i": 3,
+      "o": 1,
+      "s": 1,
+      "d": 1,
+      "c": [
+       5,
+       3.5
+      ]
+     }
+    ],
+    "0.2": [
+     {
+      "i": 0,
+      "o": 1,
+      "s": 1,
+      "d": 0.6356,
+      "c": [
+       3.8,
+       2.6
+      ]
+     },
+     {
+      "i": 1,
+      "o": 0,
+      "s": 1,
+      "d": 0,
+      "c": [
+       6.2,
+       2.6
+      ]
+     },
+     {
+      "i": 2,
+      "o": 0,
+      "s": 1,
+      "d": 0,
+      "c": [
+       5,
+       4.6
+      ]
+     },
+     {
+      "i": 3,
+      "o": 0,
+      "s": 1,
+      "d": 1,
+      "c": [
+       5,
+       3.5
+      ]
+     }
+    ],
+    "0.9": [
+     {
+      "i": 0,
+      "o": 1,
+      "s": 1,
+      "d": 1,
+      "c": [
+       3.8,
+       2.6
+      ]
+     },
+     {
+      "i": 1,
+      "o": 1,
+      "s": 1,
+      "d": 0.9902,
+      "c": [
+       6.2,
+       2.6
+      ]
+     },
+     {
+      "i": 2,
+      "o": 1,
+      "s": 1,
+      "d": 0.6356,
+      "c": [
+       5,
+       4.6
+      ]
+     },
+     {
+      "i": 3,
+      "o": 0,
+      "s": 1,
+      "d": 1,
+      "c": [
+       5,
+       3.5
+      ]
+     }
+    ],
+    "4.3": [
+     {
+      "i": 0,
+      "o": 1,
+      "s": 1,
+      "d": 1,
+      "c": [
+       3.8,
+       2.6
+      ]
+     },
+     {
+      "i": 1,
+      "o": 1,
+      "s": 1,
+      "d": 1,
+      "c": [
+       6.2,
+       2.6
+      ]
+     },
+     {
+      "i": 2,
+      "o": 1,
+      "s": 1,
+      "d": 1,
+      "c": [
+       5,
+       4.6
+      ]
+     },
+     {
+      "i": 3,
+      "o": 1,
+      "s": 1,
+      "d": 1,
+      "c": [
+       5,
+       3.5
+      ]
+     }
+    ],
+    "still": [
+     {
+      "i": 0,
+      "o": 1,
+      "s": 1,
+      "d": 1,
+      "c": [
+       3.8,
+       2.6
+      ]
+     },
+     {
+      "i": 1,
+      "o": 1,
+      "s": 1,
+      "d": 1,
+      "c": [
+       6.2,
+       2.6
+      ]
+     },
+     {
+      "i": 2,
+      "o": 1,
+      "s": 1,
+      "d": 1,
+      "c": [
+       5,
+       4.6
+      ]
+     },
+     {
+      "i": 3,
+      "o": 1,
+      "s": 1,
+      "d": 1,
+      "c": [
+       5,
+       3.5
+      ]
+     }
+    ]
+   },
+   "labels": {
+    "3": [
+     "Yui"
+    ]
+   },
+   "text": "Yui"
+  },
+  {
+   "name": "drawing kit: a closed path, a contour, a callout with a leader",
+   "input": "shapes w=10 h=6\nshape contour at=4.4,3 size=7,4.8 rings=6 tone=mint +fill\nshape dot Peak at=4.4,3 tone=accent\nshape path pts=7,0.8|9.2,1.4|9.4,3|8,3.8|6.9,2.4 +close +fill +dash tone=butter\nshape callout \"Flood zone\" at=8.2,5.2 to=8.3,2.6 tone=butter",
+   "members": [
+    {
+     "id": "n2",
+     "props": {
+      "kind": "contour",
+      "fill": true,
+      "at": "4.4,3",
+      "size": "7,4.8",
+      "rings": 6,
+      "tone": "mint"
+     }
+    },
+    {
+     "id": "n3",
+     "props": {
+      "kind": "dot",
+      "label": "Peak",
+      "at": "4.4,3",
+      "tone": "accent"
+     }
+    },
+    {
+     "id": "n4",
+     "props": {
+      "kind": "path",
+      "close": true,
+      "fill": true,
+      "dash": true,
+      "pts": [
+       "7,0.8",
+       "9.2,1.4",
+       "9.4,3",
+       "8,3.8",
+       "6.9,2.4"
+      ],
+      "tone": "butter"
+     }
+    },
+    {
+     "id": "n5",
+     "props": {
+      "kind": "callout",
+      "label": "Flood zone",
+      "at": "8.2,5.2",
+      "to": "8.3,2.6",
+      "tone": "butter"
+     }
+    }
+   ],
+   "head": {
+    "w": 10,
+    "h": 6
+   },
+   "scene": {
+    "w": 10,
+    "h": 6,
+    "fs": 0.42,
+    "title": "",
+    "caption": "",
+    "items": [
+     {
+      "i": 0,
+      "id": "n2",
+      "kind": "contour",
+      "label": "",
+      "tone": "mint",
+      "fill": true,
+      "dash": false,
+      "motion": "draw",
+      "pulse": false,
+      "start": 0,
+      "at": [
+       4.4,
+       3
+      ],
+      "size": [
+       7,
+       4.8
+      ],
+      "rings": 6,
+      "dur": 0.7,
+      "blend": true
+     },
+     {
+      "i": 1,
+      "id": "n3",
+      "kind": "dot",
+      "label": "Peak",
+      "tone": "accent",
+      "fill": true,
+      "dash": false,
+      "motion": "fade",
+      "pulse": false,
+      "start": 0.35,
+      "at": [
+       4.4,
+       3
+      ],
+      "size": [
+       0.5,
+       0.5
+      ],
+      "dur": 0.35
+     },
+     {
+      "i": 2,
+      "id": "n4",
+      "kind": "path",
+      "label": "",
+      "tone": "butter",
+      "fill": true,
+      "dash": true,
+      "motion": "draw",
+      "pulse": false,
+      "start": 0.7,
+      "pts": [
+       [
+        7,
+        0.8
+       ],
+       [
+        9.2,
+        1.4
+       ],
+       [
+        9.4,
+        3
+       ],
+       [
+        8,
+        3.8
+       ],
+       [
+        6.9,
+        2.4
+       ]
+      ],
+      "close": true,
+      "dur": 0.7,
+      "blend": true
+     },
+     {
+      "i": 3,
+      "id": "n5",
+      "kind": "callout",
+      "label": "Flood zone",
+      "tone": "butter",
+      "fill": false,
+      "dash": false,
+      "motion": "fade",
+      "pulse": false,
+      "start": 1.05,
+      "at": [
+       8.2,
+       5.2
+      ],
+      "size": [
+       2.6,
+       1
+      ],
+      "from": {
+       "ref": 3
+      },
+      "to": {
+       "pt": [
+        8.3,
+        2.6
+       ]
+      },
+      "leader": true,
+      "dur": 0.35
+     }
+    ],
+    "total": 1.4
+   },
+   "frames": {
+    "2": [
+     {
+      "i": 0,
+      "o": 1,
+      "s": 1,
+      "d": 1,
+      "c": [
+       4.4,
+       3
+      ]
+     },
+     {
+      "i": 1,
+      "o": 1,
+      "s": 1,
+      "d": 1,
+      "c": [
+       4.4,
+       3
+      ]
+     },
+     {
+      "i": 2,
+      "o": 1,
+      "s": 1,
+      "d": 1
+     },
+     {
+      "i": 3,
+      "o": 1,
+      "s": 1,
+      "d": 1,
+      "c": [
+       8.2,
+       5.2
+      ],
+      "a": [
+       8.225,
+       4.5501
+      ],
+      "b": [
+       8.3,
+       2.6
+      ]
+     }
+    ],
+    "0.2": [
+     {
+      "i": 0,
+      "o": 1,
+      "s": 1,
+      "d": 0.6356,
+      "c": [
+       4.4,
+       3
+      ]
+     },
+     {
+      "i": 1,
+      "o": 0,
+      "s": 1,
+      "d": 1,
+      "c": [
+       4.4,
+       3
+      ]
+     },
+     {
+      "i": 2,
+      "o": 0,
+      "s": 1,
+      "d": 0
+     },
+     {
+      "i": 3,
+      "o": 0,
+      "s": 1,
+      "d": 1,
+      "c": [
+       8.2,
+       5.2
+      ],
+      "a": [
+       8.225,
+       4.5501
+      ],
+      "b": [
+       8.3,
+       2.6
+      ]
+     }
+    ],
+    "0.9": [
+     {
+      "i": 0,
+      "o": 1,
+      "s": 1,
+      "d": 1,
+      "c": [
+       4.4,
+       3
+      ]
+     },
+     {
+      "i": 1,
+      "o": 1,
+      "s": 1,
+      "d": 1,
+      "c": [
+       4.4,
+       3
+      ]
+     },
+     {
+      "i": 2,
+      "o": 1,
+      "s": 1,
+      "d": 0.6356
+     },
+     {
+      "i": 3,
+      "o": 0,
+      "s": 1,
+      "d": 1,
+      "c": [
+       8.2,
+       5.2
+      ],
+      "a": [
+       8.225,
+       4.5501
+      ],
+      "b": [
+       8.3,
+       2.6
+      ]
+     }
+    ],
+    "4.3": [
+     {
+      "i": 0,
+      "o": 1,
+      "s": 1,
+      "d": 1,
+      "c": [
+       4.4,
+       3
+      ]
+     },
+     {
+      "i": 1,
+      "o": 1,
+      "s": 1,
+      "d": 1,
+      "c": [
+       4.4,
+       3
+      ]
+     },
+     {
+      "i": 2,
+      "o": 1,
+      "s": 1,
+      "d": 1
+     },
+     {
+      "i": 3,
+      "o": 1,
+      "s": 1,
+      "d": 1,
+      "c": [
+       8.2,
+       5.2
+      ],
+      "a": [
+       8.225,
+       4.5501
+      ],
+      "b": [
+       8.3,
+       2.6
+      ]
+     }
+    ],
+    "still": [
+     {
+      "i": 0,
+      "o": 1,
+      "s": 1,
+      "d": 1,
+      "c": [
+       4.4,
+       3
+      ]
+     },
+     {
+      "i": 1,
+      "o": 1,
+      "s": 1,
+      "d": 1,
+      "c": [
+       4.4,
+       3
+      ]
+     },
+     {
+      "i": 2,
+      "o": 1,
+      "s": 1,
+      "d": 1
+     },
+     {
+      "i": 3,
+      "o": 1,
+      "s": 1,
+      "d": 1,
+      "c": [
+       8.2,
+       5.2
+      ],
+      "a": [
+       8.225,
+       4.5501
+      ],
+      "b": [
+       8.3,
+       2.6
+      ]
+     }
+    ]
+   },
+   "labels": {
+    "1": [
+     "Peak"
+    ],
+    "3": [
+     "Flood zone"
+    ]
+   },
+   "text": "Peak, Flood zone"
+  },
+  {
+   "name": "drawing kit: bent arrows, arc and bracket",
+   "input": "shapes w=10 h=6\nshape@ask circle Ask at=5,1.2 size=1.8 +fill\nshape@build circle Build at=8,4.6 size=1.8 +fill\nshape arc from=ask to=build\nshape arrow from=build to=ask bend=-0.3\nshape arrow from=1,5.5 to=4,5.5 bend=0.2 label=bent\nshape bracket from=1,3 to=1,5 label=Span",
+   "members": [
+    {
+     "id": "ask",
+     "props": {
+      "kind": "circle",
+      "label": "Ask",
+      "fill": true,
+      "at": "5,1.2",
+      "size": 1.8
+     }
+    },
+    {
+     "id": "build",
+     "props": {
+      "kind": "circle",
+      "label": "Build",
+      "fill": true,
+      "at": "8,4.6",
+      "size": 1.8
+     }
+    },
+    {
+     "id": "n2",
+     "props": {
+      "kind": "arc",
+      "from": "ask",
+      "to": "build"
+     }
+    },
+    {
+     "id": "n3",
+     "props": {
+      "kind": "arrow",
+      "from": "build",
+      "to": "ask",
+      "bend": -0.3
+     }
+    },
+    {
+     "id": "n4",
+     "props": {
+      "kind": "arrow",
+      "from": "1,5.5",
+      "to": "4,5.5",
+      "bend": 0.2,
+      "label": "bent"
+     }
+    },
+    {
+     "id": "n5",
+     "props": {
+      "kind": "bracket",
+      "from": "1,3",
+      "to": "1,5",
+      "label": "Span"
+     }
+    }
+   ],
+   "head": {
+    "w": 10,
+    "h": 6
+   },
+   "scene": {
+    "w": 10,
+    "h": 6,
+    "fs": 0.42,
+    "title": "",
+    "caption": "",
+    "items": [
+     {
+      "i": 0,
+      "id": "ask",
+      "kind": "circle",
+      "label": "Ask",
+      "tone": "accent",
+      "fill": true,
+      "dash": false,
+      "motion": "fade",
+      "pulse": false,
+      "start": 0,
+      "at": [
+       5,
+       1.2
+      ],
+      "size": [
+       1.8,
+       1.8
+      ],
+      "dur": 0.35
+     },
+     {
+      "i": 1,
+      "id": "build",
+      "kind": "circle",
+      "label": "Build",
+      "tone": "accent",
+      "fill": true,
+      "dash": false,
+      "motion": "fade",
+      "pulse": false,
+      "start": 0.35,
+      "at": [
+       8,
+       4.6
+      ],
+      "size": [
+       1.8,
+       1.8
+      ],
+      "dur": 0.35
+     },
+     {
+      "i": 2,
+      "id": "n2",
+      "kind": "arc",
+      "label": "",
+      "tone": "accent",
+      "fill": false,
+      "dash": false,
+      "motion": "draw",
+      "pulse": false,
+      "start": 0.7,
+      "from": {
+       "ref": 0
+      },
+      "to": {
+       "ref": 1
+      },
+      "bend": 0.35,
+      "dur": 0.7
+     },
+     {
+      "i": 3,
+      "id": "n3",
+      "kind": "arrow",
+      "label": "",
+      "tone": "accent",
+      "fill": false,
+      "dash": false,
+      "motion": "draw",
+      "pulse": false,
+      "start": 1.05,
+      "from": {
+       "ref": 1
+      },
+      "to": {
+       "ref": 0
+      },
+      "bend": -0.3,
+      "dur": 0.7
+     },
+     {
+      "i": 4,
+      "id": "n4",
+      "kind": "arrow",
+      "label": "bent",
+      "tone": "accent",
+      "fill": false,
+      "dash": false,
+      "motion": "draw",
+      "pulse": false,
+      "start": 1.4,
+      "from": {
+       "pt": [
+        1,
+        5.5
+       ]
+      },
+      "to": {
+       "pt": [
+        4,
+        5.5
+       ]
+      },
+      "bend": 0.2,
+      "dur": 0.7
+     },
+     {
+      "i": 5,
+      "id": "n5",
+      "kind": "bracket",
+      "label": "Span",
+      "tone": "accent",
+      "fill": false,
+      "dash": false,
+      "motion": "draw",
+      "pulse": false,
+      "start": 1.75,
+      "from": {
+       "pt": [
+        1,
+        3
+       ]
+      },
+      "to": {
+       "pt": [
+        1,
+        5
+       ]
+      },
+      "side": 1,
+      "dur": 0.7
+     }
+    ],
+    "total": 2.45
+   },
+   "frames": {
+    "2": [
+     {
+      "i": 0,
+      "o": 1,
+      "s": 1,
+      "d": 1,
+      "c": [
+       5,
+       1.2
+      ]
+     },
+     {
+      "i": 1,
+      "o": 1,
+      "s": 1,
+      "d": 1,
+      "c": [
+       8,
+       4.6
+      ]
+     },
+     {
+      "i": 2,
+      "o": 1,
+      "s": 1,
+      "d": 1,
+      "a": [
+       5.6947,
+       1.9873
+      ],
+      "b": [
+       7.3053,
+       3.8127
+      ]
+     },
+     {
+      "i": 3,
+      "o": 1,
+      "s": 1,
+      "d": 1,
+      "a": [
+       7.3053,
+       3.8127
+      ],
+      "b": [
+       5.6947,
+       1.9873
+      ]
+     },
+     {
+      "i": 4,
+      "o": 1,
+      "s": 1,
+      "d": 0.9971,
+      "a": [
+       1,
+       5.5
+      ],
+      "b": [
+       4,
+       5.5
+      ]
+     },
+     {
+      "i": 5,
+      "o": 1,
+      "s": 1,
+      "d": 0.7343,
+      "a": [
+       1,
+       3
+      ],
+      "b": [
+       1,
+       5
+      ]
+     }
+    ],
+    "0.2": [
+     {
+      "i": 0,
+      "o": 0.9213,
+      "s": 1,
+      "d": 1,
+      "c": [
+       5,
+       1.2
+      ]
+     },
+     {
+      "i": 1,
+      "o": 0,
+      "s": 1,
+      "d": 1,
+      "c": [
+       8,
+       4.6
+      ]
+     },
+     {
+      "i": 2,
+      "o": 0,
+      "s": 1,
+      "d": 0,
+      "a": [
+       5.6947,
+       1.9873
+      ],
+      "b": [
+       7.3053,
+       3.8127
+      ]
+     },
+     {
+      "i": 3,
+      "o": 0,
+      "s": 1,
+      "d": 0,
+      "a": [
+       7.3053,
+       3.8127
+      ],
+      "b": [
+       5.6947,
+       1.9873
+      ]
+     },
+     {
+      "i": 4,
+      "o": 0,
+      "s": 1,
+      "d": 0,
+      "a": [
+       1,
+       5.5
+      ],
+      "b": [
+       4,
+       5.5
+      ]
+     },
+     {
+      "i": 5,
+      "o": 0,
+      "s": 1,
+      "d": 0,
+      "a": [
+       1,
+       3
+      ],
+      "b": [
+       1,
+       5
+      ]
+     }
+    ],
+    "0.9": [
+     {
+      "i": 0,
+      "o": 1,
+      "s": 1,
+      "d": 1,
+      "c": [
+       5,
+       1.2
+      ]
+     },
+     {
+      "i": 1,
+      "o": 1,
+      "s": 1,
+      "d": 1,
+      "c": [
+       8,
+       4.6
+      ]
+     },
+     {
+      "i": 2,
+      "o": 1,
+      "s": 1,
+      "d": 0.6356,
+      "a": [
+       5.6947,
+       1.9873
+      ],
+      "b": [
+       7.3053,
+       3.8127
+      ]
+     },
+     {
+      "i": 3,
+      "o": 0,
+      "s": 1,
+      "d": 0,
+      "a": [
+       7.3053,
+       3.8127
+      ],
+      "b": [
+       5.6947,
+       1.9873
+      ]
+     },
+     {
+      "i": 4,
+      "o": 0,
+      "s": 1,
+      "d": 0,
+      "a": [
+       1,
+       5.5
+      ],
+      "b": [
+       4,
+       5.5
+      ]
+     },
+     {
+      "i": 5,
+      "o": 0,
+      "s": 1,
+      "d": 0,
+      "a": [
+       1,
+       3
+      ],
+      "b": [
+       1,
+       5
+      ]
+     }
+    ],
+    "4.3": [
+     {
+      "i": 0,
+      "o": 1,
+      "s": 1,
+      "d": 1,
+      "c": [
+       5,
+       1.2
+      ]
+     },
+     {
+      "i": 1,
+      "o": 1,
+      "s": 1,
+      "d": 1,
+      "c": [
+       8,
+       4.6
+      ]
+     },
+     {
+      "i": 2,
+      "o": 1,
+      "s": 1,
+      "d": 1,
+      "a": [
+       5.6947,
+       1.9873
+      ],
+      "b": [
+       7.3053,
+       3.8127
+      ]
+     },
+     {
+      "i": 3,
+      "o": 1,
+      "s": 1,
+      "d": 1,
+      "a": [
+       7.3053,
+       3.8127
+      ],
+      "b": [
+       5.6947,
+       1.9873
+      ]
+     },
+     {
+      "i": 4,
+      "o": 1,
+      "s": 1,
+      "d": 1,
+      "a": [
+       1,
+       5.5
+      ],
+      "b": [
+       4,
+       5.5
+      ]
+     },
+     {
+      "i": 5,
+      "o": 1,
+      "s": 1,
+      "d": 1,
+      "a": [
+       1,
+       3
+      ],
+      "b": [
+       1,
+       5
+      ]
+     }
+    ],
+    "still": [
+     {
+      "i": 0,
+      "o": 1,
+      "s": 1,
+      "d": 1,
+      "c": [
+       5,
+       1.2
+      ]
+     },
+     {
+      "i": 1,
+      "o": 1,
+      "s": 1,
+      "d": 1,
+      "c": [
+       8,
+       4.6
+      ]
+     },
+     {
+      "i": 2,
+      "o": 1,
+      "s": 1,
+      "d": 1,
+      "a": [
+       5.6947,
+       1.9873
+      ],
+      "b": [
+       7.3053,
+       3.8127
+      ]
+     },
+     {
+      "i": 3,
+      "o": 1,
+      "s": 1,
+      "d": 1,
+      "a": [
+       7.3053,
+       3.8127
+      ],
+      "b": [
+       5.6947,
+       1.9873
+      ]
+     },
+     {
+      "i": 4,
+      "o": 1,
+      "s": 1,
+      "d": 1,
+      "a": [
+       1,
+       5.5
+      ],
+      "b": [
+       4,
+       5.5
+      ]
+     },
+     {
+      "i": 5,
+      "o": 1,
+      "s": 1,
+      "d": 1,
+      "a": [
+       1,
+       3
+      ],
+      "b": [
+       1,
+       5
+      ]
+     }
+    ]
+   },
+   "labels": {
+    "0": [
+     "Ask"
+    ],
+    "1": [
+     "Build"
+    ],
+    "4": [
+     "bent"
+    ],
+    "5": [
+     "Span"
+    ]
+   },
+   "text": "Ask \u2013 Build \u2192 Ask, bent, Span"
   }
  ]
 }
