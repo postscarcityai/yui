@@ -243,7 +243,8 @@ class Vocabulary(unittest.TestCase):
         src = (PLUGIN / "yui" / "adapter.py").read_text()
         self.assertEqual(src.count("flywheel.record("), 2)
         for m in re.finditer(r"flywheel\.record\(", src):
-            self.assertIn("media.rewrite", src[m.end():m.end() + 450])  # textbomb + compat sit between
+            # textbomb, compat and the Jev shape bookkeeping sit between; the point is only that the call comes first
+            self.assertIn("media.rewrite", src[m.end():m.end() + 1500])
 
 
 class Report(unittest.TestCase):
