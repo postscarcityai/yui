@@ -518,14 +518,17 @@ struct AddAgentSheet: View {
             }
             Text("What should we call them?")
                 .font(theme.font(theme.type.title, .bold)).foregroundStyle(c.ink)
-            TextField("Name, like Nova", text: $name)
-                .font(theme.font(theme.type.body, .semibold))
-                .focused($focused)
-                .submitLabel(.next)
-                .onSubmit { Task { await create() } }
-                .padding(theme.spacing.m)
-                .background(c.surface, in: .rect(cornerRadius: theme.radius.bubble))
-                .overlay(RoundedRectangle(cornerRadius: theme.radius.bubble).stroke(c.outline, lineWidth: 1.5))
+            HStack(spacing: theme.spacing.s) {
+                TextField("Name, like Nova", text: $name)
+                    .font(theme.font(theme.type.body, .semibold))
+                    .focused($focused)
+                    .submitLabel(.next)
+                    .onSubmit { Task { await create() } }
+                NameMic(text: $name, id: "agent-name-mic", label: "Say the agent's name")
+            }
+            .padding(.leading, theme.spacing.m).padding(.trailing, theme.spacing.xs).padding(.vertical, theme.spacing.xs)
+            .background(c.surface, in: .rect(cornerRadius: theme.radius.bubble))
+            .overlay(RoundedRectangle(cornerRadius: theme.radius.bubble).stroke(c.outline, lineWidth: 1.5))
             Text("Look").font(theme.font(theme.type.caption, .bold)).foregroundStyle(c.inkSoft)
             LookPickerRow(name: name, look: $look)
             if let error {
@@ -1103,11 +1106,14 @@ struct EditAgentSheet: View {
                 RestartStep(agent: live)
             }
             Text("Name").font(theme.font(theme.type.caption, .bold)).foregroundStyle(c.inkSoft)
-            TextField("Name", text: $name)
-                .font(theme.font(theme.type.body, .semibold))
-                .padding(theme.spacing.m)
-                .background(c.surface, in: .rect(cornerRadius: theme.radius.bubble))
-                .overlay(RoundedRectangle(cornerRadius: theme.radius.bubble).stroke(c.outline, lineWidth: 1.5))
+            HStack(spacing: theme.spacing.s) {
+                TextField("Name", text: $name)
+                    .font(theme.font(theme.type.body, .semibold))
+                NameMic(text: $name, id: "agent-rename-mic", label: "Say the agent's name")
+            }
+            .padding(.leading, theme.spacing.m).padding(.trailing, theme.spacing.xs).padding(.vertical, theme.spacing.xs)
+            .background(c.surface, in: .rect(cornerRadius: theme.radius.bubble))
+            .overlay(RoundedRectangle(cornerRadius: theme.radius.bubble).stroke(c.outline, lineWidth: 1.5))
             Text("Look").font(theme.font(theme.type.caption, .bold)).foregroundStyle(c.inkSoft)
             LookPickerRow(name: agent.handle, isYui: agent.isYui, look: $look)
             if let prefs = Self.prefs(agent.theme?.style) {

@@ -1062,8 +1062,10 @@ private struct Switcher: View {
                             Image(systemName: "magnifyingglass").foregroundStyle(c.inkSoft)
                             TextField("Find an agent", text: $query)
                                 .font(theme.font(theme.type.body))
+                            NameMic(text: $query, id: "agent-find-mic", label: "Say which agent")
+                                .padding(.vertical, -6)
                         }
-                        .padding(theme.spacing.m)
+                        .padding(.leading, theme.spacing.m).padding(.trailing, theme.spacing.xs).padding(.vertical, theme.spacing.s)
                         .background(c.surface, in: Capsule())
                         .overlay(Capsule().stroke(c.outline, lineWidth: 1))
                         .rise(shown, 0, reduceMotion)

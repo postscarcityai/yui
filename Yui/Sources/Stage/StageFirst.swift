@@ -1246,6 +1246,8 @@ struct StageFirstView: View {
                         .id(composer.fieldID)
                         .frame(minHeight: Self.touch)
                         .accessibilityIdentifier("stage-field")
+                    NameMic(text: Binding(get: { composer.draft }, set: { if $0 != composer.draft { composer.draft = $0 } }),
+                            id: "stage-caption-mic", label: photos.isEmpty ? "Say a message" : "Say a caption", append: true)
                     Button(action: actions.send) {
                         Image(systemName: "arrow.up")
                             .font(.system(size: 17, weight: .black))
