@@ -266,7 +266,15 @@ private struct DeckBody: View {
     @Environment(\.colorScheme) private var scheme
 
     var body: some View {
-        if full { story } else { card }
+        // A paged deck is a stage that morphs from page to page, in the chat too: no card, no
+        // border, no dots (TestFlight feedback ANhbech_, Oct 5). A scrolling deck keeps its column.
+        if !pages.isEmpty, c.string("layout") != "scroll" {
+            let s = theme.swatch(scheme)
+            MorphStage(c: c, pages: pages, at: $at, inline: !full, notes: notes, toggleNotes: toggleNotes,
+                       openFull: openFull, close: close, emit: emit)
+                .background(close == nil ? .clear : s.background)
+                .onChange(of: at) { seen.insert(at) }
+        } else if full { story } else { card }
     }
 
     /// The inline pager's height: the page showing, capped so a very long page scrolls
