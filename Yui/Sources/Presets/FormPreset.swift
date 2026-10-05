@@ -158,18 +158,37 @@ struct FormPreset: View {
     }
 
     /// Speak to fill: one mic for the whole card. Say each field's name and its answer; the words
-    /// fill the fields below, marked with a mic so the person checks them before Next.
-    private func voiceBar(_ s: Swatch, _ fields: [FormField]) -> some View {
+    /// fill the fields below, marked so the person checks them before Next.
+    /// On the stage the bar's mic is that mic (it fills the page on show), so the card draws no second
+    /// one: only the line that says how. Three mics for one job was two too many.
+    @ViewBuilder private func voiceBar(_ s: Swatch, _ fields: [FormField]) -> some View {
+        if pageVoice != nil {
+            HStack(alignment: .firstTextBaseline, spacing: theme.spacing.s) {
+                Image(systemName: "waveform")
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundStyle(s.accent)
+                    .accessibilityHidden(true)
+                Text(voiceCaption(fields))
+                    .font(theme.font(theme.type.caption))
+                    .foregroundStyle(s.inkSoft)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("form-talk-note-\(c.ylID)")
+            }
+        } else {
+            cardMic(s, fields)
+        }
+    }
+
+    /// In the record there is no bar mic filling the page: the card keeps its own.
+    private func cardMic(_ s: Swatch, _ fields: [FormField]) -> some View {
         let listening = talk?.listening == true
-        // Beside the stage's bar the page's mic is one slim row: the bar is the big mic, this one stays for a tap on the page.
-        let slim = pageVoice != nil
         return VStack(alignment: .leading, spacing: theme.spacing.s) {
             HStack(spacing: theme.spacing.m) {
                 Button { toggleTalk(fields) } label: {
                     Image(systemName: listening ? "stop.fill" : "mic.fill")
                         .font(.system(size: 20, weight: .bold))
                         .foregroundStyle(s.onAccent)
-                        .frame(width: slim ? 36 : 48, height: slim ? 36 : 48)
+                        .frame(width: 48, height: 48)
                         .background(s.accent, in: Circle())
                         .overlay(Circle().stroke(s.accent.opacity(listening ? 0.35 : 0), lineWidth: 6).scaleEffect(1.18))
                         .contentShape(Circle())
@@ -179,11 +198,9 @@ struct FormPreset: View {
                 .accessibilityIdentifier("form-talk-\(c.ylID)")
                 .sensoryFeedback(.impact(weight: .light), trigger: listening)
                 VStack(alignment: .leading, spacing: 2) {
-                    if !slim || listening {
-                        Text(listening ? "Listening. Tap to stop." : heard.isEmpty ? "Talk it out" : "Tap to add more")
-                            .font(theme.font(theme.type.body, .bold))
-                            .foregroundStyle(s.ink)
-                    }
+                    Text(listening ? "Listening. Tap to stop." : heard.isEmpty ? "Talk it out" : "Tap to add more")
+                        .font(theme.font(theme.type.body, .bold))
+                        .foregroundStyle(s.ink)
                     Text(voiceCaption(fields))
                         .font(theme.font(theme.type.caption))
                         .foregroundStyle(s.inkSoft)
@@ -219,8 +236,9 @@ struct FormPreset: View {
         default: break
         }
         if let voiceNote { return voiceNote }
-        let names = fields.filter { !["photo", "date", "time"].contains($0.type) }.prefix(2).map { $0.label.lowercased() }
-        return names.isEmpty ? "Say your answers." : "Say \(names.joined(separator: " and ")), then what it is."
+        // How to say it so each answer finds its field: the field's name first.
+        let first = fields.first { !["photo", "date", "time"].contains($0.type) }?.label.lowercased()
+        return first.map { "Tap the mic and say each one by name, like \"\($0) is...\"" } ?? "Tap the mic and say your answers."
     }
 
     private func toggleTalk(_ fields: [FormField]) {
@@ -366,7 +384,8 @@ private struct FieldRow: View {
                     Text(field.label)
                     if field.required { Text("*").foregroundStyle(s.accent) }
                     if byVoice {
-                        Image(systemName: "mic.fill").font(.system(size: 11, weight: .bold)).foregroundStyle(s.accent)
+                        // Heard, not typed: a wave, so it is not one more mic beside the field's own.
+                        Image(systemName: "waveform").font(.system(size: 11, weight: .bold)).foregroundStyle(s.accent)
                             .accessibilityLabel("Filled by voice")
                     }
                 }
@@ -492,75 +511,5 @@ private struct FieldRow: View {
         case .bool(let b): b ? "yes" : "no"
         default: nil
         }
-    }
-}
-
-/// Tap to talk into a field, tap again to stop (NOTE-40679). The words show in the field as they are heard,
-/// after anything already in it, so a person can talk, stop, fix a word and talk again. Speech stays on the
-/// phone (PushToTalk); the listener is made on the first tap, not one per field on screen.
-struct FieldMic: View {
-    @Binding var text: String
-    let label: String
-    let id: String
-    @State private var talk: PushToTalk?
-    /// What the field held when the talking started: heard words go after it.
-    @State private var base = ""
-    @Environment(\.yuiTheme) private var theme
-    @Environment(\.colorScheme) private var scheme
-
-    private var listening: Bool { talk?.listening == true }
-    private var denied: Bool { talk?.phase == .denied || talk?.phase == .failed }
-
-    var body: some View {
-        let s = theme.swatch(scheme)
-        Button { toggle() } label: {
-            Image(systemName: listening ? "stop.fill" : denied ? "mic.slash.fill" : "mic.fill")
-                .font(.system(size: 15, weight: .bold))
-                .foregroundStyle(listening ? s.onAccent : s.ink)
-                .symbolEffect(.pulse, isActive: listening)
-                .frame(width: 34, height: 34)
-                .glassEffect(listening ? .regular.tint(s.accent).interactive() : .regular.interactive(), in: .circle)
-                .frame(width: 44, height: 44)
-                .contentShape(Circle())
-        }
-        .buttonStyle(BounceButtonStyle())
-        .sensoryFeedback(.impact(weight: .light), trigger: listening)
-        .accessibilityLabel(listening ? "Stop talking" : "Talk to fill \(label)")
-        .accessibilityHint(denied ? "The mic is off for Yui. Turn it on in Settings, or type." : "")
-        .accessibilityIdentifier(id)
-        .onChange(of: talk?.transcript ?? "") { _, heard in
-            if listening { text = Self.join(base, heard) }
-        }
-        .onDisappear { talk?.cancel() }
-    }
-
-    private func toggle() {
-        let t = talk ?? {
-            let t = PushToTalk()
-            #if DEBUG
-            t.fakeWords = UserDefaults.standard.string(forKey: "yuiPTTFake")
-            #endif
-            talk = t
-            return t
-        }()
-        if t.listening {
-            Task {
-                let heard = await t.stop()
-                text = Self.join(base, heard)
-            }
-        } else {
-            base = text.trimmingCharacters(in: .whitespacesAndNewlines)
-            Task { await t.start() }
-        }
-    }
-
-    /// The words after what was there, as MicPreset joins a second talk: a full stop between them unless one is there,
-    /// and a capital after it.
-    static func join(_ had: String, _ heard: String) -> String {
-        let heard = heard.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !heard.isEmpty else { return had }
-        guard !had.isEmpty else { return heard }
-        if had.last.map({ ".!?,".contains($0) }) == true { return had + " " + heard }
-        return had + ". " + heard.prefix(1).uppercased() + heard.dropFirst()
     }
 }

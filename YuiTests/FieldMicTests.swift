@@ -18,4 +18,12 @@ final class FieldMicTests: XCTestCase {
         XCTAssertEqual(FieldMic.join("Oat milk", "   "), "Oat milk")
         XCTAssertEqual(FieldMic.join("", ""), "")
     }
+
+    /// A name, a title or a search (the naming mic): what is said is the field, with no closing period.
+    func testANameReplacesWhatWasThere() {
+        XCTAssertEqual(FieldMic.fill("Old name", "Weekend long run.", replaces: true), "Weekend long run")
+        XCTAssertEqual(FieldMic.fill("", " Nova! ", replaces: true), "Nova")
+        XCTAssertEqual(FieldMic.fill("Old name", "  ", replaces: true), "Old name", "nothing heard keeps the name")
+        XCTAssertEqual(FieldMic.fill("Oat milk", "and eggs", replaces: false), "Oat milk. And eggs", "a field of words still appends")
+    }
 }

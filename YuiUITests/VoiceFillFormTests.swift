@@ -3,7 +3,9 @@ import XCTest
 /// Speak to fill a form (feedback AKNFDrNVFCY4IO44-4fjAnc: "I want to use more voice. I should be able
 /// to just speak in my answers and it fills it out for me"). The Client website intake flow's
 /// "Your business" step: tap the mic, say each field's name and its answer, and the fields fill,
-/// each marked with a mic, and Next (held while Business name was empty) opens.
+/// each marked, and Next (held while Business name was empty) opens.
+/// On the stage the mic is the bar's own (feedback AF-LecIdpo5GenYXnYNhdm0): the card draws no second
+/// one, only the line that says how, and each field of words keeps its own small mic.
 /// `-yuiPTTFake` stands in for the voice (the simulator has no mic). Demo account, no network.
 /// `YUI_SHOTS=<dir>` saves screenshots.
 final class VoiceFillFormTests: XCTestCase {
@@ -44,19 +46,25 @@ final class VoiceFillFormTests: XCTestCase {
         let next = app.buttons["flow-next"]
         XCTAssertTrue(next.waitForExistence(timeout: 20), "the flow never opened")
         next.tap()
-        let talk = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'form-talk-'")).firstMatch
-        XCTAssertTrue(talk.waitForExistence(timeout: 10), "the form has no mic")
         let name = app.textFields["Business name"]
-        XCTAssertTrue(name.waitForExistence(timeout: 5))
+        XCTAssertTrue(name.waitForExistence(timeout: 10))
         XCTAssertEqual(name.value as? String, "Business name", "the field starts empty")
         XCTAssertFalse(app.buttons["flow-next"].isEnabled, "Next is open with the required field empty")
+        // One mic for the page: the bar's. The card says how, and draws no second one.
+        let hint = app.staticTexts.matching(NSPredicate(format: "identifier BEGINSWITH 'form-talk-note-'")).firstMatch
+        XCTAssertTrue(hint.waitForExistence(timeout: 5), "the form does not say how to fill it by voice")
+        XCTAssertFalse(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'form-talk-'")).firstMatch.exists,
+                       "the card draws its own mic beside the bar's")
+        XCTAssertTrue(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'field-mic-'")).firstMatch.exists,
+                      "a field of words has no mic of its own")
         shot("1-before")
 
-        // Talk, then stop: the words fill the fields.
+        // Talk on the bar's mic: the words fill the fields.
+        let talk = app.buttons["stage-mic"]
+        XCTAssertTrue(talk.exists, "no mic in the bar")
         talk.tap()
         shot("2-listening")
-        talk.tap()
-        let end = Date().addingTimeInterval(10)
+        let end = Date().addingTimeInterval(15)
         while (name.value as? String) != "Acme Bakery", Date() < end { usleep(300_000) }
         XCTAssertEqual(name.value as? String, "Acme Bakery", "Business name was not filled")
         func held(_ label: String) -> String {
@@ -69,5 +77,7 @@ final class VoiceFillFormTests: XCTestCase {
         XCTAssertEqual(held("Who it is for"), "People in the neighborhood")
         XCTAssertTrue(app.buttons["flow-next"].isEnabled, "Next stayed held after the required field was filled")
         shot("3-filled")
+        // Hands-free keeps the mic open; one tap closes it.
+        if !app.buttons["stage-type"].exists { talk.tap() }
     }
 }
