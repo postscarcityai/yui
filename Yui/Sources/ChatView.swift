@@ -2200,6 +2200,20 @@ struct ChatView: View {
     /// Ideas drawn with shapes that move (YUI-104): a flow in one row with arrows,
     /// a crowded row whose labels wrap, placed shapes with a dashed arrow and a path,
     /// and a card that glides from one column to the next.
+    /// Hand drawn shapes and the three marks (YUI-299), the hub's `?demo=handdrawn` scene.
+    static let handDemo = """
+        shapes w=10 h=6
+        shape@card box "Pricing page" at=3,1.4 size=4,1.2 +hand
+        shape scribble to=card
+        shape@word text "Ship it today" at=3,3
+        shape underline to=word tone=butter
+        shape@task pill "Fix login" at=3,4.4 size=4,0.9 +hand
+        shape check to=task
+        shape circle Round at=8,1.4 size=1.8 tone=mint +hand
+        shape arrow from=7.2,3 to=8.6,3.8 +hand
+        shape scribble at=8,5 size=2.4,1.2 tone=lavender +fill
+        """
+
     static let shapesDemo = [
         """
         shapes "How an ask reaches your phone" caption="You ask, it lands on the board, a lane builds it, and it ships to your phone."
@@ -2444,6 +2458,10 @@ struct ChatView: View {
             return zip(asks, shapesDemo).flatMap { ask, yl in
                 [ChatMessage(text: ask, fromUser: true), ChatMessage(text: "", fromUser: false, yl: YLScreen(yl))]
             }
+        }
+        // -yuiDemoHand: +hand shapes and the marks scribble, underline, check (YUI-299).
+        if ProcessInfo.processInfo.arguments.contains("-yuiDemoHand") {
+            return [ChatMessage(text: "Draw it by hand.", fromUser: true), ChatMessage(text: "", fromUser: false, yl: YLScreen(handDemo))]
         }
         // -yuiDemoMap: places on a map (YUI-158).
         if ProcessInfo.processInfo.arguments.contains("-yuiDemoMap") {
