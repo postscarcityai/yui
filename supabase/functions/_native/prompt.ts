@@ -39,6 +39,73 @@ forget me allergies
 - \`forget n2\` drops your note [n2]; \`forget me key\` drops a fact. Forget at once when they ask you to.
 - Keep each line short. Never store passwords, card numbers, keys or anything they asked you not to keep.`;
 
+export const TEACH_RULES = `### Explaining: draw every page
+Asked to explain or teach something ("ELI5 string theory", "how do vaccines work", "what is a mortgage", "why is the sky blue"): never text pages. Words alone are the answer people do not want. Send one short line with the answer, then ONE \`deck\` on \`>full\`:
+- 2 to 4 pages. Each page is a title, a body of 25 words or fewer in plain kid words, and its drawing on the very next line. No page without a drawing, the first one too.
+- The drawing fits the idea: \`shapes\` for how it works or what turns into what, \`chart\` for how much or over time, \`stat\` for one number, \`sketch\` for before and after, \`map\` for where, \`math\` for a formula.
+- The last line in the deck is a \`choose\` of where to go next, then \`end\`. Never a "Got it" button, never a page that only repeats the answer.
+- A plain fact ("how tall is Everest?") stays one line of words. Only an explanation gets the deck.
+Three decks, as examples of the shape (other topics; yours is about what they asked):
+"ELI5 how planes fly":
+\`\`\`yui
+>full
+deck "How planes fly"
+page "Air pushes back" body="Air is stuff. When a wing slices through it, the air pushes the wing."
+shapes caption="Wing in, air pushed down, wing pushed up."
+shape box Wing +pulse
+shape arrow
+shape blob Air tone=mint
+page "The shape matters" body="A wing is curved on top. Air over the top speeds up and presses less, so the wing is lifted."
+sketch "Wing" frame=bubble
+row "Air above: fast, less push" +hi note="lift"
+row "Air below: slower, more push"
+page "Speed is the secret" body="Faster means more lift. A plane has to run down the runway until the push is big enough."
+chart line "Lift by speed" x=0|100|200|300 y=0|10|40|90
+choose "Where next?" "What are flaps?"|"Why is it loud?"|"How do they land?"
+end
+\`\`\`
+"Why do we have seasons?":
+\`\`\`yui
+>full
+deck "Why seasons happen"
+page "Earth is tilted" body="Earth leans a little, like a spinning top that never stands straight up."
+shapes caption="Same tilt all year."
+shape circle Earth +pulse tone=lavender
+shape arrow
+shape text "tilted 23 degrees"
+page "The sun hits harder" body="When your side leans toward the sun, light lands steeper. More heat means summer."
+sketch "Your side" frame=bubble before=Winter
+row "Leans away: weak light" +x note="cold"
+after Summer
+row "Leans toward: strong light" +hi note="warm"
+page "A year goes round" body="Earth circles the sun once a year. The lean stays the same, so the seasons come back."
+shapes caption="Four spots, four seasons."
+shape circle Spring
+shape circle Summer +pulse tone=butter
+shape circle Fall
+shape circle Winter tone=mute
+choose "Where next?" "Why is the equator hot?"|"What is a solstice?"|"Why do days get longer?"
+end
+\`\`\`
+"What is a mortgage?":
+\`\`\`yui
+>full
+deck "What a mortgage is"
+page "A loan for a house" body="A house costs a lot. A bank pays the seller now, and you pay the bank back slowly."
+shapes caption="The bank pays first. You pay back."
+shape box Bank
+shape arrow
+shape box House +pulse tone=mint
+shape arrow
+shape circle You
+page "Paying it back" body="Each month you pay a bit of the loan plus a fee, called interest. Early on the fee is most of it."
+chart bar "Where one early payment goes" x=Loan|Interest y=700|1300
+page "How long it takes" body="Most mortgages last 30 years. The loan shrinks slowly, then faster."
+stat 30y "A common mortgage" spark=100|85|65|35|0
+choose "Where next?" "What is interest?"|"Is renting cheaper?"|"What if I miss a payment?"
+end
+\`\`\``;
+
 export const TOOL_RULES = `### Checking in later
 To come back at a time (a workout check-in, a lunch question, a practice reminder), add a \`schedule\` block. Times are the person's local time; only set one when they want it.
 \`\`\`schedule
@@ -144,7 +211,7 @@ export interface PromptInput {
 
 export function systemPrompt(p: Profile, memory: MemoryItem[], agentId: string, crew?: CrewEntry[],
                              extra: { now?: number; tz?: string; schedules?: ScheduleItem[]; tables?: string } = {}): string {
-  const parts = [RULES, TOOL_RULES, TABLE_RULES];
+  const parts = [RULES, TEACH_RULES, TOOL_RULES, TABLE_RULES];
   if (p.maker) parts.push(MAKER_RULES);
   if (p.blank) parts.push(SELF_RULES);
   if (p.careful) parts.push(CAREFUL_RULES);

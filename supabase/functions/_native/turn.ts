@@ -24,6 +24,7 @@ import { crew } from "./profiles.ts";
 import { applySetup, isBlank, setupAsks } from "./setup.ts";
 import { jevLine, jevRoute } from "./jev.ts";
 import { gate as oneLineGate, onelineNote, type OneLineMode } from "./oneline.ts";
+import { better, keepNotes, owes, pagesOf, redrawNote } from "./teach.ts";
 import { keyModel, providerLabel, PROVIDERS } from "./models.ts";
 import { type Clock, type TableStore, LIMITS, applyHeld, applyTables, asText, changed, clock, diff, draw, emptyStore, fromSeeds, pretty,
          readQueries, tablesPrompt } from "./tables.ts";
@@ -458,6 +459,15 @@ async function oneTurn(store: Store, agent: NativeAgent, rows: Row[], opts: Turn
       const again = await ask(opts, provider, { ...sent, messages: [...(looked.messages ?? sent.messages), { role: "user", content: SILENT_NOTE }],
                                                 ...(provider.reasoning ? { reasoning: { enabled: false } } : {}) });
       answer = { ...again, text: `${answer.text.trim()}\n${again.text}`.trim() };
+    }
+    // An explanation with a page that has no drawing (or no deck at all) is drawn again, once (t_88023cf2). The second try is kept only when it is better.
+    const owed = owes(typed.map((r) => r.body).join(" "), answer.text);
+    if (owed) {
+      log(`${p.name}: explanation with ${owed.why === "bare" ? `${owed.bare.length} of ${pagesOf(answer.text).pages} pages undrawn` : "no deck"}, asking once more to draw it`);
+      const again = await ask(opts, provider, { ...sent, messages: [...(looked.messages ?? sent.messages), { role: "assistant", content: answer.text }, { role: "user", content: redrawNote(owed) }],
+                                                ...(provider.reasoning ? { reasoning: { enabled: false } } : {}) });
+      if (better(answer.text, again.text)) answer = { ...again, text: keepNotes(answer.text, again.text) };
+      else log(`${p.name}: the second try was no better, keeping the first`);
     }
   } catch (e: any) {
     if (last) await store.doing(last, null);
