@@ -1087,18 +1087,26 @@ struct StageFirstView: View {
                         .font(theme.font(theme.type.body))
                         .foregroundStyle(c.inkSoft)
                 }
+                let draft = StageDraft.load()
                 ForEach(Array(t.questions.enumerated()), id: \.element.id) { i, q in
                     VStack(alignment: .leading, spacing: theme.spacing.m) {
                         // The looks it compares sit small above it, side by side (NOTE-42080, web YUI-277).
                         if !q.compare.isEmpty { compare(q, c, width: geo.size.width, sent: sent) }
                         PresetView(component: q.c)
+                            // What was typed before a relaunch or another thread comes back into the fields.
+                            .environment(\.ylAnswers, YLAnswers { scope, id in
+                                scope == q.scope && id == q.c.ylID ? draft.entries.first { $0.id == q.id }?.value : store.ylAnswers(scope, id)
+                            })
                             .environment(\.ylComponents, q.all)
                             .environment(\.ylScope, q.scope)
                             .environment(\.ylOnStage, false)
                             .environment(\.ylHostedSubmit, true)
                             // On the stage a question is the page, not a card on it.
                             .environment(\.ylBare, true)
-                            .environment(\.ylEmit, YLEmit { e in model.answers[q.id] = e })
+                            .environment(\.ylEmit, YLEmit { e in
+                                model.answers[q.id] = e
+                                if !sent { StageDraft.keep(q.id, e) }
+                            })
                             .environment(\.ylPress, presses[q.id] ?? YLPress())
                             .disabled(sent)
                     }
@@ -1134,6 +1142,14 @@ struct StageFirstView: View {
         .onTapGesture { p in if p.x < geo.size.width * Self.backZone, !t.chunks.isEmpty { step(-1) } }
         }
         .accessibilityIdentifier("stage-questions")
+        // Kept answers count at once: Send is lit before a field has been touched again.
+        .onAppear {
+            guard !sent else { return }
+            let draft = StageDraft.load()
+            for q in t.questions where model.answers[q.id] == nil {
+                if let v = draft.entries.first(where: { $0.id == q.id })?.value { model.answers[q.id] = q.c.event(v) }
+            }
+        }
     }
 
     /// The earlier pages a question's options name, each a small picture with its option under it (feedback
@@ -1252,6 +1268,7 @@ struct StageFirstView: View {
             store.emit(e)
         }
         finishDecks(t)
+        StageDraft.clear(t.questions.map(\.id))
         if let id = t.ask?.id { withAnimation(theme.spring) { _ = model.sent.insert(id) } }
     }
 
