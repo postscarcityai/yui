@@ -7,9 +7,11 @@ final class ScreenNameTabTests: XCTestCase {
         let reply = ["say Two pages.",
                      ">2 stat 1 \"Workouts this week\"",
                      ">3 timer 5m"].joined(separator: "\\n")
+        let env = ProcessInfo.processInfo.environment
+        let look = env["YUI_APPEARANCE"] ?? "dark"
         let app = XCUIApplication()
         app.launchArguments = ["-yuiStageFirst", "YES", "-yuiDemoAccount", "-yuiDemoAgents", "-yuiAgent", "yui",
-                               "-appearance", "dark", "-yuiDemoReply", reply, "-yuiDemoPickupAfter", "0.5",
+                               "-appearance", look, "-yuiDemoReply", reply, "-yuiDemoPickupAfter", "0.5",
                                "-yuiDemoReplyAfter", "2"]
         app.launch()
         XCTAssertTrue(app.buttons["stage-type"].waitForExistence(timeout: 15), "no stage")
@@ -28,8 +30,8 @@ final class ScreenNameTabTests: XCTestCase {
         XCTAssertEqual(app.buttons["screen-pill-2"].label, "Workouts this week")
         XCTAssertEqual(app.buttons["screen-pill-3"].label, "Timer")
         let png = XCUIScreen.main.screenshot().pngRepresentation
-        if let dir = ProcessInfo.processInfo.environment["YUI_SHOTS"] {
-            try? png.write(to: URL(fileURLWithPath: dir).appending(path: "screen-name-tabs.png"))
+        if let dir = env["YUI_SHOTS"] {
+            try? png.write(to: URL(fileURLWithPath: dir).appending(path: "screen-name-tabs-\(look).png"))
         }
     }
 }
