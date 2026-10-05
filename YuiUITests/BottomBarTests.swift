@@ -110,7 +110,9 @@ final class BottomBarTests: XCTestCase {
         let mic = app.buttons["stage-mic"]
         XCTAssertTrue(mic.waitForExistence(timeout: 15))
         let from = mic.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
-        from.press(forDuration: 1.0, thenDragTo: from.withOffset(CGVector(dx: -200, dy: 0)))
+        // All the way to the trash, which sits flush left (YUI-251): the reach is the bar's width less the
+        // insets and a mic, 272 points on this phone. The 200 this test used to drag stopped short of it.
+        from.press(forDuration: 1.0, thenDragTo: from.withOffset(CGVector(dx: -300, dy: 0)))
         sleep(2)
         XCTAssertFalse(app.descendants(matching: .any)["stage-you"].exists, "a cancelled recording was sent")
         XCTAssertFalse(app.descendants(matching: .any)["stage-listening"].exists, "still listening after cancel")

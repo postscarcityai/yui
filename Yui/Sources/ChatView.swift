@@ -1365,7 +1365,9 @@ struct ChatView: View {
                 .foregroundStyle(talk.listening ? c.onAccent : c.ink)
                 .symbolEffect(.variableColor.iterative, isActive: talk.listening && !reduceMotion)
                 .frame(width: 46, height: 46)
-                .glassEffect(talk.listening ? .regular.tint(c.accent).interactive() : .regular.interactive(), in: .circle)
+                // Not interactive glass: this mic is held and slid to the trash, and interactive glass takes
+                // the touch for itself once the finger travels (as on the stage's mic, BottomBar.swift).
+                .glassEffect(talk.listening ? .regular.tint(c.accent) : .regular, in: .circle)
                 .scaleEffect(talk.listening ? 1.25 : 1)
                 .contentShape(Circle())
                 // The trash is the one in the listening bar on the left; the mic stays where it is.

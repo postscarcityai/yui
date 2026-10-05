@@ -180,8 +180,11 @@ struct BarButtons: View {
             .background {
                 if let look, micLive, !look.reduced { MicRing(color: c.accent, look: look, voice: voice) }
             }
-            // The mic is glass in the agent's color: the one tinted piece in the bar.
-            .glassEffect(.regular.tint(c.accent).interactive(), in: .circle)
+            // The mic is glass in the agent's color: the one tinted piece in the bar. Not interactive
+            // glass: that takes the touch for itself once the finger travels, which ended the hold the
+            // moment it slid toward the lock or the trash (BottomBarTests.testSlideUpLocksTheRecording).
+            // The mic already answers a press with its own scale.
+            .glassEffect(.regular.tint(c.accent), in: .circle)
             .scaleEffect(press != nil && !reduceMotion ? 0.94 : micLive && !reduceMotion ? 1.08 : 1)
             .animation(reduceMotion ? nil : theme.spring, value: press != nil)
             .animation(reduceMotion ? nil : theme.spring, value: micLive)
