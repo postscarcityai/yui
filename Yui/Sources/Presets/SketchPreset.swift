@@ -143,9 +143,21 @@ struct SketchDrawing: View {
                     }
                     .accessibilityHidden(true)
                 } else if frame == "phone" {
-                    Capsule().stroke(line, lineWidth: 1).frame(width: 34, height: 7)
-                        .frame(maxWidth: .infinity)
-                        .accessibilityHidden(true)
+                    // A phone reads as a phone before a word is read (YUI-267, direction A's best idea, kept
+                    // in the blueprint's own line): the time, the island, the bars and the battery.
+                    ZStack {
+                        Capsule().stroke(line, lineWidth: 1).frame(width: 34, height: 7)
+                        HStack(spacing: 2) {
+                            Text("9:41").font(.system(size: 8, weight: .heavy, design: .rounded)).foregroundStyle(line)
+                            Spacer(minLength: 0)
+                            ForEach(0..<3, id: \.self) { i in
+                                Capsule().fill(line).frame(width: 2, height: 3 + CGFloat(i) * 2)
+                            }
+                            RoundedRectangle(cornerRadius: 2).stroke(line, lineWidth: 1).frame(width: 12, height: 6)
+                                .padding(.leading, 2)
+                        }
+                    }
+                    .accessibilityHidden(true)
                 }
                 ForEach(Array(rows.enumerated()), id: \.element.serial) { i, r in
                     SketchRow(r: r, i: i, frame: frame, number: numbers[r.serial], faded: side.isBefore,
@@ -153,10 +165,17 @@ struct SketchDrawing: View {
                         .blueprintStep(on, step + 1 + i, reduceMotion)
                 }
                 if rows.isEmpty { Color.clear.frame(height: 28) }
+                if frame == "phone" {
+                    // Its home bar.
+                    Capsule().fill(line.opacity(0.75)).frame(width: 40, height: 3)
+                        .frame(maxWidth: .infinity)
+                        .padding(.top, 2)
+                        .accessibilityHidden(true)
+                }
             }
             .padding(.horizontal, theme.spacing.m)
             .padding(.top, frame == "bubble" ? theme.spacing.m : theme.spacing.s + 2)
-            .padding(.bottom, theme.spacing.m + (frame == "phone" ? 6 : 0))
+            .padding(.bottom, frame == "phone" ? theme.spacing.s : theme.spacing.m)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background {
                 let shape = Blueprint.frame(frame)
