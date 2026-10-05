@@ -647,6 +647,15 @@ struct PlanPreset: View {
         }
     }
 
+    /// `-yuiRunnerPages` (UI tests of the move pages): the workout opens on its overview, as an inline plan does.
+    private static var readsPagesFirst: Bool {
+        #if DEBUG
+        ProcessInfo.processInfo.arguments.contains("-yuiRunnerPages")
+        #else
+        false
+        #endif
+    }
+
     /// A step reads its own kept answer first, so a form comes back typed in and a choice comes back picked.
     private var keptAnswers: YLAnswers {
         let kept = kept, sent = sent
@@ -674,6 +683,9 @@ struct PlanPreset: View {
             progress = p
             at = p.at
             answers.merge(p.answers(runner)) { _, new in new }
+            // On the stage the workout is the session, not a page to read first: Start opens the runner itself
+            // (Chris, build 522: the extra page and its second Start button are not needed).
+            if onStage, p.run == nil, !Self.readsPagesFirst { progress.run = SessionEngine(runner).begin() }
             return
         }
         // Once: a hosted form hands over its fields on appear, so `answers` may not be empty here.

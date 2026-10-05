@@ -41,7 +41,7 @@ final class WorkoutRunnerFlowTests: XCTestCase {
         app.launchArguments = ["-yuiDemoAccount", "-yuiDemoHome", "-yuiAgent", "arnold", "-appearance", appearance,
                                "-yuiThemeDemo", Self.runner, "-yuiDemoPrompt", "Start my workout", "-yuiDemoDelay", "0.5",
                                "-yuiPTTFake", "done", "-yuiEventLog", log]
-            + (fresh ? ["-yuiRunnerReset"] : [])
+            + ["-yuiRunnerPages"] + (fresh ? ["-yuiRunnerReset"] : [])
         app.launch()
         return app
     }

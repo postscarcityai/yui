@@ -38,44 +38,84 @@ final class WorkoutSessionTests: XCTestCase {
         XCTAssertEqual(r.moves[0].name, "Bench press")
     }
 
-    func testTheScheduleIsWorkThenRestThenTheNextSetThenTheNextMove() throws {
+    func testTheScheduleIsWorkThenLogThenRestThenTheNextSetThenTheNextMove() throws {
         let e = SessionEngine(try runner(), fast: false)
         XCTAssertEqual(e.steps.map { "\($0.kind)-\($0.move)-\($0.set)-\($0.seconds)" }, [
-            "work-0-1-30", "rest-0-1-60", "work-0-2-30", "rest-0-2-60",
-            "fail-0-3-0", "rest-0-3-60",        // the last set of the lift waits for Stop
-            "work-1-1-30",                      // and no rest after the very last set
+            "work-0-1-30", "log-0-1-0", "rest-0-1-60", "work-0-2-30", "log-0-2-0", "rest-0-2-60",
+            "fail-0-3-0", "log-0-3-0", "rest-0-3-60",   // the last set of the lift waits for Stop
+            "work-1-1-30", "log-1-1-0",                 // and no rest after the very last set
         ])
     }
 
-    func testItRunsOnItsOwnFromStartToFinishWithNoTaps() throws {
+    func testItRunsSetByLogByRestAndWaitsOnlyForTheLogAndTheStop() throws {
         let r = try runner()
         let e = SessionEngine(r, fast: false)
         var p = RunnerProgress()
         p.run = e.begin(at: t0)
+        func at(_ s: Double) -> Date { t0.addingTimeInterval(s) }
         // 30s in: still the first set. No tick yet.
-        XCTAssertFalse(e.tick(&p, at: t0.addingTimeInterval(29)))
+        XCTAssertFalse(e.tick(&p, at: at(29)))
         XCTAssertEqual(p.run?.step, 0)
-        // The set ends by itself: it ticks and the rest starts.
-        XCTAssertTrue(e.tick(&p, at: t0.addingTimeInterval(31)))
+        // The set ends by itself: it ticks and the app asks what was done. That waits for the person.
+        XCTAssertTrue(e.tick(&p, at: at(31)))
         XCTAssertEqual(p.run?.step, 1)
+        XCTAssertEqual(e.current(p.run!)?.kind, .log)
         XCTAssertEqual(p.ticked["e1-sets"], ["Set 1"])
-        // Away for a long while: the clock catches up from where each step ended, up to the failure set, which waits.
-        XCTAssertTrue(e.tick(&p, at: t0.addingTimeInterval(5_000)))
-        XCTAssertEqual(p.run?.step, 4, "stopped at the failure set")
+        XCTAssertFalse(e.tick(&p, at: at(9_000)), "the log never ends on its own")
+        // Logged: the rest starts then, and runs its 60 s by itself. The set's numbers stay on the move.
+        e.logSet(&p, reps: 9, weight: 140, at: at(40))
+        XCTAssertEqual(p.run?.step, 2)
+        XCTAssertEqual(p.run?.left(at: at(40)), 60)
+        XCTAssertEqual(p.values["e1-s1-reps"], 9)
+        XCTAssertEqual(p.values["e1-s1-lb"], 140)
+        XCTAssertEqual(e.target(r.moves[0], p), "Bench press 3x9 at 140", "the next set starts where this one ended")
+        // Away for a long while: the clock catches up to the next log, which waits again.
+        XCTAssertTrue(e.tick(&p, at: at(5_000)))
+        XCTAssertEqual(p.run?.step, 4, "stopped at set 2's log")
         XCTAssertEqual(p.ticked["e1-sets"], ["Set 1", "Set 2"])
-        XCTAssertFalse(e.tick(&p, at: t0.addingTimeInterval(50_000)), "it never ends on its own")
-        // Stop logs the reps and the session goes on by itself to the plank, then finishes.
-        let stopAt = t0.addingTimeInterval(200)
-        e.stop(&p, reps: 11, at: stopAt)
+        e.logSet(&p, reps: 8, weight: 140, at: at(200))
+        XCTAssertTrue(e.tick(&p, at: at(5_000)))
+        XCTAssertEqual(p.run?.step, 6, "stopped at the failure set")
+        XCTAssertFalse(e.tick(&p, at: at(50_000)), "it never ends on its own")
+        // Stop logs the reps; the log after it starts from them, then the plank follows.
+        e.stop(&p, reps: 11, at: at(400))
         XCTAssertEqual(p.values["e1-fail"], 11)
         XCTAssertEqual(p.ticked["e1-sets"], ["Set 1", "Set 2", "Set 3"])
-        XCTAssertEqual(p.run?.step, 5)
-        XCTAssertTrue(e.tick(&p, at: stopAt.addingTimeInterval(61 + 31)))
-        XCTAssertNotNil(p.run?.finished, "finished on its own")
+        XCTAssertEqual(p.run?.step, 7)
+        XCTAssertEqual(e.logStart(p, e.steps[7]).reps, 11)
+        e.logSet(&p, reps: 11, weight: 140, at: at(410))
+        XCTAssertEqual(p.run?.step, 8)
+        XCTAssertTrue(e.tick(&p, at: at(410 + 61 + 31)))
+        XCTAssertEqual(p.run?.step, 10, "the plank set ended, its log waits")
+        XCTAssertNil(p.run?.finished)
+        e.logSet(&p, reps: 30, weight: nil, at: at(600))
+        XCTAssertNotNil(p.run?.finished, "the last log finishes it")
         XCTAssertEqual(p.ticked["e2-sets"], ["Set 1"])
         XCTAssertEqual(e.setsDone(p).done, 4)
         XCTAssertEqual(e.setsDone(p).of, 4)
         XCTAssertEqual(p.answers(r)["e1-fail"], .number(11), "Send carries the failure reps")
+        XCTAssertEqual(p.answers(r)["e2-secs"], .number(30))
+        XCTAssertEqual(p.answers(r)["e1-lb"], .number(140), "Send carries what the last set was done at")
+    }
+
+    func testALogOnlyAnswersALogStep() throws {
+        let e = SessionEngine(try runner(), fast: false)
+        var p = RunnerProgress()
+        p.run = e.begin(at: t0)
+        e.logSet(&p, reps: 20, weight: 200, at: t0.addingTimeInterval(5))
+        XCTAssertEqual(p.run?.step, 0, "a work set is not logged")
+        XCTAssertNil(p.values["e1-s1-reps"])
+        // Before any log the numbers start from the plan's.
+        let start = e.logStart(p, e.steps[1])
+        XCTAssertEqual(start.reps, 8)
+        XCTAssertEqual(start.weight, 135)
+    }
+
+    func testRepsAndWeightSaidOutLoud() {
+        XCTAssertEqual(TimedSessionView.heard("8 reps at 135 pounds"), [8, 135])
+        XCTAssertEqual(TimedSessionView.heard("did 10"), [10])
+        XCTAssertEqual(TimedSessionView.heard("22.5 kilos"), [22.5])
+        XCTAssertTrue(TimedSessionView.heard("no numbers here").isEmpty)
     }
 
     func testNewLiftersNeverWaitOnAStop() throws {
@@ -86,7 +126,15 @@ final class WorkoutSessionTests: XCTestCase {
         var p = RunnerProgress()
         p.run = e.begin(at: t0)
         XCTAssertTrue(e.tick(&p, at: t0.addingTimeInterval(100_000)))
-        XCTAssertNotNil(p.run?.finished, "start to finish with no taps at all")
+        XCTAssertNil(p.run?.finished, "it waits at the first log")
+        // A person who logs each set (the plan's numbers) finishes it, nothing else asked.
+        var t = t0.addingTimeInterval(200_000)
+        for _ in 0..<20 where p.run?.finished == nil {
+            t = t.addingTimeInterval(1_000)
+            e.tick(&p, at: t)
+            if let run = p.run, e.current(run)?.kind == .log { e.logSet(&p, reps: 8, weight: 135, at: t) }
+        }
+        XCTAssertNotNil(p.run?.finished)
         XCTAssertNil(p.values["e1-fail"])
         XCTAssertNil(p.answers(r)["e1-fail"])
         XCTAssertEqual(e.setsDone(p).done, 4)
@@ -96,17 +144,21 @@ final class WorkoutSessionTests: XCTestCase {
         let e = SessionEngine(try runner(), fast: false)
         var p = RunnerProgress()
         p.run = e.begin(at: t0)
-        // Done early: the set ticks and the rest starts now.
+        // Done early: the set ticks and the app asks what was done; the rest starts when that is logged.
         e.doneEarly(&p, at: t0.addingTimeInterval(10))
         XCTAssertEqual(p.ticked["e1-sets"], ["Set 1"])
         XCTAssertEqual(p.run?.step, 1)
-        XCTAssertEqual(p.run?.left(at: t0.addingTimeInterval(10)), 60)
+        e.pause(&p, at: t0.addingTimeInterval(11))
+        XCTAssertFalse(p.run?.isPaused ?? true, "a log is not on a clock, so it is not paused")
+        e.logSet(&p, reps: 8, weight: 135, at: t0.addingTimeInterval(12))
+        XCTAssertEqual(p.run?.step, 2)
+        XCTAssertEqual(p.run?.left(at: t0.addingTimeInterval(12)), 60)
         // +15s on the rest.
-        e.addTime(&p, at: t0.addingTimeInterval(20))
-        XCTAssertEqual(p.run?.left(at: t0.addingTimeInterval(20)), 65, "60s rest from 10s, +15s, 10s gone")
+        e.addTime(&p, at: t0.addingTimeInterval(22))
+        XCTAssertEqual(p.run?.left(at: t0.addingTimeInterval(22)), 65, "60s rest from 12s, +15s, 10s gone")
         // Pause holds the seconds; time passing changes nothing; resume goes on from them.
-        e.pause(&p, at: t0.addingTimeInterval(30))
-        let held = p.run?.left(at: t0.addingTimeInterval(30))
+        e.pause(&p, at: t0.addingTimeInterval(32))
+        let held = p.run?.left(at: t0.addingTimeInterval(32))
         XCTAssertEqual(p.run?.left(at: t0.addingTimeInterval(9_000)), held)
         XCTAssertFalse(e.tick(&p, at: t0.addingTimeInterval(9_000)), "paused does not move")
         e.resume(&p, at: t0.addingTimeInterval(9_000))
@@ -115,7 +167,7 @@ final class WorkoutSessionTests: XCTestCase {
         // Skip the move: what was ticked stays, the plank is next.
         e.skipMove(&p, at: t0.addingTimeInterval(9_001))
         XCTAssertEqual(p.ticked["e1-sets"], ["Set 1"])
-        XCTAssertEqual(p.run?.step, 6)
+        XCTAssertEqual(p.run?.step, 9)
         // Skipping the last move ends it.
         e.skipMove(&p, at: t0.addingTimeInterval(9_002))
         XCTAssertNotNil(p.run?.finished)
@@ -126,8 +178,8 @@ final class WorkoutSessionTests: XCTestCase {
         let r = try runner()
         let e = SessionEngine(r, fast: false)
         let p = RunnerProgress()
-        XCTAssertEqual(e.nextLine(after: 1, p), "Next: Bench press, set 2 of 3")
-        XCTAssertEqual(e.nextLine(after: 5, p), "Next: Plank 1x30s")
+        XCTAssertEqual(e.nextLine(after: 2, p), "Next: Bench press, set 2 of 3")
+        XCTAssertEqual(e.nextLine(after: 8, p), "Next: Plank 1x30s")
         XCTAssertEqual(e.target(r.moves[0], p), "Bench press 3x8 at 135")
         XCTAssertEqual(SessionEngine.cue(r.moves[0]), "Brace. Slow down.")
         // The app's own words when the runtime sent none (offline, or an older agent).
@@ -139,8 +191,9 @@ final class WorkoutSessionTests: XCTestCase {
     func testFastTimersForTheUITests() throws {
         let e = SessionEngine(try runner(), fast: true)
         XCTAssertEqual(e.steps.first?.seconds, 6)
-        XCTAssertEqual(e.steps[1].seconds, 5)
+        XCTAssertEqual(e.steps.first { $0.kind == .rest }?.seconds, 5)
         XCTAssertEqual(e.steps.first { $0.kind == .fail }?.seconds, 0, "failure still waits")
+        XCTAssertEqual(e.steps.first { $0.kind == .log }?.seconds, 0, "a log waits for the person")
     }
 
     func testAPausedPlaceSurvivesARelaunch() throws {
@@ -149,13 +202,14 @@ final class WorkoutSessionTests: XCTestCase {
         var p = RunnerProgress()
         p.run = e.begin(at: t0)
         e.doneEarly(&p, at: t0.addingTimeInterval(5))
+        e.logSet(&p, reps: 8, weight: 135, at: t0.addingTimeInterval(8))
         e.pause(&p, at: t0.addingTimeInterval(15))
         let d = try XCTUnwrap(UserDefaults(suiteName: "yui.tests.session"))
         d.removePersistentDomain(forName: "yui.tests.session")
         p.save("wk-20260930-wed", in: d)
         let back = try XCTUnwrap(RunnerProgress.load("wk-20260930-wed", in: d))
         XCTAssertEqual(back, p)
-        XCTAssertEqual(back.run?.paused, 50)
+        XCTAssertEqual(back.run?.paused, 53)
         XCTAssertEqual(back.ticked["e1-sets"], ["Set 1"])
         d.removePersistentDomain(forName: "yui.tests.session")
     }
@@ -177,14 +231,16 @@ final class WorkoutSessionTests: XCTestCase {
         XCTAssertEqual(r.rest, 90, "the line after the rest leaves it alone")
         let e = SessionEngine(r, fast: false)
         XCTAssertEqual(e.steps.map { "\($0.kind)-\($0.move)-\($0.set)" },
-                       ["work-0-1", "rest-0-1", "work-0-2", "rest-0-2", "work-1-1", "rest-1-1", "work-1-2"])
+                       ["work-0-1", "log-0-1", "rest-0-1", "work-0-2", "log-0-2", "rest-0-2", "work-1-1", "log-1-1", "rest-1-1", "work-1-2", "log-1-2"])
         XCTAssertEqual(e.why(at: 0), "Last time 25 lb for 3x12, felt easy: try 30.")
-        XCTAssertNil(e.why(at: 1), "the rest before set 2 is about set 2")
-        XCTAssertNil(e.why(at: 2))
-        XCTAssertEqual(e.why(at: 3), "Last time 2x9, every rep: try 10 a set.", "the rest before the next move says its call")
-        XCTAssertEqual(e.why(at: 4), "Last time 2x9, every rep: try 10 a set.")
-        XCTAssertNil(e.why(at: 5))
-        XCTAssertNil(e.why(at: 6))
+        XCTAssertNil(e.why(at: 1), "a log has no call")
+        XCTAssertNil(e.why(at: 2), "the rest before set 2 is about set 2")
+        XCTAssertNil(e.why(at: 3))
+        XCTAssertEqual(e.why(at: 5), "Last time 2x9, every rep: try 10 a set.", "the rest before the next move says its call")
+        XCTAssertEqual(e.why(at: 6), "Last time 2x9, every rep: try 10 a set.")
+        XCTAssertNil(e.why(at: 7))
+        XCTAssertNil(e.why(at: 8))
+        XCTAssertNil(e.why(at: 9))
         XCTAssertNil(e.why(at: 99))
         // A plan with no call (an older runtime): no line.
         XCTAssertNil(SessionEngine(try runner(), fast: false).why(at: 0))

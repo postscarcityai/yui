@@ -9,12 +9,15 @@ import YuiLines
 // set, then the rest countdown, then the next set, then the next move, with no taps
 // between. A tap is optional (Done early, +15s, Skip, Pause). The last set of a lift
 // goes to failure only when the first plan chose it: that one waits for Stop.
+// After each set the app asks reps done and weight (feedback, Oct 5: "one move at a
+// time, after each set it asks"), and the rest starts when that is logged.
 // The clock is dates, not ticks: a kill, a relaunch or a pause comes back to the
 // right second, and steps that ended while the app was away are caught up.
 
 /// One step of the session's schedule.
 struct SessionStep: Equatable {
-    enum Kind: Equatable { case work, fail, rest }
+    /// `log`: the set is over and the app asks what was done (reps, weight). It waits for the person.
+    enum Kind: Equatable { case work, fail, log, rest }
     let kind: Kind
     /// Index into the runner's moves.
     let move: Int
@@ -60,6 +63,7 @@ struct SessionEngine {
                 let last = n == m.labels.count
                 out.append(SessionStep(kind: last && m.fail ? .fail : .work, move: mi, set: n,
                                        seconds: last && m.fail ? 0 : fast ? 6 : Self.workSeconds(m)))
+                out.append(SessionStep(kind: .log, move: mi, set: n, seconds: 0))
                 if !(mi == runner.moves.count - 1 && last) {
                     out.append(SessionStep(kind: .rest, move: mi, set: n, seconds: fast ? 5 : runner.rest))
                 }
@@ -88,12 +92,12 @@ struct SessionEngine {
     func current(_ run: SessionRun) -> SessionStep? { run.finished == nil && run.step < steps.count ? steps[run.step] : nil }
 
     /// The next work step after `i`: where a rest says what is next.
-    func nextWork(after i: Int) -> SessionStep? { steps.dropFirst(i + 1).first { $0.kind != .rest } }
+    func nextWork(after i: Int) -> SessionStep? { steps.dropFirst(i + 1).first { $0.kind == .work || $0.kind == .fail } }
 
     /// Completes step `i` at `base`: a finished work set ticks; the run moves on, the next step starting at `base`.
     private func complete(_ p: inout RunnerProgress, at base: Date, ticking: Bool = true) {
         guard var run = p.run, let s = current(run) else { return }
-        if s.kind != .rest, ticking { mark(&p, s) }
+        if s.kind == .work || s.kind == .fail, ticking { mark(&p, s) }
         run.step += 1
         run.paused = nil
         run.pausedAt = nil
@@ -114,7 +118,10 @@ struct SessionEngine {
     @discardableResult
     func tick(_ p: inout RunnerProgress, at now: Date = .now) -> Bool {
         var moved = false
-        while let run = p.run, run.finished == nil, !run.isPaused, run.ends <= now {
+        // At most one pass over the schedule, and never past its end: a run saved against a longer plan
+        // (or ticked by a plan still streaming in) waits instead of looping.
+        for _ in 0...steps.count {
+            guard let run = p.run, run.finished == nil, !run.isPaused, run.step < steps.count, run.ends <= now else { break }
             complete(&p, at: run.ends)
             moved = true
         }
@@ -152,7 +159,7 @@ struct SessionEngine {
     }
 
     func pause(_ p: inout RunnerProgress, at now: Date = .now) {
-        guard var run = p.run, let s = current(run), s.kind != .fail, !run.isPaused else { return }
+        guard var run = p.run, let s = current(run), s.kind == .work || s.kind == .rest, !run.isPaused else { return }
         run.paused = run.left(at: now)
         run.pausedAt = now
         p.run = run
@@ -165,6 +172,28 @@ struct SessionEngine {
         run.paused = nil
         run.pausedAt = nil
         p.run = run
+    }
+
+    /// The log step answered: reps (or seconds) and weight for the set just done, kept for it and as the move's
+    /// numbers from here on (the next set starts where this one ended). The run moves on to the rest.
+    func logSet(_ p: inout RunnerProgress, reps: Double, weight: Double?, at now: Date = .now) {
+        guard let run = p.run, let s = current(run), s.kind == .log else { return }
+        let m = runner.moves[s.move]
+        if let n = m.nudges.first(where: { !$0.ylID.hasSuffix("-lb") }) { p.values[n.ylID] = reps }
+        if let w = weight, let lb = m.nudges.first(where: { $0.ylID.hasSuffix("-lb") }) { p.values[lb.ylID] = w }
+        p.values["\(m.tag)-s\(s.set)-reps"] = reps
+        if let w = weight { p.values["\(m.tag)-s\(s.set)-lb"] = w }
+        complete(&p, at: now)
+    }
+
+    /// What the log step starts from: the reps just done on a failure set, else the move's number as it stands.
+    func logStart(_ p: RunnerProgress, _ s: SessionStep) -> (reps: Double, weight: Double?) {
+        let m = runner.moves[s.move]
+        let repsNudge = m.nudges.first { !$0.ylID.hasSuffix("-lb") }
+        let fail = s.set == m.labels.count && m.fail ? p.values["\(m.tag)-fail"] : nil
+        let reps = fail ?? repsNudge.flatMap { p.values[$0.ylID] ?? $0.number("value") } ?? 8
+        let weight = m.nudges.first { $0.ylID.hasSuffix("-lb") }.flatMap { p.values[$0.ylID] ?? $0.number("value") }
+        return (reps, weight)
     }
 
     /// Stop on the failure set: the reps it went to are logged, and the run moves on.
@@ -205,6 +234,7 @@ struct SessionEngine {
     func why(at i: Int) -> String? {
         guard i >= 0, i < steps.count else { return nil }
         let s = steps[i]
+        guard s.kind != .log else { return nil }
         let w: SessionStep? = s.kind == .rest ? nextWork(after: i) : s
         guard let w, w.set == 1, let why = runner.moves[w.move].why, !why.isEmpty else { return nil }
         return why
@@ -234,6 +264,11 @@ struct TimedSessionView: View {
     let logged: Bool
     let log: (String?) -> Void
     @State private var failReps = 8
+    /// The log step's numbers (reps or seconds, weight), set from the plan each time a set ends.
+    @State private var logReps = 8.0
+    @State private var logLb: Double?
+    @State private var talk = PushToTalk()
+    @State private var clock = Timer.publish(every: 0.25, on: .main, in: .common).autoconnect()
     @State private var feel: String?
     @Environment(\.yuiTheme) private var theme
     @Environment(\.colorScheme) private var scheme
@@ -248,16 +283,24 @@ struct TimedSessionView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .task {
-            // The clock is dates: every quarter second, anything that ended moves on.
-            while !Task.isCancelled {
-                var p = progress
-                if engine.tick(&p) { progress = p }
-                try? await Task.sleep(for: .milliseconds(250))
-            }
+        // The clock is dates: every quarter second, anything that ended moves on. A timer, not a task:
+        // its action is the latest one, so a plan still streaming in is never ticked from a stale schedule.
+        .onReceive(clock) { _ in
+            var p = progress
+            if engine.tick(&p) { progress = p }
         }
-        .onAppear { UIApplication.shared.isIdleTimerDisabled = true }
-        .onDisappear { UIApplication.shared.isIdleTimerDisabled = false }
+        .onAppear { UIApplication.shared.isIdleTimerDisabled = true; startLog() }
+        .onDisappear { UIApplication.shared.isIdleTimerDisabled = false; if talk.listening { talk.cancel() } }
+        .onChange(of: progress.run?.step) { _, _ in startLog() }
+    }
+
+    /// A set just ended: the numbers start from the plan's (or the last set's), ready to nudge.
+    private func startLog() {
+        let e = engine
+        guard let run = progress.run, let step = e.current(run), step.kind == .log else { return }
+        let start = e.logStart(progress, step)
+        logReps = start.reps
+        logLb = start.weight
     }
 
     private func running(_ run: SessionRun, _ s: Swatch) -> some View {
@@ -265,18 +308,19 @@ struct TimedSessionView: View {
         let step = e.steps[min(run.step, e.steps.count - 1)]
         let m = runner.moves[step.move]
         let resting = step.kind == .rest
+        let logging = step.kind == .log
         let accent = resting ? s.mint : step.kind == .fail ? s.butter : s.accent
         return VStack(alignment: .leading, spacing: theme.spacing.m) {
             ProgressView(value: Double(run.step), total: Double(e.steps.count)).tint(s.accent)
                 .accessibilityIdentifier("session-progress")
             HStack {
-                Text(resting ? "Rest" : step.kind == .fail ? "To failure" : "Work")
+                Text(resting ? "Rest" : logging ? "Log" : step.kind == .fail ? "To failure" : "Work")
                     .font(theme.font(theme.type.caption, .heavy)).textCase(.uppercase)
                     .foregroundStyle(resting ? s.ink : s.userInk)
                     .padding(.horizontal, theme.spacing.s).padding(.vertical, 3)
                     .background(accent, in: Capsule())
                     .accessibilityIdentifier("session-phase")
-                    .accessibilityLabel(resting ? "Rest" : step.kind == .fail ? "To failure" : "Work")
+                    .accessibilityLabel(resting ? "Rest" : logging ? "Log" : step.kind == .fail ? "To failure" : "Work")
                 Spacer()
                 Text("Move \(step.move + 1) of \(runner.moves.count) · Set \(step.set) of \(m.labels.count)")
                     .font(theme.font(theme.type.caption, .heavy)).foregroundStyle(s.inkSoft)
@@ -285,8 +329,8 @@ struct TimedSessionView: View {
             Text(m.name).font(theme.font(theme.type.display, .heavy)).foregroundStyle(s.ink)
                 .fixedSize(horizontal: false, vertical: true)
                 .accessibilityIdentifier("session-move")
-            if step.kind == .fail { failSet(m, s) } else { clockRing(run, step, accent, s) }
-            coach(e, run, step, m, s)
+            if step.kind == .fail { failSet(m, s) } else if logging { logView(e, step, m, s) } else { clockRing(run, step, accent, s) }
+            if !logging { coach(e, run, step, m, s) }
             controls(e, run, step, s)
         }
         .sensoryFeedback(.impact, trigger: run.step)
@@ -294,6 +338,94 @@ struct TimedSessionView: View {
             // Changes of step ring: the gap between work and rest is heard, not watched.
             AudioServicesPlaySystemSound(1005)
             failReps = Int(runner.moves[min(step.move, runner.moves.count - 1)].nudges.first { $0.ylID.hasSuffix("-reps") }?.number("value") ?? 8)
+        }
+    }
+
+    // MARK: the log after a set
+
+    /// What the set just done was: reps (or seconds) and weight, chips around the plan's number, a stepper, a mic.
+    private func logView(_ e: SessionEngine, _ step: SessionStep, _ m: RunnerMove, _ s: Swatch) -> some View {
+        let timed = m.nudges.first.map { $0.ylID.hasSuffix("-secs") } ?? false
+        let repsNudge = m.nudges.first { !$0.ylID.hasSuffix("-lb") }
+        let lbNudge = m.nudges.first { $0.ylID.hasSuffix("-lb") }
+        let aim = e.logStart(progress, step)
+        return VStack(alignment: .leading, spacing: theme.spacing.m) {
+            Text("Set \(step.set) of \(m.labels.count) done")
+                .font(theme.font(theme.type.title, .heavy)).foregroundStyle(s.ink)
+                .accessibilityIdentifier("session-log-title")
+            logRow(timed ? "Seconds" : "Reps", id: "session-log-reps", value: $logReps, aim: aim.reps,
+                   step: max(repsNudge?.number("step") ?? 1, 1), lo: repsNudge?.number("min") ?? 1, hi: max(repsNudge?.number("max") ?? 60, 1), unit: timed ? "s" : "", s)
+            if let aimW = aim.weight, lbNudge != nil {
+                logRow("Weight", id: "session-log-lb", value: Binding(get: { logLb ?? aimW }, set: { logLb = $0 }), aim: aimW,
+                       step: max(lbNudge?.number("step") ?? 5, 0.5), lo: lbNudge?.number("min") ?? 0, hi: lbNudge?.number("max") ?? 500, unit: " lb", s)
+            }
+            micButton(s)
+            OptionPill(text: "Log set", fill: s.accent, ink: s.onAccent, grow: true, icon: "checkmark") {
+                var p = progress
+                e.logSet(&p, reps: logReps, weight: lbNudge == nil ? nil : (logLb ?? aim.weight))
+                if talk.listening { talk.cancel() }
+                withAnimation(theme.spring) { progress = p }
+            }
+            .accessibilityIdentifier("session-log-done")
+        }
+    }
+
+    /// One number: its label and stepper, then chips for the plan's number and two either side.
+    private func logRow(_ what: String, id: String, value: Binding<Double>, aim: Double, step: Double, lo: Double, hi: Double,
+                        unit: String, _ s: Swatch) -> some View {
+        VStack(alignment: .leading, spacing: theme.spacing.s) {
+            HStack(spacing: theme.spacing.m) {
+                Text(what).font(theme.font(theme.type.body, .bold)).foregroundStyle(s.inkSoft)
+                Spacer()
+                nudgeButton("minus", label: "Less \(what.lowercased())", id: "\(id)-minus", s) { value.wrappedValue = max(lo, value.wrappedValue - step) }
+                Text(YLComponent.format(value.wrappedValue) + unit)
+                    .font(theme.font(theme.type.display, .black).monospacedDigit()).foregroundStyle(s.ink)
+                    .lineLimit(1).minimumScaleFactor(0.6)
+                    .frame(minWidth: 96).accessibilityIdentifier("\(id)-value")
+                nudgeButton("plus", label: "More \(what.lowercased())", id: "\(id)-plus", s) { value.wrappedValue = min(hi, value.wrappedValue + step) }
+            }
+            HStack(spacing: theme.spacing.xs) {
+                ForEach(-2...2, id: \.self) { k in
+                    let v = aim + Double(k) * step
+                    if v >= lo, v <= hi {
+                        OptionPill(text: YLComponent.format(v), fill: s.lavender, on: value.wrappedValue == v, grow: true) { value.wrappedValue = v }
+                            .accessibilityIdentifier("\(id)-chip-\(YLComponent.format(v))")
+                    }
+                }
+            }
+        }
+    }
+
+    /// "8 reps at 135" said out loud: the first number is the reps (or seconds), the second the weight.
+    static func heard(_ words: String) -> [Double] {
+        words.matches(of: /\d+(?:\.\d+)?/).compactMap { Double($0.0) }
+    }
+
+    private func micButton(_ s: Swatch) -> some View {
+        let on = talk.listening
+        return Button {
+            if on { talk.cancel() } else {
+                #if DEBUG
+                talk.fakeWords = UserDefaults.standard.string(forKey: "yuiPTTFake")
+                #endif
+                Task { await talk.start() }
+            }
+        } label: {
+            Label(on ? "Listening" : talk.phase == .denied ? "Mic is off" : "Say reps and weight", systemImage: on ? "waveform" : "mic.fill")
+                .font(theme.font(theme.type.body, .bold))
+                .foregroundStyle(on ? s.onAccent : s.ink)
+                .symbolEffect(.variableColor.iterative, isActive: on)
+                .padding(.horizontal, theme.spacing.l).padding(.vertical, theme.spacing.m)
+                .frame(maxWidth: .infinity)
+                .background(on ? s.accent : s.background, in: Capsule())
+                .overlay(Capsule().stroke(on ? .clear : s.outline, lineWidth: 1.5))
+        }
+        .buttonStyle(BounceButtonStyle())
+        .accessibilityIdentifier("session-log-voice")
+        .onChange(of: talk.transcript) { _, words in
+            let n = Self.heard(words)
+            if let r = n.first { logReps = r }
+            if n.count > 1 { logLb = n[1] }
         }
     }
 
@@ -379,7 +511,7 @@ struct TimedSessionView: View {
 
     private func controls(_ e: SessionEngine, _ run: SessionRun, _ step: SessionStep, _ s: Swatch) -> some View {
         HStack(spacing: theme.spacing.s) {
-            if step.kind == .fail {
+            if step.kind == .fail || step.kind == .log {
                 EmptyView()
             } else if run.isPaused {
                 OptionPill(text: "Resume", fill: s.accent, ink: s.onAccent, grow: true) { change { e.resume(&$0) } }

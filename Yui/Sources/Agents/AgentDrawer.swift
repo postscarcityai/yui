@@ -23,6 +23,14 @@ enum Drawer {
 // MARK: What's waiting on you
 
 /// One ask in the thread with no answer yet: a question, a pick, a form, a plan.
+extension ChatMessage {
+    /// The message carries a plan shaped like a workout (moves with sets to tick): that plays full screen as the runner.
+    var holdsWorkout: Bool {
+        guard let yl else { return false }
+        return yl.components.contains { $0.preset == "plan" && RunnerPlan.of(yl.components.steps(of: $0)) != nil }
+    }
+}
+
 struct ReviewItem: Identifiable, Equatable {
     let message: ChatMessage
     /// The ask itself and what came just before it in the reply (the card or
@@ -30,6 +38,9 @@ struct ReviewItem: Identifiable, Equatable {
     let parts: [YLComponent]
     let ask: YLComponent
     var id: String { "\(message.id)#\(ask.serial)" }
+
+    /// A plan shaped like a workout (moves with sets to tick): it runs full screen, never inside the drawer.
+    var isWorkout: Bool { ask.preset == "plan" && message.holdsWorkout }
 
     var kicker: String {
         switch ask.preset {
@@ -590,7 +601,13 @@ private struct DrawerReview: View {
                     .font(theme.font(theme.type.caption, .semibold)).foregroundStyle(c.inkSoft)
                 ForEach(items) { item in
                     ReviewCard(item: item, open: open == item.id, store: store) {
-                        withAnimation(theme.spring) { open = open == item.id ? nil : item.id }
+                        // A workout never plays in the drawer: its runner is full screen (Chris, build 522).
+                        if item.isWorkout {
+                            close()
+                            store.openStage(item.message.id)
+                        } else {
+                            withAnimation(theme.spring) { open = open == item.id ? nil : item.id }
+                        }
                     }
                 }
                 // What the agent flagged for you (`menu review`): a tap opens it.
@@ -601,7 +618,7 @@ private struct DrawerReview: View {
                 }
             }
         }
-        .onAppear { if open == nil { open = items.first?.id } }
+        .onAppear { if open == nil { open = items.first(where: { !$0.isWorkout })?.id } }
     }
 }
 

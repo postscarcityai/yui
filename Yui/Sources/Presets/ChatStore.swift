@@ -542,6 +542,10 @@ final class ChatStore {
         }
         #endif
         let id = UUID().uuidString.lowercased()
+        // A card's button on a screen beside the chat (Today's workout: Start) asks the agent for something
+        // that answers in the chat or on the stage: go there, where the working row and the answer are.
+        // Left on the screen, a reply that is not a full-screen plan landed out of sight (build 522: "Start does nothing").
+        if e.preset == "card", e.value["cta"] != nil, e.relays, page > 1 { goToPage(1) }
         // A sent plan is done with the whole phone: back to the chat, where its answers land (YUI-51).
         if e.preset == "plan", e.value["plan"] != nil, stageOpen { closeStage() }
         if e.preset == "flow", e.value["flow"] != nil, stageOpen { closeStage() }

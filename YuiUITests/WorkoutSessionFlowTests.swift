@@ -1,8 +1,8 @@
 import XCTest
 
-/// Arnold coaches a timed workout, start to finish (YUI-220). Start opens a full-screen
-/// session that runs on its own clock: a work set, the rest countdown, the next set,
-/// the next move, with no tap between them. `-yuiRunnerFast` makes sets 3 s and rests 2 s.
+/// Arnold coaches a timed workout, start to finish (YUI-220). The plan opens as a full-screen
+/// session, no overview first: a work set, then the app asks reps and weight, then the rest
+/// countdown, then the next set. `-yuiRunnerFast` makes sets 6 s and rests 5 s.
 /// A heavy lifter's last set waits for Stop and logs its reps; a new lifter never sees it.
 /// Demo account, no network. `YUI_SHOTS=<dir>` saves screenshots.
 final class WorkoutSessionFlowTests: XCTestCase {
@@ -59,7 +59,8 @@ final class WorkoutSessionFlowTests: XCTestCase {
     private func phase(_ app: XCUIApplication, _ phase: String, timeout: TimeInterval) -> Bool {
         let end = Date().addingTimeInterval(timeout)
         while Date() < end {
-            if t(app, "session-phase").exists, t(app, "session-phase").label.caseInsensitiveCompare(phase) == .orderedSame { return true }
+            let el = app.staticTexts["session-phase"].firstMatch
+            if el.exists, el.label.caseInsensitiveCompare(phase) == .orderedSame { return true }
             usleep(200_000)
         }
         return false
@@ -77,9 +78,7 @@ final class WorkoutSessionFlowTests: XCTestCase {
         let app = launch(log)
 
         XCTAssertTrue(app.staticTexts["Upper"].waitForExistence(timeout: 15), "the runner never opened")
-        let start = b(app, "runner-start")
-        XCTAssertTrue(start.waitForExistence(timeout: 5), "no Start button on the overview")
-        start.tap()
+        XCTAssertFalse(b(app, "runner-start").exists, "an overview with a second Start came first")
 
         // Work set: its move, Arnold's line, the clock. Then the taps stop.
         XCTAssertTrue(phase(app, "Work", timeout: 5), "Start did not open a work set")
@@ -87,8 +86,21 @@ final class WorkoutSessionFlowTests: XCTestCase {
         XCTAssertEqual(t(app, "session-cue").label, "Brace. Slow down.")
         shot("1-work")
 
-        // Set 1 ends on its own and the rest counts down, saying what is next.
-        XCTAssertTrue(phase(app, "Rest", timeout: 12), "the rest did not start by itself")
+        // Set 1 ends on its own and the app asks what was done: nudge the reps and weight, then log it.
+        XCTAssertTrue(phase(app, "Log", timeout: 12), "the set did not ask what was done")
+        XCTAssertEqual(t(app, "session-log-title").label, "Set 1 of 2 done")
+        XCTAssertEqual(t(app, "session-log-reps-value").label, "8")
+        XCTAssertEqual(t(app, "session-log-lb-value").label, "135 lb")
+        XCTAssertTrue(b(app, "session-log-reps-chip-8").exists, "no chips around the target")
+        b(app, "session-log-reps-plus").tap()
+        b(app, "session-log-lb-plus").tap()
+        XCTAssertEqual(t(app, "session-log-reps-value").label, "9")
+        XCTAssertEqual(t(app, "session-log-lb-value").label, "140 lb")
+        shot("1b-log")
+        b(app, "session-log-done").tap()
+
+        // Then the rest counts down, saying what is next.
+        XCTAssertTrue(phase(app, "Rest", timeout: 5), "the rest did not start after the log")
         XCTAssertTrue(t(app, "session-next").label.hasPrefix("Next: Bench press"), "rest line: \(t(app, "session-next").label)")
         shot("2-rest")
 
@@ -101,13 +113,29 @@ final class WorkoutSessionFlowTests: XCTestCase {
             b(app, "session-fail-plus").tap()
             XCTAssertEqual(t(app, "session-fail-value").label, "10")
             b(app, "session-stop").tap()
+            XCTAssertTrue(phase(app, "Log", timeout: 5), "the failure set did not ask for its weight")
+            XCTAssertEqual(t(app, "session-log-reps-value").label, "10", "the log did not start from the reps at Stop")
+            b(app, "session-log-done").tap()
         } else {
-            XCTAssertFalse(phase(app, "To failure", timeout: 8), "a new lifter was sent to failure")
+            // Set 2 asks again, starting where set 1 ended.
+            XCTAssertTrue(phase(app, "Log", timeout: 14), "set 2 did not ask")
             XCTAssertFalse(b(app, "session-stop").exists, "a new lifter got a Stop button")
+            XCTAssertEqual(t(app, "session-log-reps-value").label, "9", "set 2 did not start from set 1")
+            b(app, "session-log-done").tap()
         }
 
-        // The plank and the finish run by themselves.
-        XCTAssertTrue(app.staticTexts["session-finish"].waitForExistence(timeout: 60), "the session did not finish on its own")
+        // The plank asks for its seconds, and the finish follows.
+        let asked = phase(app, "Log", timeout: 40)
+        shot("3b-plank")
+        XCTAssertTrue(asked, "the plank did not ask")
+        XCTAssertFalse(t(app, "session-log-lb-value").exists, "a plank asked for a weight")
+        b(app, "session-log-done").tap()
+        XCTAssertTrue(phase(app, "Rest", timeout: 5), "no rest between the plank's sets")
+        let second = phase(app, "Log", timeout: 25)
+        shot("3c-plank-2")
+        XCTAssertTrue(second, "the plank's second set did not ask")
+        b(app, "session-log-done").tap()
+        XCTAssertTrue(app.staticTexts["session-finish"].waitForExistence(timeout: 60), "the session did not finish after the last log")
         XCTAssertEqual(t(app, "session-sets").label, "4 of 4")
         shot("4-finish")
         b(app, "Just right").tap()
@@ -122,6 +150,7 @@ final class WorkoutSessionFlowTests: XCTestCase {
         XCTAssertEqual(p["e1-sets"] as? [String], ["Set 1", "Set 2"])
         XCTAssertEqual(p["e2-sets"] as? [String], ["Set 1", "Set 2"])
         XCTAssertEqual(p["feel"] as? String, "Just right")
+        XCTAssertEqual(p["e1-lb"] as? Double, 140, "Send carries what the sets were done at")
         if heavy { XCTAssertEqual(p["e1-fail"] as? Double, 10) } else { XCTAssertNil(p["e1-fail"]) }
     }
 }

@@ -113,6 +113,8 @@ struct ChatView: View {
     @State private var recordTyping = false
     /// The record shows the bar (mic, T, +) in place of the field.
     private var recordBar: Bool { stageFirstOn && talkPage == nil && !recordTyping }
+    /// The stage went down so a workout could play full screen; it comes back when the runner closes.
+    @State private var stageHeldForWorkout = false
     private var stageFirstOn: Bool { StageFirstModel.enabled(stored: stageFirstStored) }
     /// The thread's scroll, and whether it is far enough up to offer the way back down (YUI-50).
     @State private var position = ScrollPosition(edge: .bottom)
@@ -427,6 +429,16 @@ struct ChatView: View {
         .onChange(of: agentStyle, initial: true) { store.style = agentStyle }
         // The stage's reply went, or its screens stopped being staged: close it (YUI-80).
         .onChange(of: store.stageShowing) { store.settleStage() }
+        // A workout's runner is full screen over everything: the stage steps down while it plays and comes back after.
+        .onChange(of: store.stageOpen) { _, open in
+            if open, stageFirstOn, stageFirst.open, store.stageMessage?.holdsWorkout == true {
+                stageHeldForWorkout = true
+                closeStageFirst()
+            } else if !open, stageHeldForWorkout {
+                stageHeldForWorkout = false
+                openStageFirst()
+            }
+        }
         // A full screen takes the keyboard down with it, however it opened: a tap, a pill,
         // the agent. Closing it leaves the keyboard down (feedback ACbsyYSZ).
         .onChange(of: store.stageOpen) { _, open in
@@ -726,6 +738,14 @@ struct ChatView: View {
         // (YUI-262: it left every stage-first tap on the home, whatever the reply held).
         guard stageFirstOn || store.messages.first(where: { $0.id == id })?.yl?.staged(store.style).isEmpty == false else { return }
         openStage(id, toPlan: true)
+    }
+
+    /// A workout just came back (Start on Today's workout, "start my workout"): it opens as the runner, full screen,
+    /// not as a line on the stage with the plan a swipe away (Chris, build 522: "Start does nothing").
+    private func landWorkout(after old: String?) {
+        guard stageFirstOn, old != nil, store.loaded, scenePhase == .active, !store.stageOpen, !showSettings, !showAgents,
+              let m = store.messages.last, !m.fromUser, m.holdsWorkout, m.sentAt.timeIntervalSinceNow > -PushLanding.patience * 4 else { return }
+        store.openStage(m.id)
     }
 
     /// Something the agent said just landed in the thread on screen, and the stage is on the home (no turn
@@ -1735,7 +1755,7 @@ struct ChatView: View {
             }
             .onChange(of: store.loaded) { if store.loaded { stageFirst.seen = store.shown.count } }
             // A reply that lands while the agent's home is up plays at once (YUI-262), no tap on a badge.
-            .onChange(of: store.messages.last?.id) { old, _ in landArrival(after: old) }
+            .onChange(of: store.messages.last?.id) { old, _ in landArrival(after: old); landWorkout(after: old) }
             #if DEBUG
             .task(id: store.loaded) {
                 guard store.loaded, let text = ChatStore.demoText("yuiDemoArrive") else { return }
@@ -3449,3 +3469,4 @@ private struct ChatsHooks: ViewModifier {
         }
     }
 }
+
