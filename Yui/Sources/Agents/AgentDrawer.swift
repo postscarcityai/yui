@@ -384,7 +384,6 @@ private struct DrawerHome: View {
 
     var body: some View {
         let c = theme.swatch(scheme)
-        let name = store.agent?.name ?? "Yui"
         VStack(alignment: .leading, spacing: theme.spacing.s) {
             DrawerChats(store: store, openChat: openChat)
 
@@ -422,15 +421,11 @@ private struct DrawerHome: View {
                 .accessibilityIdentifier("drawer-next-up")
             }
 
-            DrawerHeading(text: "Pinned screens")
+            // Pinned screens show once there is one. Empty, the section was a dashed box of
+            // instructions in the one place a person comes to get somewhere.
             let pinned = store.shelf.screens
-            if pinned.isEmpty {
-                Text("Nothing pinned yet. Ask \(name) to save a screen you'll want again, like a workout.")
-                    .font(theme.font(theme.type.caption)).foregroundStyle(c.inkSoft)
-                    .padding(theme.spacing.l)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .overlay(RoundedRectangle(cornerRadius: 20).stroke(c.outline, style: StrokeStyle(lineWidth: 1.5, dash: [5, 4])))
-            } else {
+            if !pinned.isEmpty {
+                DrawerHeading(text: "Pinned screens")
                 ScrollView(.horizontal) {
                     HStack(spacing: theme.spacing.m) {
                         ForEach(Array(pinned.enumerated()), id: \.element.name) { i, s in
