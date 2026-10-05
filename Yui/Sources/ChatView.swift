@@ -464,7 +464,6 @@ struct ChatView: View {
         .onChange(of: store.loaded) { keepPage() }
         #if DEBUG
         // -yuiReactDemo bar|select|<meaning> ("love it"): the reaction bar open, Select text open, or a reacted bubble, for screenshots.
-        .task { await Attachments.refreshLimit(account) }
         .task {
             guard let mode = UserDefaults.standard.string(forKey: "yuiReactDemo") else { return }
             try? await Task.sleep(for: .seconds(1))
@@ -1697,6 +1696,13 @@ struct ChatView: View {
         Color.clear
             .frame(width: 0, height: 0)
             .accessibilityHidden(true)
+            // The server's photo limit, read once signed in. It sat inside the chat body's DEBUG block, so a
+            // TestFlight build never read it and kept the fallback. Here, not there: that chain is at the
+            // type checker's budget and takes no more modifiers.
+            .task(id: account.session?.userID ?? "") {
+                guard account.isSignedIn, account.session?.userID != "demo" else { return }
+                await Attachments.refreshLimit(account)
+            }
             .onChange(of: stageFirstOn, initial: true) { _, on in
                 store.stageFirst = on
                 withAnimation(theme.spring) { stageFirst.open = on }
