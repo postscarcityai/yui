@@ -120,7 +120,10 @@ struct ShapesCanvas: View {
     var body: some View {
         let s = theme.swatch(scheme)
         TimelineView(.animation(paused: still || start == nil || (finished && !scene.pulses))) { tl in
-            let t = still ? Double.infinity : start.map { tl.date.timeIntervalSince($0) - delay } ?? -1
+            // Finished and not pulsing: the timeline is paused, so draw the end state, never the last frame it
+            // happened to tick (a drawing mounted off screen stalled partway on a deck's first page, YUI-302).
+            let rest = still || finished && !scene.pulses
+            let t = rest ? Double.infinity : start.map { tl.date.timeIntervalSince($0) - delay } ?? -1
             Canvas { ctx, size in draw(ctx, size, ShapesModel.frame(scene, at: t), t, s) }
         }
     }
@@ -271,9 +274,18 @@ struct ShapesCanvas: View {
                     c.stroke(path, with: .color(color),
                              style: StrokeStyle(lineWidth: lw * 1.6, lineCap: .round, lineJoin: .round, dash: it.dash ? dash : []))
                 default:
-                    var path = curve(it.hand ? ShapesModel.rough(pts, seed: it.i, amp: ShapesModel.hand * scene.w) : pts, closed: false, u: u)
+                    let line = it.hand ? ShapesModel.rough(pts, seed: it.i, amp: ShapesModel.hand * scene.w, closed: it.close) : pts
+                    var path: Path
+                    if it.sharp {
+                        path = polyline(line, u: u)
+                        if it.close { path.closeSubpath() }
+                    } else {
+                        path = curve(line, closed: it.close, u: u)
+                    }
+                    // +close +fill: a zone, washed like a region.
+                    if it.close, it.fill { c.fill(path, with: .color(color.opacity(0.18 * f.d))) }
                     if !it.dash { path = path.trimmedPath(from: 0, to: f.d) }
-                    c.stroke(path, with: .color(color), style: StrokeStyle(lineWidth: lw, lineCap: .round, dash: it.dash ? dash : []))
+                    c.stroke(path, with: .color(color), style: StrokeStyle(lineWidth: lw, lineCap: .round, lineJoin: .round, dash: it.dash ? dash : []))
                 }
                 if !it.label.isEmpty {
                     var tc = c; tc.opacity = f.o * f.d

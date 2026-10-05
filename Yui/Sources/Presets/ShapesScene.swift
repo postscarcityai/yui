@@ -100,6 +100,9 @@ enum ShapesModel {
         var hand = false
         /// A mark's kind (scribble, underline, check); its `pts` are already roughened (YUI-299).
         var mark: String? = nil
+        /// A path's +close (a zone, washed when it says +fill) and +sharp (straight sides, no curve) (YUI-302).
+        var close = false
+        var sharp = false
     }
 
     struct Scene: Equatable {
@@ -289,6 +292,11 @@ enum ShapesModel {
                 // A region is a closed outline, so it needs three points.
                 if pts.count < (kind == "region" ? 3 : 2) { continue }
                 item.pts = pts
+                // +close joins the last point back to the first; +sharp keeps straight sides (the hub's path).
+                if kind == "path" {
+                    if truthy(p["close"]), pts.count >= 3 { item.close = true; item.fill = truthy(p["fill"]) }
+                    item.sharp = truthy(p["sharp"])
+                }
             } else {
                 // A connector: from= and to= are a shape's id or a point. With
                 // neither, it joins the closed shape before it to the one after it.

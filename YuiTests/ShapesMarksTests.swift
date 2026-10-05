@@ -129,4 +129,16 @@ final class ShapesMarksTests: XCTestCase {
         XCTAssertNotNil(YLMediaURL.url(sc.img))
         XCTAssertEqual(try scene("shapes\nshape dot").img, "")
     }
+
+    /// The hub's drawing-kit zone (YUI-302): `path +close +fill` is a closed, washed outline, not an open dashed line.
+    func testAClosedPathIsAZoneAndAnOpenOneIsALine() throws {
+        let sc = try scene("shapes w=10 h=6\nshape path pts=7,0.8|9.2,1.4|9.4,3|8,3.8|6.9,2.4 +close +fill +dash tone=butter\n"
+                           + "shape path pts=1,1|3,2|5,1 +close +sharp\nshape path pts=1,4|3,5|5,4 +fill")
+        XCTAssertEqual(sc.items.map(\.kind), ["path", "path", "path"])
+        XCTAssertTrue(sc.items[0].close && sc.items[0].fill, "the zone closes and is washed")
+        XCTAssertTrue(sc.items[0].dash)
+        XCTAssertTrue(sc.items[1].close && sc.items[1].sharp && !sc.items[1].fill, "+sharp keeps straight sides")
+        XCTAssertFalse(sc.items[2].close, "no +close, no closing side")
+        XCTAssertFalse(sc.items[2].sharp)
+    }
 }
