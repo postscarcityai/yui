@@ -17,6 +17,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import test_restyle  # noqa: E402
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "yui"))
+import compat  # noqa: E402
 from test_shared import AID, CLIENT, OWNER  # noqa: E402
 
 PUT = "Logged.\n```yui\nput meals Food=Oats Cal=300\nquery meals as table\n```"
@@ -27,7 +29,7 @@ NOTE = "[yui] Your tables:\n\nmeals\nFood | Cal\nOats | 300\n\n[yui] Answer the 
 
 class ReplyPath(test_restyle.Turn):
     def make(self, answers=None):
-        ad, a = super().make(build=test_restyle.MIN + 1)
+        ad, a = super().make(build=max(test_restyle.MIN + 1, compat.TABLES_BUILD))
         a._queue, a.poked, self.calls = {}, [], []
         a._poke = lambda: a.poked.append(1)
         answers = list(answers or [])

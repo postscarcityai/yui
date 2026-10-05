@@ -63,6 +63,9 @@ FLOW_BUILD = 414
 # 466 to 491 can exist without them. Older builds get the words.
 FREE_DRAW_BUILD = 466
 MARKS_BUILD = 492
+# YUI-89: agent tables on the phone (`table create|drop`, `put`, `query`; spec/TABLES.md). The app
+# store, views and delete reached main at 428 (7b182c7); 450 is the first VALID build from it.
+TABLES_BUILD = 450
 MARK_KINDS = {"venn", "contour", "region", "doodle", "tap", "swipe"}
 
 # First app build whose parser knows each preset (git rev-list --count of the
@@ -80,6 +83,7 @@ MIN_BUILD: Dict[str, int] = {
     "diagram": DRAW_BUILD, "mock": DRAW_BUILD, "part": DRAW_BUILD,  # DRAW-2: a Mermaid diagram, a UI mock
     "flow": FLOW_BUILD,                                  # YUI-115: older builds get a plan
     "draw": FREE_DRAW_BUILD,                             # the agent's own SVG: older builds get its words
+    "tablecmd": TABLES_BUILD, "put": TABLES_BUILD, "query": TABLES_BUILD,  # YUI-89: agent tables
 }
 GROUPS = {"sketch": {"row", "after"}, "timeline": {"done", "now", "next"}, "shapes": {"shape"},
           "map": {"area", "pin", "route"}, "mock": {"part", "shape"}}
@@ -131,7 +135,8 @@ def too_new(build: Optional[int]) -> set:
 
 def note(build: Optional[int]) -> str:
     """A line for the agent's turn, or "" when the phone draws everything."""
-    heads = sorted({MEMBER_OF.get(p, p) for p in too_new(build) - QUIET - MADE_OVER})
+    heads = sorted({"table create" if MEMBER_OF.get(p, p) == "tablecmd" else MEMBER_OF.get(p, p)
+                    for p in too_new(build) - QUIET - MADE_OVER})
     marks = build is None or build < MARKS_BUILD
     if not heads and not marks:
         return ""
@@ -165,6 +170,8 @@ def _split(line: str) -> tuple:
             props[k] = v
         else:
             words.append(_unquote(t))
+    if preset == "table" and words[:1] in (["create"], ["drop"]):  # `table` is also the grid component
+        preset = "tablecmd"
     return prefix, head, preset, words, props, flags
 
 
