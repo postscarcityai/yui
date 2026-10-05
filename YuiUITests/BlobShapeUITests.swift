@@ -30,8 +30,9 @@ final class BlobShapeUITests: XCTestCase {
         app.buttons["stage-send-text"].tap()
         let working = app.descendants(matching: .any)["stage-working"]
         XCTAssertTrue(working.waitForExistence(timeout: 5), "no working state after send")
+        // The host's plain tool words are shown in the friendlier voice (WorkingWords): the shape still reads the plain ones.
         for (words, name) in [("Pondering", "1-thinking"), ("Reading your calendar", "2-reading"),
-                              ("Running the tests", "3-running"), ("Searching the web", "4-searching")] {
+                              ("Running the tests", "3-running"), ("Looking around the web", "4-searching")] {
             let got = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label CONTAINS %@", words), object: working)
             XCTAssertEqual(XCTWaiter.wait(for: [got], timeout: 12), .completed, "no step \(words): \(working.label)")
             // Let the morph settle into the shape.

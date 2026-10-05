@@ -281,7 +281,7 @@ Dinner is Beef tacos now, 620 kcal. Your list follows.
         let thread = try write("yui-basil-rows.json", rows(Self.homeRow))
         app = launch(["-yuiDemoHome", "-yuiThreadRows", thread, "-yuiEventLog", log])
         XCTAssertTrue(app.buttons["home-chip-plan"].waitForExistence(timeout: 15), "no home after the relaunch")
-        XCTAssertTrue(text(app, "Nothing waiting on you"), "his pages' pickers read as waiting on you")
+        XCTAssertFalse(app.descendants(matching: .any)["home-waiting"].exists, "his pages' pickers read as waiting on you")
         app.goToScreen(4)
         XCTAssertTrue(item(app, "Spinach").waitForExistence(timeout: 8), "the grocery list is gone after the relaunch")
         XCTAssertTrue(item(app, "Spinach").isSelected, "Spinach lost its tick on relaunch")

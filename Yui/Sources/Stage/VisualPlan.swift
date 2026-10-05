@@ -80,6 +80,14 @@ struct VisualPlan: Equatable, Sendable {
         func shown(_ level: Double) -> Double {
             steps > 0 ? (level * Double(steps)).rounded() / Double(steps) : level
         }
+
+        /// The same sound followed gently: up in a tenth of a second at the quickest, down in half a
+        /// second, never in steps. The orb uses it (Chris, Sep 29: when he talks "it should be more
+        /// smooth and abstracted"). A still envelope stays still.
+        var softened: Envelope {
+            guard gain > 0 else { return self }
+            return Envelope(attack: max(attack, 110), release: max(release, 520), steps: 0, gain: min(gain, 0.85))
+        }
     }
 
     enum Why: String, Sendable { case reduceMotion = "reduce-motion", lowPower = "low-power", hot, hidden }
@@ -115,6 +123,23 @@ struct VisualPlan: Equatable, Sendable {
     var still: Bool { why != nil }
     /// What the agent is doing: the orb's shape (YUI-232). Other looks leave it be.
     var action: StageAction = .idle
+    /// Where the orb sits, from the stage's layout. Nil: its old place, a little above the middle.
+    var spot: Spot?
+
+    /// The orb's place on the stage: the layout reserves it (`OrbSlot`) and the shader draws the orb there,
+    /// so the orb is the agent's face on the home and the hero while it works, and never sits under words.
+    struct Spot: Equatable, Sendable {
+        /// Its center as fractions of the visual's width and height from the top left, and its radius
+        /// as a fraction of the height.
+        var x, y, r: Double
+        /// 1 on show, 0 tucked away.
+        var presence: Double
+        /// No place is kept for it (words fill the stage): it fades out where it stands.
+        static let away = Spot(x: 0.5, y: 0.5, r: 0, presence: 0)
+    }
+
+    /// The orb is the look on show: the stage's layouts make room for it.
+    var isOrb: Bool { look == "orb" }
     var label: String { "\(Self.names[look] ?? "Orb"), \(Self.hears[react] ?? Self.hears["voice"]!)" }
     /// What it does with the sound, for VoiceOver: "Orb pulses with the lows, ripples with the mids and glows with the highs."
     var hint: String? {

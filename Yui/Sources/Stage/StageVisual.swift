@@ -86,6 +86,76 @@ struct StageVisual: View {
     }
 }
 
+/// The orb's place as the layout has it. The slot on show writes its frame here and only the
+/// visual's host reads it, so a slot that moves under a finger (the pager, the pull home) re-runs
+/// the visual and nothing else.
+@Observable @MainActor
+final class OrbSpot {
+    /// The slot's frame in global points. Nil: no layout keeps a place for the orb right now.
+    private(set) var frame: CGRect?
+    @ObservationIgnored private var owner: UUID?
+
+    func claim(_ id: UUID, _ frame: CGRect) {
+        owner = id
+        if self.frame != frame { self.frame = frame }
+    }
+
+    /// The slot left. A newer slot that already claimed the place keeps it.
+    func release(_ id: UUID) {
+        guard owner == id else { return }
+        owner = nil
+        frame = nil
+    }
+}
+
+extension EnvironmentValues {
+    /// Set by the stage: where an `OrbSlot` reports its frame.
+    @Entry var orbSpot: OrbSpot? = nil
+}
+
+/// Room for the orb in a layout (YUI-232, "the shader draws the agent"): the home keeps one over
+/// the agent's name, the working state a big one over what it is doing. It draws nothing itself;
+/// the shader behind the stage draws the orb exactly here.
+struct OrbSlot: View {
+    var size: CGFloat
+    @Environment(\.orbSpot) private var spot
+    @State private var id = UUID()
+
+    var body: some View {
+        Color.clear
+            .frame(width: size, height: size)
+            .onGeometryChange(for: CGRect.self, of: { $0.frame(in: .global) }) { spot?.claim(id, $0) }
+            .onDisappear { spot?.release(id) }
+            .accessibilityHidden(true)
+    }
+}
+
+/// The visual with the orb in its place. `up`: the orb has the stage (the home, the working state,
+/// the mic). With a page of words or a screen up it is false, and the orb tucks away.
+struct StageVisualHost: View {
+    let plan: VisualPlan
+    let spot: OrbSpot
+    let up: Bool
+    @State private var bounds = CGRect.zero
+
+    var body: some View {
+        StageVisual(plan: placed)
+            .onGeometryChange(for: CGRect.self, of: { $0.frame(in: .global) }) { bounds = $0 }
+    }
+
+    private var placed: VisualPlan {
+        var p = plan
+        guard p.isOrb else { return p }
+        if up, let f = spot.frame, bounds.width > 0, bounds.height > 0 {
+            p.spot = .init(x: (f.midX - bounds.minX) / bounds.width, y: (f.midY - bounds.minY) / bounds.height,
+                           r: min(f.width, f.height) / 2 / bounds.height, presence: 1)
+        } else {
+            p.spot = .away
+        }
+        return p
+    }
+}
+
 /// Frames per second, measured (DEBUG `-yuiVisualMeter`, proof for the budget): what the
 /// visual drew, and what the app's own display link got, so a visual that costs the
 /// app its 60 (120 on ProMotion) shows up as a drop in `app`.
@@ -197,6 +267,9 @@ private struct VisualUniforms {
     /// The blob's state weights (YUI-232): thinking, reading, running, searching; then talking, done, since.
     var act: SIMD4<Float>
     var act2: SIMD4<Float>
+    /// The orb's place as drawn: center x and y (fractions of the view from its top left), radius (a
+    /// fraction of the height), presence.
+    var orb: SIMD4<Float>
 }
 
 @MainActor
@@ -224,6 +297,11 @@ final class VisualRenderer: NSObject, MTKViewDelegate {
     /// shapes morph (action.mjs easeWeights), and seconds since the action changed (done's ring).
     private var weights = BlobWeights()
     private var since = 9.0
+    /// The orb as drawn (x, y, radius, presence), eased toward the plan's spot so it glides between
+    /// its places and never jumps, and the radius it last had a place for.
+    private var orb = OrbPlace()
+    /// Tucked away with nothing left to move: the frame on screen is the last one until the plan changes.
+    private var resting = false
 
     func attach(_ view: MTKView) {
         view.enableSetNeedsDisplay = true
@@ -243,18 +321,22 @@ final class VisualRenderer: NSObject, MTKViewDelegate {
             view.isPaused = true
             view.enableSetNeedsDisplay = true
             if old != plan { view.setNeedsDisplay() }
-        } else {
+        } else if resting, old != plan, plan.spot?.presence ?? 1 == 0 {
+            // Still tucked away, but something it draws with changed (a theme, the size): one more frame.
+            view.setNeedsDisplay()
+        } else if !resting || old != plan {
             // A quiet default starts at its idle rate; render() lifts it while something is heard.
             if old == nil || old?.fps != plan.fps || old?.idleFps != plan.idleFps || old?.still == true {
                 view.preferredFramesPerSecond = plan.idleFps
             }
+            resting = false
             view.enableSetNeedsDisplay = false
             if view.isPaused { lastFrame = 0; view.isPaused = false }
         }
     }
 
     nonisolated func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) {
-        MainActor.assumeIsolated { if plan?.still == true { view.setNeedsDisplay() } }
+        MainActor.assumeIsolated { if plan?.still == true || resting { view.setNeedsDisplay() } }
     }
 
     nonisolated func draw(in view: MTKView) {
@@ -267,7 +349,13 @@ final class VisualRenderer: NSObject, MTKViewDelegate {
         let now = CACurrentMediaTime()
         if weights.action != plan.action { weights.action = plan.action; since = 0 }
         if plan.still { weights = BlobWeights(plan.action); since = 9 }
-        if !plan.still {
+        let size = view.drawableSize
+        let goal = orb.goal(plan.spot, aspect: size.height > 0 ? size.width / size.height : 0.46)
+        // The orb follows the voice softly, whatever the agent's pulse: it swells, it never jitters.
+        let env = plan.isOrb ? plan.env.softened : plan.env
+        if plan.still {
+            orb.snap(to: goal)
+        } else {
             let dt = lastFrame == 0 ? 0 : min(now - lastFrame, 0.1)
             lastFrame = now
             clock += dt * plan.speed
@@ -275,27 +363,36 @@ final class VisualRenderer: NSObject, MTKViewDelegate {
                 raw = meter?() ?? .zero
                 lastMeter = now
             }
-            let ms = dt * 1000, env = plan.env
+            let ms = dt * 1000
             heard = .init(level: env.follow(heard.level, raw.level, dt: ms), low: env.follow(heard.low, raw.low, dt: ms),
                           mid: env.follow(heard.mid, raw.mid, dt: ms), high: env.follow(heard.high, raw.high, dt: ms))
             weights.ease(toward: plan.action, dt: dt)
             since += dt
+            orb.ease(toward: goal, dt: dt)
             // A shape on the move draws at the full rate even when nothing is heard.
             let silent = max(heard.level, heard.low, heard.mid, heard.high) < 0.02 && weights.settled(plan.action == .idle)
+                && orb.settled(goal)
             let want = silent ? plan.idleFps : plan.fps
             if view.preferredFramesPerSecond != want { view.preferredFramesPerSecond = want }
+            // Tucked away behind words: what is left (the wash) does not move, so this is the last
+            // frame until the plan changes. A page of words costs the phone nothing.
+            if plan.isOrb, goal.presence == 0, orb.away {
+                resting = true
+                view.isPaused = true
+                view.enableSetNeedsDisplay = true
+            }
         }
         count(now)
 
-        let size = view.drawableSize
         var u = VisualUniforms(
-            res: SIMD2(Float(size.width), Float(size.height)), time: Float(clock), level: Float(plan.env.shown(heard.level)),
+            res: SIMD2(Float(size.width), Float(size.height)), time: Float(clock), level: Float(env.shown(heard.level)),
             dim: Float(plan.dim), scrim: Float(plan.scrim),
             zone: SIMD2(Float(plan.zone.low), Float(plan.zone.high)),
             a: Self.vec(plan.colors.a), b: Self.vec(plan.colors.b), c: Self.vec(plan.colors.c), ground: Self.vec(plan.colors.ground),
-            bands: SIMD3(Float(plan.env.shown(heard.low)), Float(plan.env.shown(heard.mid)), Float(plan.env.shown(heard.high))),
+            bands: SIMD3(Float(env.shown(heard.low)), Float(env.shown(heard.mid)), Float(env.shown(heard.high))),
             act: SIMD4(Float(weights[.thinking]), Float(weights[.reading]), Float(weights[.running]), Float(weights[.searching])),
-            act2: SIMD4(Float(weights[.talking]), Float(weights[.done]), Float(since), 0))
+            act2: SIMD4(Float(weights[.talking]), Float(weights[.done]), Float(since), 0),
+            orb: SIMD4(Float(orb.x), Float(orb.y), Float(orb.r), Float(orb.presence)))
         pass.colorAttachments[0].loadAction = .dontCare
         pass.colorAttachments[0].storeAction = .store
         guard let buffer = queue.makeCommandBuffer(), let enc = buffer.makeRenderCommandEncoder(descriptor: pass) else { return }
@@ -328,6 +425,58 @@ final class VisualRenderer: NSObject, MTKViewDelegate {
         let c = RGB(hex: hex) ?? RGB(r: 0, g: 0, b: 0)
         return SIMD3(Float(c.r), Float(c.g), Float(c.b))
     }
+}
+
+/// The orb as drawn: where, how big and how much of it is there. It eases toward the place the
+/// layout keeps for it, so going from the home to the working state it glides and grows, and with
+/// words up it shrinks a little and fades where it stands.
+struct OrbPlace: Equatable {
+    var x = 0.5, y = 0.44, r = 0.0, presence = 0.0
+    /// The radius it last had a place for: what it shrinks from as it goes.
+    private var home = 0.0
+
+    /// Where the orb sat before layouts placed it: a little above the middle, sized to the narrow side.
+    static func legacy(aspect: Double) -> OrbPlace {
+        OrbPlace(x: 0.5, y: 0.44, r: 0.19 * min(1, 1.4 * aspect), presence: 1)
+    }
+
+    /// Where the plan wants it. No spot: the old place. Away: where it is, a little smaller, gone.
+    mutating func goal(_ spot: VisualPlan.Spot?, aspect: Double) -> OrbPlace {
+        guard let spot else {
+            let g = Self.legacy(aspect: aspect)
+            home = g.r
+            return g
+        }
+        if spot.presence > 0, spot.r > 0 {
+            home = spot.r
+            return OrbPlace(x: spot.x, y: spot.y, r: spot.r, presence: spot.presence)
+        }
+        return OrbPlace(x: x, y: y, r: (home > 0 ? home : Self.legacy(aspect: aspect).r) * 0.72, presence: 0)
+    }
+
+    mutating func snap(to g: OrbPlace) {
+        x = g.x; y = g.y; r = g.r; presence = g.presence
+    }
+
+    /// Place and size at 9 a second, presence in at 6 and out at 10. Coming back from nothing it
+    /// starts at its new place, a little small, and blooms there; it never flies in from the old one.
+    mutating func ease(toward g: OrbPlace, dt: Double) {
+        guard dt > 0 else { if r == 0 { snap(to: g) }; return }
+        if presence < 0.02, g.presence > 0 { x = g.x; y = g.y; r = g.r * 0.72 }
+        let k = 1 - exp(-9 * dt), kp = 1 - exp(-(g.presence > presence ? 6.0 : 10.0) * dt)
+        x += (g.x - x) * k
+        y += (g.y - y) * k
+        r += (g.r - r) * k
+        presence += (g.presence - presence) * kp
+    }
+
+    /// Nothing left to move.
+    func settled(_ g: OrbPlace) -> Bool {
+        abs(g.x - x) < 0.0015 && abs(g.y - y) < 0.0015 && abs(g.r - r) < 0.0008 && abs(g.presence - presence) < 0.004
+    }
+
+    /// Gone from the picture.
+    var away: Bool { presence < 0.004 }
 }
 
 /// The blob's state weights (YUI-232, action.mjs easeWeights): each 0...1, summing to 1, every

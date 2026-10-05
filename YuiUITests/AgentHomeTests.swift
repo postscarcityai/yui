@@ -58,7 +58,8 @@ final class AgentHomeTests: XCTestCase {
         let app = launch("basil", "light")
         let log = app.buttons["home-chip-log"]
         XCTAssertTrue(log.waitForExistence(timeout: 15), "no Log a meal chip")
-        XCTAssertTrue(app.staticTexts["Nothing waiting on you. Swipe left for your screens."].exists)
+        // Nothing waiting: the home says nothing more (no list, no filler line).
+        XCTAssertFalse(app.descendants(matching: .any)["home-waiting"].exists, "something reads as waiting on a fresh home")
         shot("basil-light-1-home")
         log.tap()
         let field = app.textFields["stage-field"]

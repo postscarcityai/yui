@@ -257,6 +257,8 @@ struct StageFirstView: View {
     @State private var releasedAt: CGFloat?
     /// How far the finger has pulled the answer down toward home (YUI-195).
     @State private var pull: CGFloat = 0
+    /// Where the layout on show keeps a place for the orb. Only the visual's host reads it.
+    @State private var orbSpot = OrbSpot()
     #if DEBUG
     /// -yuiAutoSwitch: the way it is going and how many switches it has made.
     @State private var autoStep = 1
@@ -267,8 +269,12 @@ struct StageFirstView: View {
     @State private var presses: [String: YLPress] = [:]
 
     static let small = BarButtons.small, touch = BarButtons.touch
-    /// The room kept for the shader blob above the working words.
-    static let blobRoom: CGFloat = 250
+    /// The orb's size where it is the hero (the agent working), where it is the agent's face (the
+    /// home, a greeting) and where it listens over the words it hears.
+    static let orbWorking: CGFloat = 196, orbFace: CGFloat = 128, orbListening: CGFloat = 132
+    /// A tap this far in from the left edge goes back a page; anywhere else goes on (Chris,
+    /// TestFlight AOM_F89JfsVH: "if I tap on the left 25% it goes back").
+    static let backZone: CGFloat = 0.25
     /// Faster screen switching (feedback NOTE-15980): a page turn settles in a quick spring with no wobble,
     /// the same for every agent. The look's own spring (0.55 s for a calm agent, a wobble for the default)
     /// was slow to land, and the old screen stayed drawn beside it until it came to rest.
@@ -278,13 +284,16 @@ struct StageFirstView: View {
         let _ = BodyLog.hit("StageFirst")
         let c = theme.swatch(scheme)
         let turn = model.turn(store.messages)
+        let plan = visualPlan(turn)
+        // The orb is the look on show: the layouts keep a place for it, and it is the agent's face.
+        let orb = plan?.isOrb == true
         VStack(spacing: 0) {
             topBar(c)
             Group {
                 if mic.live {
-                    listening(c)
+                    listening(c, orb: orb)
                 } else {
-                    pager(turn, c)
+                    pager(turn, c, orb: orb)
                         .modifier(PullHome(pull: $pull, enabled: closable(turn), reduceMotion: look.reduced,
                                            surface: c.surface, outline: c.outline, radius: theme.radius.card) { goHome() })
                 }
@@ -327,9 +336,10 @@ struct StageFirstView: View {
         .background {
             ZStack {
                 c.background
-                if let plan = visualPlan(turn) {
+                if let plan {
                     // The agent's visual (YUI-124): a shader behind the chunks, or alone on the stage.
-                    StageVisual(plan: plan)
+                    // The orb sits where the layout on show keeps its place, and tucks away behind words.
+                    StageVisualHost(plan: plan, spot: orbSpot, up: orbUp(turn))
                         .onGeometryChange(for: CGFloat.self, of: { $0.frame(in: .global).maxY }) { stageHeight = $0 }
                 } else {
                     // A soft wash of the agent's color from the top, like the mock.
@@ -342,6 +352,7 @@ struct StageFirstView: View {
         // The stage opens from the mic: a wash of the agent's color out of the bottom right.
         .overlay { StageWash(color: c.accent, look: look, trigger: model.opened).ignoresSafeArea() }
         .environment(\.ylOnStage, true)
+        .environment(\.orbSpot, orbSpot)
         .environment(\.ylPageVoice, model.pageVoice)
         .onChange(of: mic.live, initial: true) { model.pageVoice.listening = mic.live }
         // Another turn or a hello: the page that took the voice is gone.
@@ -451,12 +462,12 @@ struct StageFirstView: View {
     /// The screens slide: the one on show sits `slide` points off center, and while a drag or
     /// its spring is under way the one beside it (`beside`, on the `side` it comes from) is
     /// drawn a screen's width away. Only those two are ever drawn. Reduce Motion cross-fades.
-    @ViewBuilder private func pager(_ turn: StageTurn?, _ c: Swatch) -> some View {
+    @ViewBuilder private func pager(_ turn: StageTurn?, _ c: Swatch, orb: Bool) -> some View {
         let still = look.reduced
         ZStack {
             ForEach(pagerPages, id: \.self) { n in
                 PagerSlot(motion: motion, shown: n == shown, side: side, width: pagerWidth) {
-                    page(n, turn, c)
+                    page(n, turn, c, orb: orb)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
                     .allowsHitTesting(n == shown)
@@ -468,21 +479,30 @@ struct StageFirstView: View {
     }
 
     /// What screen `n` holds: 1 the answer or the home, 2 on the agent's screens.
-    @ViewBuilder private func page(_ n: Int, _ turn: StageTurn?, _ c: Swatch) -> some View {
+    @ViewBuilder private func page(_ n: Int, _ turn: StageTurn?, _ c: Swatch, orb: Bool) -> some View {
         if n > 1, screens.contains(n) {
             ScreenPage(number: n, parts: store.onPage(n), agent: agent, style: style) { store.openStage($0) }
                 .accessibilityIdentifier("stage-screen-\(n)")
         } else if let turn, turn.ask != nil || turn.hello {
-            play(turn, c)
+            play(turn, c, orb: orb)
         } else if hasHome {
             // The agent's home (YUI-168): what it does, what is waiting on you, its chips below.
             HomeHead(agent: agent, line: homeLine, waiting: AgentHome.waiting(store), open: openWaiting,
                      seeAll: actions.menu, dismiss: { if let item = $0.item { store.dismissMenu(item) } },
-                     hasScreens: screens.count > 1)
+                     orb: orb)
         } else {
             greeting(c, title: "Hi. \(showMic ? "Tap the mic and talk." : "Tap T and type.")",
-                     sub: "I answer right here, on the whole screen.")
+                     sub: "I answer right here, on the whole screen.", orb: orb)
         }
+    }
+
+    /// The orb has the stage: the home, a greeting, the agent working, the mic. With a page of
+    /// words up, or one of the agent's screens, it tucks away and only its wash stays behind them.
+    private func orbUp(_ turn: StageTurn?) -> Bool {
+        if mic.live { return true }
+        guard shown == 1 else { return false }
+        guard let t = turn, t.ask != nil || t.hello else { return true }
+        return t.pages == 0 || model.foundUntil != nil
     }
 
     /// The pages drawn: the one on show, and the one beside it while it moves.
@@ -701,9 +721,12 @@ struct StageFirstView: View {
 
     // MARK: The middle
 
-    private func greeting(_ c: Swatch, title: String, sub: String, id: String = "stage-greeting") -> some View {
+    private func greeting(_ c: Swatch, title: String, sub: String, id: String = "stage-greeting", orb: Bool) -> some View {
         VStack(spacing: theme.spacing.m) {
-            if let agent {
+            // The shader draws the agent (YUI-232): its orb is its face here. With the visual off, its badge.
+            if orb {
+                OrbSlot(size: Self.orbFace).padding(.bottom, theme.spacing.s)
+            } else if let agent {
                 AgentBadge(agent: agent, size: 72)
                     .shadow(color: c.accent.opacity(0.35), radius: 24, y: 6)
             }
@@ -723,8 +746,10 @@ struct StageFirstView: View {
     }
 
     /// Hands-free is open: what it hears, big, as it hears it.
-    private func listening(_ c: Swatch) -> some View {
+    private func listening(_ c: Swatch, orb: Bool) -> some View {
         VStack(spacing: theme.spacing.m) {
+            // The orb is the one listening: a tall pill that breathes with the voice, over what it hears.
+            if orb { OrbSlot(size: Self.orbListening).padding(.bottom, theme.spacing.m) }
             Label("Listening", systemImage: "waveform")
                 .font(theme.font(theme.type.caption, .heavy))
                 .foregroundStyle(c.accent)
@@ -745,36 +770,38 @@ struct StageFirstView: View {
         .accessibilityIdentifier("stage-listening")
     }
 
-    private func play(_ t: StageTurn, _ c: Swatch) -> some View {
+    private func play(_ t: StageTurn, _ c: Swatch, orb: Bool) -> some View {
         let pages = t.pages
         let at = min(model.at, max(0, pages - 1))
         return VStack(alignment: .leading, spacing: theme.spacing.s) {
             if pages > 1 { segments(pages, at: at, c) }
             if let ask = t.ask {
-                // What was asked, over the answer. Chris, TestFlight AKh8806F: one line cut his question too soon.
-                // Six, then the ellipsis. Always from the left, so it never jumps sides between the working
-                // state and the answer.
-                Text("\(Text("You: ").bold())\(ask.text)")
-                    .font(theme.font(theme.type.caption))
+                // What was asked, over the answer: not their exact words, the gist of them in 5 to 12
+                // (Chris, TestFlight ADv4muh06N4P: "just summarize what I asked ... a little haiku"). The
+                // whole ask is in the record, and VoiceOver still reads all of it. Always from the left, so
+                // it never jumps sides between the working state and the answer.
+                Text(WorkingWords.gist(ask.text))
+                    .font(theme.font(theme.type.caption, .medium).italic())
                     .foregroundStyle(c.inkSoft)
-                    .lineLimit(6)
+                    .lineLimit(2)
                     .multilineTextAlignment(.leading)
                     .frame(maxWidth: .infinity, alignment: .leading)
+                    .accessibilityLabel("You: \(ask.text)")
                     .accessibilityIdentifier("stage-you")
             }
             Group {
                 if t.failed, pages == 0, !store.inFlight {
-                    failed(t, c)
+                    failed(t, c, orb: orb)
                 } else if pages == 0 || model.foundUntil != nil {
-                    if store.inFlight || model.foundUntil != nil { working(c) } else if t.stopped {
+                    if store.inFlight || model.foundUntil != nil { working(c, orb: orb) } else if t.stopped {
                         // Stopped (YUI-190): the stage is still, ready for the next thing.
-                        greeting(c, title: "Stopped.", sub: "Say the next thing when you're ready.", id: "stage-stopped")
+                        greeting(c, title: "Stopped.", sub: "Say the next thing when you're ready.", id: "stage-stopped", orb: orb)
                     } else if t.unanswered {
                         // The agent never answered this one (a dropped or timed-out turn): say so and offer
                         // Try again, never a bare "Nothing to show" that reads as Yui gave up (feedback AClUWC-D8Vp).
-                        failed(t, c, title: "No answer came back.")
+                        failed(t, c, title: "No answer came back.", orb: orb)
                     } else {
-                        greeting(c, title: "Anything else?", sub: "Everything so far is in the chat, top right.")
+                        greeting(c, title: "Anything else?", sub: "Everything so far is in the chat, top right.", orb: orb)
                     }
                 } else if at < t.chunks.count {
                     // done: the stage hands over to the chunk, in the look's enter.
@@ -848,7 +875,7 @@ struct StageFirstView: View {
         .accessibilityIdentifier("stage-segments")
     }
 
-    /// A page: up to 3 ideas, each a line and its picture, stacked. A tap on the left third goes back,
+    /// A page: up to 3 ideas, each a line and its picture, stacked. A tap on the left quarter goes back,
     /// anywhere else on. One idea centers; several share the height so the page fills the phone (VIS-4).
     private func chunk(_ page: StageChunk, _ c: Swatch) -> some View {
         let blocks = page.blocks
@@ -866,7 +893,7 @@ struct StageFirstView: View {
             .scrollIndicators(.hidden)
             // Buttons and drawings inside keep their own taps; a tap on words or space turns the page.
             .contentShape(.rect)
-            .onTapGesture { p in step(p.x < geo.size.width / 3 ? -1 : 1) }
+            .onTapGesture { p in step(p.x < geo.size.width * Self.backZone ? -1 : 1) }
         }
         .accessibilityIdentifier("stage-page-\(blocks.count)")
     }
@@ -924,21 +951,55 @@ struct StageFirstView: View {
         withAnimation(look.enterAnimation) { model.at = to }
     }
 
-    /// The agent is on it: their words up top, and what it is doing under the blob. The shader
-    /// behind the stage draws the agent (YUI-232): its shape says what it is doing, so this
-    /// only keeps the blob's room clear above the words.
-    private func working(_ c: Swatch) -> some View {
-        VStack(spacing: theme.spacing.xl) {
-            Color.clear.frame(width: 170, height: Self.blobRoom)
-            workingLine(c, big: true)
+    /// The agent is on it: the gist of the ask up top, the orb as the hero (the shader behind the
+    /// stage draws it in the place kept here, and its shape says what the agent is doing, YUI-232),
+    /// and under it what it is doing in a few friendly words with the seconds in glass.
+    private func working(_ c: Swatch, orb: Bool) -> some View {
+        VStack(spacing: theme.spacing.l) {
+            if orb { OrbSlot(size: Self.orbWorking) }
+            workingWords(c)
         }
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier("stage-working")
     }
 
+    /// What it is doing, light and lit by the orb's color, the seconds floating under it in glass,
+    /// and the step when the agent counts them (feedback ADv4muh06N4P; StageWorking.swift).
+    private func workingWords(_ c: Swatch) -> some View {
+        VStack(spacing: theme.spacing.m) {
+            TimelineView(.periodic(from: .now, by: 1)) { ctx in
+                let doing = store.doing.map { YLDoing(text: $0.text) }
+                let word = WorkingNote.shown(doing, pickedUp: store.pickedUpAt, now: ctx.date)
+                VStack(spacing: theme.spacing.s) {
+                    WorkingWordsLine(text: word, ink: c.ink, accent: c.accent, still: look.reduced)
+                        .id(word)
+                        .transition(look.reduced ? .identity : .opacity.combined(with: .scale(scale: 0.94)))
+                    if let start = store.pickedUpAt ?? store.waitingSince {
+                        GlassSeconds(text: WorkingNote.elapsed(ctx.date.timeIntervalSince(start)), ink: c.inkSoft, still: look.reduced)
+                    }
+                }
+                .animation(look.reduced ? nil : .easeInOut(duration: 0.45), value: word)
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(WorkingNote.label(since: store.waitingSince, pickedUp: store.pickedUpAt, now: ctx.date, doing: doing))
+            }
+            if let d = store.doing, let step = d.step, let of = d.of, of > 0 {
+                ProgressView(value: Double(min(step, of)), total: Double(of))
+                    .tint(c.accent)
+                    .frame(width: 132)
+                    .animation(look.reduced ? nil : look.enterAnimation, value: step)
+                    // Read as the row's value, so the row stays one element of one kind while the bar comes and goes.
+                    .accessibilityHidden(true)
+            }
+        }
+        .padding(.horizontal, theme.spacing.xl)
+        .accessibilityValue(store.doing.flatMap { d in d.step.flatMap { s in d.of.map { "Step \(min(s, $0)) of \($0)" } } } ?? "")
+        .accessibilityIdentifier("stage-working-line")
+    }
+
     /// error: a small shake, grey, and Try again. The words still say what happened.
-    private func failed(_ t: StageTurn, _ c: Swatch, title: String = "That didn't go through.") -> some View {
+    private func failed(_ t: StageTurn, _ c: Swatch, title: String = "That didn't go through.", orb: Bool) -> some View {
         VStack(spacing: theme.spacing.l) {
+            if orb { OrbSlot(size: Self.orbFace) }
             Text(title)
                 .font(theme.font(theme.type.title, .bold))
                 .foregroundStyle(c.ink)
@@ -973,20 +1034,21 @@ struct StageFirstView: View {
         return f
     }
 
-    private func workingLine(_ c: Swatch, big: Bool = false) -> some View {
+    /// More is coming under a page that already landed: one quiet line.
+    private func workingLine(_ c: Swatch) -> some View {
         VStack(spacing: theme.spacing.s) {
             TimelineView(.periodic(from: .now, by: 1)) { ctx in
                 Text(WorkingNote.label(since: store.waitingSince, pickedUp: store.pickedUpAt, now: ctx.date,
                                        doing: store.doing.map { YLDoing(text: $0.text) }))
-                    .font(theme.font(big ? theme.type.title : theme.type.caption, .bold))
-                    .foregroundStyle(big ? c.ink : c.inkSoft)
+                    .font(theme.font(theme.type.caption, .bold))
+                    .foregroundStyle(c.inkSoft)
                     .lineLimit(1)
                     .contentTransition(.opacity)
             }
             if let d = store.doing, let step = d.step, let of = d.of, of > 0 {
                 ProgressView(value: Double(min(step, of)), total: Double(of))
                     .tint(c.accent)
-                    .frame(width: big ? 160 : 100)
+                    .frame(width: 100)
                     .animation(look.reduced ? nil : look.enterAnimation, value: step)
                     // Read as the row's value, so the row stays one element of one kind while the bar comes and goes.
                     .accessibilityHidden(true)
@@ -1063,10 +1125,10 @@ struct StageFirstView: View {
         }
         .scrollBounceBehavior(.basedOnSize)
         .scrollIndicators(.hidden)
-        // Tap the left side to go back (feedback NOTE-35492), as on a chunk: a tap on words or space in the
-        // left third goes back to the page before the questions. Buttons, pickers and fields keep their own taps.
+        // Tap the left side to go back (feedback AOM_F89JfsVH), as on a chunk: a tap on words or space in the
+        // left quarter goes back to the page before the questions. Buttons, pickers and fields keep their own taps.
         .contentShape(.rect)
-        .onTapGesture { p in if p.x < geo.size.width / 3, !t.chunks.isEmpty { step(-1) } }
+        .onTapGesture { p in if p.x < geo.size.width * Self.backZone, !t.chunks.isEmpty { step(-1) } }
         }
         .accessibilityIdentifier("stage-questions")
     }

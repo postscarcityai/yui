@@ -400,7 +400,7 @@ Right. Solved: x = 4. You got 1 of 2 steps.
         let thread = try write("yui-quill-rows.json", rows(Self.homeRow))
         app = launch(["-yuiDemoHome", "-yuiThreadRows", thread, "-yuiEventLog", log])
         XCTAssertTrue(app.buttons["home-chip-learn"].waitForExistence(timeout: 15), "no home after the relaunch")
-        XCTAssertTrue(text(app, "Nothing waiting on you"), "his pages' buttons read as waiting on you")
+        XCTAssertFalse(app.descendants(matching: .any)["home-waiting"].exists, "his pages' buttons read as waiting on you")
         checkPages(app, "relaunched")
 
         // Five trips to another agent and back (the 0.5.0 crash path): up, and his pages kept.

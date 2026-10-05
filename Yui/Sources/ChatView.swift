@@ -3068,9 +3068,10 @@ struct WorkingNote: View {
         return "\(word) · \(elapsed(now.timeIntervalSince(start)))"
     }
 
-    /// The agent's own words when it said what it is doing, else the working word.
+    /// The agent's own words when it said what it is doing, else the working word. A tool's plain
+    /// words ("Running a command") are said in the friendlier voice (`WorkingWords`).
     static func shown(_ doing: YLDoing?, pickedUp: Date?, now: Date) -> String {
-        doing?.text ?? word(pickedUp: pickedUp, now: now)
+        doing?.text.map(WorkingWords.friendly) ?? word(pickedUp: pickedUp, now: now)
     }
 
     /// 12s, 1m 24s, 1h 3m.

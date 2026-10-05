@@ -308,7 +308,7 @@ Logged 1 minute: Stand By Me.
         let thread = try write("yui-gouda-rows.json", rows())
         app = launch(["-yuiDemoHome", "-yuiThreadRows", thread, "-yuiEventLog", log])
         XCTAssertTrue(app.buttons["home-chip-learn"].waitForExistence(timeout: 15), "no home after the relaunch")
-        XCTAssertTrue(text(app, "Nothing waiting on you"), "his pages' pickers read as waiting on you")
+        XCTAssertFalse(app.descendants(matching: .any)["home-waiting"].exists, "his pages' pickers read as waiting on you")
         try kept(app, "after the relaunch")
         shot("10-relaunched")
 

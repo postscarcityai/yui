@@ -83,8 +83,9 @@ struct HomeChips: View {
 
     private func chip(_ item: YLMenuItem) -> some View {
         let c = theme.swatch(scheme)
+        // A screen to open, words to finish in the field (a pencil: the text cursor read as a stray "A|"), or words that send.
         let icon = item.show != nil ? "rectangle.portrait.on.rectangle.portrait.fill"
-            : item.say?.hasSuffix(" ") == true ? "text.cursor" : "sparkles"
+            : item.say?.hasSuffix(" ") == true ? "pencil" : "sparkles"
         return Button { tap(item) } label: {
             HStack(spacing: small ? 6 : theme.spacing.s) {
                 Image(systemName: icon)
@@ -113,7 +114,8 @@ struct HomeChips: View {
 }
 
 /// The top of the home: the agent's face, its name and what it does, then what is waiting
-/// on you (up to three, See all opens the drawer), or one quiet line when nothing is.
+/// on you (up to three, See all opens the drawer). With nothing waiting it says nothing more:
+/// the screens are the pills up top, and a line saying so was one more thing to read.
 struct HomeHead: View {
     let agent: YuiAgent?
     /// One line under the name: what the agent does.
@@ -123,8 +125,9 @@ struct HomeHead: View {
     let seeAll: () -> Void
     /// Dismiss on a row the host asked (YUI-265); nil when the row cannot be dismissed.
     var dismiss: ((AgentHome.Waiting) -> Void)? = nil
-    /// There are screens a swipe away: the quiet line says so.
-    var hasScreens = false
+    /// The shader draws the agent (YUI-232): its orb is its face, in the place kept here. Off (the
+    /// person switched the visual off, or the agent wears another look): its badge.
+    var orb = false
     @Environment(\.yuiTheme) private var theme
     @Environment(\.colorScheme) private var scheme
 
@@ -133,9 +136,13 @@ struct HomeHead: View {
         ScrollView {
             VStack(spacing: theme.spacing.l) {
                 VStack(spacing: theme.spacing.s) {
-                    if let agent {
+                    if orb {
+                        OrbSlot(size: StageFirstView.orbFace).padding(.bottom, theme.spacing.s)
+                    } else if let agent {
                         AgentBadge(agent: agent, size: 72)
                             .shadow(color: c.accent.opacity(0.35), radius: 24, y: 6)
+                    }
+                    if let agent {
                         Text(agent.name)
                             .font(theme.font(theme.type.display, .heavy))
                             .foregroundStyle(c.ink)
@@ -148,15 +155,7 @@ struct HomeHead: View {
                 }
                 .accessibilityElement(children: .combine)
                 .accessibilityIdentifier("stage-greeting")
-                if waiting.isEmpty {
-                    Text(hasScreens ? "Nothing waiting on you. Swipe left for your screens." : "Nothing waiting on you.")
-                        .font(theme.font(theme.type.caption, .semibold))
-                        .foregroundStyle(c.inkSoft)
-                        .multilineTextAlignment(.center)
-                        .accessibilityIdentifier("home-quiet")
-                } else {
-                    list(c)
-                }
+                if !waiting.isEmpty { list(c) }
             }
             .padding(.horizontal, theme.spacing.l)
             .padding(.vertical, theme.spacing.l)
