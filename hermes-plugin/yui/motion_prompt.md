@@ -74,14 +74,34 @@ MOTION: api.cam(cx,cy,zoom,roll) moves the camera for everything drawn after it 
 EXAMPLE of one scene, to show the calls (not the style; yours should look nothing like it):
 === scene kettle 6 ===
 api.look('sketch');
-const k = api.seg(t, 0, 1.6), cx = api.w/2, cy = 330;
-api.path('M-70 40 L-60 -40 C-60 -70 60 -70 60 -40 L70 40 Z', {x:cx, y:cy, s:1.4, c:'accent', w:4, fill:'accent', k});
-api.path('M60 -20 C110 -30 110 30 66 20', {x:cx, y:cy, s:1.4, c:'fg', w:4, k:api.seg(t,1,2)});
-api.swarm(40, t, {mode:'rise', cx, cy:cy-120, rx:50, ry:120, c:'a2', size:3});
-api.callout('Water heats', cx-60, cy+40, 100, cy+190, {k:api.seg(t,2,3.2)});
-api.callout('Steam pushes out', cx+10, cy-120, 290, cy-190, {k:api.seg(t,3,4.2)});
+const k = api.seg(t, 0, 1.6), cx = api.w/2, cy = 400;
+api.path('M-70 40 L-60 -40 C-60 -70 60 -70 60 -40 L70 40 Z', {x:cx, y:cy, s:2.4, c:'accent', w:5, fill:'accent', k});
+api.path('M60 -20 C110 -30 110 30 66 20', {x:cx, y:cy, s:2.4, c:'fg', w:5, k:api.seg(t,1,2)});
+api.swarm(40, t, {mode:'rise', cx, cy:cy-200, rx:80, ry:160, c:'a2', size:3});
+api.callout('Water heats', cx-60, cy+40, 80, cy+200, {k:api.seg(t,2,3.2)});
+api.callout('Steam pushes out', cx+10, cy-200, 300, cy-260, {k:api.seg(t,3,4.2)});
 api.focus(cx, cy, api.lerp(1, 1.5, api.ease(api.seg(t,3.5,6))));
 api.say('Heat makes steam', 0.4, 5.5);
+
+LOOK (every scene is judged on one frame, so each frame must stand on its own):
+- THE HERO IS BIG. 280 to 360 px wide, in the middle band (y 140 to api.h-190). A path drawn about 160 units wide needs
+  s of 2 or more. A hero under 240 px wide, or one that still has not finished drawing 2 s in, is a failure.
+- THE HERO IS THE THING. Name the nouns of the ask (chicken, lemon, oven; the Settings rows; database, agent) and DRAW
+  each one as one big filled silhouette (api.path, filled) plus 2 or 3 detail strokes that make it that thing, or a
+  stock api.shape at size 200 or more. A bare circle, blob, box or bar is never a stand-in. Work between a person and
+  an agent is drawn as the real artefact in the ask's own words: a phone outline with its real rows written out, a
+  week of day tiles with a marker on today, a row of named parts joined by arrows. api.node boxes are for software
+  parts only, and each carries an icon. Scene 1 holds to the same bar: no dot, no ring, no thin outline.
+- NOTHING SITS ON ANYTHING. A label stays 12 px clear of every line and shape: put it in open space and point at the
+  part with api.callout. Stack labels at least 40 px apart. Everything except the caption stays above y=api.h-170.
+  When a value changes (0 reps, 8 reps) draw ONE api.counter, never two texts in the same spot.
+- SOMETHING MOVES THROUGH THE WHOLE SCENE: a part draws on, a counter climbs, particles flow, the camera drifts in. A
+  frame at 2 s must differ from one at 1.4 s. Camera moves are for the drawing: call api.cam0() before any text.
+- A thing built from parts (a mug, 330 px wide), the way to draw any object:
+  api.path('M-50 -40 L-44 50 Q0 66 44 50 L50 -40 Z', {x:cx, y:cy, s:3.2, c:'fg', w:5, fill:'panel', k});
+  api.path('M50 -20 C95 -26 95 28 46 20', {x:cx, y:cy, s:3.2, c:'fg', w:5, k:api.seg(t,0.6,1.4)});
+  api.ellipse(cx, cy-120, 150, 24, {c:'accent', fill:'accent', a:0.8, k:api.seg(t,0.3,1)});
+  api.swarm(24, t, {mode:'rise', cx, cy:cy-230, rx:60, ry:130, c:'a2'});
 
 DIRECTION.
 - Fill the screen. The hero drawing is at least two thirds of the width and sits in the middle band;
