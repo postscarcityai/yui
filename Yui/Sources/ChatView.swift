@@ -52,6 +52,8 @@ struct ChatView: View {
     @State private var pickCrew = false
     /// The message open in Select text.
     @State private var selecting: ChatMessage?
+    /// The chip of folded stage replies is open (StageFold).
+    @State private var foldOpen = false
     /// A reply's chip was tapped: the thread scrolls to this bubble (YUI-68).
     @State private var scrollTarget: String?
     @FocusState private var focused: Bool
@@ -886,11 +888,20 @@ struct ChatView: View {
                     let all = store.shown
                     let visible = all.count > window ? Array(all.suffix(window)) : all
                     let marks = SentTimes.marks(visible)
-                    ForEach(visible) { m in
+                    // Older stage replies fold into one chip (pick A, Oct 6): the oldest one's row holds it.
+                    let fold = StageFold.plan(visible, style: agentStyle)
+                    ForEach(foldOpen ? visible : visible.filter { !fold.folded.contains($0.id) || $0.id == fold.chipAt }) { m in
                         VStack(spacing: theme.spacing.xs) {
                         if let day = marks.day[m.id] { DayDivider(label: day) }
+                        if m.id == fold.chipAt {
+                            StageFoldChip(count: fold.folded.count, open: foldOpen) {
+                                withAnimation(reduceMotion ? .easeInOut(duration: 0.2) : theme.spring) { foldOpen.toggle() }
+                            }
+                        }
                         Group {
-                            if m.stopped {
+                            if m.id == fold.chipAt && !foldOpen {
+                                EmptyView()
+                            } else if m.stopped {
                                 QuietNote(text: "Stopped", icon: "stop.circle", id: "stopped-note")
                             } else if let yl = m.yl {
                                 YLReply(screen: yl, scope: m.id, agent: store.agent, style: agentStyle,
