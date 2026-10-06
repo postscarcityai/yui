@@ -49,6 +49,10 @@ class Split(unittest.TestCase):
         self.assertEqual(ask, "one")
         self.assertIn('motion "two"', body)
 
+    def test_a_scene_name_with_spaces_still_harvests(self):
+        out, _ = motion.harvest("=== scene Settings redesign 4 ===\napi.look('agent');\n=== end ===\n", 0)
+        self.assertEqual([x["name"] for x in out], ["Settingsredesign"])
+
     def test_no_motion_no_change(self):
         b = "```yui\nsay hi\n```"
         self.assertEqual(motion.split(b), (b, None))
@@ -84,6 +88,32 @@ class Make(unittest.TestCase):
         self.assertFalse(motion.allowed(1000.0))
         self.assertTrue(motion.allowed(5000.0))
         motion._calls.clear()
+
+
+class SplitFilm(unittest.TestCase):
+    """Scene 1 from the small model, the rest from the big one, both at once."""
+
+    def _run(self, fast, slow):
+        calls = []
+
+        async def fake(ask, model="big", extra="", think=True):
+            calls.append((model, think, "ONLY scene 1" in extra))
+            for s in (fast if model == motion.OPENER_MODEL else slow):
+                yield s
+
+        async def go():
+            with mock.patch.object(motion, "claude_cli", fake):
+                return [s["name"] async for s in motion.split_film("ask")]
+        return asyncio.run(go()), calls
+
+    def test_small_model_opens_without_thinking_then_the_big_one_follows(self):
+        names, calls = self._run([{"name": "a"}], [{"name": "s2"}, {"name": "s3"}])
+        self.assertEqual(names, ["a", "s2", "s3"])
+        self.assertIn((motion.OPENER_MODEL, False, True), calls)
+
+    def test_no_opener_the_film_starts_at_scene_two(self):
+        names, _ = self._run([], [{"name": "s2"}])
+        self.assertEqual(names, ["s2"])
 
 
 class Compat(unittest.TestCase):

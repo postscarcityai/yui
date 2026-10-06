@@ -34,12 +34,13 @@ MAX_SCENES = 12
 MAX_FILMS_PER_HOUR = 8
 FIRST_SCENE_TIMEOUT = 45.0
 FILM_TIMEOUT = 150.0
+OPENER_MODEL = "claude-haiku-4-5-20251001"
 PROMPT = Path(__file__).with_name("motion_prompt.md")
 
 # The agent's line: `motion "ask"` or `motion ask words`. A block (`film=`, or scenes on the next line) is already ours.
 LINE = re.compile(r'^\s*motion\s+(?P<rest>\S.*?)\s*$')
 FENCE = re.compile(r"(```yui[^\n]*\n)(.*?)(```|\Z)", re.S)
-SCENE_HEAD = re.compile(r"^=== ((?:scene )?(\S+) ([\d.]+)|end) ===\s*$", re.M)
+SCENE_HEAD = re.compile(r"^=== ((?:scene )?(.+?) ([\d.]+)|end) ===\s*$", re.M)
 _calls: list[float] = []
 
 
@@ -148,18 +149,29 @@ def harvest(text: str, done: int) -> tuple[list[dict], int]:
     return out, done
 
 
-def prompt_for(ask: str, theme: Optional[str] = None) -> str:
+OPENER = ("\n\nYOUR JOB: write ONLY scene 1, then `=== end ===`. A slower writer draws the rest. Scene 1 is SMALL "
+          "(at most 14 lines, 3 s), opens on the hero drawing of the ask and shows the subject at once. Name it with one word, no spaces. No words before the first header.")
+CONTINUE = ("\n\nYOUR JOB: scene 1 is already written by someone else (it opens on the hero drawing with a title and a "
+            "caption). Do NOT write it. Start at the next scene and write 4 to 6 scenes of 4 to 7 s that carry on from it. "
+            "Name your scenes s2, s3, ...; the first scene you write is s2.")
+
+
+def prompt_for(ask: str, theme: Optional[str] = None, extra: str = "") -> str:
     p = PROMPT.read_text()
     if theme:
         p += f"\n\nTHEME: {theme}"
+    p += extra
     return p + "\n\nASK: " + ask + "\n"
 
 
-async def claude_cli(ask: str, model: str = "claude-sonnet-5-5") -> AsyncIterator[dict]:
+async def claude_cli(ask: str, model: str = "claude-sonnet-5-5", extra: str = "", think: bool = True) -> AsyncIterator[dict]:
     """Stream the film from the `claude` CLI: yields each scene the moment it is complete."""
     env = dict(os.environ, USER=os.environ.get("USER") or "yui")
+    if not think:
+        env["MAX_THINKING_TOKENS"] = "0"  # haiku thinks ~25 s before the first word otherwise, even at --effort low
     cmd = ["claude", "-p", "--model", model, "--tools", "", "--no-session-persistence", "--output-format", "stream-json",
-           "--include-partial-messages", "--verbose", "--effort", "low", prompt_for(ask)]
+           "--include-partial-messages", "--verbose", "--effort", "low", "--strict-mcp-config", "--mcp-config",
+           '{"mcpServers":{}}', "--disable-slash-commands", prompt_for(ask, extra=extra)]
     proc = await asyncio.create_subprocess_exec(*cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL, env=env)
     text, done, scenes = "", 0, 0
     try:
@@ -191,13 +203,38 @@ async def claude_cli(ask: str, model: str = "claude-sonnet-5-5") -> AsyncIterato
                 pass
 
 
+async def split_film(ask: str) -> AsyncIterator[dict]:
+    """Scene 1 from a small fast model, the rest from the big one, both started at once. Scene 1 plays the moment
+    the small model finishes it; the rest follow in order. If the small model gives nothing, the film starts at scene 2."""
+    opener = asyncio.ensure_future(_first(claude_cli(ask, OPENER_MODEL, OPENER, think=False)))
+    rest = claude_cli(ask, extra=CONTINUE)
+    try:
+        s = await opener
+        if s:
+            yield s
+        async for s in rest:
+            yield s
+    finally:
+        opener.cancel()
+        await rest.aclose()
+
+
+async def _first(agen) -> Optional[dict]:
+    try:
+        async for s in agen:
+            return s
+    finally:
+        await agen.aclose()
+    return None
+
+
 def maker(config_extra: Optional[dict] = None):
     """The scene source for this host: an async generator function `(ask) -> scenes`."""
     custom = (config_extra or {}).get("motion_maker")
     if callable(custom):
         return custom
     if shutil.which("claude"):
-        return claude_cli
+        return split_film
     return None
 
 
