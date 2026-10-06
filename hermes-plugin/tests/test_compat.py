@@ -118,11 +118,11 @@ class Downgrade(unittest.TestCase):
         self.assertDrawable(out, 96)
 
     def test_note_names_what_to_skip(self):
-        self.assertIn("cannot draw chords, diagram, draw, drums, keys, loop, map, metronome, mock, put, query, shapes, sketch, table create, tuner; venn, contour, region, doodle, tap or swipe shapes, shapes img=, or shapes over a mock yet", compat.note(96))
+        self.assertIn("cannot draw chords, diagram, draw, drums, keys, loop, map, metronome, mock, motion, put, query, shapes, sketch, table create, tuner; venn, contour, region, doodle, tap or swipe shapes, shapes img=, or shapes over a mock yet", compat.note(96))
         self.assertNotIn("timeline", compat.note(96))
-        self.assertEqual(compat.note(compat.SHAPES_BUILD), f"[yui] This person's Yui app (build {compat.SHAPES_BUILD}) cannot draw chords, diagram, draw, drums, keys, loop, map, metronome, mock, put, query, table create, tuner; venn, contour, region, doodle, tap or swipe shapes, shapes img=, or shapes over a mock yet: don't send those. Say it in words or use another preset.")
+        self.assertEqual(compat.note(compat.SHAPES_BUILD), f"[yui] This person's Yui app (build {compat.SHAPES_BUILD}) cannot draw chords, diagram, draw, drums, keys, loop, map, metronome, mock, motion, put, query, table create, tuner; venn, contour, region, doodle, tap or swipe shapes, shapes img=, or shapes over a mock yet: don't send those. Say it in words or use another preset.")
         self.assertEqual(compat.note(compat.DRAW_BUILD), "")
-        self.assertIn("cannot draw chords, diagram, draw, drums, keys, loop, map, metronome, mock, put, query, shapes", compat.note(122))
+        self.assertIn("cannot draw chords, diagram, draw, drums, keys, loop, map, metronome, mock, motion, put, query, shapes", compat.note(122))
         self.assertIn("an older build", compat.note(None))
 
     def test_menu_lines_go_quietly_before_the_drawer(self):
@@ -163,8 +163,8 @@ class Downgrade(unittest.TestCase):
         self.assertIn("There are chord buttons here: G I-V-vi-IV. Update Yui to play them.", out)
         self.assertIn("There are chord buttons here: C G Am F. Update Yui to play them.", out)
         self.assertDrawable(out, 176)
-        self.assertIn("cannot draw chords, diagram, draw, keys, map, metronome, mock, put, query, table create, tuner; venn, contour, region, doodle, tap or swipe shapes, shapes img=, or shapes over a mock yet", compat.note(176))
-        self.assertIn("cannot draw diagram, draw, map, metronome, mock, put, query, table create, tuner; venn, contour, region, doodle, tap or swipe shapes, shapes img=, or shapes over a mock yet", compat.note(compat.KEYS_BUILD))
+        self.assertIn("cannot draw chords, diagram, draw, keys, map, metronome, mock, motion, put, query, table create, tuner; venn, contour, region, doodle, tap or swipe shapes, shapes img=, or shapes over a mock yet", compat.note(176))
+        self.assertIn("cannot draw diagram, draw, map, metronome, mock, motion, put, query, table create, tuner; venn, contour, region, doodle, tap or swipe shapes, shapes img=, or shapes over a mock yet", compat.note(compat.KEYS_BUILD))
         self.assertEqual(compat.downgrade(body, compat.KEYS_BUILD), body)
 
     def test_tuner_and_metronome_before_build_205(self):
@@ -176,7 +176,7 @@ class Downgrade(unittest.TestCase):
         self.assertIn("There's a tuner here. Update Yui to use it.", out)
         self.assertIn("There's a metronome here at 72 bpm. Update Yui to use it.", out)
         self.assertDrawable(out, 204)
-        self.assertIn("cannot draw diagram, draw, map, metronome, mock, put, query, table create, tuner; venn, contour, region, doodle, tap or swipe shapes, shapes img=, or shapes over a mock yet", compat.note(204))
+        self.assertIn("cannot draw diagram, draw, map, metronome, mock, motion, put, query, table create, tuner; venn, contour, region, doodle, tap or swipe shapes, shapes img=, or shapes over a mock yet", compat.note(204))
         self.assertEqual(compat.note(compat.DRAW_BUILD), "")
         self.assertEqual(compat.downgrade(body, compat.TUNER_BUILD), body)
 

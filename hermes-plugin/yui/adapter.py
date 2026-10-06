@@ -114,6 +114,14 @@ Transport: the gateway dials OUT to Supabase (the yuigui project). No inbound po
      or a page of points inside a deck or plan, and each turn on the channel
      gets a note naming what to skip.
 
+ 14b. Motion (MOTION-1, motion.py): the agent writes ONE line, `motion "<ask with the
+     facts>"`. For the owner on a phone at or above compat.MOTION_BUILD the line is
+     cut from the reply and the plugin makes the film after it, streaming each scene
+     as its own row (spec/MOTION.md 0.5); only the first row pushes. Off (`yui.motion:
+     off`), over the hourly cap, no `claude` CLI, a client's thread or a film that
+     never starts: the ask goes out as a sketch (compat) and the agent hears why on
+     its next turn. An older phone gets the same sketch from compat.downgrade.
+
  15. Restyle (YUI-96, restyle.py): a `theme app` line offers the person a
      look for the whole app. It goes out only from the owner's turn to a
      phone at or above yui_limits restyle_min_build; anywhere else it is
@@ -202,7 +210,7 @@ from gateway.config import Platform, PlatformConfig
 from gateway.platforms.base import (BasePlatformAdapter, MessageEvent, MessageType, ProcessingOutcome,
                                     SendResult)
 
-from . import board, compat, connector, controls, doing, flywheel, groups, jev, media, mentions, needs, outbox, restyle, sandbox, shown, syserror, tables, oneline, talk, textbomb, vault
+from . import board, compat, connector, controls, doing, flywheel, groups, jev, media, mentions, motion, needs, outbox, restyle, sandbox, shown, syserror, tables, oneline, talk, textbomb, vault
 from . import commands as slash
 
 logger = logging.getLogger(__name__)
@@ -1305,11 +1313,13 @@ class YuiAdapter(BasePlatformAdapter):
 
     # -- outbound -------------------------------------------------------------
 
-    async def _insert(self, key: str, body: str, sender: Optional[str] = None) -> SendResult:
+    async def _insert(self, key: str, body: str, sender: Optional[str] = None, film: int = 0) -> SendResult:
         agent_id, user_id = self._split(key)
         if not self._client:
             return SendResult(success=False, error="not connected")
         body = body.strip()
+        if film:  # a scene of a film the plugin is making (MOTION-1): no reply rewriting, only the row
+            return await self._write_film_row(key, body, push=film == 1)
         if syserror.is_failure(body):  # Hermes cron failure lines: no bubble, no push
             logger.info("[yui] system failure line dropped")
             return SendResult(success=True, message_id=None)
@@ -1323,6 +1333,14 @@ class YuiAdapter(BasePlatformAdapter):
         if not sender and self._held_back(key):
             logger.info("[yui] reply from a stopped turn held back (%d chars)", len(body))
             return SendResult(success=True, message_id=None)
+        # `motion "<ask>"` (MOTION-1): the agent's one line is cut out of the reply; the film is made after the reply
+        # goes, scene by scene, each its own row. Phones that cannot play it keep the line: compat draws it as a sketch.
+        ask = None
+        if not sender and "motion" in body:
+            body, ask = self._motion_line(body, agent_id, user_id)
+            if ask and not body.strip():
+                self._spawn(self._film(key, ask, agent_id, user_id))
+                return SendResult(success=True, message_id=None)
         reads = self.__dict__.setdefault("_reads", {})
         if user_id == self._user_id and tables.has_words(body):
             # Table words (YUI-171): out before the reply is saved, queries drawn; a read goes back to the agent.
@@ -1402,6 +1420,8 @@ class YuiAdapter(BasePlatformAdapter):
         result = "retry" if queued else await self._write_row(row)
         if result == "drop":
             return SendResult(success=False, error="Yui refused the reply")
+        if ask:
+            self._spawn(self._film(key, ask, agent_id, user_id))
         if result == "retry":
             await asyncio.to_thread(self._outbox.add, row, sender, handoff)
             self._outbox_wake.set()
@@ -1412,6 +1432,67 @@ class YuiAdapter(BasePlatformAdapter):
         if not connector.quiet(body):  # patches only (YUI-75): nothing new to look at, no push
             self._spawn(self._notify(mid, sender, handoff))
         return SendResult(success=True, message_id=mid)
+
+    def _motion_line(self, body: str, agent_id: str, user_id: str) -> tuple:
+        """(body, ask): the ask when this reply's `motion` line is ours to make, with the line cut out. When it is
+        not (an older phone, a client's thread, off, over the hourly cap, no maker on this host) the ask is None;
+        an old phone's line stays for compat to draw, anything else turns into the ask as words and the agent hears why."""
+        extra = getattr(getattr(self, "config", None), "extra", None)
+        build = compat.build_for(user_id, self._user_id)
+        if build is None or build < compat.MOTION_BUILD:
+            return body, None
+        text, ask = motion.split(body)
+        if not ask:
+            return body, None
+        why = ("off" if motion.mode(extra) == "off" else "not for a shared thread" if user_id != self._user_id
+               else "busy: too many films this hour" if not motion.allowed()
+               else "unavailable on this host" if motion.maker(extra) is None else "")
+        if why:
+            logger.info("[yui] motion line not made (%s)", why)
+            self._notes.setdefault(agent_id, []).append(f"[yui] Your motion line was not made ({why}): it went out as words. Use a sketch or shapes instead.")
+            return (text.rstrip() + "\n\n" + motion.words(ask)).strip(), None
+        return text.strip(), ask
+
+    async def _film(self, key: str, ask: str, agent_id: str, user_id: str) -> None:
+        """Make the film for `ask` and send each scene as its own row; a film that never starts is drawn as a sketch."""
+        extra = getattr(getattr(self, "config", None), "extra", None)
+        n = 0
+        try:
+            async for part, _title, row_body, last in motion.make(ask, source=motion.maker(extra)):
+                n += 1
+                await self._insert(key, row_body, film=1 if part == 1 else 2)
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            logger.warning("[yui] motion: %s", e)
+        if n:
+            logger.info("[yui] motion: %d rows for %s", n, ask[:60].replace("\n", " "))
+            return
+        logger.warning("[yui] motion: no scene for %r, drawn as a sketch", ask[:60])
+        self._notes.setdefault(agent_id, []).append("[yui] Your motion film did not start: the person got a sketch of your ask. Draw it yourself with sketch or shapes if it matters.")
+        draw = compat.downgrade("```yui\nmotion " + json.dumps(ask[:motion.MAX_ASK], ensure_ascii=False) + "\n```", 0)
+        await self._insert(key, draw, film=1)
+
+    async def _write_film_row(self, key: str, body: str, push: bool) -> SendResult:
+        agent_id, user_id = self._split(key)
+        if not self._client or not body:
+            return SendResult(success=False, error="not connected")
+        if self._held_back(key):
+            return SendResult(success=True, message_id=None)
+        row = {"id": str(uuid.uuid4()), "user_id": user_id, "agent_id": agent_id, "sender": "agent", "body": body, "kind": "text"}
+        if self.__dict__.get("_chats", {}).get(key):
+            row["meta"] = {"chat": self._chats[key]}
+        queued = await asyncio.to_thread(len, self._outbox)
+        result = "retry" if queued else await self._write_row(row)
+        if result == "drop":
+            return SendResult(success=False, error="Yui refused the film")
+        if result == "retry":
+            await asyncio.to_thread(self._outbox.add, row, None, False)
+            self._outbox_wake.set()
+            return SendResult(success=True, message_id=row["id"])
+        if push:
+            self._spawn(self._notify(row["id"], None, False))
+        return SendResult(success=True, message_id=row["id"])
 
     async def _write_doing(self, key: str, value: Optional[dict]) -> None:
         """Put the agent's newest doing (None: off) on the rows its running turn answers."""

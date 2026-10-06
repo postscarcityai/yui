@@ -66,6 +66,11 @@ MARKS_BUILD = 492
 # YUI-89: agent tables on the phone (`table create|drop`, `put`, `query`; spec/TABLES.md). The app
 # store, views and delete reached main at 428 (7b182c7); 450 is the first VALID build from it.
 TABLES_BUILD = 450
+# MOTION-1: the app plays `motion` films (a streamed block of scenes, yuigui spec/MOTION.md 0.5). The
+# MotionView and parser are not on a VALID build yet, so this is a sentinel: every phone gets the sketch
+# below and agents are told to skip it. Set it to the app commit's count (git rev-list --count) once the
+# build that plays films goes VALID.
+MOTION_BUILD = 1_000_000
 MARK_KINDS = {"venn", "contour", "region", "doodle", "tap", "swipe"}
 
 # First app build whose parser knows each preset (git rev-list --count of the
@@ -82,6 +87,7 @@ MIN_BUILD: Dict[str, int] = {
     "map": MAP_BUILD, "area": MAP_BUILD, "pin": MAP_BUILD, "route": MAP_BUILD,  # YUI-158: places on a map
     "diagram": DRAW_BUILD, "mock": DRAW_BUILD, "part": DRAW_BUILD,  # DRAW-2: a Mermaid diagram, a UI mock
     "flow": FLOW_BUILD,                                  # YUI-115: older builds get a plan
+    "motion": MOTION_BUILD,                              # MOTION-1: a film of the agent's own drawing; older builds get a sketch
     "draw": FREE_DRAW_BUILD,                             # the agent's own SVG: older builds get its words
     "tablecmd": TABLES_BUILD, "put": TABLES_BUILD, "query": TABLES_BUILD,  # YUI-89: agent tables
 }
@@ -728,6 +734,46 @@ def _marks_words(group: List[str]) -> tuple:
     return " ".join(words).strip(), _shapes_chain(group[1:]), _unquote(props.get("caption", ""))
 
 
+SAY = re.compile(r"""api\.say\(\s*(?:"((?:[^"\\]|\\.)*)"|'((?:[^'\\]|\\.)*)'|`([^`]*)`)""")
+SENTENCE = re.compile(r"(?<=[.!?])\s+")
+MOTION_ROWS = 6
+
+
+def _motion_extent(lines: List[str], i: int) -> int:
+    """Lines used by the motion block at `i`: its head, and when scenes follow, up to the `end` line."""
+    j = i + 1
+    nxt = next((x for x in lines[j:] if x.strip()), "")
+    if not nxt.startswith("==="):
+        return j
+    while j < len(lines) and lines[j].strip() != "end":
+        j += 1
+    return min(j + 1, len(lines))
+
+
+def _motion_words(lines: List[str]) -> tuple:
+    """(title, points) for a film an older phone cannot play: the `say` cues of its scenes in order, or, when
+    the line is still the agent's own ask, the ask cut into sentences."""
+    _, _, _, words, props, _ = _split(lines[0])
+    ask = " ".join(words).strip()
+    sentences = [x.strip() for x in SENTENCE.split(ask) if x.strip()]
+    title_ = (sentences[0] if sentences else "").rstrip(".")
+    title_ = (title_[:55] + "...") if len(title_) > 58 else title_
+    points: List[str] = []
+    for m in SAY.finditer("\n".join(lines[1:])):
+        t = next(g for g in m.groups() if g is not None)
+        t = t.replace("\\'", "'").replace('\\"', '"').strip()
+        if t:
+            points.append(t)
+    return title_, (points or sentences[1:])[:MOTION_ROWS]
+
+
+def _motion_sketch(lines: List[str]) -> List[str]:
+    title_, points = _motion_words(lines)
+    out = [f"sketch {json.dumps(title_ or 'Picture', ensure_ascii=False)} frame=bubble"]
+    out += [f"row {json.dumps(p, ensure_ascii=False)}" for p in points]
+    return out if points else [f"say {title_}"] if title_ else []
+
+
 def _fence(block: str, gated: set, marks: bool = False) -> List[tuple]:
     """Split one fence body into ("yui", lines) and ("text", str) parts. `marks`: the
     phone predates MARKS_BUILD."""
@@ -776,6 +822,22 @@ def _fence(block: str, gated: set, marks: bool = False) -> List[tuple]:
                 if text:
                     parts.append(("text", text))
                 continue
+        if preset == "motion" and "motion" in gated and not head.startswith("~"):
+            end = _motion_extent(lines, i)
+            group = lines[i:end]
+            i = end
+            if len(group) == 1 and "film" in _split(group[0])[4]:
+                continue  # the closing row of a film that never played: nothing to say
+            if story:
+                title_, points = _motion_words(group)
+                page = _words_page(title_, "", points, "The picture")
+                if page:
+                    cur.append(SCREEN.match(line).group(1) + page if SCREEN.match(line) else page)
+                continue
+            sketch = _motion_sketch(group)
+            if sketch:
+                cur.extend(sketch)
+            continue
         if preset == "flow" and "flow" in gated and not head.startswith("~"):
             end = _flow_extent(lines, i)
             cur.extend(flow_plan(lines[i:end]) or [FALLBACK])
