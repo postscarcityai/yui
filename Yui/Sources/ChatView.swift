@@ -1754,6 +1754,13 @@ struct ChatView: View {
                 }
             }
             .onChange(of: store.loaded) { if store.loaded { stageFirst.seen = store.shown.count } }
+            // Chat is home (pick A, Oct 6): an answer of plain words and questions goes down to the chat once it lands,
+            // buttons inline. The stage stays up only for a real visual.
+            .onChange(of: store.inFlight) { _, flying in
+                guard !flying, stageFirstOn, stageFirst.open, stageFirst.ask != nil, !handsFree.on,
+                      let t = stageFirst.turn(store.messages), t.replies > 0, !t.failed, !t.visual else { return }
+                closeStageFirst()
+            }
             // A reply that lands while the agent's home is up plays at once (YUI-262), no tap on a badge.
             .onChange(of: store.messages.last?.id) { old, _ in landArrival(after: old); landWorkout(after: old) }
             #if DEBUG

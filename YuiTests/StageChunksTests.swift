@@ -134,6 +134,15 @@ final class StageChunksTests: XCTestCase {
         XCTAssertEqual(t.replies, 2)
     }
 
+    /// Pick A (Oct 6): plain words and plain questions stay in the chat; a drawing, a timer or a plan holds the stage.
+    func testOnlyARealVisualHoldsTheStage() {
+        func turn(_ m: ChatMessage) -> StageTurn { StageChunks.turn([ChatMessage(id: "u", text: "Hi", fromUser: true), m], ask: "u") }
+        XCTAssertFalse(turn(ChatMessage(id: "a", text: "Board is green.", fromUser: false)).visual)
+        XCTAssertFalse(turn(ChatMessage(id: "a", text: "", fromUser: false, yl: YLScreen("say \"Ping you?\"\nchoose \"Ping you?\" Yes|No"))).visual)
+        XCTAssertTrue(turn(ChatMessage(id: "a", text: "", fromUser: false, yl: YLScreen("say Three\ntimer 5m Focus"))).visual)
+        XCTAssertTrue(turn(ChatMessage(id: "a", text: "", fromUser: false, yl: YLScreen("say Look\nstat 135 iPad"))).visual)
+    }
+
     /// A pill in the record opens the stage at that reply's chunk.
     func testShowOpensTheStageAtTheRepliesChunk() {
         let messages = [

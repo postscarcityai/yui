@@ -79,6 +79,14 @@ struct StageTurn: Equatable {
     /// The person stopped it (YUI-190): nothing more comes for this turn.
     var stopped = false
 
+    /// Something to look at, not just to read or answer (pick A, Oct 6): a deck or plan page, a drawing, a timer, a
+    /// motion, a form. Plain words and plain questions stay in the chat, with their buttons inline.
+    var visual: Bool {
+        let seen = chunks + (lead.map { [$0] } ?? [])
+        return seen.contains { $0.blocks.contains { $0.pic != nil || $0.page != nil } }
+            || plan != nil || questions.contains { $0.c.preset == "form" }
+    }
+
     /// The questions screen follows the last chunk.
     var pages: Int { chunks.count + (questions.isEmpty ? 0 : 1) }
 
