@@ -14,13 +14,50 @@ const HEAD = new RegExp(`^(?:>\\w*|%%.*|(?:${HEADS.join("|")})(?:@[\\w-]+)?(?:\\
 /** Tags a model puts on a block that is not code: yml and yaml for the look of it, none, text. */
 const PLAIN_TAGS = new Set(["", "yml", "yaml", "yl", "text", "txt", "plain", "plaintext", "markdown", "md", "ini", "toml"]);
 
-/** Retags every ```yml / ```yaml / plain fence that opens with a Yui Line head as ```yui. */
+/** Heads a model writes with no fence at all, and only when the line carries an argument (quote, bar or digit). Prose says "list of" and "show me"; it rarely says `timer 5m`. */
+const LOOSE_HEADS = new Set(["timer", "ask", "choose", "pick", "slide", "form", "list", "table", "card", "stat", "chart", "step", "calc"]);
+const unTick = (l: string): string => l.trim().replace(/^`([^`]+)`$/, "$1"); // `slide ...` in one pair of backticks
+const isLooseLine = (l: string): boolean => {
+  const t = unTick(l);
+  const head = /^([a-z]+)(?:@[\w-]+)?\s+\S/.exec(t)?.[1];
+  return !!head && LOOSE_HEADS.has(head) && /["|\d]/.test(t);
+};
+/** A lone `[yui]`, `[ yui ]` or `[/yui]` line: the tap marker a model copies from the guide, never a screen. */
+const STRAY_MARK = /^[ \t]*\[\s*\/?\s*yui\s*\][ \t]*\n?/gim;
+
+/** A ```yui fence the model never closed (it ran out, or stopped early): close it. */
+function closeFence(text: string): string {
+  const fences = text.split("\n").filter((l) => /^`{3,}/.test(l));
+  const last = fences[fences.length - 1];
+  return fences.length % 2 === 1 && /^`{3,}yui[ \t]*$/.test(last) ? `${text.replace(/\n*$/, "")}\n${last.match(/^`+/)![0]}` : text;
+}
+
+/** Wraps a run of bare Yui Lines (a model that forgot the fence), dropping a lone `yui` line above it. */
+function fenceBare(text: string): string {
+  if (text.includes("```")) return text;
+  const lines = text.split("\n");
+  const out: string[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    if (!isLooseLine(lines[i])) { out.push(lines[i]); continue; }
+    let j = i;
+    while (j < lines.length && isLooseLine(lines[j])) j++;
+    if (out.length && out[out.length - 1].trim().toLowerCase() === "yui") out.pop();
+    out.push("```yui", ...lines.slice(i, j).map(unTick), "```");
+    i = j - 1;
+  }
+  return out.join("\n");
+}
+
+/** Retags every ```yml / ```yaml / plain fence that opens with a Yui Line head as ```yui, and fences bare Yui Lines. */
 export function asYui(text: string): string {
-  return text.replace(/^(`{3,})([\w-]*)[ \t]*\n([\s\S]*?)\n\1[ \t]*$/gm, (whole, ticks: string, tag: string, body: string) => {
+  const clean = closeFence(text.replace(STRAY_MARK, ""));
+  return fenceBare(clean.replace(/^(`{3,})([\w-]*)[ \t]*\n([\s\S]*?)\n\1[ \t]*$/gm, (whole, ticks: string, tag: string, body: string) => {
     if (tag.toLowerCase() === "yui" || !PLAIN_TAGS.has(tag.toLowerCase())) return whole;
-    const first = body.split("\n").find((l) => l.trim())?.trim() ?? "";
-    return HEAD.test(first) ? `${ticks}yui\n${body}\n${ticks}` : whole;
-  });
+    const lines = body.split("\n");
+    if (lines[0]?.trim().toLowerCase() === "yui") lines.shift(); // ```\nyui\n...: the tag landed inside the fence
+    const first = lines.find((l) => l.trim())?.trim() ?? "";
+    return HEAD.test(first) ? `${ticks}yui\n${lines.join("\n")}\n${ticks}` : whole;
+  }));
 }
 
 /** Below this many tokens of room the full channel guide leaves no space for a thread. */

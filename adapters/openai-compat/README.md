@@ -107,4 +107,16 @@ python3 tests/openai_e2e.py --run ollama          # live with a real model on th
 python3 tests/openai_e2e.py --run phone --sim <udid>   # plus the app on a simulator, with screenshots
 ```
 
+### Small models that draw screens (INT-23, INT-25)
+
+Same ask on each, a stock Ollama (4,096 token window, so the bridge sends the short guide): "Show me a choose screen titled Drink with exactly two options: Tea and Coffee." Then a tap, then "which drink did I pick?".
+
+| model | size | window | live runs | draws a screen | fence it writes | raw text on the stage |
+| --- | --- | --- | --- | --- | --- | --- |
+| qwen2.5:7b | 4.7 GB | 4,096 | 3 of 3 | yes | `yui` | no |
+| gemma4:e4b | 9.6 GB | 4,096 | 3 of 3 | yes | `yui` | no |
+| llama3.2:3b | 2.0 GB | 4,096 | 3 of 3 | yes | `yui` (sometimes a stray `[Response:]` line or a made-up follow-up screen after a tap) | no |
+
+llama3.2:3b also lost one run of the kill -9 check to timing (it finished its answer before the test killed the bridge); four reruns were 9 of 9. The bridge fixes that came out of this are generic: an empty answer is asked once more, a bare Yui Line gets its fence, an unclosed fence is closed, a stray `[yui]` marker is dropped, and `yui` written inside a plain fence moves out.
+
 `tests/fake-model.ts` is the scripted server the tests use: no model, fixed answers, streaming or not, with or without a key. `--gemini` makes it answer in the shapes of Gemini's OpenAI-compatible endpoint (`models/` ids, errors in a list, a bad key as 400, thought summaries, a blocked answer), which the bridge copes with (INT-9). `--grok` answers in xAI's shapes (errors as `{"code", "error"}`, a bad key as 400, 403 when the team is out of credits, 429 rate limits, `reasoning_content` before the answer, a `refusal` with no content, a 400 for `stop` and the penalties that reasoning models refuse) (INT-10). `--meta` answers in the shapes of Meta's Model API for Muse Spark (a bad key as 401, 402 when the balance runs out, 403 for a model the key can't use, a content policy 400, a context 400, 429 with `Retry-After`, a plain 504 `gateway_timeout`, an `error` event mid-stream, a 404 with no body, `reasoning_content` always there and empty, a 400 for `stop`, `n` > 1 and `logit_bias`) (INT-11).

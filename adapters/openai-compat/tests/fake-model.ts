@@ -14,6 +14,7 @@
 //   history          -> the earlier messages it was sent, one per line
 //   flaky            -> 503 the first time, then "Back again."
 //   drop             -> the first stream breaks halfway, then "Whole this time."
+//   blank            -> an empty answer the first time, then "Second try."
 //   down N           -> 503 for N seconds after the first try, then "Up again."
 //   refuse           -> 400, the context is too long
 //   think            -> a <think> block, then "Thought it through."
@@ -147,7 +148,8 @@ export function startFake(opts: FakeOptions = {}): Promise<Fake> {
     } else if (line === "flaky") {
       if (n === 1) return json(res, 503, { error: { message: "model is loading" } });
       pieces = ["Back again."];
-    } else if ((m = line.match(/^down (\d+)$/))) {
+    } else if (line === "blank") pieces = n === 1 ? [] : ["Second try."];
+    else if ((m = line.match(/^down (\d+)$/))) {
       const key = `down-start:${line}`;
       if (!seen.has(key)) seen.set(key, Date.now());
       if (Date.now() - seen.get(key)! < Number(m[1]) * 1000) return json(res, 503, { error: { message: "server is starting" } });

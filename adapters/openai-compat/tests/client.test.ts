@@ -452,6 +452,32 @@ describe("small models (INT-23)", () => {
   test("two fences: only the Yui one is retagged", () => {
     assert.equal(asYui(`\`\`\`yml\nname: x\n\`\`\`\n\`\`\`yml\n${screen}\n\`\`\``), `\`\`\`yml\nname: x\n\`\`\`\n\`\`\`yui\n${screen}\n\`\`\``);
   });
+  test("a model that forgot the fence: bare Yui Lines get one, a lone yui line above goes", () => {
+    assert.equal(asYui("yui\ntimer 5m Plank"), "```yui\ntimer 5m Plank\n```");
+    assert.equal(asYui("timer 5m Plank"), "```yui\ntimer 5m Plank\n```");
+    assert.equal(asYui('How sore?\nslide "How sore?" 1-5 Fresh|Wrecked'), 'How sore?\n```yui\nslide "How sore?" 1-5 Fresh|Wrecked\n```');
+    assert.equal(asYui(`${screen}\ntimer 5m Plank`), `\`\`\`yui\n${screen}\ntimer 5m Plank\n\`\`\``);
+  });
+  test("a line in single backticks is fenced", () => {
+    assert.equal(asYui('`slide "How sore?" 1-5 Fresh|Wrecked`'), '```yui\nslide "How sore?" 1-5 Fresh|Wrecked\n```');
+  });
+  test("the yui tag inside a plain fence moves out", () => {
+    assert.equal(asYui("```\nyui\ntimer 5m Plank\n```"), "```yui\ntimer 5m Plank\n```");
+  });
+  test("a yui fence that never closes is closed", () => {
+    assert.equal(asYui(`How sore?\n\`\`\`yui\n${screen}`), `How sore?\n\`\`\`yui\n${screen}\n\`\`\``);
+    assert.equal(asYui(`\`\`\`yui\n${screen}\n\`\`\``), `\`\`\`yui\n${screen}\n\`\`\``);
+  });
+  test("a stray [yui] marker line is dropped", () => {
+    assert.equal(asYui(`\`\`\`yui\n${screen}\n\`\`\`\n[yui]`), `\`\`\`yui\n${screen}\n\`\`\`\n`);
+    assert.equal(asYui('[ yui ]\nslide "How sore?" 1-5 Fresh|Wrecked'), '```yui\nslide "How sore?" 1-5 Fresh|Wrecked\n```');
+    assert.equal(asYui("[/yui]\nHow sore are you?"), "How sore are you?");
+  });
+  test("prose that starts with a head word is not fenced", () => {
+    for (const t of ["list of things I like", "Show me what you have", "timer is a good idea", "pick one and tell me", "next week we ask again", "I will choose tea 2 times"]) {
+      assert.equal(asYui(t), t);
+    }
+  });
   const big = "g".repeat(9000); // about 2,570 tokens, like the live guide
   test("a small window gets the short guide, a roomy one the full guide", () => {
     const small = buildMessages([], [user("hi")], { guide: big }).messages[0].content as string;

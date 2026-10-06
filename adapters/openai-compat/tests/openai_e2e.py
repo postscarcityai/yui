@@ -289,6 +289,11 @@ def run_stream():
         check("stream: a 503 is tried again, then answered once", [m["body"] for m in rep] == ["Back again."] and calls("flaky") == 2,
               f"{rep} asks={calls('flaky')}")
 
+        bl = r.say("blank")
+        rep = wait(lambda: r.replies_to(bl), 30, "reply to blank")
+        check("stream: an empty answer is asked once more, then answered once", [m["body"] for m in rep] == ["Second try."] and calls("blank") == 2,
+              f"{rep} asks={calls('blank')}")
+
         print("== J. the server is down for a while")
         dn = r.say("down 12")
         rep = wait(lambda: r.replies_to(dn), 90, "reply to down")
@@ -371,9 +376,9 @@ def run_ollama():
         rep = wait(lambda: r.replies_to(q), 300, "answer to the question")
         check("ollama: it remembers the tap (Yui sent the thread)", len(rep) == 1 and "tea" in rep[0]["body"].lower(), rep and rep[0]["body"][:200])
 
-        crash = r.say("Write four short sentences about green tea.")
+        crash = r.say("Write a 300 word essay about green tea.")
         wait(lambda: (json.loads(r.state.read_text()).get("inflight") or {}).get(r.agent), 30, "turn on disk")
-        time.sleep(1)
+        time.sleep(0.3)  # a 3B model finishes a short answer in about a second
         r.kill()
         log("bridge killed -9 while Ollama answers")
         check("ollama: killed mid-answer: delivered, not handled, not answered",

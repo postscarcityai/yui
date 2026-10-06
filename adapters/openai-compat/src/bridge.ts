@@ -481,8 +481,16 @@ export class Bridge {
     await this.flushAcks();
   }
 
-  /** Streams when the server can; a server that refuses streams is asked plain from then on. */
+  /** Asks the model; a small model sometimes ends a turn with no words (finish "stop", empty), so ask once more. */
   async ask(remote: Remote, req: Parameters<ChatClient["complete"]>[0]): Promise<Completion> {
+    const done = await this.askOnce(remote, req);
+    if (done.text.trim() || (done.finish && done.finish !== "stop")) return done;
+    log(`${remote.model} answered with nothing; asking once more`);
+    return await this.askOnce(remote, req);
+  }
+
+  /** Streams when the server can; a server that refuses streams is asked plain from then on. */
+  async askOnce(remote: Remote, req: Parameters<ChatClient["complete"]>[0]): Promise<Completion> {
     const client = clientFor(remote, this.modelFetch);
     try {
       return await client.complete(req, { stream: remote.stream !== false });
