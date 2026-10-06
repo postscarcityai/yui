@@ -66,7 +66,15 @@ struct SketchDrawing: View {
                     .accessibilityAddTraits(.isHeader)
                     .blueprintStep(on, 0, reduceMotion)
             }
-            if let cut {
+            if frame == "phone" {
+                // A phone is the animated wireframe (YUI-267, direction B): one device, the before
+                // playing into the after, instead of two outlines side by side.
+                SketchPhone(before: before, after: cut == nil ? nil : after,
+                            beforeLabel: sketch.string("before") ?? "Before",
+                            afterLabel: cut.flatMap { parts[$0].string("label") } ?? "After",
+                            numbers: numbers, on: on)
+                    .frame(maxWidth: .infinity)
+            } else if let cut {
                 // Side by side: the eye compares across. Large type stacks them so the words keep their room.
                 let pair = Group {
                     side(frame, .before(sketch.string("before") ?? "Before"), before, numbers, step: 1)
@@ -218,7 +226,7 @@ struct SketchDrawing: View {
 }
 
 /// One drawn line: its text with its marks, a button, or a filler bar.
-private struct SketchRow: View {
+struct SketchRow: View {
     let r: YLComponent
     let i: Int
     let frame: String
