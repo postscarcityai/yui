@@ -114,6 +114,26 @@ final class StageChunksTests: XCTestCase {
         XCTAssertNil(StageChunks.turn([ChatMessage(text: "Hi", fromUser: false)], ask: nil).ask)
     }
 
+    /// Pick A (Oct 6): replies minutes apart are separate answers; the stage holds the newest, the rest stay in chat.
+    func testTheStageHoldsOnlyTheNewestAnswer() {
+        let t0 = Date(timeIntervalSince1970: 1_000_000)
+        func reply(_ id: String, _ text: String, _ after: TimeInterval) -> ChatMessage {
+            var m = ChatMessage(id: id, text: text, fromUser: false)
+            m.sentAt = t0.addingTimeInterval(after)
+            return m
+        }
+        let messages = [
+            ChatMessage(id: "u1", text: "Status?", fromUser: true),
+            reply("a1", "Build news.", 0),
+            reply("a2", "Board is green.", 600),
+            reply("a3", "Push card.", 6000),
+            reply("a4", "Two lines.", 6030),
+        ]
+        let t = StageChunks.turn(messages, ask: "u1")
+        XCTAssertEqual(t.chunks.flatMap(\.blocks).map(\.scope), ["a3", "a4"])
+        XCTAssertEqual(t.replies, 2)
+    }
+
     /// A pill in the record opens the stage at that reply's chunk.
     func testShowOpensTheStageAtTheRepliesChunk() {
         let messages = [

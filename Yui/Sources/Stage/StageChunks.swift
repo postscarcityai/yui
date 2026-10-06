@@ -256,15 +256,35 @@ enum StageChunks {
         guard let i = ask.flatMap({ id in messages.lastIndex { $0.id == id } }) ?? messages.lastIndex(where: \.fromUser)
         else { return StageTurn() }
         var t = StageTurn(ask: messages[i])
+        var replies: [ChatMessage] = []
         for m in messages[(i + 1)...] {
             if m.fromUser { break }
             if m.home { continue }  // the agent's home is its chips and pages, not part of an answer (YUI-168)
             if m.stopped { t.stopped = true; continue }  // a note in the record, never a chunk (YUI-190)
-            add(m, to: &t)
+            replies.append(m)
         }
+        for m in newest(replies) { add(m, to: &t) }
         t.chunks = pack(t.chunks)
         lift(&t)
         return t
+    }
+
+    /// Seconds between replies that still belong to one answer.
+    static let answerGap: TimeInterval = 120
+
+    /// The stage holds the newest answer, not every message since the person spoke (feedback
+    /// APOmDkahSl2ApP7vrgIC820, Chris Oct 5: "30 pages and none of them relate"; pick A, Oct 6). An answer is
+    /// the replies that came close together, ending at the newest one; build news, a board status or a
+    /// push card sent minutes later is a new answer, and the older ones stay in the chat (their pill plays them).
+    static func newest(_ replies: [ChatMessage]) -> [ChatMessage] {
+        var from = replies.endIndex
+        var last: Date?
+        for i in replies.indices.reversed() {
+            if let last, last.timeIntervalSince(replies[i].sentAt) > answerGap { break }
+            last = replies[i].sentAt
+            from = i
+        }
+        return Array(replies[from...])
     }
 
     /// The agent's hello (YUI-167): the first messages of a thread marked as its hello,
