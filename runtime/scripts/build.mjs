@@ -53,7 +53,7 @@ put(join(runtime, "src", "crew.gen.ts"),
 // 2. The edge copy.
 const edge = join(repo, "supabase", "functions", "_native");
 const head = (from) => `// Copied from ${from} by runtime/scripts/build.mjs. Do not edit here.\n`;
-const shims = new Set(["openai.ts", "sse.ts", "thread.ts"]); // re-exports of the model bridge
+const shims = new Set(["openai.ts", "sse.ts", "thread.ts", "fences.ts"]); // re-exports of the model bridge
 for (const f of readdirSync(join(runtime, "src")).filter((f) => f.endsWith(".ts")).sort()) {
   if (shims.has(f)) continue;
   put(join(edge, f), head(`runtime/src/${f}`) + readFileSync(join(runtime, "src", f), "utf8"));
