@@ -16,6 +16,11 @@ export function validEndpoint(e: unknown): e is string {
   }
 }
 
+/** An IANA zone name as the browser reports it ("America/New_York"); the database checks it against its own list. */
+export function validTz(z: unknown): z is string {
+  return typeof z === "string" && z.length >= 1 && z.length <= 64 && /^[A-Za-z0-9_+\/-]+$/.test(z);
+}
+
 const B64URL = /^[A-Za-z0-9_-]{16,200}$/;
 export const validKey = (k: unknown): k is string => typeof k === "string" && B64URL.test(k);
 

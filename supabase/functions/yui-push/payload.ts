@@ -60,3 +60,18 @@ export function webPayload(agent: PushAgent, msg: PushMessage, o: PushOptions = 
 export function webQuiet(kind: "revoked" | "clear", agentId: string) {
   return { kind, agent_id: agentId, tag: agentId };
 }
+
+/** A reminder an agent set, due now (YUI-258): the closed-tab half of meta.native.reminders. The service worker
+ * tags it `yui.reminder.<agent>.<key>`, the same tag the open tab's Notifications API uses, so the two never stack,
+ * and a click opens the agent's thread. */
+export function reminderPayload(agent: PushAgent, key: string, text: string) {
+  return {
+    kind: "reminder",
+    title: agent.name,
+    body: text.replace(/\s+/g, " ").trim().slice(0, 160) || `${agent.name} set a reminder`,
+    agent_id: agent.id,
+    key,
+    tag: `yui.reminder.${agent.id}.${key}`,
+    url: `/web/agent/${agent.id}`,
+  };
+}

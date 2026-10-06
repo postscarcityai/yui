@@ -20,6 +20,7 @@
 //   {action: "register_web", endpoint, keys: {p256dh, auth}, name?}   (YUI-248)
 //       The same for a browser: a Web Push subscription (VAPID, public key in the site's
 //       lib/web/push.mjs). Stored next to the APNs tokens in yui_devices (no apns_token).
+//       `tz` (an IANA zone, "America/New_York") is the browser's time zone; reminders read in it (YUI-258).
 //   {action: "unregister_web", endpoint}
 //       Sign out, or the person turned notifications off in that browser.
 //   presence also takes `endpoint` in place of `token` for a browser. When a device reports it is
@@ -55,6 +56,11 @@
 //       which rows are due (one per pinned screen per 15 minutes, a timer at once).
 //       Rows of one phone share a push token: it gets one push.
 //
+//   {action: "reminders", due: [{user_id, agent_id, key, text}]}
+//       The minute tick (yui_web_reminders_tick, YUI-258) claimed reminders an agent set that are due now.
+//       Each goes as a Web Push (kind "reminder") to that person's browsers only, closed tab or open, and
+//       never skipped for an open thread: the service worker drops a double of the tab's own notification.
+//
 // APNs: token auth (ES256, the APNs key), HTTP/2 straight to Apple. Secrets:
 // YUI_APNS_P8, YUI_APNS_KEY_ID, YUI_APPLE_TEAM_ID, YUI_APNS_TOPIC. Yui Dev
 // phones push to YUI_APNS_TOPIC + ".dev" with the same key (yui_devices.topic).
@@ -71,8 +77,8 @@ import {
   take,
   verifyAccessToken,
 } from "../_shared/yui.ts";
-import { apnsPayload, webPayload, webQuiet, widgetPush } from "./payload.ts";
-import { sendWeb, validEndpoint, validKey } from "./web.ts";
+import { apnsPayload, reminderPayload, webPayload, webQuiet, widgetPush } from "./payload.ts";
+import { sendWeb, validEndpoint, validKey, validTz } from "./web.ts";
 
 const NOTIFY_WINDOW_MS = 10 * 60_000;
 const PRESENCE_MS = 90_000;
@@ -126,6 +132,8 @@ Deno.serve(withCors(async (req) => {
         return await revoked(req, body);
       case "widgets":
         return await widgets(req, body);
+      case "reminders":
+        return await reminders(req, body);
       default:
         return json({ error: "unknown_action" }, 400);
     }
@@ -182,6 +190,8 @@ async function registerWeb(userId: string, b: Body): Promise<Response> {
     web_endpoint: b.endpoint,
     web_p256dh: b.keys.p256dh,
     web_auth: b.keys.auth,
+    // The browser's time zone (YUI-258): a reminder's `at` is the person's local time. Absent keeps the last one.
+    ...(validTz(b.tz) ? { web_tz: b.tz } : {}),
     environment: "production",
     topic: null,
     name: cleanName(b.name),
@@ -384,6 +394,30 @@ async function widgets(req: Request, b: Body): Promise<Response> {
     return { rows: same.length, ok: res.status === 200, status: res.status, reason, apns_id: res.headers.get("apns-id") };
   }));
   return json({ ok: true, phones: results.length, delivered: results.filter((r) => r.ok).length, results });
+}
+
+async function reminders(req: Request, b: Body): Promise<Response> {
+  const secret = Deno.env.get("YUI_WIDGETS_SECRET");
+  const given = req.headers.get("x-yui-widgets") ?? "";
+  if (!secret || given.length !== secret.length || given !== secret) return json({ error: "unauthorized" }, 401);
+  const ok = (r: Body) =>
+    r && typeof r.user_id === "string" && UUID.test(r.user_id) && typeof r.agent_id === "string" && UUID.test(r.agent_id) &&
+    typeof r.key === "string" && r.key.length > 0 && r.key.length <= 200 && typeof r.text === "string";
+  if (!Array.isArray(b.due) || b.due.length > 500 || !b.due.every(ok)) return json({ error: "invalid_due" }, 400);
+  const db = admin();
+  const results = await Promise.all(b.due.map(async (r: Body) => {
+    const { data: agent } = await db.from("yui_agents").select("id, name").eq("id", r.agent_id).maybeSingle();
+    if (!agent) return [];
+    const { data: browsers } = await db.from("yui_devices").select("id, web_endpoint, web_p256dh, web_auth")
+      .eq("user_id", r.user_id).not("web_endpoint", "is", null);
+    const msg = reminderPayload(agent, r.key, r.text);
+    return await Promise.all((browsers ?? []).map((d: DB) =>
+      sendWeb(db, d, msg).catch((e) => ({ device: d.id, kind: "web", ok: false, status: 0, reason: String(e?.message ?? e) }))
+    ));
+  }));
+  const flat = results.flat();
+  console.log(`reminders ${b.due.length} due, ${flat.filter((x: DB) => x.ok).length}/${flat.length} delivered`);
+  return json({ ok: true, due: b.due.length, devices: flat.length, delivered: flat.filter((x: DB) => x.ok).length, results: flat });
 }
 
 let jwtCache: { jwt: string; at: number } | null = null;
