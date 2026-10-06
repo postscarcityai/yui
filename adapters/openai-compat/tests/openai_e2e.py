@@ -413,7 +413,7 @@ def run_phone():
         subprocess.run(BRIDGE + ["try", "hi", "--model", args.model], capture_output=True, timeout=300)
         r.start()
         env = {**os.environ, "DEVELOPER_DIR": "/Applications/Xcode.app/Contents/Developer",
-               "TEST_RUNNER_YUI_RTS": ",".join(rts), "TEST_RUNNER_YUI_USER": r.T, "TEST_RUNNER_YUI_SHOTS": str(shots)}
+               "TEST_RUNNER_YUI_RTS": ",".join(rts), "TEST_RUNNER_YUI_USER": r.T, "TEST_RUNNER_YUI_AGENT": r.agent, "TEST_RUNNER_YUI_SHOTS": str(shots)}
         subprocess.run(["xcodegen", "generate", "--quiet"], cwd=REPO, env=env, check=True)
         ui = subprocess.run(["xcodebuild", "test", "-project", "Yui.xcodeproj", "-scheme", "Yui",
                              "-destination", f"id={args.sim}", "-derivedDataPath", "/tmp/int12-dd",

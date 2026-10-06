@@ -15,7 +15,7 @@ final class OpenAICompatTests: XCTestCase {
     func testLocalModelAnswersWithAScreen() throws {
         let env = ProcessInfo.processInfo.environment
         guard let rts = env["YUI_RTS"]?.split(separator: ",").map(String.init), rts.count >= 2,
-              let user = env["YUI_USER"], let dir = env["YUI_SHOTS"] else {
+              let user = env["YUI_USER"], let agent = env["YUI_AGENT"], let dir = env["YUI_SHOTS"] else {
             throw XCTSkip("run through adapters/openai-compat/tests/openai_e2e.py --run phone --sim <udid>")
         }
         let shots = URL(fileURLWithPath: dir)
@@ -30,7 +30,7 @@ final class OpenAICompatTests: XCTestCase {
         let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
         let app = XCUIApplication()
         func launch(_ n: Int, _ appearance: String) {
-            app.launchArguments = ["-yuiRefreshToken", rts[n], "-yuiUserID", user, "-appearance", appearance]
+            app.launchArguments = ["-yuiRefreshToken", rts[n], "-yuiUserID", user, "-selectedAgent", agent, "-yuiStageFirst", "NO", "-appearance", appearance]
             app.launch()
             let allow = springboard.buttons["Allow"]
             if allow.waitForExistence(timeout: 6) { allow.tap() }
@@ -40,6 +40,8 @@ final class OpenAICompatTests: XCTestCase {
         func say(_ s: String) {
             XCTAssertTrue(field.waitForExistence(timeout: 20))
             field.tap()
+            if !app.keyboards.firstMatch.waitForExistence(timeout: 5) { field.tap() } // a fresh sim can miss the first focus
+            XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 10), "no keyboard to type on")
             field.typeText(s)
             app.buttons["Send"].tap()
         }
