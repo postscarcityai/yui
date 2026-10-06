@@ -45,6 +45,10 @@ struct StageQuestion: Identifiable, Equatable {
     var all: [YLComponent] = []
     /// The earlier pages its options name (feedback NOTE-42080, web YUI-277): drawn small above it, a tap picks.
     var compare: [StageCompare] = []
+    /// What it asks about (TestFlight, Oct 5: two bare "Ship it?" with no word on WHAT ships): the line and
+    /// picture of its own reply that came right before it. It sits above the question, so the context and the
+    /// buttons share one screen. A plan's last page that already heads the screen (`StageTurn.lead`) is not repeated.
+    var about: StageChunk?
     var id: String { "\(scope)#\(c.serial)" }
 }
 
@@ -149,6 +153,8 @@ enum StageChunks {
         var plan: YLComponent?
         // The chunk still waiting for its picture.
         var open: Int?
+        // The chunk a question last took as its context: the next question needs a chunk of its own.
+        var taken: Int?
         // A plan's page, while nothing but its picture has come after it: a decision next joins it.
         var page: Int?
 
@@ -173,7 +179,12 @@ enum StageChunks {
                 continue
             }
             if questions.contains(c.preset) {
-                qs.append(StageQuestion(scope: scope, c: c, all: all))
+                var asked = StageQuestion(scope: scope, c: c, all: all)
+                if let i = chunks.indices.last, i != taken, chunks[i].pic.map({ !questions.contains($0.preset) }) ?? true {
+                    asked.about = chunks[i]
+                    taken = i
+                }
+                qs.append(asked)
                 if let head, head.preset == "plan" { plan = head }
                 if let i = page, decisions.contains(c.preset) { chunks[i].asks = true }
                 page = nil

@@ -473,4 +473,45 @@ final class StageChunksTests: XCTestCase {
         XCTAssertEqual(t.questions.first?.compare.map(\.page.line), ["Cover 1", "Cover 2"])
         XCTAssertEqual(t.questions.first?.compare.map(\.option), ["1", "2"])
     }
+    /// TestFlight Oct 5: two bare "Ship it?" on one screen told Chris nothing about what ships. Each question
+    /// carries the line and picture of its own reply that came right before it.
+    func testEachLooseQuestionCarriesItsOwnContext() {
+        let t = StageChunks.turn([
+            ChatMessage(id: "u", text: "Status", fromUser: true),
+            ChatMessage(id: "r1", text: "", fromUser: false, yl: YLScreen("""
+            say "Explainers draw every page."
+            choose "Ship it?" "Ship it"|"Not yet"
+            """)),
+            ChatMessage(id: "r2", text: "", fromUser: false, yl: YLScreen("""
+            say "Left drawer shows Done cards."
+            choose "Ship it?" "Ship it"|"Not yet"
+            """)),
+        ], ask: "u")
+        XCTAssertEqual(t.questions.map { $0.about?.line }, ["Explainers draw every page.", "Left drawer shows Done cards."])
+    }
+
+    /// A plan's page heads the questions screen when it is the last one; the page before it stays the context of its own question.
+    func testAPlanQuestionKeepsItsPageAndTheLeadIsNotRepeated() {
+        let t = turn("""
+        plan "Before I go"
+        page "Chalk look" body="Hand drawn borders."
+        choose "Chalk?" Yes|No
+        page "Glass look" body="Frosted cards."
+        choose "Glass?" Yes|No
+        end
+        """)
+        XCTAssertEqual(t.lead?.line, "Glass look")
+        XCTAssertEqual(t.questions.map { $0.about?.line }, ["Chalk look", "Glass look"])
+        XCTAssertEqual(t.questions.last?.about?.id, t.lead?.id, "the view draws it once, as the lead")
+    }
+
+    /// Two questions in a row share one context line: only the first takes it, the second asks bare.
+    func testAContextBelongsToOneQuestion() {
+        let t = turn("""
+        say "Pick both."
+        choose "A?" Yes|No
+        choose "B?" Yes|No
+        """)
+        XCTAssertEqual(t.questions.map { $0.about?.line }, ["Pick both.", nil])
+    }
 }

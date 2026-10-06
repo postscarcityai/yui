@@ -1090,6 +1090,14 @@ struct StageFirstView: View {
                 let draft = StageDraft.load()
                 ForEach(Array(t.questions.enumerated()), id: \.element.id) { i, q in
                     VStack(alignment: .leading, spacing: theme.spacing.m) {
+                        // What it asks about sits right above it, so the context and the buttons share a screen
+                        // (TestFlight Oct 5: "I need context and action on the same screen").
+                        if let about = q.about, about.id != t.lead?.id {
+                            block(about, c, room: geo.size.width * 0.72)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .accessibilityElement(children: .contain)
+                                .accessibilityIdentifier("stage-question-context")
+                        }
                         // The looks it compares sit small above it, side by side (NOTE-42080, web YUI-277).
                         if !q.compare.isEmpty { compare(q, c, width: geo.size.width, sent: sent) }
                         PresetView(component: q.c)
