@@ -24,6 +24,10 @@ Runs, each on a fresh throwaway account (never a real one):
           answer draws a Yui screen that the YL parser reads, a tap goes back
           as the next turn and is answered, it remembers the tap, and a kill -9
           mid-answer still ends in one reply.
+  explain INT-28: three "how does it work" prompts. Pass = one short line plus a
+          parseable `motion "..."` line (2-4 sentences, under 80 words), or a valid
+          deck where every page has its picture. --runs N asks each N times and
+          prints a pass/fail table; raw answers go to --out/explain.json.
   phone   with --sim: the same Ollama model and YuiUITests/OpenAICompatTests on a
           simulator: the working row, the model's screen, a tap and its
           answer (light), a follow-up that needs the thread (dark). Shots in --out.
@@ -40,12 +44,13 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[3]
 HERE = REPO / "adapters/openai-compat"
 BRIDGE = ["node", str(HERE / "yui-openai.ts")]
-YL = Path.home() / "dev/yuigui/site/lib/yl/yl.mjs"
+YL = Path(os.environ.get("YUI_YL") or Path.home() / "dev/yuigui/site/lib/yl/yl.mjs")
 KEY = "sk-int12-" + secrets.token_hex(8)
 
 ap = argparse.ArgumentParser()
-ap.add_argument("--run", choices=["stream", "plain", "ollama", "phone", "all"], default="all")
+ap.add_argument("--run", choices=["stream", "plain", "ollama", "explain", "film", "phone", "all"], default="all")
 ap.add_argument("--model", default="qwen2.5:7b", help="the Ollama model for the ollama and phone runs")
+ap.add_argument("--runs", type=int, default=1, help="explain run: times to ask each prompt")
 ap.add_argument("--sim", help="simulator udid: also run YuiUITests/OpenAICompatTests (phone side)")
 ap.add_argument("--out", default="/tmp/int12-proof")
 args = ap.parse_args()
@@ -398,6 +403,76 @@ def run_ollama():
         r.close()
 
 
+EXPLAIN = ["how does a rainbow form?", "how does a bill become law?", "explain compound interest like I'm five"]
+PICTURES = {"sketch", "shapes", "chart", "stat", "image", "diagram", "mock", "timeline", "map", "compare", "storyboard", "motion", "video", "gallery"}
+
+def parse_all(text):
+    js = f"import({json.dumps(str(YL))}).then(m => console.log(JSON.stringify(m.parse({json.dumps(text)}))))"
+    return json.loads(subprocess.check_output(["node", "-e", js], text=True))
+
+def judge_explain(body):
+    """(ok, why): one short line plus one parseable motion line, or a valid deck with a picture on every page."""
+    body = body.strip()
+    m = re.search(r"```yui[ \t]*\n(.*?)\n```", body, re.S)
+    if not m:
+        return False, "no ```yui fence" + (" (wall of text)" if len(body.split()) > 60 else "")
+    fence = m.group(1)
+    text = re.sub(r"```yui[ \t]*\n.*?\n```", "", body, flags=re.S).strip()
+    ops = parse_all(fence)
+    errs = [o for o in ops if o.get("op") == "error"]
+    if errs:
+        return False, "parse error: " + errs[0].get("message", "")
+    adds = [o for o in ops if o.get("op") == "add"]
+    motion = [o for o in adds if o.get("preset") == "motion"]
+    if motion:
+        ask = (motion[0].get("props") or {}).get("title", "")
+        words = len(ask.split())
+        sentences = len([x for x in re.split(r"(?<=[.!?])\s+", ask.strip()) if x])
+        if not ask or words >= 80 or not 2 <= sentences <= 4:
+            return False, f"motion ask is {sentences} sentences, {words} words: {ask[:90]!r}"
+        if "\n" in text or len(text.split()) > 30:
+            return False, f"more than one short line before the motion ({len(text.split())} words)"
+        return True, "motion"
+    if any(o.get("preset") == "deck" for o in adds):
+        pages = {}
+        for o in adds:
+            if o.get("preset") not in ("deck", "page"):
+                pages.setdefault(o.get("screen"), []).append(o.get("preset"))
+        if pages and all(PICTURES & set(v) for v in pages.values()):
+            return True, f"deck, {len(pages)} pages"
+        return False, f"deck page without a picture: {pages}"
+    return False, "fence has no motion and no deck: " + ",".join(o.get("preset", "?") for o in adds)[:80]
+
+
+def run_explain():
+    print(f"\n==== explain: {args.model}, {args.runs} run(s) per prompt")
+    r = Run("explain")
+    rows = []
+    try:
+        code = r.create_agent("Qwen")
+        p = r.pair(code, "--server", "ollama", "--model", args.model, "--ref", "qwen")
+        check("explain: pairs", p.returncode == 0, (p.stdout + p.stderr).strip()[:200])
+        r.start()
+        for prompt in EXPLAIN:
+            for n in range(args.runs):
+                ask = r.say(prompt)
+                try:
+                    rep = wait(lambda: r.replies_to(ask), 300, "answer")
+                except TimeoutError:
+                    rows.append({"model": args.model, "prompt": prompt, "run": n + 1, "ok": False, "why": "no answer in 300 s", "body": ""})
+                    check(f"explain: {prompt} #{n + 1}", False, "no answer")
+                    continue
+                body = rep[0]["body"]
+                ok, why = judge_explain(body)
+                rows.append({"model": args.model, "prompt": prompt, "run": n + 1, "ok": ok, "why": why, "body": body})
+                check(f"explain: {prompt} #{n + 1}", ok, why)
+        r.stop()
+        out = Path(args.out); out.mkdir(parents=True, exist_ok=True)
+        (out / f"explain-{args.model.replace(':', '_')}.json").write_text(json.dumps(rows, indent=1))
+    finally:
+        r.close()
+
+
 def run_phone():
     print(f"\n==== phone: {args.model} and the app on a simulator")
     r = Run("phone")
@@ -442,11 +517,55 @@ def run_phone():
         r.close()
 
 
-runs = {"stream": [run_stream], "plain": [run_plain], "ollama": [run_ollama], "phone": [run_phone],
+
+def run_film():
+    print(f"\n==== film: {args.model} and the app on a simulator")
+    r = Run("film")
+    out = Path(args.out)
+    shots = out / "shots"
+    shots.mkdir(parents=True, exist_ok=True)
+    for f in shots.iterdir():
+        f.unlink()
+    try:
+        code = r.create_agent("Qwen")
+        p = r.pair(code, "--server", "ollama", "--model", args.model, "--ref", "qwen")
+        check("film: pairs", p.returncode == 0, (p.stdout + p.stderr).strip()[:200])
+        rts = []
+        for _ in range(2):  # one fresh session per launch: a replayed refresh token signs everyone out
+            rt = secrets.token_urlsafe(32)
+            sql(f"insert into yui_sessions(user_id, refresh_hash, expires_at) values "
+                f"('{r.T}', '{hashlib.sha256(rt.encode()).hexdigest()}', now() + interval '1 day')")
+            rts.append(rt)
+        # Warm the model so the first answer on the phone is not a cold load.
+        subprocess.run(BRIDGE + ["try", "hi", "--model", args.model], capture_output=True, timeout=300)
+        r.start()
+        env = {**os.environ, "DEVELOPER_DIR": "/Applications/Xcode.app/Contents/Developer",
+               "TEST_RUNNER_YUI_RTS": ",".join(rts), "TEST_RUNNER_YUI_USER": r.T, "TEST_RUNNER_YUI_AGENT": r.agent, "TEST_RUNNER_YUI_SHOTS": str(shots)}
+        subprocess.run(["xcodegen", "generate", "--quiet"], cwd=REPO, env=env, check=True)
+        ui = subprocess.run(["xcodebuild", "test", "-project", "Yui.xcodeproj", "-scheme", "Yui",
+                             "-destination", f"id={args.sim}", "-derivedDataPath", "/tmp/int12-dd",
+                             "-only-testing:YuiUITests/OpenAIFilmTests"],
+                            cwd=REPO, env=env, stdout=open(out / "xcodebuild-film.log", "w"), stderr=subprocess.STDOUT)
+        wait(lambda: all(m["handled_at"] for m in r.thread() if m["sender"] == "user"), 60, "all handled")
+        r.stop()
+        text = (out / "xcodebuild-film.log").read_text()
+        check("film: OpenAIFilmTests ran and passed in the simulator",
+              ui.returncode == 0 and "Executed 1 test, with 0 failures" in text, f"xcodebuild exit {ui.returncode}, log {out / 'xcodebuild-film.log'}")
+        users = [m for m in r.thread() if m["sender"] == "user"]
+        for m in users:
+            ok, why = judge_explain(next((a["body"] for a in r.replies_to(m["id"])), ""))
+            check(f"film: {m['body']!r} is one line and a film", ok, why)
+        (out / "thread-film.json").write_text(json.dumps(r.thread(), indent=1))
+        print(f"  screenshots: {shots}")
+    finally:
+        r.close()
+
+
+runs = {"stream": [run_stream], "plain": [run_plain], "ollama": [run_ollama], "explain": [run_explain], "film": [run_film], "phone": [run_phone],
         "all": [run_stream, run_plain, run_ollama]}[args.run]
-if args.sim and run_phone not in runs:
+if args.sim and run_phone not in runs and run_film not in runs:
     runs.append(run_phone)
-if run_phone in runs and not args.sim:
+if (run_phone in runs or run_film in runs) and not args.sim:
     sys.exit("--run phone needs --sim <udid>")
 for f in runs:
     try:

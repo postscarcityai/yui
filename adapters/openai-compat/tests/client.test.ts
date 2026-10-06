@@ -505,6 +505,51 @@ describe("small models (INT-23)", () => {
     assert.equal(firstScreen(`${a}\n\nDone.`), `${a}\n\nDone.`);
     assert.equal(firstScreen("no screens here"), "no screens here");
   });
+  const ask = "Sunlight enters a raindrop and bends. It splits into colors, bounces off the back, and exits. We see the colors as a rainbow.";
+  test("a film ask is repaired: unquoted, split over lines, open quote, bare, wrong fence (INT-28)", () => {
+    const good = `How a rainbow forms.\n\`\`\`yui\nmotion "${ask}"\n\`\`\``;
+    assert.equal(asYui(good), good);
+    assert.equal(asYui(`How a rainbow forms.\n\`\`\`yui\nmotion ${ask}\n\`\`\``), good); // unquoted
+    assert.equal(asYui(`How a rainbow forms.\n\`\`\`yui\nmotion "Sunlight enters a raindrop and bends.\nIt splits into colors, bounces off the back, and exits.\nWe see the colors as a rainbow."\n\`\`\``), good); // split
+    assert.equal(asYui(`How a rainbow forms.\n\`\`\`yui\nmotion ${ask.replace(". It", ".\nIt")}\n\`\`\``), good); // unquoted and split
+    assert.equal(asYui(`How a rainbow forms.\n\`\`\`yui\nmotion "${ask}`), good); // quote and fence left open
+    assert.equal(asYui(`How a rainbow forms.\n\`\`\`yui\nmotion "${ask}\n\`\`\``), good); // quote left open
+    assert.equal(asYui(`How a rainbow forms.\nmotion "${ask}"`), good); // no fence
+    assert.equal(asYui(`How a rainbow forms.\nmotion ${ask}`), good); // no fence, no quotes
+    assert.equal(asYui(`How a rainbow forms.\n\`\`\`yml\nmotion "${ask}"\n\`\`\``), good); // wrong tag
+    assert.equal(asYui(good.replace("```yui\n", "```\n")), good);
+    assert.equal(asYui(`How.\n\`\`\`yui\nmotion "It says \"hi\" twice. Then it stops."\n\`\`\``), `How.\n\`\`\`yui\nmotion "It says 'hi' twice. Then it stops."\n\`\`\``);
+    assert.equal(asYui(`Why.\n\`\`\`yui\nmotion ${ask}\nchoose "Quiz" A|B\n\`\`\``), `Why.\n\`\`\`yui\nmotion "${ask}"\nchoose "Quiz" A|B\n\`\`\``); // the next Yui Line stays its own
+  });
+  test("a film reply keeps one short line and the film, never the prose a small model adds (INT-28)", () => {
+    const film = `\`\`\`yui\nmotion "${ask}"\n\`\`\``;
+    assert.equal(asYui(`How a rainbow forms.\n${film}\n"Light bends."\n"Colors split."\nTap to continue`), `How a rainbow forms.\n${film}`);
+    assert.equal(asYui(`${film}\n"Light is made of colors."\n"They bend."`), film);
+    assert.equal(asYui(`How.\nIt is long.\n${film}`), `How.\n${film}`);
+    const quiz = '```yui\nchoose "Quiz" A|B\n```';
+    assert.equal(asYui(`How.\n${film}\nNice.\n${quiz}`), `How.\n${film}\n${quiz}`); // the quiz under the film stays
+    const card = 'Here.\n```yui\ncard "Plan" body="Hi"\n```\nMore words below.';
+    assert.equal(asYui(card), card); // no film: untouched
+  });
+  test("options on the line under a choice are joined (INT-28)", () => {
+    assert.equal(asYui('```yui\nchoose "Drink"\n  Tea|Coffee\n```'), '```yui\nchoose "Drink" Tea|Coffee\n```');
+    assert.equal(asYui('```yui\npick@gear "Gear"\n Dumbbells|Bands \n```'), '```yui\npick@gear "Gear" Dumbbells|Bands\n```');
+    const same = '```yui\nchoose "Drink" Tea|Coffee\nlist Today "Squat"\n```';
+    assert.equal(asYui(same), same);
+    assert.equal(asYui('```yui\nchoose "Drink" \nTea|Coffee \n```'), '```yui\nchoose "Drink" Tea|Coffee\n```');
+    const apart = '```yui\nchoose "Drink"\nlist Today "Squat"\n```'; // a Yui Line under it is its own line
+    assert.equal(asYui(apart), apart);
+  });
+  test("motion prose and code are left alone (INT-28)", () => {
+    for (const t of ["motion blur is nice", "Motion sickness is caused by a mismatch of what you see and feel", "```js\nmotion x y z a b c\n```"]) {
+      assert.equal(asYui(t), t);
+    }
+  });
+  test("the short guide teaches the film line (INT-28)", () => {
+    assert.match(SMALL_GUIDE, /motion "/);
+    assert.match(SMALL_GUIDE, /ONE short line, then ONE motion line/);
+    assert.ok(SMALL_GUIDE.includes(`motion "${ask}"`)); // the example is the ask the repair tests use
+  });
   test("prose that starts with a head word is not fenced", () => {
     for (const t of ["list of things I like", "Show me what you have", "timer is a good idea", "pick one and tell me", "next week we ask again", "I will choose tea 2 times"]) {
       assert.equal(asYui(t), t);
