@@ -109,6 +109,11 @@ def title_of(ask: str) -> str:
     return (t[:56] + "...") if len(t) > 58 else t
 
 
+def drawing(n: int) -> str:
+    """The working row's words while scene `n` is made (MOTION-5): plain words, never an id."""
+    return "Drawing the first scene" if n <= 1 else f"Drawing scene {n}"
+
+
 def block(film: str, title: str, part: int, scene: dict, last: bool) -> str:
     """The row for one scene (spec 0.5). Code never contains a line that is only `end`."""
     code = "\n".join(ln for ln in scene["code"].split("\n") if ln.strip() != "end")

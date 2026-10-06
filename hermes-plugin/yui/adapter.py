@@ -1457,14 +1457,20 @@ class YuiAdapter(BasePlatformAdapter):
         """Make the film for `ask` and send each scene as its own row; a film that never starts is drawn as a sketch."""
         extra = getattr(getattr(self, "config", None), "extra", None)
         n = 0
+        build = compat.build_for(user_id, self._user_id)
+        say = (lambda words: self._doing.note(key, doing.OFF if words is None else {"text": words})) if doing.allowed(build) else (lambda words: None)
+        say(motion.drawing(1))  # plain words in the working row while the scenes are made (MOTION-5); a no-op once the turn is over
         try:
             async for part, _title, row_body, last in motion.make(ask, source=motion.maker(extra)):
                 n += 1
                 await self._insert(key, row_body, film=1 if part == 1 else 2)
+                if not last:
+                    say(motion.drawing(n + 1))
         except asyncio.CancelledError:
             raise
         except Exception as e:
             logger.warning("[yui] motion: %s", e)
+        say(None)  # the film is whole (or never started): the working word comes back
         if n:
             logger.info("[yui] motion: %d rows for %s", n, ask[:60].replace("\n", " "))
             return

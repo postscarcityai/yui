@@ -208,6 +208,23 @@ class Turn(unittest.TestCase):
         self.run_all()
         self.assertEqual(len(self.written), 3)
 
+    def test_the_working_row_says_which_scene_is_being_drawn(self):
+        notes = []
+        self.a._doing = type("D", (), {"note": lambda self, k, v: notes.append((k, v))})()
+        with mock.patch.object(self.ad.doing, "allowed", lambda *_: True):
+            self.send(REPLY)
+            self.run_all()
+        words = [v if v == "off" else v["text"] for _, v in notes]
+        self.assertEqual(words, ["Drawing the first scene", "Drawing scene 2", "Drawing scene 3", "off"])
+        self.assertTrue(all(k == "a1" for k, _ in notes))
+        self.assertEqual(motion.drawing(1), "Drawing the first scene")
+
+    def test_no_words_for_a_phone_that_cannot_read_them(self):
+        self.a._doing = None  # would raise if touched
+        self.send(REPLY)
+        self.run_all()
+        self.assertEqual(len(self.written), 4)
+
     def test_old_phone_gets_a_sketch_and_no_film(self):
         self.build = 300
         self.ad.compat.downgrade = compat.downgrade
