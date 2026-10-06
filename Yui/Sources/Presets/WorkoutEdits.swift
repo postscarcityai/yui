@@ -369,6 +369,7 @@ struct RunnerEditSheet: View {
                 .background(s.surface, in: Capsule())
                 .overlay(Capsule().stroke(s.outline, lineWidth: 1.5))
                 .accessibilityIdentifier(id)
+            NameMic(text: text, id: "\(id)-mic", label: "Say the move")
             if !text.wrappedValue.trimmingCharacters(in: .whitespaces).isEmpty {
                 OptionPill(text: go, fill: s.accent, ink: s.onAccent, action: action)
                     .accessibilityIdentifier("\(id)-go")
