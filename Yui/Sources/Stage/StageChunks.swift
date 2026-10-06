@@ -287,8 +287,32 @@ enum StageChunks {
     /// The last page asks the questions that follow it: it moves onto their screen (NOTE-42080).
     /// A page before more pages stays where it is, so the story still reads in order.
     static func lift(_ t: inout StageTurn) {
-        guard !t.questions.isEmpty, let last = t.chunks.last, last.asks, last.more.isEmpty else { return }
-        t.lead = t.chunks.removeLast()
+        guard !t.questions.isEmpty, let last = t.chunks.last else { return }
+        if last.asks, last.more.isEmpty {
+            t.lead = t.chunks.removeLast()
+            return
+        }
+        // The question sits on the page it asks about (feedback AAY2aTG4, Oct 5: "I don't want clicks for no
+        // reason"): a short line or drawing right before the first question, with room under it, heads the
+        // questions screen. A long page, a map, a game or a timer keeps its own page, so nothing scrolls.
+        guard let about = t.questions.first?.about, let block = last.blocks.last, block.id == about.id,
+              roomUnder(block, questions: t.questions.count) else { return }
+        if last.more.isEmpty {
+            t.chunks.removeLast()
+        } else {
+            t.chunks[t.chunks.count - 1].more.removeLast()
+        }
+        t.lead = block
+    }
+
+    /// Words a page holds above its questions: the answers need the rest of the screen.
+    static let leadWords = 45
+
+    /// A page that leaves room for its questions: plain words or a stackable drawing, a short line, and not
+    /// more than three questions under it.
+    private static func roomUnder(_ c: StageChunk, questions: Int) -> Bool {
+        guard c.page == nil, questions <= 3, canStack(c) else { return false }
+        return (c.line ?? "").split(whereSeparator: \.isWhitespace).count <= leadWords
     }
 
     /// The pages a question's options name ("A", "Look B", "Hand drawn"), in option order (mirror: `compareOf`

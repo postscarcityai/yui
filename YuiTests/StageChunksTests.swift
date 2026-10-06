@@ -102,10 +102,11 @@ final class StageChunksTests: XCTestCase {
         ]
         let t = StageChunks.turn(messages, ask: "u1")
         XCTAssertEqual(t.ask?.id, "u1")
-        // Three ideas share one page (VIS-4), and the question follows.
+        // Three ideas share one page (VIS-4); the one the question asks about moves onto the questions screen.
         XCTAssertEqual(t.chunks.count, 1)
-        XCTAssertEqual(t.chunks[0].blocks.map(\.line), ["Yes.", "Build 160.", "Update the iPad."])
-        XCTAssertEqual(t.chunks[0].blocks.map(\.scope), ["a1", "a1", "a2"])
+        XCTAssertEqual(t.chunks[0].blocks.map(\.line), ["Yes.", "Build 160."])
+        XCTAssertEqual(t.chunks[0].blocks.map(\.scope), ["a1", "a1"])
+        XCTAssertEqual(t.lead?.line, "Update the iPad.")
         XCTAssertEqual(t.questions.map(\.c.ylID), ["n3"])
         XCTAssertEqual(t.pages, 2)
         // Nil is the newest thing the person said.
@@ -266,7 +267,7 @@ final class StageChunksTests: XCTestCase {
         page "after"
         end
         """), [])
-        // The release reply's plan has no page in it: nothing moves.
+        // The release reply's plan has no page in it: its short line and drawing head the question.
         let t = turn("""
         say "Keys ride along."
         sketch "In 0.3.2"
@@ -275,8 +276,8 @@ final class StageChunksTests: XCTestCase {
         choose@ping "Ping you?" Yes|No
         end
         """)
-        XCTAssertNil(t.lead)
-        XCTAssertEqual(t.pages, 2)
+        XCTAssertEqual(t.lead?.line, "Keys ride along.")
+        XCTAssertEqual(t.pages, 1)
     }
 
     /// The last page and its question share the questions screen: one page, not two.
@@ -513,5 +514,53 @@ final class StageChunksTests: XCTestCase {
         choose "B?" Yes|No
         """)
         XCTAssertEqual(t.questions.map { $0.about?.line }, ["Pick both.", nil])
+    }
+
+    /// A short line and its question are one page, not two (feedback AAY2aTG4, Oct 5).
+    func testAShortPageAndItsQuestionShareOneScreen() {
+        let t = turn("""
+        say "I just sent you the kid version. Want a grown-up take?"
+        choose "Grown-up take?" Yes|"Kid one was enough"
+        """)
+        XCTAssertEqual(t.chunks.count, 0, "the line moved onto the questions screen")
+        XCTAssertEqual(t.lead?.line, "I just sent you the kid version. Want a grown-up take?")
+        XCTAssertEqual(t.pages, 1)
+    }
+
+    /// A drawing with its line heads the question too; the pages before it stay.
+    func testAShortDrawingAndItsQuestionShareOneScreen() {
+        let t = turn("""
+        say "Intro."
+        say "Left drawer"
+        sketch "Left drawer" frame=bubble
+        row "Done card gone" +hi
+        choose "Ship it?" Yes|No
+        """)
+        XCTAssertEqual(t.lead?.line, "Left drawer")
+        XCTAssertEqual(t.pages, 2)
+    }
+
+    /// A long page would scroll under its answers: it still splits.
+    func testALongPageStillSplitsFromItsQuestion() {
+        let words = Array(repeating: "word", count: 60).joined(separator: " ")
+        let t = turn("""
+        say "\(words)"
+        choose "Go?" Yes|No
+        """)
+        XCTAssertNil(t.lead)
+        XCTAssertEqual(t.chunks.count, 1)
+        XCTAssertEqual(t.pages, 2)
+    }
+
+    /// A map, a game or a timer keeps a page of its own.
+    func testAMapKeepsItsOwnPage() {
+        let t = turn("""
+        say "Where they ruled."
+        map caption="Karakorum"
+        pin@ka Karakorum 47.2,102.8
+        choose "Next?" Yes|No
+        """)
+        XCTAssertNil(t.lead)
+        XCTAssertEqual(t.pages, 2)
     }
 }
