@@ -43,8 +43,10 @@ function repairMotion(text: string): string {
     const line = lines[i];
     const f = /^[ \t]*(`{3,})([\w-]*)/.exec(line);
     if (f) { mine = fence ? true : f[2].toLowerCase() === "yui" || PLAIN_TAGS.has(f[2].toLowerCase()); fence = fence ? "" : f[1]; out.push(line); continue; }
-    const m = /^(\s*)`?motion\s+(.*?)`?\s*$/i.exec(line);
-    if (!m || !mine || !m[2].trim() || (!fence && (!/^\s*`?motion/.test(line) || m[2].trim().split(/\s+/).length < 5))) { out.push(line); continue; }
+    // `motion "..."`, [motion "..."], `Motion "..."` and `motions "..."` (INT-29): a small model dresses the line in brackets or backticks
+    const m = /^(\s*)[`\[]?[ \t]*motions?\s+(.*?)[ \t]*[`\]]?\s*$/i.exec(line);
+    const quotedOpen = !!m && /^["“]/.test(m[2]);
+    if (!m || !mine || !m[2].trim() || (!fence && !quotedOpen && (!/^\s*`?motion\s/.test(line) || m[2].trim().split(/\s+/).length < 5))) { out.push(line); continue; }
     let ask = m[2];
     const quoted = /^["“]/.test(ask);
     let j = i;
@@ -57,7 +59,7 @@ function repairMotion(text: string): string {
       ask += ` ${next.trim()}`;
       j++;
     }
-    ask = ask.replace(/^["“”'‘]|["“”'’]$/g, "").replace(QUOTES, "'").replace(/\s+/g, " ").trim();
+    ask = ask.replace(/\s*[\]`]$/, "").replace(/^["“”'‘]|["“”'’]$/g, "").replace(QUOTES, "'").replace(/\s+/g, " ").trim();
     out.push(`${m[1]}motion "${ask}"`);
     i = j;
   }
@@ -74,6 +76,94 @@ function joinOptions(text: string): string {
     const prev = out[out.length - 1];
     if (fence && prev !== undefined && /^(?:choose|pick)(?:@[\w-]+)?\s+"[^"\n]*"\s*$/.test(prev.trim()) && /^[ \t]*[^\s|][^|\n]*(?:\|[^|\n]+)+\s*$/.test(line) && !HEAD.test(line.trim())) {
       out[out.length - 1] = `${prev.trim()} ${line.trim()}`;
+      continue;
+    }
+    out.push(line);
+  }
+  return out.join("\n");
+}
+
+/** What the guide answers with a film (SMALL_GUIDE, CHANNEL.md "Explain by picture"): "how does", "why", "explain". */
+export const isExplainAsk = (s: string): boolean => /^\W*(?:how (?:does|do|did|can|come)|why|explain|what makes)\b/i.test(s);
+
+/** One line of a film ask a small model wrapped in its own marks: "a quoted line", [a bracketed one], or `quote "..."`. */
+const WRAPPED = /^\s*(?:quote\s+)?(?:"([^"\n]*)"|“([^”\n]*)”|\[([^\]\n]*)\]|`([^`\n]*)`)[ \t,]*$/;
+const unwrap = (l: string): string => { const m = WRAPPED.exec(l); return (m ? (m[1] ?? m[2] ?? m[3] ?? m[4]) : l).trim(); };
+
+/**
+ * A small model answers an explain question with the film's ask and forgets the film (INT-29): the sentences come bare,
+ * each in its own quotes or brackets, the whole reply in one pair of quotes, or the last one ends in a stray closing quote (the `motion "` opener was dropped).
+ * The guide says an explain question gets one line and one `motion` line, so when the person asked one and the whole reply
+ * is 2 to 4 short sentences carrying one of those two marks, wrap it. A plain text answer has neither mark and stays.
+ * An unknown line like `sign "Path" ... "text"` is not a dropped opener (the guide has no rule that makes it a film;
+ * it may be a card or pick gone wrong), so it is never guessed into a motion.
+ */
+function restoreFilm(text: string, ask: string | undefined): string {
+  if (!ask || !isExplainAsk(ask) || text.includes("```")) return text;
+  const opener = /^[\[`\s]*motions?\s+(?=["“])/i; // a garbled opener: `[ motion "`, `` `Motion "``, `motions "`
+  if (opener.test(text)) text = text.replace(opener, "").replace(/\s*[\]`]\s*$/, "");
+  const lines = text.split("\n").map((l) => l.trim()).filter(Boolean);
+  if (!lines.length || lines.length > 6 || lines.some((l) => HEAD.test(l) || /^motion\b/i.test(l))) return text;
+  const joined = lines.join("\n");
+  const marks = (joined.match(QUOTES) ?? []).length;
+  let inner: string, lead = "Here's how it works.";
+  if (lines.length >= 2 && lines.every((l) => WRAPPED.test(l))) {
+    inner = lines.map(unwrap).join("\n"); // every line in its own marks
+  } else if (lines.length >= 3 && !WRAPPED.test(lines[0]) && !/["“”`\[\]]/.test(lines[0]) && lines[0].split(/\s+/).length <= 30 && lines.slice(1).every((l) => WRAPPED.test(l))) {
+    lead = /[.!?:]$/.test(lines[0]) ? lines[0] : `${lines[0]}.`; // one plain line, then the film's sentences in marks
+    inner = lines.slice(1).map(unwrap).join("\n");
+  } else if (marks === 2 && /^["“]/.test(joined) && /["”]$/.test(joined)) {
+    inner = joined.slice(1, -1); // the whole reply in one pair of quotes
+  } else if (marks % 2 === 1 && /["”]$/.test(joined) && !/^["“]/.test(joined)) {
+    inner = joined.slice(0, -1); // the closing quote of an opener that never came
+  } else return text;
+  const sentences = inner.split(/\n+|(?<=[.!?])\s+/).map((x) => x.trim()).filter(Boolean).map((x) => (/[.!?]$/.test(x) ? x : `${x}.`));
+  const words = sentences.join(" ").split(/\s+/).length;
+  if (sentences.length < 2 || sentences.length > 4 || words >= 80) return text;
+  return `${lead}\n\`\`\`yui\nmotion "${sentences.join(" ").replace(QUOTES, "'").replace(/\s+/g, " ")}"\n\`\`\``;
+}
+
+const LEAD = /^(?:here|how|why|this|that|watch|let me|so\b|sure|ok)|[:?]$/i; // a title or a lead-in, not a fact
+/**
+ * A small model splits the film (INT-29): its facts come as plain lines above the fence and the `motion` line gets one scrap
+ * (`motion "The colors always come in the same order."`). The film is made from the ask alone, so for an explain question
+ * the facts above go into the ask, in order, when together they make 2 to 4 sentences under 80 words; the line above is
+ * then the plain "Here's how it works." Lead-ins ("Here is how...", a question) are not facts: those replies stay as they are.
+ */
+function mergeFilmAsk(text: string, ask: string | undefined): string {
+  if (!ask || !isExplainAsk(ask)) return text;
+  const lines = text.split("\n");
+  const open = lines.findIndex((l) => /^[ \t]*`{3,}yui[ \t]*$/.test(l));
+  if (open < 1 || lines.slice(0, open).some((l) => /`{3,}/.test(l))) return text;
+  const at = lines.findIndex((l, i) => i > open && /^[ \t]*motion\s+"[^"\n]*"[ \t]*$/.test(l));
+  const close = lines.findIndex((l, i) => i > open && /^[ \t]*`{3,}[ \t]*$/.test(l));
+  if (at < 0 || (close >= 0 && at > close)) return text;
+  const own = /"([^"\n]*)"/.exec(lines[at])![1].trim();
+  const norm = (x: string) => x.replace(/\s+/g, " ").trim();
+  if ((own.split(/(?<=[.!?])\s+/).filter(Boolean).length) >= 2) {
+    // the film's ask already says it all and the same words sit above the fence: the line above is the plain lead
+    const above = norm(lines.slice(0, open).join(" "));
+    return above.length > 20 && norm(own).startsWith(above) ? ["Here's how it works.", ...lines.slice(open)].join("\n") : text;
+  }
+  const prose = lines.slice(0, open).map((l) => l.trim()).filter(Boolean)
+    .map(unwrap).filter(Boolean);
+  if (!prose.length || prose.length > 3 || prose.some((l) => LEAD.test(l))) return text;
+  const sentences = [...prose, own].flatMap((x) => x.split(/\n+|(?<=[.!?])\s+/)).map((x) => x.trim()).filter(Boolean)
+    .map((x) => (/[.!?]$/.test(x) ? x : `${x}.`));
+  const merged = sentences.join(" ").replace(QUOTES, "'").replace(/\s+/g, " ");
+  if (sentences.length < 2 || sentences.length > 4 || merged.split(" ").length >= 80) return text;
+  return ["Here's how it works.", ...lines.slice(open, at), `${lines[at].match(/^[ \t]*/)![0]}motion "${merged}"`, ...lines.slice(at + 1)].join("\n");
+}
+
+/** A small model puts an attribute on the line under its component (INT-29): `card "Grow"` then `body="..."`. Join it to the line above. */
+function joinAttrs(text: string): string {
+  const out: string[] = [];
+  let fence = false;
+  for (const line of text.split("\n")) {
+    if (/^[ \t]*`{3,}/.test(line)) fence = !fence;
+    const prev = out[out.length - 1];
+    if (fence && prev !== undefined && HEAD.test(prev.trim()) && /^[ \t]*(?:[a-z][\w-]*=(?:"[^"\n]*"|[^\s"=]+)[ \t]*)+$/.test(line)) {
+      out[out.length - 1] = `${prev.trimEnd()} ${line.trim()}`;
       continue;
     }
     out.push(line);
@@ -169,8 +259,8 @@ function filmOnly(text: string): string {
 }
 
 /** Retags every ```yml / ```yaml / plain fence that opens with a Yui Line head as ```yui, and fences bare Yui Lines. */
-export function asYui(text: string): string {
-  const clean = closeFence(joinOptions(repairMotion(stripLabels(text.replace(STRAY_MARK, "")))));
+export function asYui(text: string, ask?: string): string {
+  const clean = mergeFilmAsk(closeFence(joinAttrs(joinOptions(repairMotion(restoreFilm(stripLabels(text.replace(STRAY_MARK, "")), ask))))), ask);
   return filmOnly(fenceBare(clean.replace(/^(`{3,})([\w-]*)[ \t]*\n([\s\S]*?)\n\1[ \t]*$/gm, (whole, ticks: string, tag: string, body: string) => {
     if (tag.toLowerCase() === "yui" || !PLAIN_TAGS.has(tag.toLowerCase())) return whole;
     const lines = body.split("\n");

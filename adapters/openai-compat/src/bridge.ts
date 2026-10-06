@@ -446,7 +446,9 @@ export class Bridge {
         ...(remote.temperature !== undefined ? { temperature: remote.temperature } : {}),
         ...(remote.maxTokens ? { max_tokens: remote.maxTokens } : {}),
       });
-      text = asYui(done.text);
+      if (process.env.YUI_BRIDGE_RAW) log(`raw: ${JSON.stringify(done.text)}`); // tests save what the model said before the repairs
+      const ask = [...rows].reverse().find((r) => r.sender === "user" && r.kind === "text")?.body; // what the person asked, for the explain repair
+      text = asYui(done.text, ask);
       if (rows.every((r) => r.kind === "event")) text = firstScreen(text); // a tap answers with one screen
       log(`${agent.name}: ${remote.model} answered${done.streamed ? " (streamed)" : ""}, ${text.length} chars`
         + (done.finish && done.finish !== "stop" ? `, finish ${done.finish}` : "")

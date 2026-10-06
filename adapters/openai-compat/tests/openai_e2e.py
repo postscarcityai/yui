@@ -449,6 +449,7 @@ def run_explain():
     r = Run("explain")
     rows = []
     try:
+        r.env["YUI_BRIDGE_RAW"] = "1"
         code = r.create_agent("Qwen")
         p = r.pair(code, "--server", "ollama", "--model", args.model, "--ref", "qwen")
         check("explain: pairs", p.returncode == 0, (p.stdout + p.stderr).strip()[:200])
@@ -464,7 +465,9 @@ def run_explain():
                     continue
                 body = rep[0]["body"]
                 ok, why = judge_explain(body)
-                rows.append({"model": args.model, "prompt": prompt, "run": n + 1, "ok": ok, "why": why, "body": body})
+                raws = re.findall(r"raw: (\".*)", r.bridge_log())
+                rows.append({"model": args.model, "prompt": prompt, "run": n + 1, "ok": ok, "why": why, "body": body,
+                             "raw": json.loads(raws[-1]) if raws else None})
                 check(f"explain: {prompt} #{n + 1}", ok, why)
         r.stop()
         out = Path(args.out); out.mkdir(parents=True, exist_ok=True)

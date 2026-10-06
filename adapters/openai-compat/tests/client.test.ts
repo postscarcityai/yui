@@ -505,6 +505,7 @@ describe("small models (INT-23)", () => {
     assert.equal(firstScreen(`${a}\n\nDone.`), `${a}\n\nDone.`);
     assert.equal(firstScreen("no screens here"), "no screens here");
   });
+  const chat = (c: ChatClient, text: string) => c.complete({ model: "fake-1", messages: [{ role: "system", content: "guide" }, { role: "user", content: text }] }, { stream: true });
   const ask = "Sunlight enters a raindrop and bends. It splits into colors, bounces off the back, and exits. We see the colors as a rainbow.";
   test("a film ask is repaired: unquoted, split over lines, open quote, bare, wrong fence (INT-28)", () => {
     const good = `How a rainbow forms.\n\`\`\`yui\nmotion "${ask}"\n\`\`\``;
@@ -530,6 +531,98 @@ describe("small models (INT-23)", () => {
     assert.equal(asYui(`How.\n${film}\nNice.\n${quiz}`), `How.\n${film}\n${quiz}`); // the quiz under the film stays
     const card = 'Here.\n```yui\ncard "Plan" body="Hi"\n```\nMore words below.';
     assert.equal(asYui(card), card); // no film: untouched
+  });
+  test("a dropped film opener is put back for an explain question, replayed from llama3.2:3b (INT-29)", async () => {
+    const f = await startFake();
+    try {
+      const c = new ChatClient(f.url);
+      const replay = async (name: string) => (await chat(c, `replay ${name}`)).text;
+      const film = (a: string) => `Here's how it works.\n\`\`\`yui\nmotion "${a}"\n\`\`\``;
+      const q = "how does a rainbow form?";
+      assert.equal(asYui(await replay("strayQuote"), q),
+        film("Sunlight enters a raindrop and bends. It splits into colors, hits a tiny water particle, reflects again, bounces off. We see the colors as a rainbow."));
+      assert.equal(asYui(await replay("quotedLines"), "how does a bill become law?"),
+        film("First, Congress proposes a bill. It's sent to the President for signature or veto. Awaits Presidential decision or signing into law."));
+      assert.equal(asYui(await replay("bracketLines"), "how does a bill become law?"),
+        film("Congress sends it to committee review. it goes through committee markup and vote. Passed with majority vote in both House and Senate."));
+      assert.equal(asYui(await replay("quoteWord"), q),
+        film("A water droplet acts as a lens, bending sunlight. Refraction occurred due to change in speed of light inside water. The separated colors spread out, forming an arc shape."));
+      assert.equal(asYui(await replay("wholeQuote"), "how does a bill become law?"),
+        film("President signs the bill after Senate approval. Congress votes in favor with required majority. Proposed bill passes both houses."));
+      assert.equal(asYui(await replay("curlyQuote"), "explain compound interest like I'm five"),
+        film("Imagine your piggy bank is magic. Every year, the money makes more money!"));
+      assert.equal(asYui(await replay("bracketMotion"), "how does a bill become law?"),
+        film("A President signs a bill into law after Senate and House votes. The president vetoes the bill which then goes to override vote. If both houses approve, it becomes law."));
+      assert.equal(asYui(await replay("tickMotion"), q),
+        film("Light is refracted through water droplets in the air. It's reflected back, forming a spectrum. Water droplets act like tiny prisms. They filter sunlight into its color components."));
+      assert.equal(asYui(await replay("bracketMotion"), "log my run"), asYui(await replay("bracketMotion"))); // no explain question, no repair
+      // no explain question, no repair: the same reply stays what it was
+      for (const name of ["strayQuote", "quotedLines", "bracketLines"]) assert.equal(asYui(await replay(name), "what is on my list?"), asYui(await replay(name)));
+      assert.ok(!asYui(await replay("strayQuote"), "log my sleep").includes("```"));
+      // a normal text answer (no quote marks, no brackets) is never made a film
+      const plain = await replay("plainAnswer");
+      assert.equal(asYui(plain, q), plain);
+      assert.equal(asYui(plain, "explain compound interest like I'm five"), plain);
+    } finally { await f.close(); }
+  });
+  test("facts above a one-scrap film go into its ask, replayed from llama3.2:3b (INT-29)", async () => {
+    const f = await startFake();
+    try {
+      const c = new ChatClient(f.url);
+      const replay = async (name: string) => (await chat(c, `replay ${name}`)).text;
+      const q = "how does a rainbow form?";
+      assert.equal(asYui(await replay("splitFilm"), q),
+        'Here\'s how it works.\n```yui\nmotion "It splits into colors, bounces off the back, and exits. We see the colors as a rainbow slowly spreads."\n```');
+      assert.equal(asYui(await replay("splitFilm3"), q),
+        'Here\'s how it works.\n```yui\nmotion "Sunlight enters a raindrop and bends. It passes through water droplets in the air at a shallow angle. The colors separate by wavelength, resulting in our visible spectrum. A prism of sunlight is refracted."\n```');
+      // the same words above the fence and in the film's ask (gemma4:e4b): one copy, under the plain lead
+      const echo = await replay("echoFilm");
+      assert.equal(asYui(echo, "how does a bill become law?"), echo.replace(/^[^\n]*\n/, "Here's how it works.\n"));
+      assert.equal(asYui(echo, "log my run"), echo);
+      // a lead-in above the film is a lead-in, not a fact: untouched; so is any reply to a question that is not an explain
+      const lead = await replay("leadFilm");
+      assert.equal(asYui(lead, q), lead);
+      assert.equal(asYui(await replay("splitFilm"), "log my run"), asYui(await replay("splitFilm")));
+      // a film with 2 to 4 sentences of its own is never touched
+      const own = `It bends.\n\`\`\`yui\nmotion "${ask}"\n\`\`\``;
+      assert.equal(asYui(own, q), own);
+    } finally { await f.close(); }
+  });
+  test("the film repair skips what is not a dropped ask (INT-29)", () => {
+    const q = "why is the sky blue?";
+    const one = '"Air scatters blue light."'; // one sentence: not 2 to 4
+    assert.equal(asYui(one, q), one);
+    const five = ["One is here.", "Two is here.", "Three is here.", "Four is here.", "Five is here."].join(" ") + '"';
+    assert.equal(asYui(five, q), five);
+    const long = `${"word ".repeat(40).trim()}. ${"word ".repeat(45).trim()}."`; // 85 words
+    assert.equal(asYui(long, q), long);
+    const fenced = 'Why.\n```yui\ncard "Sky" body="Blue"\n```';
+    assert.equal(asYui(fenced, q), fenced);
+    assert.equal(asYui('"Blue wins." A reply with a quote. And a closed pair "here".', q), '"Blue wins." A reply with a quote. And a closed pair "here".'); // quotes paired: not a stray
+    // a card's lines under an explain question are not a film either
+    assert.equal(asYui('card "Sky" body="Blue"\ntimer 5m Look up', q), '```yui\ncard "Sky" body="Blue"\ntimer 5m Look up\n```');
+  });
+  test("an unknown preset with a quoted ask is not guessed into a motion (INT-29)", async () => {
+    const f = await startFake();
+    try {
+      const c = new ChatClient(f.url);
+      const sign = (await chat(c, "replay signLine")).text;
+      assert.equal(asYui(sign, "how does a bill become law?"), sign);
+      assert.ok(!asYui(sign, "how does a bill become law?").includes("motion"));
+    } finally { await f.close(); }
+  });
+  test("an attribute on the line under its component joins it, replayed from llama3.2:3b (INT-29)", async () => {
+    const f = await startFake();
+    try {
+      const c = new ChatClient(f.url);
+      const orphan = (await chat(c, "replay orphanBody")).text;
+      assert.equal(asYui(orphan), '```yui\ncard "Grow Money" body="Money + more Money = Even More Money!"\n```');
+      assert.equal(asYui('```yui\ncard "Plan"\n  body="Hi"\n  cta="Go"\nstat 5 Count\n```'), '```yui\ncard "Plan" body="Hi" cta="Go"\nstat 5 Count\n```');
+      const same = '```yui\ncard "Plan" body="Hi"\nstat 5 Count\n```';
+      assert.equal(asYui(same), same);
+      const prose = 'Hi.\nbody="not in a fence"'; // outside a fence nothing joins
+      assert.equal(asYui(prose), prose);
+    } finally { await f.close(); }
   });
   test("options on the line under a choice are joined (INT-28)", () => {
     assert.equal(asYui('```yui\nchoose "Drink"\n  Tea|Coffee\n```'), '```yui\nchoose "Drink" Tea|Coffee\n```');

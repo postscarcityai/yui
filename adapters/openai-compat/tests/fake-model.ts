@@ -18,6 +18,7 @@
 //   down N           -> 503 for N seconds after the first try, then "Up again."
 //   refuse           -> 400, the context is too long
 //   think            -> a <think> block, then "Thought it through."
+//   replay <name>    -> a reply recorded from llama3.2:3b (INT-29), see REPLAYS
 //   anything else    -> "You said: <it>"
 //
 // --gemini answers the way Google's OpenAI-compatible endpoint does (INT-9):
@@ -70,6 +71,25 @@ export interface Fake {
   log: any[];
   close(): Promise<void>;
 }
+
+/** Answers llama3.2:3b really gave (INT-28, INT-29), word for word: the film's ask with no film around it, one attribute on its own line. */
+const REPLAYS: Record<string, string> = {
+  strayQuote: 'Sunlight enters a raindrop and bends. \nIt splits into colors, hits a tiny water particle, reflects again, bounces off.\nWe see the colors as a rainbow."',
+  quotedLines: '"First, Congress proposes a bill."\n"It\'s sent to the President for signature or veto."\n"Awaits Presidential decision or signing into law."',
+  bracketLines: '[Congress sends it to committee review]\n[it goes through committee markup and vote]\n[Passed with majority vote in both House and Senate]',
+  quoteWord: 'quote "A water droplet acts as a lens, bending sunlight."\n"Refraction occurred due to change in speed of light inside water."\n"The separated colors spread out, forming an arc shape."',
+  wholeQuote: '"President signs the bill after Senate approval. \nCongress votes in favor with required majority.\nProposed bill passes both houses."',
+  curlyQuote: '“Imagine your piggy bank is magic.\nEvery year, the money makes more money!”',
+  splitFilm: 'It splits into colors, bounces off the back, and exits.\n\n```yui\nmotion "We see the colors as a rainbow slowly spreads."\n```',
+  splitFilm3: 'Sunlight enters a raindrop and bends.\n It passes through water droplets in the air at a shallow angle.\n The colors separate by wavelength, resulting in our visible spectrum.\n\n```yui\nmotion "A prism of sunlight is refracted." \n```\n\n[ behaviors: refraction : dispersion',
+  leadFilm: 'How a rainbow forms.\n```yui\nmotion "Sunlight enters a raindrop and bends and splits into colors."\n```',
+  orphanBody: '```yui\ncard "Grow Money"\nbody="Money + more Money = Even More Money!"\n```',
+  signLine: '```yui\nsign "Path" became law "Vetoed then overridden. Becomes law after signature."\n```',
+  bracketMotion: '[ motion "A President signs a bill into law after Senate and House votes. \nThe president vetoes the bill which then goes to override vote.\nIf both houses approve, it becomes law." ]',
+  tickMotion: '`Motion "Light is refracted through water droplets in the air. It\'s reflected back, forming a spectrum." \n"Water droplets act like tiny prisms. They filter sunlight into its color components."',
+  echoFilm: 'A bill is proposed by a member of Congress. It passes through committees and is debated in both chambers. Both chambers must pass the identical version before it goes to the President.\n```yui\nmotion "A bill is proposed by a member of Congress. It passes through committees and is debated in both chambers. Both chambers must pass the identical version before it goes to the President."\n```',
+  plainAnswer: "A rainbow forms when sunlight bends inside raindrops. The drops split it into colors. We see the colors as an arc.",
+};
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -156,7 +176,8 @@ export function startFake(opts: FakeOptions = {}): Promise<Fake> {
       pieces = ["Up again."];
     } else if (line === "refuse") {
       return json(res, 400, { error: { message: "This model's maximum context length is 4096 tokens", type: "invalid_request_error" } });
-    } else if (line === "think") pieces = ["<think>Let me see.", " Tea or coffee.</think>", "Thought it through."];
+    } else if ((m = line.match(/^replay (\w+)$/)) && REPLAYS[m[1]]) pieces = REPLAYS[m[1]].match(/[^\n]*\n?/g)!.filter(Boolean);
+    else if (line === "think") pieces = ["<think>Let me see.", " Tea or coffee.</think>", "Thought it through."];
     else if (line === "drop") pieces = n === 1 ? ["Half of ", "the answer", "DROP"] : ["Whole this time."];
     else if (opts.gemini && line === "thought") {
       thought = "Tea suits the afternoon.";
