@@ -165,7 +165,7 @@ enum StageChunks {
         }
 
         // Pages 2 to 12 are the agent's screens, not this turn's story.
-        for c in all where c.page == 1 {
+        for c in all where c.page == 1 && !c.isMotionPart {
             let head = yl.head(of: c)
             // A member of a drawing belongs to the drawing, not to the flow.
             if let head, !flows.contains(head.preset) { continue }

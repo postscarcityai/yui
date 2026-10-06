@@ -1440,6 +1440,7 @@ final class ChatStore {
                         fileMenu(screen.menuLines, at: at)
                     }
                     fileTables(nodes, reply: "\(id)#\(i)", live: !history)
+                    MotionFilms.shared.take(nodes, live: !history)
                     if !history, let agentID = agent?.id { for look in screen.looks { onLook?(agentID, look, row.createdAt) } }
                     new.append(ChatMessage(id: "\(id)#\(i)", text: "", fromUser: false, yl: screen, hello: hello, home: home, sentAt: sent))
                     // The home fills its pages quietly: it never brings one forward (YUI-168).

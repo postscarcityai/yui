@@ -7,3 +7,6 @@ The app uses SwiftMath (https://github.com/mgriebling/SwiftMath), MIT
 License, Copyright (c) 2023 Computer Inspirations, to typeset TeX. It bundles
 the Latin Modern Math and other OpenType math fonts under their own licenses
 (GUST Font License, SIL Open Font License).
+
+Motion films bundle three.js r160 (https://threejs.org), MIT License, Copyright
+(c) 2010-2023 three.js authors, loaded only when a film asks for 3D.

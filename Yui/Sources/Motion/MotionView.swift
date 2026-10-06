@@ -21,7 +21,7 @@ struct MotionView<Fallback: View, After: View>: View {
 
     var body: some View {
         ZStack {
-            Color(red: 11 / 255, green: 8 / 255, blue: 19 / 255).ignoresSafeArea()
+            controller.background.ignoresSafeArea()
             if controller.isFailed {
                 fallback()
             } else {

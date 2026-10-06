@@ -49,7 +49,7 @@ let presets: Set<String> = [
     "timeline", "done", "now", "next",
     "sketch", "row", "after",
     "shapes", "shape",
-    "diagram", "mock", "part", "draw",
+    "diagram", "mock", "part", "draw", "motion",
     "map", "area", "pin", "route",
     "game", "flow",
     "loop", "drums", "keys", "chords", "tuner", "metronome",
@@ -491,7 +491,7 @@ private func positional(_ preset: String, _ pos: [Token]) -> Props {
             if text.count > 1 { o["body"] = .string(joinText(Array(text.dropFirst()))) }
         }
 
-    case "calc", "deck", "plan", "flow", "narrate", "timeline", "sketch", "shapes", "diagram", "mock", "draw", "map":
+    case "calc", "deck", "plan", "flow", "narrate", "timeline", "sketch", "shapes", "diagram", "mock", "draw", "motion", "map":
         if !pos.isEmpty { o["title"] = .string(joinText(pos)) }
 
     case "row":

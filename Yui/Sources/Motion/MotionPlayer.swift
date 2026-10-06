@@ -3,7 +3,7 @@ import WebKit
 
 // The native motion player (spec/MOTION.md 2.3, YUI-MOTION). A film is written by the agent as scenes
 // (JavaScript bodies, `(t, c, api)`), streamed one by one. This file owns the box they run in: a
-// WKWebView on the bundled harness-stream.html with no network, no storage and one message handler.
+// WKWebView on the bundled motion-player.html (the yuigui motion kit and player, built by site/scripts/motion/bundle_player.py) with no network, no storage and one message handler.
 // MotionView.swift draws it full bleed with native chrome.
 
 /// One scene of a film: a name, seconds, and the body of `(t, c, api)`.
@@ -34,6 +34,7 @@ enum MotionMessage: Equatable {
     case firstFrame
     case stall
     case slow
+    case needThree
     case ended
     case error(scene: String, message: String)
     case tap(id: String?)
@@ -49,6 +50,7 @@ enum MotionMessage: Equatable {
         case "first-frame": self = .firstFrame
         case "stall": self = .stall
         case "slow": self = .slow
+        case "need-three": self = .needThree
         case "ended": self = .ended
         case "error": self = .error(scene: d["scene"] as? String ?? "", message: d["message"] as? String ?? "")
         case "tap": self = .tap(id: d["id"] as? String)
@@ -100,6 +102,8 @@ final class MotionController: NSObject, ObservableObject, WKScriptMessageHandler
     @Published private(set) var cues: [MotionCue] = []
     @Published private(set) var sceneCount = 0
     @Published private(set) var firstFrameSeconds: Double?
+    /// The screen behind the film: the agent's ink, so the first frame and the edges match the film.
+    @Published private(set) var background = Color(red: 11 / 255, green: 8 / 255, blue: 19 / 255)
     /// Set once the first frame is on screen.
     var hasFirstFrame: Bool { firstFrameSeconds != nil }
 
@@ -113,6 +117,7 @@ final class MotionController: NSObject, ObservableObject, WKScriptMessageHandler
     let web: WKWebView
     private let ucc = WKUserContentController()
     private var ready = false
+    private var threeSent = false
     private var pending: [String] = []
     private var born = Date()
     private var firstSceneAt: Date?
@@ -156,8 +161,13 @@ final class MotionController: NSObject, ObservableObject, WKScriptMessageHandler
         }
     }
 
+    /// three.js r160 (MIT), the UMD build, bundled. Read only when a film asks for it.
+    static var threeSource: String? {
+        Bundle.main.url(forResource: "three.min", withExtension: "js").flatMap { try? String(contentsOf: $0, encoding: .utf8) }
+    }
+
     static var harnessHTML: String {
-        guard let url = Bundle.main.url(forResource: "harness-stream", withExtension: "html"),
+        guard let url = Bundle.main.url(forResource: "motion-player", withExtension: "html"),
               let s = try? String(contentsOf: url, encoding: .utf8) else { return "<body style='background:#0b0813'>" }
         return s
     }
@@ -188,6 +198,20 @@ final class MotionController: NSObject, ObservableObject, WKScriptMessageHandler
     func toggle() { phase == .paused ? resume() : pause() }
     func seek(_ t: Double) { time = min(max(t, 0), total); if phase == .ended { phase = .paused }; run("window.yui.seek(\(time))") }
     func replay() { time = 0; phase = .playing; run("window.yui.replay()") }
+    /// The agent's own colours, as the film's palette (the kit's `ink panel fg dim line accent a2 a3 good bad warn`).
+    /// Sent before scene 1, so a film that keeps the agent's look draws in it; a film with its own look overrides.
+    func setTheme(_ p: YuiTheme.Palette, dark: Bool) {
+        func h(_ s: String) -> String { String(s.prefix(7)) }
+        let t: [String: String] = ["ink": h(p.background), "panel": h(p.surface), "fg": h(p.ink), "dim": h(p.inkSoft), "line": h(p.outline),
+                                   "accent": h(p.accent), "a2": h(p.mint), "a3": h(p.lavender), "warn": h(p.butter),
+                                   "good": dark ? "#3fbf8a" : "#13875a", "bad": dark ? "#ff7a6b" : "#c93c2c"]
+        guard let d = try? JSONSerialization.data(withJSONObject: t), let j = String(data: d, encoding: .utf8) else { return }
+        background = Color(hex: p.background)
+        web.backgroundColor = UIColor(background)
+        web.scrollView.backgroundColor = web.backgroundColor
+        run("window.yui.theme(\(j))")
+    }
+
     /// Reduce Motion: the last frame, still. It follows the film as scenes land.
     func setStill(_ on: Bool) { run("window.yui.still(\(on ? "true" : "false"))") }
 
@@ -233,6 +257,12 @@ final class MotionController: NSObject, ObservableObject, WKScriptMessageHandler
             firstFrameSeconds = firstSceneAt.map { Date().timeIntervalSince($0) } ?? Date().timeIntervalSince(born)
             if phase == .loading { phase = .playing }
         case .stall: break
+        case .needThree:
+            // A scene called api.three(): the library goes in once, from the bundle (no network), and only then.
+            guard !threeSent, let src = Self.threeSource, let d = try? JSONSerialization.data(withJSONObject: [src], options: .fragmentsAllowed),
+                  let arr = String(data: d, encoding: .utf8) else { return }
+            threeSent = true
+            run("window.yui.three(\(arr)[0])")
         case .ended:
             if phase == .playing || phase == .paused || phase == .loading { phase = .ended; onEnded?() }
         case .time(let t, let tot, _):

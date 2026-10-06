@@ -175,7 +175,7 @@ final class MotionPlayerTests: XCTestCase {
         c.addScene(MotionSceneSpec(name: "oops", dur: 1, code: "nope.nothing();"))
         c.end()
         await waitFor(c, "the film still ends", timeout: 12) { c.phase == .ended }
-        XCTAssertFalse(c.isFailed)
+        XCTAssertFalse(c.isFailed, "\(c.phase)")
         c.stop()
     }
 
@@ -224,6 +224,55 @@ final class MotionPlayerTests: XCTestCase {
         // Not blank: the middle of the frame is the pink ball.
         let rgb = try await c.web.evaluateJavaScript("(()=>{const k=document.getElementById('cv'),d=k.getContext('2d').getImageData(k.width/2,k.height/2,1,1).data;return [d[0],d[1],d[2]]})()") as? [Int] ?? [0, 0, 0]
         XCTAssertGreaterThan(rgb[0], 150, "the ball is drawn")
+        c.stop()
+    }
+
+    // MARK: three.js, lazy and offline
+
+    func testThreeIsAskedForOnlyByAScene() async throws {
+        let c = MotionController(); let w = host(c); _ = w
+        c.addScene(Self.scene1)
+        await waitFor(c, "first frame") { c.hasFirstFrame }
+        try await Task.sleep(for: .milliseconds(600))
+        let loaded = try await c.web.evaluateJavaScript("typeof THREE") as? String ?? ""
+        XCTAssertEqual(loaded, "undefined", "a film with no 3D never loads the library")
+        XCTAssertNotNil(MotionController.threeSource, "three.js is in the bundle")
+        c.stop()
+    }
+
+    func testARealThreeSceneDraws() async throws {
+        let c = MotionController(); let w = host(c); _ = w
+        c.addScene(MotionSceneSpec(name: "cube", dur: 3, code: """
+            const T = api.three(), THREE = T.THREE;
+            T.once(() => {
+              T.cube = new THREE.Mesh(new THREE.BoxGeometry(2, 2, 2), new THREE.MeshBasicMaterial({ color: 0xff6b8b }));
+              T.scene.add(T.cube);
+            });
+            T.cube.rotation.y = t; T.cube.rotation.x = 0.5;
+            """))
+        await waitFor(c, "first frame", timeout: 20) { c.hasFirstFrame }
+        XCTAssertFalse(c.isFailed, "\(c.phase)")
+        try await Task.sleep(for: .milliseconds(1200))
+        let rgb = try await c.web.evaluateJavaScript("(()=>{const k=document.getElementById('cv'),d=k.getContext('2d').getImageData(k.width/2,k.height/2,1,1).data;return [d[0],d[1],d[2]]})()") as? [Int] ?? [0, 0, 0]
+        XCTAssertGreaterThan(rgb[0], 150, "the cube is drawn in the middle of the frame")
+        c.stop()
+    }
+
+    // MARK: Reduce Motion
+
+    func testReduceMotionShowsTheLastFrameStill() async throws {
+        let c = MotionController(); let w = host(c); _ = w
+        c.addScene(Self.scene1); c.addScene(Self.scene2); c.end()
+        await waitFor(c, "first frame") { c.hasFirstFrame }
+        c.setStill(true)
+        try await Task.sleep(for: .milliseconds(900))
+        func sample() async throws -> [Int] {
+            try await c.web.evaluateJavaScript("(()=>{const k=document.getElementById('cv'),x=k.getContext('2d').getImageData(0,0,k.width,k.height).data;let h=0;for(let i=0;i<x.length;i+=97)h=(h*31+x[i])|0;return [h]})()") as? [Int] ?? []
+        }
+        let a = try await sample()
+        try await Task.sleep(for: .milliseconds(700))
+        let b = try await sample()
+        XCTAssertEqual(a, b, "a still frame does not change")
         c.stop()
     }
 }

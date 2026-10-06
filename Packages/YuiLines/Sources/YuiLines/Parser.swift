@@ -119,6 +119,8 @@ public struct YLParser: Sendable {
     var dgm: YLDiagramReader?
     /// An open `draw`'s markup, being read (Draw.swift).
     var drw: YLDrawReader?
+    /// An open `motion`'s scenes, being read (Motion.swift).
+    var mot: YLMotionReader?
     /// A flow head just added, waiting to see whether a Mermaid header follows, and an open flow being read (Flow.swift).
     var flowHead: (id: String, screen: String, pre: [String])?
     var flow: YLFlowReader?
@@ -131,6 +133,7 @@ public struct YLParser: Sendable {
         if let handled = flowLine(src) { return handled }
         if let handled = diagramLine(src) { return handled }
         if let handled = drawLine(src) { return handled }
+        if let handled = motionLine(src) { return handled }
         let node = group(parseLine(src))
         if let n = node, n.op == .add, n.preset == "flow", let id = n.id {
             // `as=` makes it a variant of the saved flow it names: its lines follow.
@@ -139,11 +142,12 @@ public struct YLParser: Sendable {
         }
         if let n = node, n.op == .add, n.preset == "diagram", let id = n.id { dgm = YLDiagramReader(id: id, screen: n.screen) }
         if let n = node, n.op == .add, n.preset == "draw", let id = n.id { drw = YLDrawReader(id: id, screen: n.screen) }
+        if let n = node, n.op == .add, n.preset == "motion", let id = n.id { mot = YLMotionReader(id: id, screen: n.screen) }
         return node
     }
 
     /// Ends the input: a diagram still open gives its patch now.
-    public mutating func finish() -> YLNode? { flowDone(line: "") ?? diagramDone(line: "") ?? drawDone(line: "") }
+    public mutating func finish() -> YLNode? { flowDone(line: "") ?? diagramDone(line: "") ?? drawDone(line: "") ?? motionDone(line: "") }
 
     /// Group bookkeeping for one parsed node. Errors (and nil) leave groups open.
     private mutating func group(_ node: YLNode?) -> YLNode? {
