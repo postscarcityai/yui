@@ -216,8 +216,10 @@ def run_stream():
         check("stream: hello marked delivered and handled", r.row(hi)["delivered_at"] and r.row(hi)["handled_at"])
         guide = fn("yui-connect", {"action": "guide"})[1]["guide"]
         call = next(c for c in model_log(url) if c["text"] == "hello")
-        check(f"stream: system message = the person's words + the channel guide ({guide['version']})",
-              call["messages"][0] == {"role": "system", "content": f"You are Echo.\n\n{guide['body'].strip()}"}
+        # an 8k window cannot hold the ~10k-token live guide, so it gets the short one (INT-26)
+        short = re.search(r"SMALL_GUIDE = `(.*?)`;", (HERE / "src/fences.ts").read_text(), re.S).group(1).replace("\\`", "`")
+        check(f"stream: system message = the person's words + the short guide for an 8k window (live guide {guide['version']} is too big for it)",
+              call["messages"][0] == {"role": "system", "content": f"You are Echo.\n\n{short}"}
               and call["messages"][1:] == [{"role": "user", "content": "hello"}], json.dumps(call["messages"])[:300])
         check("stream: asked to stream, with the key as a bearer token", call["stream"] and call["auth"] == f"Bearer {KEY}")
 
@@ -283,7 +285,7 @@ def run_stream():
         no = r.say("refuse")
         rep = wait(lambda: r.replies_to(no), 30, "reply to refuse")
         check("stream: a 400 is answered once with the server's reason",
-              [m["body"] for m in rep] == ["Echo couldn't answer: 400: This model's maximum context length is 4096 tokens"], f"{rep}")
+              [m["body"] for m in rep] == ["Echo couldn't answer: 400: This model's maximum context length is 4096 tokens. Lower --context or --max-tokens"], f"{rep}")
         fl = r.say("flaky")
         rep = wait(lambda: r.replies_to(fl), 30, "reply to flaky")
         check("stream: a 503 is tried again, then answered once", [m["body"] for m in rep] == ["Back again."] and calls("flaky") == 2,

@@ -488,6 +488,24 @@ describe("small models (INT-23)", () => {
     const tiny = buildMessages([], [user("hi")], { guide: "short guide" }).messages[0].content;
     assert.equal(tiny, "short guide");
   });
+  test("the live guide (~10k tokens) gets the short one on 8k and 16k windows and keeps the thread (INT-26)", () => {
+    const live = "g".repeat(35700);
+    const hist = [user("hello"), agent("You said: hello"), user("screen"), agent("Pick one:\n```yui\nchoose \"Pick one\" Tea|Coffee\n```")];
+    for (const context of [8192, 16384]) {
+      const r = buildMessages(hist, [user("[yui] n1 choose choice=Tea")], { guide: live, context });
+      assert.equal(r.messages[0].content, SMALL_GUIDE);
+      assert.equal(r.dropped, 0);
+      assert.deepEqual(r.messages.slice(1).map((m) => m.role), ["user", "assistant", "user", "assistant", "user"]);
+    }
+    assert.equal(buildMessages([], [user("hi")], { guide: live, context: 65536 }).messages[0].content, live);
+  });
+  test("an oversized old thread loses its oldest turns, never all of them (INT-26)", () => {
+    const hist = Array.from({ length: 40 }, (_, i) => (i % 2 ? agent : user)(`turn ${i} ` + "w".repeat(1200)));
+    const r = buildMessages(hist, [user("now")], { guide: "g".repeat(35700), context: 8192, reserve: 1024 });
+    assert.ok(r.dropped > 0 && r.dropped < 40, `dropped ${r.dropped}`);
+    assert.equal(r.over, false);
+    assert.match(String(r.messages[r.messages.length - 2].content), /^turn 39 /);
+  });
   test("the short guide leaves room for the thread on the default window", () => {
     const r = buildMessages([user("a".repeat(700)), agent("b".repeat(700))], [user("now")], { guide: big });
     assert.equal(r.over, false);

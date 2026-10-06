@@ -60,9 +60,6 @@ export function asYui(text: string): string {
   }));
 }
 
-/** Below this many tokens of room the full channel guide leaves no space for a thread. */
-export const SMALL_CONTEXT = 8192;
-
 /** The channel guide in about 600 tokens, for a model with a small window. Every example parses. */
 export const SMALL_GUIDE = `You are talking to someone in Yui, a phone app. You can put buttons, pickers and cards on their screen. Taps come back to you as lines starting with [yui].
 
@@ -88,8 +85,8 @@ chart line "Weight" x=Mon|Tue|Wed y=180|179|178.5
 
 Rules: one component per line, no other keys, no YAML, no indentation. Use a screen when the person should tap something. A plain question gets a plain answer.`;
 
-/** The guide to send: the full one when the window has room, the small one when it would crowd the thread out. */
+/** The guide to send: the full one when it takes no more than a third of the window, the small one when it would crowd the thread out. The live guide runs ~10k tokens, so an 8k or 16k window gets the small one too (INT-26). */
 export function guideFor(guide: string, context: number | undefined, tokenCount: (s: string) => number): string {
   const room = context ?? 4096;
-  return room < SMALL_CONTEXT && tokenCount(guide) > room / 3 ? SMALL_GUIDE : guide;
+  return tokenCount(guide) > room / 3 ? SMALL_GUIDE : guide;
 }
