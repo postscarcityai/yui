@@ -1,0 +1,198 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline' 'unsafe-eval'; style-src 'unsafe-inline'; img-src data:">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Yui motion player</title>
+<style>html,body{margin:0;height:100%;background:#0b0813;overflow:hidden;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}canvas{display:block;width:100%;height:100%}</style>
+<canvas id="cv"></canvas>
+<script>
+// Native motion player (spec/MOTION.md 2.3), the MotionView harness. Derived from the site's
+// harness-stream.html (prototype A v2): the page owns the canvas, the clock, the camera, the dissolves
+// and the captions. Differences: it is the top document of a WKWebView, not an iframe, so it talks to
+// the app through ONE message handler (webkit.messageHandlers.yui), and it takes scenes through
+// window.yui.*. The clock is a film clock so the app can pause, scrub and replay. No network (CSP,
+// plus a WKContentRuleList in the app), no storage.
+const cv = document.getElementById("cv");
+const dpr = Math.min(2, window.devicePixelRatio || 1);
+let W = 390, H = 844;
+const post = (m) => { try { window.webkit.messageHandlers.yui.postMessage(m); } catch (e) {} };
+const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
+const ease = (x) => { x = clamp(x); return x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2; };
+const hash = (n) => { const s = Math.sin(n * 127.1) * 43758.5453; return s - Math.floor(s); };
+
+// One api per context, so the cue probe can run a scene on a scratch canvas.
+function makeApi(c, sink) {
+  const base = () => c.setTransform(dpr, 0, 0, dpr, 0, 0);
+  return {
+    get w() { return W; }, get h() { return H; },
+    ease, clamp, eout: (x) => 1 - Math.pow(1 - clamp(x), 3), lerp: (a, b, k) => a + (b - a) * k,
+    seg: (t, a, b) => clamp((t - a) / (b - a)),
+    rand: hash,
+    noise: (x) => { const i = Math.floor(x), f = x - i; return hash(i) + (hash(i + 1) - hash(i)) * (f * f * (3 - 2 * f)); },
+    cam(cx, cy, z, roll) { base(); c.translate(W / 2, H / 2); c.rotate(roll || 0); c.scale(z || 1, z || 1); c.translate(-(W / 2 + (cx || 0)), -(H / 2 + (cy || 0))); },
+    pts: {
+      circle: (n, r) => Array.from({ length: n }, (_, i) => [Math.cos(i / n * 6.2832) * r, Math.sin(i / n * 6.2832) * r]),
+      wave: (n, w, amp, ph) => Array.from({ length: n }, (_, i) => [(i / (n - 1) - 0.5) * w, Math.sin(i / (n - 1) * 6.2832 * 2 + (ph || 0)) * amp]),
+      poly: (n, sides, r) => Array.from({ length: n }, (_, i) => {
+        const a = i / n * 6.2832, s = 6.2832 / sides, m = (a % s) / s, k = Math.cos(Math.PI / sides) / Math.cos((m - 0.5) * s);
+        return [Math.cos(a) * r * k, Math.sin(a) * r * k];
+      }),
+    },
+    morph: (a, b, k) => a.map((p, i) => [p[0] + (b[i % b.length][0] - p[0]) * k, p[1] + (b[i % b.length][1] - p[1]) * k]),
+    path(pts, close) {
+      c.beginPath();
+      const n = pts.length; if (n < 2) return;
+      if (close) {
+        const m = (i) => [(pts[i % n][0] + pts[(i + 1) % n][0]) / 2, (pts[i % n][1] + pts[(i + 1) % n][1]) / 2];
+        c.moveTo(...m(n - 1));
+        for (let i = 0; i < n; i++) c.quadraticCurveTo(pts[i][0], pts[i][1], ...m(i));
+        c.closePath();
+      } else {
+        c.moveTo(pts[0][0], pts[0][1]);
+        for (let i = 1; i < n - 1; i++) c.quadraticCurveTo(pts[i][0], pts[i][1], (pts[i][0] + pts[i + 1][0]) / 2, (pts[i][1] + pts[i + 1][1]) / 2);
+        c.lineTo(pts[n - 1][0], pts[n - 1][1]);
+      }
+    },
+    // A voice-over cue and an on-screen caption: the same line. Called every frame it is on screen.
+    say(text, from, to) { sink.caps.push({ text: String(text), from: +from || 0, to: +to || 0 }); },
+    // A tap target, for the turns that need one (a quiz, a pick). Re-registered every frame.
+    hit(id, x, y, r) { sink.hits.push({ id: String(id), x, y, r: r || 30 }); },
+  };
+}
+
+const c = cv.getContext("2d");
+const snap = document.createElement("canvas"), sc2 = snap.getContext("2d");
+const prev = document.createElement("canvas"), pc = prev.getContext("2d");
+const live = { caps: [], hits: [] };
+const api = makeApi(c, live);
+const prevSink = { caps: [], hits: [] };
+const prevApi = makeApi(pc, prevSink);
+function size() {
+  W = cv.clientWidth || 390; H = cv.clientHeight || 844;
+  for (const k of [cv, snap, prev]) { k.width = Math.round(W * dpr); k.height = Math.round(H * dpr); }
+  dirty = true;
+}
+addEventListener("resize", size);
+const base = (ctx) => ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+const scenes = [];            // {name, dur, code, fn, start, failed}
+let total = 0, ended = false, doneSent = false, stalled = false, paused = false, still = false;
+let clock = 0, lastNow = 0, sentFirst = false, dirty = true, lastTimePost = -1, slowFor = 0, slowSent = false;
+const FADE = 0.6;
+
+function compile(s) { try { return new Function("t", "c", "api", s.code); } catch (e) { return null; } }
+function addScene(o) {
+  if (!o || typeof o.code !== "string") return;
+  const s = { name: String(o.name || "scene"), dur: Math.max(0.5, +o.dur || 5), code: o.code, start: total };
+  s.fn = compile(s);
+  if (!s.fn) { s.failed = true; post({ motion: "error", scene: s.name, message: "scene does not parse" }); s.fn = () => {}; }
+  scenes.push(s); total += s.dur; stalled = false; dirty = true;
+  post({ motion: "timeline", total, scenes: scenes.length, ended });
+  setTimeout(() => probe(s), 0);
+}
+
+// Run a scene on a scratch canvas to learn its cues (api.say calls), so a narrator can speak them ahead
+// of the clock. Scenes are functions of t, so sampling is safe.
+function probe(s) {
+  if (s.failed || !sentFirst) { if (!s.failed && !sentFirst) setTimeout(() => probe(s), 120); return; }
+  const k = document.createElement("canvas"); k.width = Math.round(W * dpr); k.height = Math.round(H * dpr);
+  const kc = k.getContext("2d"), sink = { caps: [], hits: [] }, kapi = makeApi(kc, sink), seen = new Map();
+  for (let t = 0; t <= s.dur + 1e-6; t += 0.2) {
+    sink.caps = []; sink.hits = []; kc.setTransform(1, 0, 0, 1, 0, 0);
+    try { kc.save(); s.fn(Math.min(t, s.dur), kc, kapi); kc.restore(); } catch (e) { break; }
+    for (const q of sink.caps) { const key = q.text + "|" + q.from.toFixed(1); if (!seen.has(key)) seen.set(key, q); }
+  }
+  const cues = [...seen.values()].map((q) => ({ text: q.text, from: +(s.start + q.from).toFixed(2), to: +(s.start + q.to).toFixed(2) }));
+  post({ motion: "cues", scene: s.name, cues });
+}
+
+function sceneAt(t) {
+  let s = scenes[0];
+  for (const x of scenes) { if (x.start <= t + 1e-9) s = x; else break; }
+  return s;
+}
+function drawScene(ctx, a, s, t, sink) {
+  ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalAlpha = 1; ctx.shadowBlur = 0;
+  ctx.fillStyle = "#0b0813"; ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+  base(ctx); sink.caps = []; sink.hits = [];
+  try { ctx.save(); s.fn(t, ctx, a); ctx.restore(); } catch (e) {
+    ctx.restore();
+    if (!s.errored) { s.errored = true; post({ motion: "error", scene: s.name, message: String((e && e.message) || e) }); }
+    s.fn = () => {};
+  }
+  ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalAlpha = 1; ctx.shadowBlur = 0;
+}
+function drawCaps(t) {
+  base(c);
+  for (const k of live.caps) {
+    if (t < k.from || t > k.to) continue;
+    const a = ease(Math.min((t - k.from) / 0.45, (k.to - t) / 0.45, 1));
+    c.globalAlpha = a; c.fillStyle = "#f6eef7"; c.shadowColor = "rgba(0,0,0,.7)"; c.shadowBlur = 14;
+    c.font = "800 30px system-ui, -apple-system, sans-serif"; c.textAlign = "center";
+    const words = k.text.split(" "), lines = []; let ln = "";
+    for (const w of words) { if (c.measureText(ln + " " + w).width > W - 48 && ln) { lines.push(ln); ln = w; } else ln = ln ? ln + " " + w : w; }
+    lines.push(ln);
+    lines.forEach((l, i) => c.fillText(l, W / 2, H - 120 - (lines.length - 1 - i) * 36 + (1 - a) * 10));
+    c.shadowBlur = 0; c.globalAlpha = 1;
+  }
+}
+
+function frame(now) {
+  requestAnimationFrame(frame);
+  const dt = lastNow ? Math.min(0.1, (now - lastNow) / 1000) : 0; const raw = lastNow ? now - lastNow : 0; lastNow = now;
+  if (!scenes.length) {
+    // waiting for scene 1: a small breathing ring, so the screen is never dead
+    c.setTransform(1, 0, 0, 1, 0, 0); c.fillStyle = "#0b0813"; c.fillRect(0, 0, cv.width, cv.height); base(c);
+    const k = (Math.sin(now / 420) + 1) / 2;
+    c.strokeStyle = "rgba(255,107,139," + (0.25 + 0.4 * k) + ")"; c.lineWidth = 2;
+    c.beginPath(); c.arc(W / 2, H / 2, 16 + k * 8, 0, 6.2832); c.stroke();
+    return;
+  }
+  if (still) { clock = total; dirty = true; }
+  else if (!paused) {
+    clock += dt;
+    if (clock >= total) {
+      clock = total;
+      if (ended) { if (!doneSent) { doneSent = true; post({ motion: "ended" }); } }
+      else if (!stalled) { stalled = true; post({ motion: "stall" }); }
+    } else stalled = false;
+  } else if (!dirty) return;
+  dirty = false;
+  const s = sceneAt(clock), t = Math.min(clock - s.start, s.dur);
+  drawScene(c, api, s, t, live);
+  const hits = live.hits;
+  drawCaps(t);
+  const i = scenes.indexOf(s);
+  if (i > 0 && t < FADE) {
+    const p = scenes[i - 1];
+    drawScene(pc, prevApi, p, p.dur, prevSink);
+    c.setTransform(1, 0, 0, 1, 0, 0); c.globalAlpha = 1 - ease(t / FADE); c.drawImage(prev, 0, 0); c.globalAlpha = 1;
+  }
+  live.hits = hits;
+  if (!sentFirst) { sentFirst = true; post({ motion: "first-frame" }); }
+  // watchdog input: frames over 50 ms for 2 s straight
+  if (!paused && !still && raw > 50) { slowFor += raw; if (slowFor >= 2000 && !slowSent) { slowSent = true; post({ motion: "slow", ms: Math.round(raw) }); } } else slowFor = 0;
+  if (Math.abs(clock - lastTimePost) >= 0.2 || clock === total) {
+    if (clock !== lastTimePost) { lastTimePost = clock; post({ motion: "time", t: +clock.toFixed(2), total: +total.toFixed(2), paused }); }
+  }
+}
+
+cv.addEventListener("pointerup", (e) => {
+  const r = cv.getBoundingClientRect(), x = e.clientX - r.left, y = e.clientY - r.top;
+  let id = null, best = Infinity;
+  for (const h of live.hits) { const d = Math.hypot(h.x - x, h.y - y); if (d <= h.r + 14 && d < best) { best = d; id = h.id; } }
+  post(id === null ? { motion: "tap" } : { motion: "tap", id });
+});
+
+window.yui = {
+  scene: addScene,
+  end() { ended = true; post({ motion: "timeline", total, scenes: scenes.length, ended }); },
+  pause(b) { paused = !!b; dirty = true; post({ motion: "time", t: +clock.toFixed(2), total: +total.toFixed(2), paused }); },
+  seek(t) { clock = clamp(+t || 0, 0, total); if (clock < total) { doneSent = false; stalled = false; } dirty = true; lastTimePost = -1; },
+  replay() { clock = 0; paused = false; doneSent = false; stalled = false; dirty = true; lastTimePost = -1; },
+  still(b) { still = !!b; dirty = true; },
+};
+size();
+requestAnimationFrame(frame);
+post({ motion: "ready" });
+</script>
