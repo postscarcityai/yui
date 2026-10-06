@@ -735,7 +735,8 @@ def _marks_words(group: List[str]) -> tuple:
 
 
 SAY = re.compile(r"""api\.say\(\s*(?:"((?:[^"\\]|\\.)*)"|'((?:[^'\\]|\\.)*)'|`([^`]*)`)""")
-SENTENCE = re.compile(r"(?<=[.!?])\s+")
+SENTENCE = re.compile(r"(?<=[.!?])\s+|(?<=[;:])\s+")
+ROW_WORDS = 12
 MOTION_ROWS = 6
 
 
@@ -764,7 +765,8 @@ def _motion_words(lines: List[str]) -> tuple:
         t = t.replace("\\'", "'").replace('\\"', '"').strip()
         if t:
             points.append(t)
-    return title_, (points or sentences[1:])[:MOTION_ROWS]
+    points = [" ".join(p.split()[:ROW_WORDS]).rstrip(",;:") + ("..." if len(p.split()) > ROW_WORDS else "") for p in (points or sentences[1:])]
+    return title_, points[:MOTION_ROWS]
 
 
 def _motion_sketch(lines: List[str]) -> List[str]:
