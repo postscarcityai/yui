@@ -2,6 +2,7 @@
 // Yui holds the thread (INT-12): a chat API remembers nothing, so every turn
 // sends the channel guide as the system message, then as much of the thread as
 // fits, then the person's new messages. Runtime-neutral, no I/O.
+import { guideFor } from "./fences.ts";
 import type { ChatMessage } from "./openai.ts";
 
 /** A row of yui_messages, as the bridge reads it. */
@@ -52,7 +53,7 @@ export function alternate(msgs: ChatMessage[]): ChatMessage[] {
 
 /** system (guide), then the newest history that fits, then the turn. Returns what was left out too. */
 export function buildMessages(history: ThreadRow[], turn: ThreadRow[], opts: BuildOptions): { messages: ChatMessage[]; dropped: number; over: boolean } {
-  const system = [opts.system?.trim(), opts.guide.trim()].filter(Boolean).join("\n\n");
+  const system = [opts.system?.trim(), guideFor(opts.guide.trim(), opts.context, tokens)].filter(Boolean).join("\n\n");
   const now = alternate(turn.map(toMessage).filter((m): m is ChatMessage => !!m));
   let budget = (opts.context ?? 4096) - (opts.reserve ?? 1024) - tokens(system) - now.reduce((n, m) => n + tokens(String(m.content)), 0);
   const over = budget < 0;
