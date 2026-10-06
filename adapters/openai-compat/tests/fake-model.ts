@@ -144,7 +144,7 @@ export function startFake(opts: FakeOptions = {}): Promise<Fake> {
       pieces = [...Array.from({ length: k }, (_, i) => `${i ? ", s" : "S"}tep ${i + 1}`), `\n\nDone after ${k} steps.`];
       wait = 1000;
     } else if (line === "history") {
-      pieces = [msgs.slice(1, -1).map((x) => `${x.role}: ${x.content.split("\n")[0]}`).join("\n") || "(nothing before)"];
+      pieces = [msgs.slice(1, -1).map((x) => `${x.role} | ${x.content.split("\n")[0]}`).join("\n") || "(nothing before)"];
     } else if (line === "flaky") {
       if (n === 1) return json(res, 503, { error: { message: "model is loading" } });
       pieces = ["Back again."];

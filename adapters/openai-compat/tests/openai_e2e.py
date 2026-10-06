@@ -240,7 +240,7 @@ def run_stream():
         print("== E. Yui holds the thread")
         h = r.say("history")
         rep = wait(lambda: r.replies_to(h), 30, "reply to history")
-        want = "user: hello\nassistant: You said: hello\nuser: screen\nassistant: Pick one:\nuser: [yui] n1 choose choice=Tea\nassistant: Tea it is."
+        want = "user | hello\nassistant | You said: hello\nuser | screen\nassistant | Pick one:\nuser | [yui] n1 choose choice=Tea\nassistant | Tea it is."
         check("stream: the model is sent every earlier turn, in order, roles taking turns",
               [m["body"] for m in rep] == [want], f"{rep and rep[0]['body']!r}")
 

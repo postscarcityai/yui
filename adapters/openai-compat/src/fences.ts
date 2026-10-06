@@ -48,9 +48,59 @@ function fenceBare(text: string): string {
   return out.join("\n");
 }
 
+/** A role label a small model puts in front of its own bubble (INT-27): `[Response:]`, `Response:`, `Assistant:`, `[Assistant]`, `[yui] `. Bare `Response:` and `Assistant:` only; "Answer:" and "Reply:" are plain words. */
+const ROLE_LABEL = /^[ \t]*(?:\[\s*(?:response|assistant|reply|answer|yui|ai|bot)\s*:?\s*\]|(?:response|assistant)[ \t]*:)[ \t]*/i;
+const isFence = (l: string): boolean => /^[ \t]*`{3,}/.test(l);
+
+/** Strips a leading role label from each bubble line, drops a line with nothing left, and never touches a fenced or quoted line. */
+function stripLabels(text: string): string {
+  let inFence = false;
+  const out: string[] = [];
+  for (const line of text.split("\n")) {
+    if (isFence(line)) { inFence = !inFence; out.push(line); continue; }
+    if (inFence || /^[ \t]*(?:>|["“'‘])/.test(line)) { out.push(line); continue; }
+    const m = ROLE_LABEL.exec(line);
+    if (!m) { out.push(line); continue; }
+    const rest = line.slice(m[0].length);
+    if (rest.trim()) out.push(rest);
+  }
+  return out.join("\n");
+}
+
+/** After a tap, a small model stacks a second ```yui screen nobody asked for right under the first (INT-27): keep the first of a run of back-to-back screens. */
+export function firstScreen(text: string): string {
+  const out: string[] = [];
+  let fence = "", yui = false, skip = false, run = false, gap: string[] = []; // run: a yui screen just closed, only blank lines since
+  for (const line of text.split("\n")) {
+    const m = /^[ \t]*(`{3,})([\w-]*)[ \t]*$/.exec(line);
+    if (fence) {
+      if (m && !m[2] && m[1].length >= fence.length) { // the closing fence
+        fence = "";
+        run = yui;
+        if (!skip) out.push(line);
+        skip = false;
+      } else if (!skip) out.push(line);
+      continue;
+    }
+    if (m && m[2]) { // an opening fence
+      fence = m[1];
+      yui = m[2].toLowerCase() === "yui";
+      skip = yui && run;
+      if (!skip) out.push(...gap, line);
+      gap = [];
+      continue;
+    }
+    if (run && !line.trim()) { gap.push(line); continue; }
+    run = false;
+    out.push(...gap, line);
+    gap = [];
+  }
+  return out.join("\n");
+}
+
 /** Retags every ```yml / ```yaml / plain fence that opens with a Yui Line head as ```yui, and fences bare Yui Lines. */
 export function asYui(text: string): string {
-  const clean = closeFence(text.replace(STRAY_MARK, ""));
+  const clean = closeFence(stripLabels(text.replace(STRAY_MARK, "")));
   return fenceBare(clean.replace(/^(`{3,})([\w-]*)[ \t]*\n([\s\S]*?)\n\1[ \t]*$/gm, (whole, ticks: string, tag: string, body: string) => {
     if (tag.toLowerCase() === "yui" || !PLAIN_TAGS.has(tag.toLowerCase())) return whole;
     const lines = body.split("\n");

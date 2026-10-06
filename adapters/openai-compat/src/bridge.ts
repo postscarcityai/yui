@@ -24,7 +24,7 @@ import { randomUUID } from "node:crypto";
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { hostname } from "node:os";
 import { dirname } from "node:path";
-import { asYui } from "./fences.ts";
+import { asYui, firstScreen } from "./fences.ts";
 import { ChatClient, ModelError, ModelUnavailable, StreamRefused, type Completion } from "./openai.ts";
 import { buildMessages, type ThreadRow } from "./thread.ts";
 
@@ -447,6 +447,7 @@ export class Bridge {
         ...(remote.maxTokens ? { max_tokens: remote.maxTokens } : {}),
       });
       text = asYui(done.text);
+      if (rows.every((r) => r.kind === "event")) text = firstScreen(text); // a tap answers with one screen
       log(`${agent.name}: ${remote.model} answered${done.streamed ? " (streamed)" : ""}, ${text.length} chars`
         + (done.finish && done.finish !== "stop" ? `, finish ${done.finish}` : "")
         + (done.usage?.prompt_tokens ? `, ${done.usage.prompt_tokens} prompt tokens` : ""));

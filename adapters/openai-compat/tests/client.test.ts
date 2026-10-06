@@ -4,7 +4,7 @@
 import assert from "node:assert/strict";
 import { after, before, describe, test } from "node:test";
 import { ChatClient, ModelError, ModelUnavailable, SERVERS, StreamRefused, baseUrl, errorMessage, retryAfter, splitThinking } from "../src/openai.ts";
-import { SMALL_GUIDE, asYui } from "../src/fences.ts";
+import { SMALL_GUIDE, asYui, firstScreen } from "../src/fences.ts";
 import { alternate, buildMessages, toMessage, tokens, type ThreadRow } from "../src/thread.ts";
 import { startFake, type Fake } from "./fake-model.ts";
 
@@ -472,6 +472,38 @@ describe("small models (INT-23)", () => {
     assert.equal(asYui(`\`\`\`yui\n${screen}\n\`\`\`\n[yui]`), `\`\`\`yui\n${screen}\n\`\`\`\n`);
     assert.equal(asYui('[ yui ]\nslide "How sore?" 1-5 Fresh|Wrecked'), '```yui\nslide "How sore?" 1-5 Fresh|Wrecked\n```');
     assert.equal(asYui("[/yui]\nHow sore are you?"), "How sore are you?");
+  });
+  test("a role label in front of a bubble is stripped (INT-27)", () => {
+    const fence = `\`\`\`yui\n${screen}\n\`\`\``;
+    // the real llama3.2:3b answer from the Drink screen
+    assert.equal(asYui(`${fence}\n[Response:] What do you want to drink?`), `${fence}\nWhat do you want to drink?`);
+    assert.equal(asYui(`${fence}\nResponse: Pick one.`), `${fence}\nPick one.`);
+    assert.equal(asYui(`Assistant: Here you go.\n${fence}`), `Here you go.\n${fence}`);
+    assert.equal(asYui(`[Assistant] Here you go.\n${fence}`), `Here you go.\n${fence}`);
+    assert.equal(asYui(`${fence}\n[yui] What can I get you?`), `${fence}\nWhat can I get you?`);
+    assert.equal(asYui(`${fence}\n[yui]Timed out after 5 minutes!`), `${fence}\nTimed out after 5 minutes!`);
+  });
+  test("a label with nothing after it drops the bubble", () => {
+    const fence = `\`\`\`yui\n${screen}\n\`\`\``;
+    assert.equal(asYui(`${fence}\n[Response:]`), fence);
+    assert.equal(asYui("[Response:]"), "");
+  });
+  test("a label inside a quoted or fenced line stays", () => {
+    for (const t of ["> Response: this was quoted", '"Response: hi" is what it said', "He wrote [Response:] in the log", "Answer: 42", "Reply: later", "The Assistant: a film"]) {
+      assert.equal(asYui(t), t);
+    }
+    assert.equal(asYui("```text\nResponse: keep\n```"), "```text\nResponse: keep\n```");
+  });
+  test("after a tap, back-to-back screens keep the first (INT-27)", () => {
+    const a = `\`\`\`yui\n${screen}\n\`\`\``;
+    const b = '```yui\nask "How are you today?" Good|Bad\n```';
+    const c = '```yui\nform "Introduce yourself" name:~\n```';
+    assert.equal(firstScreen(`${a}\n\n${b}\n\n${c}`), a);
+    assert.equal(firstScreen(`${a}\n${b}`), a);
+    assert.equal(firstScreen(a), a);
+    assert.equal(firstScreen(`Nice.\n${a}\nSay more\n${b}`), `Nice.\n${a}\nSay more\n${b}`); // prose between: both stay
+    assert.equal(firstScreen(`${a}\n\nDone.`), `${a}\n\nDone.`);
+    assert.equal(firstScreen("no screens here"), "no screens here");
   });
   test("prose that starts with a head word is not fenced", () => {
     for (const t of ["list of things I like", "Show me what you have", "timer is a good idea", "pick one and tell me", "next week we ask again", "I will choose tea 2 times"]) {
