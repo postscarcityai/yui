@@ -39,7 +39,7 @@ PRESETS = {
     "sketch", "row", "after",
     "shapes", "shape",
     "map", "area", "pin", "route",
-    "diagram", "mock", "part",
+    "diagram", "mock", "part", "motion",
     "query",
     "loop", "drums", "keys", "chords", "tuner", "metronome",
 }

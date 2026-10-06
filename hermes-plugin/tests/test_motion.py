@@ -7,6 +7,7 @@ import asyncio
 import os
 import sys
 import unittest
+from unittest import mock
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -139,11 +140,12 @@ class Turn(unittest.TestCase):
                 coro.close()
         a._spawn = spawn
         a._poke = lambda: None
-        ad.flywheel.record = lambda *_: None
-        ad.media.rewrite = lambda body, *_: body
-        ad.SendResult = lambda **kw: kw
         self.build = compat.MOTION_BUILD
-        ad.compat.build_for = lambda *_: self.build
+        for obj, name, val in ((ad.flywheel, "record", lambda *_: None), (ad.media, "rewrite", lambda body, *_: body),
+                               (ad, "SendResult", lambda **kw: kw), (ad.compat, "build_for", lambda *_: self.build)):
+            p = mock.patch.object(obj, name, val)
+            p.start()
+            self.addCleanup(p.stop)
 
     def run_all(self):
         async def go():
