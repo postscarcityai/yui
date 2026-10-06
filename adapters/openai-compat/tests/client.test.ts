@@ -4,6 +4,7 @@
 import assert from "node:assert/strict";
 import { after, before, describe, test } from "node:test";
 import { ChatClient, ModelError, ModelUnavailable, SERVERS, StreamRefused, baseUrl, errorMessage, retryAfter, splitThinking } from "../src/openai.ts";
+import { SMALL_GUIDE, asYui } from "../src/fences.ts";
 import { alternate, buildMessages, toMessage, tokens, type ThreadRow } from "../src/thread.ts";
 import { startFake, type Fake } from "./fake-model.ts";
 
@@ -429,5 +430,41 @@ describe("thread", () => {
     assert.deepEqual(alternate([{ role: "assistant", content: "a" }, { role: "user", content: "b" }, { role: "user", content: "c" },
                                 { role: "assistant", content: "d" }]),
                      [{ role: "user", content: "b\nc" }, { role: "assistant", content: "d" }]);
+  });
+});
+
+describe("small models (INT-23)", () => {
+  const screen = 'choose "Drink" Tea|Coffee';
+  test("a yml, yaml or plain fence that opens with a Yui Line becomes a yui fence", () => {
+    for (const tag of ["yml", "yaml", "", "YAML", "text"]) {
+      assert.equal(asYui(`Sure:\n\`\`\`${tag}\n${screen}\n\`\`\`\nEnjoy`), `Sure:\n\`\`\`yui\n${screen}\n\`\`\`\nEnjoy`, tag);
+    }
+  });
+  test("a mode line or an id on the first line counts", () => {
+    assert.equal(asYui('```yml\n>full\ndeck "Hi"\n```'), '```yui\n>full\ndeck "Hi"\n```');
+    assert.equal(asYui('```yaml\nchoose@drink "Drink" Tea|Coffee\n```'), '```yui\nchoose@drink "Drink" Tea|Coffee\n```');
+  });
+  test("code, yui fences and prose in a fence are left alone", () => {
+    for (const t of ['```js\nchoose("x")\n```', `\`\`\`yui\n${screen}\n\`\`\``, "```yml\nname: tea\nchoose: yes\n```", "```\nnothing here\n```", "no fence at all"]) {
+      assert.equal(asYui(t), t);
+    }
+  });
+  test("two fences: only the Yui one is retagged", () => {
+    assert.equal(asYui(`\`\`\`yml\nname: x\n\`\`\`\n\`\`\`yml\n${screen}\n\`\`\``), `\`\`\`yml\nname: x\n\`\`\`\n\`\`\`yui\n${screen}\n\`\`\``);
+  });
+  const big = "g".repeat(9000); // about 2,570 tokens, like the live guide
+  test("a small window gets the short guide, a roomy one the full guide", () => {
+    const small = buildMessages([], [user("hi")], { guide: big }).messages[0].content as string;
+    assert.equal(small, SMALL_GUIDE);
+    assert.ok(tokens(SMALL_GUIDE) < 900, `${tokens(SMALL_GUIDE)} tokens`);
+    const roomy = buildMessages([], [user("hi")], { guide: big, context: 16384 }).messages[0].content as string;
+    assert.equal(roomy, big);
+    const tiny = buildMessages([], [user("hi")], { guide: "short guide" }).messages[0].content;
+    assert.equal(tiny, "short guide");
+  });
+  test("the short guide leaves room for the thread on the default window", () => {
+    const r = buildMessages([user("a".repeat(700)), agent("b".repeat(700))], [user("now")], { guide: big });
+    assert.equal(r.over, false);
+    assert.equal(r.dropped, 0);
   });
 });
