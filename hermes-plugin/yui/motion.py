@@ -46,6 +46,7 @@ OPENER_MODEL = "claude-haiku-4-5-20251001"
 PROMPT = Path(__file__).with_name("motion_prompt.md")
 SPEC = os.environ.get("YUI_MOTION_SPEC", "on").strip().lower() != "off"  # the scene 1 writer starts before the noun is known (MOTION-21)
 EARLY = os.environ.get("YUI_MOTION_EARLY", "on").strip().lower() != "off"  # scene 1 goes out on a partial drawing while the parts stream (MOTION-21)
+REST_EARLY = os.environ.get("YUI_MOTION_REST_EARLY", "on").strip().lower() != "off"  # the scene 2+ writer starts with scene 1's, not after it (MOTION-22)
 HERO = os.environ.get("YUI_MOTION_HERO", "on").strip().lower() != "off"  # the kit draws the hero (MOTION-14); off = the model draws it
 
 # The agent's line: `motion "ask"` or `motion ask words`. A block (`film=`, or scenes on the next line) is already ours.
@@ -219,6 +220,48 @@ async def claude_cli(ask: str, model: str = "claude-sonnet-5-5", extra: str = ""
                 pass
 
 
+class _Running:
+    """An async generator that runs now, not on its first `async for`: its scenes wait in a queue (MOTION-22). A bare
+    async generator does nothing until someone iterates it, so the scene 2+ writer used to start only after scene 1 was
+    written and sent."""
+
+    def __init__(self, agen):
+        self._agen, self._q = agen, asyncio.Queue()
+        self._task = asyncio.ensure_future(self._pump())
+
+    async def _pump(self):
+        try:
+            async for s in self._agen:
+                self._q.put_nowait(s)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            pass
+        finally:
+            self._q.put_nowait(None)
+
+    def __aiter__(self):
+        return self
+
+    async def __anext__(self):
+        s = await self._q.get()
+        if s is None:
+            self._q.put_nowait(None)
+            raise StopAsyncIteration
+        return s
+
+    async def aclose(self):
+        self._task.cancel()
+        try:
+            await self._task
+        except BaseException:
+            pass
+        try:
+            await self._agen.aclose()
+        except Exception:
+            pass
+
+
 async def split_film(ask: str) -> AsyncIterator[dict]:
     """Scene 1 from a small fast model, the rest from the big one, both started at once. Scene 1 plays the moment
     the small model finishes it; the rest follow in order. If the small model gives nothing, the film starts at scene 2.
@@ -258,7 +301,8 @@ async def split_film(ask: str) -> AsyncIterator[dict]:
                 spec.cancel()
                 spec = None
             op = asyncio.ensure_future(_first(claude_cli(ask, OPENER_MODEL, OPENER + (motion_hero.OPENER_NOTE.format(**notes) if hero else ""), think=False)))
-        return op, claude_cli(ask, extra=CONTINUE + (motion_hero.CONTINUE_NOTE.format(**notes) if hero else ""))
+        rest = claude_cli(ask, extra=CONTINUE + (motion_hero.CONTINUE_NOTE.format(**notes) if hero else ""))
+        return op, (_Running(rest) if REST_EARLY else rest)
 
     opener, rest = start(hero, label)
     first = True

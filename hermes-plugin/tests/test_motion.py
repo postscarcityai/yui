@@ -7,6 +7,7 @@ import asyncio
 import json
 import os
 import sys
+import time
 import unittest
 from unittest import mock
 from pathlib import Path
@@ -346,8 +347,27 @@ class NewThing(unittest.TestCase):
             with mock.patch.object(motion, "claude_cli", fake), mock.patch.object(self.h, "_call_model", self.streaming(bad, 0.0, 0.01)):
                 return [s async for s in motion.split_film("How an elephant keeps cool")]
         out = asyncio.run(go())
-        self.assertEqual(starts, [True, False, False])  # the opener on the noun, then plain again (the continuation writer only starts when iterated)
+        self.assertEqual(starts, [True, True, False, False])  # the opener and the continuation writer on the noun, then both plain again (MOTION-22: the continuation writer no longer waits to be iterated)
         self.assertEqual(out[0]["code"], "api.say('x');")
+
+    def test_the_continuation_writer_starts_before_scene_1_is_written(self):
+        """MOTION-22: scene 2+ is being written while scene 1 is still being written."""
+        started = {}
+
+        async def fake(ask, model="big", extra="", think=True):
+            started[model] = time.time()
+            await asyncio.sleep(0.3 if model == motion.OPENER_MODEL else 0.1)
+            yield {"name": "a", "dur": 3, "code": "api.say('x');"}
+
+        async def go():
+            with mock.patch.object(motion, "claude_cli", fake), mock.patch.object(motion.motion_hero, "pick", lambda a: "heart"):
+                agen = motion.split_film("How a heart pumps")
+                first = await agen.__anext__()
+                t_first = time.time()
+                await agen.aclose()
+                return first, t_first
+        _, t_first = asyncio.run(go())
+        self.assertLess(started["big"], t_first - 0.2)
 
     def test_a_null_noun_starts_the_writers_plain_at_once(self):
         starts = []
