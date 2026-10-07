@@ -274,7 +274,7 @@ async def split_film(ask: str) -> AsyncIterator[dict]:
 def prime(config_extra: Optional[dict] = None) -> None:
     """Start the warm `claude` for the film's parts call (MOTION-18) when this host makes films; called when the adapter connects."""
     try:
-        if HERO and motion_hero.THINGS_ON and motion_hero.WARM_ON and mode(config_extra) != "off" and maker(config_extra) is claude_cli:
+        if HERO and motion_hero.THINGS_ON and motion_hero.WARM_ON and mode(config_extra) != "off" and maker(config_extra) is split_film:
             motion_hero._warm().prime(motion_hero.THING_MODEL)
     except Exception:
         pass

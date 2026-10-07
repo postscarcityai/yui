@@ -426,6 +426,27 @@ class WarmProcess(unittest.TestCase):
         asyncio.run(go())
 
 
+class WarmShutdown(unittest.TestCase):
+    def test_shutdown_leaves_no_process_that_was_still_starting(self):
+        from unittest import mock
+        import importlib
+        warm = importlib.import_module("warm")
+        warm._slot.clear()
+
+        async def go():
+            async def slow(model):
+                await asyncio.sleep(5)
+            with mock.patch.object(warm, "_spawn", slow):
+                warm.prime("m")
+                await asyncio.sleep(0.05)
+                warm.shutdown()
+                await asyncio.sleep(0.05)
+            return all(f.cancelled() or f.done() for f in warm._filling.values()), dict(warm._slot)
+        ok, slot = asyncio.run(go())
+        self.assertTrue(ok)
+        self.assertEqual(slot, {})
+
+
 class Compat(unittest.TestCase):
     FILM = '```yui\nmotion "How a heart pumps. Blood enters." film=m1 part=1\n=== scene hook 4 ===\napi.say("Blood in");\nend\n```'
 

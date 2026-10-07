@@ -42,6 +42,7 @@ class _Proc:
 
 _slot: dict[str, _Proc] = {}      # model -> the warm process waiting for its next call
 _reaper: dict[str, asyncio.Handle] = {}
+_filling: dict[str, asyncio.Future] = {}  # model -> the start that is under way (shutdown cancels it, so no process outlives it)
 stats = {"spawned": 0, "calls": 0, "retries": 0}
 
 
@@ -70,7 +71,13 @@ def _expire(model: str) -> None:
         p.kill()
 
 
-async def _refill(model: str) -> None:
+def _refill(model: str) -> None:
+    if model in _filling and not _filling[model].done():
+        return
+    _filling[model] = asyncio.ensure_future(_fill(model))
+
+
+async def _fill(model: str) -> None:
     try:
         if model not in _slot:
             _slot[model] = await _spawn(model)
@@ -84,7 +91,7 @@ def prime(model: str) -> None:
     try:
         if model not in _slot or not _slot[model].alive():
             _slot.pop(model, None)
-            asyncio.ensure_future(_refill(model))
+            _refill(model)
     except RuntimeError:
         pass
 
@@ -164,12 +171,15 @@ async def ask(prompt: str, model: str, timeout: float = 14.0, on_text=None) -> s
                 _arm_idle(model)
             else:
                 p.kill()
-                asyncio.ensure_future(_refill(model))
+                _refill(model)
         if attempt == 0:
             stats["retries"] += 1
     raise last or asyncio.TimeoutError()
 
 
 def shutdown() -> None:
+    for f in list(_filling.values()):
+        f.cancel()
+    _filling.clear()
     for m in list(_slot):
         _expire(m)
