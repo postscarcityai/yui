@@ -357,9 +357,16 @@ def _learned_words() -> dict:
     return _LEARNED["words"]
 
 
+LEARN_JUDGE_DEFAULTS = ("~/dev/yuigui-judge", "~/dev/yuigui")  # clean checkout first: the main one lags origin and is often dirty
+
+
 def learn_judge_script() -> Optional[Path]:
-    p = Path(os.path.expanduser(os.environ.get(LEARN_JUDGE_ENV) or "~/dev/yuigui/site/scripts/motion/learn_judge.py"))
-    return p if p.is_file() else None
+    rel = "site/scripts/motion/learn_judge.py"
+    for c in ([os.environ[LEARN_JUDGE_ENV]] if os.environ.get(LEARN_JUDGE_ENV) else [os.path.join(d, rel) for d in LEARN_JUDGE_DEFAULTS]):
+        p = Path(os.path.expanduser(c))
+        if p.is_file():
+            return p
+    return None
 
 
 def learn_idle() -> bool:
