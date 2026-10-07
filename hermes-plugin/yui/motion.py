@@ -28,6 +28,14 @@ import uuid
 from pathlib import Path
 from typing import AsyncIterator, Optional
 
+try:
+    from . import motion_hero
+except ImportError:  # loaded by file path (yuigui site/scripts/motion/look_set.py)
+    import importlib.util as _ilu
+    _spec = _ilu.spec_from_file_location("motion_hero", Path(__file__).with_name("motion_hero.py"))
+    motion_hero = _ilu.module_from_spec(_spec)
+    _spec.loader.exec_module(motion_hero)
+
 MODES = ("off", "on")
 MAX_ASK = 700            # characters of ask the maker sees
 MAX_SCENES = 12
@@ -36,6 +44,7 @@ FIRST_SCENE_TIMEOUT = 45.0
 FILM_TIMEOUT = 150.0
 OPENER_MODEL = "claude-haiku-4-5-20251001"
 PROMPT = Path(__file__).with_name("motion_prompt.md")
+HERO = os.environ.get("YUI_MOTION_HERO", "on").strip().lower() != "off"  # the kit draws the hero (MOTION-14); off = the model draws it
 
 # The agent's line: `motion "ask"` or `motion ask words`. A block (`film=`, or scenes on the next line) is already ours.
 LINE = re.compile(r'^\s*motion\s+(?P<rest>\S.*?)\s*$')
@@ -210,15 +219,21 @@ async def claude_cli(ask: str, model: str = "claude-sonnet-5-5", extra: str = ""
 
 async def split_film(ask: str) -> AsyncIterator[dict]:
     """Scene 1 from a small fast model, the rest from the big one, both started at once. Scene 1 plays the moment
-    the small model finishes it; the rest follow in order. If the small model gives nothing, the film starts at scene 2."""
-    opener = asyncio.ensure_future(_first(claude_cli(ask, OPENER_MODEL, OPENER, think=False)))
-    rest = claude_cli(ask, extra=CONTINUE)
+    the small model finishes it; the rest follow in order. If the small model gives nothing, the film starts at scene 2.
+    The hero object is picked from the ask by a word match and drawn by the kit (motion_hero): scene 1 gets it written
+    in, scenes 2+ are told its name and get it written in when they leave it out."""
+    hero = motion_hero.pick(ask) if HERO else None
+    opener = asyncio.ensure_future(_first(claude_cli(ask, OPENER_MODEL, OPENER + (motion_hero.OPENER_NOTE.format(name=hero) if hero else ""), think=False)))
+    rest = claude_cli(ask, extra=CONTINUE + (motion_hero.CONTINUE_NOTE.format(name=hero) if hero else ""))
+    first = True
     try:
         s = await opener
         if s:
-            yield s
+            yield dict(s, code=motion_hero.put_in(s["code"], hero, True)) if hero else s
+            first = False
         async for s in rest:
-            yield s
+            yield dict(s, code=motion_hero.put_in(s["code"], hero, first)) if hero else s
+            first = False
     finally:
         opener.cancel()
         await rest.aclose()

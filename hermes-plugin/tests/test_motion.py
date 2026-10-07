@@ -116,6 +116,68 @@ class SplitFilm(unittest.TestCase):
         self.assertEqual(names, ["s2"])
 
 
+class Hero(unittest.TestCase):
+    """The kit draws the hero (MOTION-14): picked from the ask by words, written into scene 1, kept in later scenes."""
+
+    def test_pick_by_words(self):
+        pick = motion.motion_hero.pick
+        self.assertEqual(pick("How a heart pumps blood"), "heart")
+        self.assertEqual(pick("Why a cat purrs"), "cat")
+        self.assertEqual(pick("Roast a lemon-garlic chicken: the steps"), "roast")  # a chicken being cooked, the lemon is a side
+        self.assertEqual(pick("How a chicken lays an egg"), "chicken")
+        self.assertEqual(pick("What the Home screen shows"), None)  # "home screen" is an app, not a house
+        self.assertEqual(pick("Show the Earth and Moon in real 3D (api.three)"), None)  # a 3D film draws its own bodies
+        self.assertIsNone(motion.motion_hero.pick("A mood: a quiet evening"))
+        self.assertIsNone(motion.motion_hero.pick(""))
+
+    def test_put_in_after_the_look_or_at_the_top(self):
+        h = motion.motion_hero
+        a = h.put_in("api.look('sketch');\napi.say('x');", "dog", True)
+        self.assertLess(a.index("api.look"), a.index('api.thing("dog"'))
+        self.assertLess(a.index('api.thing("dog"'), a.index("api.say"))
+        self.assertIn("if (api.thing)", a)  # an older kit skips it instead of throwing
+        self.assertTrue(h.put_in("api.say('x');", "dog", True).startswith("if (api.thing)"))
+        own = "api.thing('dog', 1, 2, 3);"
+        self.assertEqual(h.put_in(own, "dog", False), own)  # a later scene that already draws it is left alone
+        self.assertIn('api.thing("dog"', h.put_in("api.say('x');", "dog", False))
+
+    def test_every_hero_word_names_a_real_kit_thing(self):
+        root = Path(os.environ.get("YUIGUI") or Path(__file__).resolve().parents[3] / ".." / "yuigui")
+        kit = root / "site" / "public" / "demo" / "motion" / "kit.js"
+        if not kit.exists():
+            self.skipTest("no sibling yuigui checkout")
+        import re
+        names = set(re.findall(r"^      ([a-z]+): \[", kit.read_text(), re.M))
+        self.assertEqual(sorted((set(motion.motion_hero.WORDS) | {"roast"}) - names), [])
+
+    def test_film_gets_the_hero_in_scene_one_and_the_name_in_the_notes(self):
+        notes = []
+
+        async def fake(ask, model="big", extra="", think=True):
+            notes.append(extra)
+            yield {"name": "a" if model == motion.OPENER_MODEL else "s2", "dur": 3, "code": "api.look('paper');\napi.say('x');"}
+
+        async def go():
+            with mock.patch.object(motion, "claude_cli", fake):
+                return [s async for s in motion.split_film("How a heart pumps blood")]
+        out = asyncio.run(go())
+        self.assertIn('api.thing("heart"', out[0]["code"])
+        self.assertIn("seg(t, 0, 1.2)", out[0]["code"])   # scene 1 draws it on
+        self.assertIn('api.thing("heart"', out[1]["code"])
+        self.assertIn("{k: 1}", out[1]["code"])           # later scenes show it already drawn
+        self.assertTrue(all("heart" in n for n in notes))
+
+    def test_no_hero_leaves_the_film_as_it_was(self):
+        async def fake(ask, model="big", extra="", think=True):
+            assert "HERO" not in extra
+            yield {"name": "a", "dur": 3, "code": "api.say('x');"}
+
+        async def go():
+            with mock.patch.object(motion, "claude_cli", fake):
+                return [s async for s in motion.split_film("A calm mood")]
+        self.assertEqual(asyncio.run(go())[0]["code"], "api.say('x');")
+
+
 class Compat(unittest.TestCase):
     FILM = '```yui\nmotion "How a heart pumps. Blood enters." film=m1 part=1\n=== scene hook 4 ===\napi.say("Blood in");\nend\n```'
 
