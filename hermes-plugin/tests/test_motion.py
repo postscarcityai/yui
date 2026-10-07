@@ -210,7 +210,7 @@ class NewThing(unittest.TestCase):
         self.calls = []
 
     def call(self, reply):
-        async def f(ask, on_noun=None):
+        async def f(ask, on_noun=None, on_text=None):
             self.calls.append(ask)
             return reply if isinstance(reply, str) else json.dumps(reply)
         return f
@@ -284,7 +284,7 @@ class NewThing(unittest.TestCase):
         self.assertIn("api.defineThing", out[0]["code"])
         self.assertLess(out[0]["code"].index("api.defineThing"), out[0]["code"].index('api.thing("elephant"'))
         self.assertIn("api.defineThing", out[1]["code"])  # the model's own api.thing call needs the thing registered too
-        self.assertTrue(all("elephant" in n for n in notes))
+        self.assertTrue("elephant" in notes[-1])  # the continuation writer is told the hero's name (scene 1's writer started before the noun)
 
     def test_failed_call_leaves_the_film_as_it_was(self):
         async def fake(ask, model="big", extra="", think=True):
@@ -298,7 +298,7 @@ class NewThing(unittest.TestCase):
 
     def streaming(self, reply, noun_after=0.0, done_after=0.2):
         """A parts call that tells on_noun first and finishes later, like the warm process does."""
-        async def f(ask, on_noun=None):
+        async def f(ask, on_noun=None, on_text=None):
             self.calls.append(ask)
             await asyncio.sleep(noun_after)
             if on_noun:
@@ -317,7 +317,7 @@ class NewThing(unittest.TestCase):
         async def go():
             real = self.streaming(ELEPHANT, 0.0, 0.3)
 
-            async def watched(ask, on_noun=None):
+            async def watched(ask, on_noun=None, on_text=None):
                 def heard(n):
                     order.append(("noun", n))
                     on_noun(n)
@@ -329,7 +329,8 @@ class NewThing(unittest.TestCase):
         out = asyncio.run(go())
         kinds = [o[0] for o in order]
         self.assertLess(kinds.index("noun"), kinds.index("parts whole"))
-        self.assertEqual([o for o in order if o[0] == "start"], [("start", motion.OPENER_MODEL, True), ("start", "big", True)])
+        # MOTION-21: the scene 1 writer starts with the parts call (no noun yet), the continuation writer on the noun
+        self.assertEqual([o for o in order if o[0] == "start"], [("start", motion.OPENER_MODEL, False), ("start", "big", True)])
         self.assertIn("api.defineThing", out[0]["code"])
 
     def test_a_noun_whose_parts_then_fail_restarts_the_writers_plain(self):
@@ -359,7 +360,47 @@ class NewThing(unittest.TestCase):
             with mock.patch.object(motion, "claude_cli", fake), mock.patch.object(self.h, "_call_model", self.streaming({"noun": None}, 0.0, 0.01)):
                 return [s async for s in motion.split_film("A calm mood")]
         self.assertEqual(asyncio.run(go())[0]["code"], "api.say('x');")
-        self.assertEqual(starts, [False, False])
+        self.assertEqual(starts, [True, False, False])  # the speculative scene 1 writer is dropped when the noun is null, then plain writers start
+
+    def test_scene_1_goes_out_on_the_shapes_whole_so_far(self):
+        out_at = []
+
+        async def fake(ask, model="big", extra="", think=True):
+            yield {"name": "a" if model == motion.OPENER_MODEL else "s2", "dur": 3, "code": "api.say('x');" if model == motion.OPENER_MODEL else "api.say('y');"}
+
+        async def slow_parts(ask, on_noun=None, on_text=None):
+            text = '{"noun":"elephant","parts":['
+            on_noun("elephant")
+            on_text(text)
+            for sh in ELEPHANT["parts"]:
+                await asyncio.sleep(0.05)
+                text += json.dumps(sh) + ","
+                on_text(text)
+            await asyncio.sleep(0.5)  # the reply is whole only half a second later
+            return json.dumps(ELEPHANT)
+
+        async def go():
+            t0 = asyncio.get_running_loop().time()
+            with mock.patch.object(motion, "claude_cli", fake), mock.patch.object(self.h, "_call_model", slow_parts):
+                res = []
+                async for s in motion.split_film("How an elephant keeps cool"):
+                    out_at.append(asyncio.get_running_loop().time() - t0)
+                    res.append(s)
+                return res
+        out = asyncio.run(go())
+        self.assertLess(out_at[0], 0.5)  # scene 1 did not wait for the whole reply
+        for s in out:
+            self.assertIn("api.defineThing", s["code"])
+        self.assertGreaterEqual(out[1]["code"].count('["'), out[0]["code"].count('["'))  # scenes 2+ carry the whole drawing
+
+    def test_shapes_so_far_reads_only_whole_shapes(self):
+        txt = '{"noun":"elephant","parts":[{"s":"circle","x":0,"y":0,"r":9,"f":"a2"},{"s":"rect","x":1,"y":2,"w":3'
+        self.assertEqual(len(self.h.shapes_so_far(txt)), 1)
+        self.assertEqual(self.h.shapes_so_far('{"noun":"elephant"'), [])
+        e = self.h.Early()
+        e.noun = "elephant"
+        e(txt)
+        self.assertIsNone(e.hero())  # too few to draw
 
 
 FAKE_CLAUDE = """#!/usr/bin/env python3

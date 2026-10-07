@@ -334,21 +334,70 @@ def noun_watch(on_noun):
     return on_text
 
 
-async def _call_model(ask: str, on_noun=None) -> str:
+EARLY_MIN = 6  # shapes whole before scene 1 may go out on a partial drawing (MOTION-21)
+
+
+def shapes_so_far(text: str) -> list:
+    """The shapes of the streaming parts reply that are already whole (each a dict), in order."""
+    i = text.find('"parts"')
+    j = text.find("[", i) if i >= 0 else -1
+    if j < 0:
+        return []
+    dec, pos, out = json.JSONDecoder(), j + 1, []
+    while True:
+        while pos < len(text) and text[pos] in " \t\r\n,":
+            pos += 1
+        if pos >= len(text) or text[pos] != "{":
+            return out
+        try:
+            obj, pos = dec.raw_decode(text, pos)
+        except ValueError:
+            return out
+        out.append(obj)
+
+
+class Early:
+    """Hears the streaming parts reply; `hero()` is the drawing the shapes whole so far make (the big silhouette comes first,
+    so a prefix reads as the thing with fewer details), or None while there are too few (MOTION-21)."""
+
+    def __init__(self):
+        self.text, self.noun, self._n, self._hero = "", None, 0, None
+
+    def __call__(self, text: str) -> None:
+        self.text = text
+
+    def hero(self) -> Optional[dict]:
+        sh = shapes_so_far(self.text)
+        if len(sh) < EARLY_MIN:
+            return None
+        if len(sh) != self._n:
+            self._n = len(sh)
+            parts = build_parts(sh)
+            name = noun_id(self.noun or "")
+            self._hero = {"name": name, "label": (self.noun or "").strip().lower()[:24], "parts": parts} if parts and name else None
+        return self._hero
+
+
+async def _call_model(ask: str, on_noun=None, on_text=None) -> str:
     """The parts call: on the warm process when there is one, else (warm off or failed) one `claude -p` per call.
     `on_noun` hears the noun while the parts are still being written (warm only; MOTION-18)."""
     if WARM_ON:
         t0 = time.time()
         try:
-            return await _warm().ask(THING_PROMPT.format(ask=ask[:400]), THING_MODEL, CALL_TIMEOUT,
-                                     noun_watch(on_noun) if on_noun else None)
+            watch = noun_watch(on_noun) if on_noun else None
+            if on_text:
+                def watch(text, _w=watch):
+                    on_text(text)
+                    if _w:
+                        _w(text)
+            return await _warm().ask(THING_PROMPT.format(ask=ask[:400]), THING_MODEL, CALL_TIMEOUT, watch)
         except Exception:
             if CALL_TIMEOUT - (time.time() - t0) < 4:
                 raise
     return await _call_cold(ask)
 
 
-async def draw_new(ask: str, call=None, on_noun=None) -> Optional[dict]:
+async def draw_new(ask: str, call=None, on_noun=None, on_text=None) -> Optional[dict]:
     """The hero for an ask the word match missed: {"name", "label", "parts"} (parts None = a kit thing), or None for no hero.
     Cached by name; never raises. `call` is the model call (a test seam): async (ask) -> text.
     `on_noun(noun or None)` is called early, while the model is still writing the parts (the film starts its writers on it)."""
@@ -358,7 +407,7 @@ async def draw_new(ask: str, call=None, on_noun=None) -> Optional[dict]:
     if hit is not None:
         return hit or None
     try:
-        hero = parse_reply(await (call(ask) if call else _call_model(ask, on_noun)))
+        hero = parse_reply(await (call(ask) if call else _call_model(ask, on_noun, on_text)))
     except Exception:
         return None
     if hero is None:
@@ -399,6 +448,10 @@ OPENER_NOTE = ("\n\nHERO: the kit has ALREADY drawn the hero of this ask, a {lab
                "the {label} yourself and do not hide it. It is centred at (api.w/2, api.h*0.47) and about 280 px wide and tall: aim every callout at a spot inside that box. api.thing returns nothing and has no other fields. Write the rest of scene 1 around it: a title near the top, one or two api.callout "
                "labels on its parts (put each label in open space beside it, 12 px clear), something moving. Do not call api.look "
                "unless you want a different look; the hero is drawn after it.")
+OPENER_NOTE_SPEC = ("\n\nHERO: if the ask is about one physical thing with a body (an animal, machine, building, tool, plant, vehicle), the kit has ALREADY drawn it, big in the middle "
+                    "of the screen (api.thing). Do not draw it yourself and do not hide it. It is centred at (api.w/2, api.h*0.47) and about 280 px wide and tall: aim every callout at a spot inside that box. "
+                    "Write the rest of scene 1 around it: a title near the top, one or two api.callout labels on its parts (put each label in open space beside it, 12 px clear), something moving. "
+                    "Do not call api.look unless you want a different look; the hero is drawn after it.")
 CONTINUE_NOTE = ("\n\nHERO: the hero of this ask is a {label}, drawn by the kit as api.thing(\"{name}\", x, y, size, {{k: 1}}) (x centre, y about "
                  "api.h*0.47, size 200 to 240; wrap it as `if (api.thing) api.thing(...)`; it returns nothing). Every scene you write keeps the {label} on screen "
                  "with that call, the same drawing, so the film reads as one thing: draw it first, then your callouts, arrows, counters and "

@@ -44,6 +44,8 @@ FIRST_SCENE_TIMEOUT = 45.0
 FILM_TIMEOUT = 150.0
 OPENER_MODEL = "claude-haiku-4-5-20251001"
 PROMPT = Path(__file__).with_name("motion_prompt.md")
+SPEC = os.environ.get("YUI_MOTION_SPEC", "on").strip().lower() != "off"  # the scene 1 writer starts before the noun is known (MOTION-21)
+EARLY = os.environ.get("YUI_MOTION_EARLY", "on").strip().lower() != "off"  # scene 1 goes out on a partial drawing while the parts stream (MOTION-21)
 HERO = os.environ.get("YUI_MOTION_HERO", "on").strip().lower() != "off"  # the kit draws the hero (MOTION-14); off = the model draws it
 
 # The agent's line: `motion "ask"` or `motion ask words`. A block (`film=`, or scenes on the next line) is already ours.
@@ -164,7 +166,7 @@ def harvest(text: str, done: int) -> tuple[list[dict], int]:
 
 
 OPENER = ("\n\nYOUR JOB: write ONLY scene 1, then `=== end ===`. A slower writer draws the rest. Scene 1 is SMALL "
-          "(at most 14 lines, 3 s), opens on the hero drawing of the ask and shows the subject at once. Name it with one word, no spaces. No words before the first header.")
+          "(at most 10 lines, 3 s), opens on the hero drawing of the ask and shows the subject at once. Name it with one word, no spaces. No words before the first header.")
 CONTINUE = ("\n\nYOUR JOB: scene 1 is already written by someone else (it opens on the hero drawing with a title and a "
             "caption). Do NOT write it. Start at the next scene and write 4 to 6 scenes of 4 to 7 s that carry on from it. "
             "Name your scenes s2, s3, ...; the first scene you write is s2.")
@@ -225,11 +227,18 @@ async def split_film(ask: str) -> AsyncIterator[dict]:
     call may draw a hero the kit lacks from kit shapes, cached by name (motion_hero.draw_new, MOTION-15)."""
     hero = motion_hero.pick(ask) if HERO else None
     label, define = hero, ""
-    task, early, guess = None, None, None
+    task, early, guess, spec = None, None, None, None
     if HERO and not hero:
         # MOTION-18: the parts call streams its noun first; the writers start on it while the parts are still coming
         early = asyncio.get_running_loop().create_future()
-        task = asyncio.ensure_future(motion_hero.draw_new(ask, on_noun=lambda n: early.done() or early.set_result(n)))
+        ev = motion_hero.Early()  # MOTION-21: the shapes as they stream in
+
+        def heard(n):
+            ev.noun = n
+            early.done() or early.set_result(n)
+        task = asyncio.ensure_future(motion_hero.draw_new(ask, on_noun=heard, on_text=ev))
+        if SPEC:  # MOTION-21: scene 1 is the long pole now, so its writer starts with the parts call; the noun only confirms there is a hero
+            spec = asyncio.ensure_future(_first(claude_cli(ask, OPENER_MODEL, OPENER + motion_hero.OPENER_NOTE_SPEC, think=False)))
         await asyncio.wait({task, early}, return_when=asyncio.FIRST_COMPLETED)
         if task.done():  # cached, or no streaming: the hero is known
             new, task = task.result(), None
@@ -239,9 +248,16 @@ async def split_film(ask: str) -> AsyncIterator[dict]:
             hero, label = motion_hero.noun_id(early.result()), early.result().strip().lower()[:24]
             guess = (hero, label)
 
-    def start(hero, label):
+    def start(hero, label, reuse=True):
         notes = dict(name=hero, label=label)
-        op = asyncio.ensure_future(_first(claude_cli(ask, OPENER_MODEL, OPENER + (motion_hero.OPENER_NOTE.format(**notes) if hero else ""), think=False)))
+        nonlocal spec
+        if spec is not None and hero and reuse:  # the speculative scene 1 writer already has the job
+            op, spec = spec, None
+        else:
+            if spec is not None:
+                spec.cancel()
+                spec = None
+            op = asyncio.ensure_future(_first(claude_cli(ask, OPENER_MODEL, OPENER + (motion_hero.OPENER_NOTE.format(**notes) if hero else ""), think=False)))
         return op, claude_cli(ask, extra=CONTINUE + (motion_hero.CONTINUE_NOTE.format(**notes) if hero else ""))
 
     opener, rest = start(hero, label)
@@ -249,15 +265,30 @@ async def split_film(ask: str) -> AsyncIterator[dict]:
     try:
         s = await opener
         if task is not None:  # the writers ran on the noun alone: check the parts agree before scene 1 goes out
-            new = await task
-            if guess and not (new and new["name"] == guess[0]):  # the parts failed or named something else: write again without the guess
-                opener.cancel()
-                await rest.aclose()
-                hero, label, define = (new["name"], new["label"], motion_hero.define_call(new)) if new else (None, None, "")
-                opener, rest = start(hero, label)
-                s = await opener
-            elif new:
+            partial = None
+            while s and guess and EARLY and not task.done():  # MOTION-21: scene 1 need not wait for the last parts, the silhouette comes first
+                partial = ev.hero()
+                if partial and partial["name"] == guess[0]:
+                    break
+                partial = None
+                await asyncio.wait({task}, timeout=0.05)
+            if partial:  # scene 1 goes out on the shapes whole so far; scenes 2+ get the whole drawing
+                yield dict(s, code=motion_hero.put_in(s["code"], hero, True, motion_hero.define_call(partial)))
+                first = False
+                s = None
+                new = await task
+                new = new if new and new["name"] == hero else partial
                 label, define = new["label"], motion_hero.define_call(new)
+            else:
+                new = await task
+                if guess and not (new and new["name"] == guess[0]):  # the parts failed or named something else: write again without the guess
+                    opener.cancel()
+                    await rest.aclose()
+                    hero, label, define = (new["name"], new["label"], motion_hero.define_call(new)) if new else (None, None, "")
+                    opener, rest = start(hero, label, reuse=False)
+                    s = await opener
+                elif new:
+                    label, define = new["label"], motion_hero.define_call(new)
         if s:
             yield dict(s, code=motion_hero.put_in(s["code"], hero, True, define)) if hero else s
             first = False
@@ -266,6 +297,8 @@ async def split_film(ask: str) -> AsyncIterator[dict]:
             first = False
     finally:
         opener.cancel()
+        if spec is not None:
+            spec.cancel()
         await rest.aclose()
         if task is not None and not task.done():
             task.cancel()
