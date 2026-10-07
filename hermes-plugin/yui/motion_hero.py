@@ -238,6 +238,46 @@ def _save(d: dict) -> None:
         pass
 
 
+# MOTION-23: things the kit lacks that films ask about, drawn and checked once, shipped with the plugin. The disk cache wins over the seed.
+SEED_ON = os.environ.get("YUI_MOTION_SEED", "on").strip().lower() != "off"
+SEED_FILE = Path(__file__).with_name("motion_things_seed.json")
+
+
+def _seed() -> dict:
+    global _SEED
+    if _SEED is None:
+        try:
+            d = json.loads(SEED_FILE.read_text())
+            words = {n: re.compile(r"\b(?:" + w + r")\b", re.I) for n, w in (d.get("words") or {}).items() if n in (d.get("things") or {})}
+            _SEED = {"things": d["things"], "words": words}
+        except (OSError, ValueError, KeyError, TypeError, re.error):
+            _SEED = {"things": {}, "words": {}}
+    return _SEED
+
+
+_SEED: Optional[dict] = None
+
+
+def _things() -> dict:
+    """Every drawn thing by name: the seed under the disk cache."""
+    return {**(_seed()["things"] if SEED_ON else {}), **(_load().get("things") or {})}
+
+
+def seeded(ask: str) -> Optional[dict]:
+    """The seed thing the ask is about ({"name", "label", "parts"}), or None. Run after pick() misses; the earliest word wins."""
+    if not SEED_ON or not THINGS_ON or not (ask or "").strip() or SKIP.search(ask):
+        return None
+    best = None
+    for name, pat in _seed()["words"].items():
+        m = pat.search(ask)
+        if m and (best is None or m.start() < best[0]):
+            best = (m.start(), name)
+    if best is None:
+        return None
+    th = _things().get(best[1])
+    return dict(th, name=best[1]) if th else None
+
+
 def cached(ask: str) -> Optional[dict]:
     """The stored hero for this ask: {"name", "label", "parts"}, or {} when the ask was seen and has no body, or None when new."""
     d = _load()
@@ -246,7 +286,7 @@ def cached(ask: str) -> Optional[dict]:
         return None
     if not hit:
         return {}
-    th = (d.get("things") or {}).get(hit)
+    th = _things().get(hit)
     return dict(th, name=hit) if th else None
 
 
@@ -412,7 +452,7 @@ async def draw_new(ask: str, call=None, on_noun=None, on_text=None) -> Optional[
         return None
     if hero is None:
         return None  # a failed call is not remembered: the next ask tries again
-    th = (_load().get("things") or {}).get(hero.get("name")) if hero else None
+    th = _things().get(hero.get("name")) if hero else None
     if hero.get("parts") and th:  # the noun is already drawn from an earlier ask
         hero = {"name": hero["name"], "label": th["label"], "parts": th["parts"]}
     remember(ask, hero or None)

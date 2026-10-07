@@ -196,6 +196,85 @@ ELEPHANT = {"noun": "Elephant", "parts": [
     {"s": "line", "p": [[-40, 0], [-52, 14], [-48, 30]], "w": 2}, {"s": "circle", "x": -30, "y": -10, "r": 2, "f": "ink"}]}
 
 
+class SeedThings(unittest.TestCase):
+    """MOTION-23: things the kit lacks, shipped drawn in motion_things_seed.json: found by word, no parts call, disk cache wins."""
+
+    def setUp(self):
+        import tempfile
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        h = motion.motion_hero
+        for patcher in (mock.patch.object(h, "THINGS_ON", True), mock.patch.object(h, "SEED_ON", True),
+                        mock.patch.dict(os.environ, {h.CACHE_ENV: os.path.join(self._tmp.name, "things.json")})):
+            patcher.start()
+            self.addCleanup(patcher.stop)
+        self.h = h
+
+    def test_the_seed_has_fifteen_checked_things(self):
+        seed = self.h._seed()
+        self.assertGreaterEqual(len(seed["things"]), 15)
+        self.assertEqual(sorted(seed["words"]), sorted(seed["things"]))
+        for name, th in seed["things"].items():
+            self.assertRegex(name, r"^[a-z][a-z0-9_]{1,23}$")
+            self.assertNotIn(name, self.h.WORDS)  # the kit draws those itself
+            self.assertTrue(th["label"])
+            self.assertTrue(10 <= len(th["parts"]) + 1 and all(len(p) == 4 and p[0].startswith("M") for p in th["parts"]), name)
+            self.assertTrue(self.h.define_call(dict(th, name=name)).startswith("if (api.defineThing)"))
+
+    def test_word_forms_find_the_thing(self):
+        s = self.h.seeded
+        self.assertEqual(s("Why a giraffe has such a long neck")["name"], "giraffe")
+        self.assertEqual(s("How do cacti store water?")["name"], "cactus")
+        self.assertEqual(s("How a tower crane lifts steel")["name"], "tower_crane")
+        self.assertEqual(s("How pianos make sound")["name"], "grand_piano")
+        self.assertEqual(s("A wind turbine and its blades")["name"], "windmill")
+        self.assertEqual(s("Camels and elephants in the desert")["name"], "camel")  # the earliest word wins
+        self.assertEqual(s("Why a giraffe has such a long neck")["label"], "giraffe")
+
+    def test_asks_about_no_seed_thing_miss(self):
+        s = self.h.seeded
+        for ask in ("Show the plan for Monday", "How a decision tree splits data", "Explain a pyramid scheme", "A balloon payment on a loan",
+                    "Show the Earth in real 3D with a tractor (api.three)", ""):
+            self.assertIsNone(s(ask), ask)
+
+    def test_the_kit_picks_first_and_the_seed_never_shadows_it(self):
+        self.assertEqual(self.h.pick("How a dog sees"), "dog")
+        self.assertIsNone(self.h.pick("How a giraffe drinks"))
+
+    def test_disk_cache_wins_over_the_seed(self):
+        mine = [["M0 0 L9 9", 0, "fg", 1]]
+        self.h._save({"things": {"giraffe": {"label": "tall one", "parts": mine}}})
+        got = self.h.seeded("Why a giraffe has such a long neck")
+        self.assertEqual((got["label"], got["parts"]), ("tall one", mine))
+        self.assertEqual(self.h.seeded("How an octopus hides")["label"], "octopus")
+
+    def test_off_switch(self):
+        with mock.patch.object(self.h, "SEED_ON", False):
+            self.assertIsNone(self.h.seeded("Why a giraffe has such a long neck"))
+
+    def test_a_seeded_film_makes_no_parts_call(self):
+        seen = []
+
+        async def fake(ask, model="big", extra="", think=True):
+            seen.append(extra)
+            yield {"name": "x", "dur": 3.0, "code": "api.look('dark');\nconst k = 1;"}
+
+        async def boom(*a, **k):
+            raise AssertionError("parts call made")
+
+        async def run():
+            out = []
+            async for s in motion.split_film("Why a giraffe has such a long neck"):
+                out.append(s)
+            return out
+
+        with mock.patch.object(motion, "claude_cli", fake), mock.patch.object(self.h, "draw_new", boom), mock.patch.object(motion, "HERO", True):
+            scenes = asyncio.run(run())
+        self.assertTrue(scenes)
+        self.assertIn('api.defineThing("giraffe"', scenes[0]["code"])
+        self.assertIn('api.thing("giraffe"', scenes[0]["code"])
+
+
 class NewThing(unittest.TestCase):
     """A hero the kit lacks (MOTION-15): one cheap call returns kit shapes, validated, cached by name."""
 
@@ -204,7 +283,7 @@ class NewThing(unittest.TestCase):
         self._tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self._tmp.cleanup)
         h = motion.motion_hero
-        for patcher in (mock.patch.object(h, "THINGS_ON", True), mock.patch.dict(os.environ, {h.CACHE_ENV: os.path.join(self._tmp.name, "things.json")})):
+        for patcher in (mock.patch.object(h, "THINGS_ON", True), mock.patch.object(h, "SEED_ON", False), mock.patch.dict(os.environ, {h.CACHE_ENV: os.path.join(self._tmp.name, "things.json")})):
             patcher.start()
             self.addCleanup(patcher.stop)
         self.h = h

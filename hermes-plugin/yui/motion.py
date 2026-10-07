@@ -271,6 +271,9 @@ async def split_film(ask: str) -> AsyncIterator[dict]:
     hero = motion_hero.pick(ask) if HERO else None
     label, define = hero, ""
     task, early, guess, spec = None, None, None, None
+    seed = motion_hero.seeded(ask) if HERO and not hero else None  # MOTION-23: a thing the plugin ships drawn: no parts call
+    if seed:
+        hero, label, define = seed["name"], seed["label"], motion_hero.define_call(seed)
     if HERO and not hero:
         # MOTION-18: the parts call streams its noun first; the writers start on it while the parts are still coming
         early = asyncio.get_running_loop().create_future()
