@@ -56,6 +56,16 @@ final class MotionFilmTests: XCTestCase {
         Thread.sleep(forTimeInterval: 2.5); shot("a")
         Thread.sleep(forTimeInterval: 4.0); shot("b")
         Thread.sleep(forTimeInterval: 6.0); shot("c")
+        // A tap brings the chrome back: pause, the speaker (the film has say lines), the scrubber.
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.4)).tap()
+        XCTAssertTrue(app.buttons["motion.mute"].waitForExistence(timeout: 5), "a film with say lines shows the mute button")
+        shot("mute")
+        // The chrome may have faded by now; the mute toggle itself is covered by MotionSpeechTests.
+        if app.buttons["motion.mute"].exists {
+            app.buttons["motion.mute"].tap()
+            shot("muted")
+            if app.buttons["motion.mute"].exists { app.buttons["motion.mute"].tap() }
+        }
         XCTAssertTrue(close.exists, "the player closed on its own or fell back")
         close.tap()
         XCTAssertTrue(app.buttons["motion-tile"].waitForExistence(timeout: 10), "closing the film leaves its tile in the thread")

@@ -101,6 +101,8 @@ final class MotionController: NSObject, ObservableObject, WKScriptMessageHandler
     @Published private(set) var total: Double = 0
     @Published private(set) var cues: [MotionCue] = []
     @Published private(set) var sceneCount = 0
+    /// The mute choice, kept across films.
+    @Published private(set) var muted: Bool
     @Published private(set) var firstFrameSeconds: Double?
     /// The screen behind the film: the agent's ink, so the first frame and the edges match the film.
     @Published private(set) var background = Color(red: 11 / 255, green: 8 / 255, blue: 19 / 255)
@@ -116,12 +118,15 @@ final class MotionController: NSObject, ObservableObject, WKScriptMessageHandler
 
     let web: WKWebView
     private let ucc = WKUserContentController()
+    private let defaults: UserDefaults
     private var ready = false
     private var threeSent = false
     private var pending: [String] = []
     private var born = Date()
     private var firstSceneAt: Date?
     private var watchdog: Task<Void, Never>?
+    /// Speaks the film's `say` cues (YUI-319). Tests swap the output.
+    let speech: MotionCueScheduler
     private var cuesByScene: [String: [MotionCue]] = [:]
     private var sceneOrder: [String] = []
 
@@ -130,7 +135,13 @@ final class MotionController: NSObject, ObservableObject, WKScriptMessageHandler
     [{"trigger":{"url-filter":".*","resource-type":["image","style-sheet","script","font","raw","svg-document","media","popup","ping","fetch"]},"action":{"type":"block"}}]
     """
 
-    override init() {
+    static let mutedKey = "yui.motion.muted"
+
+    init(speech output: MotionSpeechOutput? = nil, defaults: UserDefaults = .standard) {
+        self.defaults = defaults
+        let m = defaults.bool(forKey: Self.mutedKey)
+        muted = m
+        speech = MotionCueScheduler(output: output ?? AVMotionSpeech(), muted: m)
         let config = WKWebViewConfiguration()
         config.userContentController = ucc
         config.websiteDataStore = .nonPersistent()
@@ -193,11 +204,13 @@ final class MotionController: NSObject, ObservableObject, WKScriptMessageHandler
     /// The agent has written the last scene.
     func end() { run("window.yui.end()") }
 
-    func pause() { guard phase == .playing else { return }; phase = .paused; run("window.yui.pause(true)") }
-    func resume() { guard phase == .paused else { return }; phase = .playing; run("window.yui.pause(false)") }
+    func pause() { guard phase == .playing else { return }; phase = .paused; speech.pause(); run("window.yui.pause(true)") }
+    func resume() { guard phase == .paused else { return }; phase = .playing; speech.resume(); run("window.yui.pause(false)") }
     func toggle() { phase == .paused ? resume() : pause() }
-    func seek(_ t: Double) { time = min(max(t, 0), total); if phase == .ended { phase = .paused }; run("window.yui.seek(\(time))") }
-    func replay() { time = 0; phase = .playing; run("window.yui.replay()") }
+    func seek(_ t: Double) { time = min(max(t, 0), total); if phase == .ended { phase = .paused; speech.pause() }; speech.seek(time); run("window.yui.seek(\(time))") }
+    func replay() { time = 0; phase = .playing; speech.resume(); speech.replay(); run("window.yui.replay()") }
+    /// The speaker button: the film's voice on or off, for this film and the next.
+    func setMuted(_ on: Bool) { muted = on; defaults.set(on, forKey: Self.mutedKey); speech.setMuted(on) }
     /// The agent's own colours, as the film's palette (the kit's `ink panel fg dim line accent a2 a3 good bad warn`).
     /// Sent before scene 1, so a film that keeps the agent's look draws in it; a film with its own look overrides.
     func setTheme(_ p: YuiTheme.Palette, dark: Bool) {
@@ -213,13 +226,14 @@ final class MotionController: NSObject, ObservableObject, WKScriptMessageHandler
     }
 
     /// Reduce Motion: the last frame, still. It follows the film as scenes land.
-    func setStill(_ on: Bool) { run("window.yui.still(\(on ? "true" : "false"))") }
+    func setStill(_ on: Bool) { speech.setInOrder(on); run("window.yui.still(\(on ? "true" : "false"))") }
 
     /// The `say` cues in film order, as one line for VoiceOver.
     var spoken: String { cues.map(\.text).joined(separator: " ") }
 
     /// Stop everything: the player leaves the screen.
     func stop() {
+        speech.stop()
         watchdog?.cancel()
         ucc.removeScriptMessageHandler(forName: "yui")
         web.stopLoading()
@@ -228,6 +242,7 @@ final class MotionController: NSObject, ObservableObject, WKScriptMessageHandler
     func fail(_ reason: String) {
         guard !isFailed else { return }
         phase = .failed(reason)
+        speech.stop()
         watchdog?.cancel()
         run("window.yui.pause(true)")
         onFailure?(reason)
@@ -267,12 +282,14 @@ final class MotionController: NSObject, ObservableObject, WKScriptMessageHandler
             if phase == .playing || phase == .paused || phase == .loading { phase = .ended; onEnded?() }
         case .time(let t, let tot, _):
             time = t; total = tot
+            speech.tick(t)
         case .timeline(let tot, _, _):
             total = tot
         case .cues(let scene, let new):
             if cuesByScene[scene] == nil { sceneOrder.append(scene) }
             cuesByScene[scene] = new
             cues = sceneOrder.flatMap { cuesByScene[$0] ?? [] }.sorted { $0.from < $1.from }
+            speech.setCues(cues)
         case .tap(let id):
             if let id { onHit?(id) } else { onChromeTap?() }
         case .error, .slow: break

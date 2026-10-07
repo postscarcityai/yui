@@ -32,6 +32,7 @@ struct MotionView<Fallback: View, After: View>: View {
                     .accessibilityAddTraits(.isImage)
                 if controller.phase == .ended { after().transition(.opacity) }
                 if chrome && !reduce { controls.transition(.opacity) }
+                if reduce && hasVoice { reduceMute.transition(.opacity) }
             }
         }
         .overlay(alignment: .topTrailing) { if !controller.isFailed { closeButton } }
@@ -50,6 +51,30 @@ struct MotionView<Fallback: View, After: View>: View {
     private var label: String {
         let words = controller.spoken
         return words.isEmpty ? "Film" : "Film: \(words)"
+    }
+
+    private var hasVoice: Bool { !controller.cues.isEmpty }
+
+    private var muteButton: some View {
+        Button {
+            controller.setMuted(!controller.muted)
+            poke(toggle: false)
+        } label: {
+            Image(systemName: controller.muted ? "speaker.slash.fill" : "speaker.wave.2.fill")
+                .font(.system(size: 18, weight: .black))
+                .foregroundStyle(.white)
+                .frame(width: 44, height: 44)
+                .background(.black.opacity(0.5), in: Circle())
+                .overlay(Circle().stroke(.white.opacity(0.7), lineWidth: 1.5))
+        }
+        .buttonStyle(BounceButtonStyle())
+        .accessibilityLabel(controller.muted ? "Unmute film voice" : "Mute film voice")
+        .accessibilityIdentifier("motion.mute")
+    }
+
+    /// Reduce Motion hides the transport; the voice still needs its mute.
+    private var reduceMute: some View {
+        VStack { Spacer(); HStack { muteButton; Spacer() }.padding(.horizontal, 16).padding(.bottom, 22) }
     }
 
     private var closeButton: some View {
@@ -84,6 +109,8 @@ struct MotionView<Fallback: View, After: View>: View {
                 .buttonStyle(BounceButtonStyle())
                 .accessibilityLabel(controller.phase == .ended ? "Replay" : (controller.phase == .paused ? "Play" : "Pause"))
                 .accessibilityIdentifier("motion.playpause")
+
+                if hasVoice { muteButton }
 
                 Slider(value: Binding(get: { scrubbing ? scrub : controller.time },
                                       set: { scrub = $0; controller.seek($0) }),
