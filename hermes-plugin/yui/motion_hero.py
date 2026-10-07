@@ -20,6 +20,7 @@ import json
 import math
 import os
 import re
+import time
 from pathlib import Path
 from typing import Optional
 
@@ -281,7 +282,25 @@ def parse_reply(text: str) -> Optional[dict]:
     return {"name": name, "label": str(d["noun"]).strip().lower()[:24], "parts": parts}
 
 
-async def _call_model(ask: str) -> str:
+WARM_ON = os.environ.get("YUI_MOTION_WARM", "on").strip().lower() != "off"  # a claude kept open for this call (MOTION-18); off = start one per call
+
+
+def _warm():
+    try:
+        from . import warm
+    except ImportError:  # loaded by file path (yuigui site/scripts/motion/look_set.py)
+        import importlib.util as ilu
+        import sys
+        warm = sys.modules.get("yui_motion_warm")
+        if warm is None:
+            spec = ilu.spec_from_file_location("yui_motion_warm", Path(__file__).with_name("warm.py"))
+            warm = ilu.module_from_spec(spec)
+            sys.modules["yui_motion_warm"] = warm
+            spec.loader.exec_module(warm)
+    return warm
+
+
+async def _call_cold(ask: str) -> str:
     env = dict(os.environ, USER=os.environ.get("USER") or "yui", MAX_THINKING_TOKENS="0")
     cmd = ["claude", "-p", "--model", THING_MODEL, "--tools", "", "--no-session-persistence", "--effort", "low", "--strict-mcp-config",
            "--mcp-config", '{"mcpServers":{}}', "--disable-slash-commands", THING_PROMPT.format(ask=ask[:400])]
@@ -298,16 +317,48 @@ async def _call_model(ask: str) -> str:
                 pass
 
 
-async def draw_new(ask: str, call=None) -> Optional[dict]:
+NOUN = re.compile(r'"noun"\s*:\s*(?:null|"([^"\n]{0,40})")')
+
+
+def noun_watch(on_noun):
+    """An on_text callback for the streaming call: tells `on_noun(noun or None)` once, the moment the reply's first field is whole."""
+    seen = []
+
+    def on_text(text: str) -> None:
+        if seen:
+            return
+        m = NOUN.search(text)
+        if m:
+            seen.append(1)
+            on_noun(m.group(1) or None)
+    return on_text
+
+
+async def _call_model(ask: str, on_noun=None) -> str:
+    """The parts call: on the warm process when there is one, else (warm off or failed) one `claude -p` per call.
+    `on_noun` hears the noun while the parts are still being written (warm only; MOTION-18)."""
+    if WARM_ON:
+        t0 = time.time()
+        try:
+            return await _warm().ask(THING_PROMPT.format(ask=ask[:400]), THING_MODEL, CALL_TIMEOUT,
+                                     noun_watch(on_noun) if on_noun else None)
+        except Exception:
+            if CALL_TIMEOUT - (time.time() - t0) < 4:
+                raise
+    return await _call_cold(ask)
+
+
+async def draw_new(ask: str, call=None, on_noun=None) -> Optional[dict]:
     """The hero for an ask the word match missed: {"name", "label", "parts"} (parts None = a kit thing), or None for no hero.
-    Cached by name; never raises. `call` is the model call (a test seam): async (ask) -> text."""
+    Cached by name; never raises. `call` is the model call (a test seam): async (ask) -> text.
+    `on_noun(noun or None)` is called early, while the model is still writing the parts (the film starts its writers on it)."""
     if not THINGS_ON or not (ask or "").strip() or SKIP.search(ask):
         return None
     hit = cached(ask)
     if hit is not None:
         return hit or None
     try:
-        hero = parse_reply(await (call or _call_model)(ask))
+        hero = parse_reply(await (call(ask) if call else _call_model(ask, on_noun)))
     except Exception:
         return None
     if hero is None:

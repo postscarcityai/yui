@@ -225,16 +225,39 @@ async def split_film(ask: str) -> AsyncIterator[dict]:
     call may draw a hero the kit lacks from kit shapes, cached by name (motion_hero.draw_new, MOTION-15)."""
     hero = motion_hero.pick(ask) if HERO else None
     label, define = hero, ""
+    task, early, guess = None, None, None
     if HERO and not hero:
-        new = await motion_hero.draw_new(ask)  # one cheap call, cached by name (MOTION-15); None = no hero, the film goes on as before
-        if new:
-            hero, label, define = new["name"], new["label"], motion_hero.define_call(new)
-    notes = dict(name=hero, label=label)
-    opener = asyncio.ensure_future(_first(claude_cli(ask, OPENER_MODEL, OPENER + (motion_hero.OPENER_NOTE.format(**notes) if hero else ""), think=False)))
-    rest = claude_cli(ask, extra=CONTINUE + (motion_hero.CONTINUE_NOTE.format(**notes) if hero else ""))
+        # MOTION-18: the parts call streams its noun first; the writers start on it while the parts are still coming
+        early = asyncio.get_running_loop().create_future()
+        task = asyncio.ensure_future(motion_hero.draw_new(ask, on_noun=lambda n: early.done() or early.set_result(n)))
+        await asyncio.wait({task, early}, return_when=asyncio.FIRST_COMPLETED)
+        if task.done():  # cached, or no streaming: the hero is known
+            new, task = task.result(), None
+            if new:
+                hero, label, define = new["name"], new["label"], motion_hero.define_call(new)
+        elif early.result() and motion_hero.noun_id(early.result()):
+            hero, label = motion_hero.noun_id(early.result()), early.result().strip().lower()[:24]
+            guess = (hero, label)
+
+    def start(hero, label):
+        notes = dict(name=hero, label=label)
+        op = asyncio.ensure_future(_first(claude_cli(ask, OPENER_MODEL, OPENER + (motion_hero.OPENER_NOTE.format(**notes) if hero else ""), think=False)))
+        return op, claude_cli(ask, extra=CONTINUE + (motion_hero.CONTINUE_NOTE.format(**notes) if hero else ""))
+
+    opener, rest = start(hero, label)
     first = True
     try:
         s = await opener
+        if task is not None:  # the writers ran on the noun alone: check the parts agree before scene 1 goes out
+            new = await task
+            if guess and not (new and new["name"] == guess[0]):  # the parts failed or named something else: write again without the guess
+                opener.cancel()
+                await rest.aclose()
+                hero, label, define = (new["name"], new["label"], motion_hero.define_call(new)) if new else (None, None, "")
+                opener, rest = start(hero, label)
+                s = await opener
+            elif new:
+                label, define = new["label"], motion_hero.define_call(new)
         if s:
             yield dict(s, code=motion_hero.put_in(s["code"], hero, True, define)) if hero else s
             first = False
@@ -244,6 +267,24 @@ async def split_film(ask: str) -> AsyncIterator[dict]:
     finally:
         opener.cancel()
         await rest.aclose()
+        if task is not None and not task.done():
+            task.cancel()
+
+
+def prime(config_extra: Optional[dict] = None) -> None:
+    """Start the warm `claude` for the film's parts call (MOTION-18) when this host makes films; called when the adapter connects."""
+    try:
+        if HERO and motion_hero.THINGS_ON and motion_hero.WARM_ON and mode(config_extra) != "off" and maker(config_extra) is claude_cli:
+            motion_hero._warm().prime(motion_hero.THING_MODEL)
+    except Exception:
+        pass
+
+
+def unprime() -> None:
+    try:
+        motion_hero._warm().shutdown()
+    except Exception:
+        pass
 
 
 async def _first(agen) -> Optional[dict]:

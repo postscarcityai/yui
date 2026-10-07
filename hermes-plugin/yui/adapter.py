@@ -448,6 +448,7 @@ class YuiAdapter(BasePlatformAdapter):
         await self._report_commands()
         await self._report_controls()
         self._mark_connected()
+        motion.prime(self.config.extra)  # MOTION-18: a warm claude for the film's parts call
         self._tasks = [
             asyncio.create_task(self._heartbeat_loop()),
             asyncio.create_task(self._poll_loop()),
@@ -461,6 +462,7 @@ class YuiAdapter(BasePlatformAdapter):
 
     async def disconnect(self) -> None:
         self._running = False
+        motion.unprime()
         self._mark_disconnected()
         if self._client:
             try:  # goodbye: the app shows offline at once instead of asleep

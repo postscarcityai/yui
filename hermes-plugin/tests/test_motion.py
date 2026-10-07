@@ -210,7 +210,7 @@ class NewThing(unittest.TestCase):
         self.calls = []
 
     def call(self, reply):
-        async def f(ask):
+        async def f(ask, on_noun=None):
             self.calls.append(ask)
             return reply if isinstance(reply, str) else json.dumps(reply)
         return f
@@ -287,6 +287,143 @@ class NewThing(unittest.TestCase):
             with mock.patch.object(motion, "claude_cli", fake), mock.patch.object(self.h, "_call_model", self.call("nope")):
                 return [s async for s in motion.split_film("A calm mood")]
         self.assertEqual(asyncio.run(go())[0]["code"], "api.say('x');")
+
+    def streaming(self, reply, noun_after=0.0, done_after=0.2):
+        """A parts call that tells on_noun first and finishes later, like the warm process does."""
+        async def f(ask, on_noun=None):
+            self.calls.append(ask)
+            await asyncio.sleep(noun_after)
+            if on_noun:
+                on_noun(reply.get("noun") if isinstance(reply, dict) else None)
+            await asyncio.sleep(done_after)
+            return reply if isinstance(reply, str) else json.dumps(reply)
+        return f
+
+    def test_writers_start_on_the_noun_before_the_parts_are_whole(self):
+        order = []
+
+        async def fake(ask, model="big", extra="", think=True):
+            order.append(("start", model, "elephant" in extra))
+            yield {"name": "a" if model == motion.OPENER_MODEL else "s2", "dur": 3, "code": "api.say('x');" if model == motion.OPENER_MODEL else "api.say('y');"}
+
+        async def go():
+            real = self.streaming(ELEPHANT, 0.0, 0.3)
+
+            async def watched(ask, on_noun=None):
+                def heard(n):
+                    order.append(("noun", n))
+                    on_noun(n)
+                r = await real(ask, heard)
+                order.append(("parts whole",))
+                return r
+            with mock.patch.object(motion, "claude_cli", fake), mock.patch.object(self.h, "_call_model", watched):
+                return [s async for s in motion.split_film("How an elephant keeps cool")]
+        out = asyncio.run(go())
+        kinds = [o[0] for o in order]
+        self.assertLess(kinds.index("noun"), kinds.index("parts whole"))
+        self.assertEqual([o for o in order if o[0] == "start"], [("start", motion.OPENER_MODEL, True), ("start", "big", True)])
+        self.assertIn("api.defineThing", out[0]["code"])
+
+    def test_a_noun_whose_parts_then_fail_restarts_the_writers_plain(self):
+        starts = []
+
+        async def fake(ask, model="big", extra="", think=True):
+            starts.append("HERO" in extra)
+            await asyncio.sleep(0.05)
+            yield {"name": "a", "dur": 3, "code": "api.say('x');"}
+
+        async def go():
+            bad = dict(ELEPHANT, parts=[{"s": "circle", "x": 0, "y": 0, "r": 4}])
+            with mock.patch.object(motion, "claude_cli", fake), mock.patch.object(self.h, "_call_model", self.streaming(bad, 0.0, 0.01)):
+                return [s async for s in motion.split_film("How an elephant keeps cool")]
+        out = asyncio.run(go())
+        self.assertEqual(starts, [True, False, False])  # the opener on the noun, then plain again (the continuation writer only starts when iterated)
+        self.assertEqual(out[0]["code"], "api.say('x');")
+
+    def test_a_null_noun_starts_the_writers_plain_at_once(self):
+        starts = []
+
+        async def fake(ask, model="big", extra="", think=True):
+            starts.append("HERO" in extra)
+            yield {"name": "a", "dur": 3, "code": "api.say('x');"}
+
+        async def go():
+            with mock.patch.object(motion, "claude_cli", fake), mock.patch.object(self.h, "_call_model", self.streaming({"noun": None}, 0.0, 0.01)):
+                return [s async for s in motion.split_film("A calm mood")]
+        self.assertEqual(asyncio.run(go())[0]["code"], "api.say('x');")
+        self.assertEqual(starts, [False, False])
+
+
+FAKE_CLAUDE = """#!/usr/bin/env python3
+import json, sys, os
+print(json.dumps({"type": "system", "subtype": "init"}), flush=True)
+for line in sys.stdin:
+    q = json.loads(line)["message"]["content"]
+    if "DIE" in q:
+        os._exit(3)
+    out = '{"noun":"ox","parts":[]}' + str(os.getpid())
+    for chunk in (out[:12], out[12:]):
+        print(json.dumps({"type": "stream_event", "event": {"type": "content_block_delta", "delta": {"type": "text_delta", "text": chunk}}}), flush=True)
+    print(json.dumps({"type": "assistant", "message": {"content": [{"type": "text", "text": out}]}}), flush=True)
+    print(json.dumps({"type": "result", "result": out}), flush=True)
+"""
+
+
+class WarmProcess(unittest.TestCase):
+    """The warm claude (MOTION-18): stream-json in and out, one call per process, a fresh one ready, a dead one replaced."""
+
+    def setUp(self):
+        import tempfile
+        import stat
+        import importlib
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        exe = Path(self._tmp.name) / "claude"
+        exe.write_text(FAKE_CLAUDE)
+        exe.chmod(exe.stat().st_mode | stat.S_IEXEC)
+        patcher = mock.patch.dict(os.environ, {"PATH": self._tmp.name + os.pathsep + os.environ["PATH"]})
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.warm = importlib.import_module("warm")
+        self.warm._slot.clear()
+        self.warm.stats.update(spawned=0, calls=0, retries=0)
+
+    def test_twenty_calls_in_a_row_each_on_its_own_process_and_the_noun_streams_early(self):
+        heard, pids = [], set()
+
+        async def go():
+            for i in range(20):
+                if i % 2:
+                    await asyncio.sleep(0.15)  # films come minutes apart: the next process is up by then
+                nouns = []
+                out = await self.warm.ask("q%d" % i, "m", 10, motion.motion_hero.noun_watch(nouns.append))
+                heard.append(nouns)
+                pids.add(out.rsplit("}", 1)[1])
+            self.warm.shutdown()
+        asyncio.run(go())
+        self.assertEqual(heard, [["ox"]] * 20)
+        self.assertEqual(len(pids), 20)  # one ask never sees another ask's chat
+        self.assertEqual(self.warm.stats["calls"], 20)
+        self.assertEqual(self.warm.stats["retries"], 0)
+
+    def test_a_process_that_dies_is_replaced_and_the_call_goes_through(self):
+        async def go():
+            await self.warm.ask("first", "m", 10)
+            await asyncio.sleep(0.2)
+            self.warm._slot["m"].kill()  # the waiting process is killed
+            await asyncio.sleep(0.1)
+            out = await self.warm.ask("after the kill", "m", 10)
+            self.warm.shutdown()
+            return out
+        self.assertIn('"noun":"ox"', asyncio.run(go()))
+
+    def test_a_process_that_dies_mid_call_is_retried_once_then_raises(self):
+        async def go():
+            with self.assertRaises(Exception):
+                await self.warm.ask("DIE now", "m", 6)
+            self.assertEqual(self.warm.stats["retries"], 1)
+            self.warm.shutdown()
+        asyncio.run(go())
 
 
 class Compat(unittest.TestCase):
