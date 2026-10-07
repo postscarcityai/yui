@@ -260,11 +260,11 @@ def remember(ask: str, hero: Optional[dict]) -> None:
 
 def parse_reply(text: str) -> Optional[dict]:
     """{"name", "label", "parts"} from the model's JSON, {} for 'no single thing', None when unusable."""
-    m = re.search(r"\{.*\}", text or "", re.S)
-    if not m:
+    i = (text or "").find("{")
+    if i < 0:
         return None
     try:
-        d = json.loads(m.group(0))
+        d, _ = json.JSONDecoder().raw_decode(text[i:])  # the first object; a second line after it is ignored (MOTION-20)
     except ValueError:
         return None
     if not isinstance(d, dict):

@@ -215,6 +215,14 @@ class NewThing(unittest.TestCase):
             return reply if isinstance(reply, str) else json.dumps(reply)
         return f
 
+    def test_a_second_line_after_the_reply_is_ignored(self):
+        spec = {"noun": "elephant", "parts": [
+            {"s": "ellipse", "x": 5, "y": 8, "rx": 33, "ry": 21, "f": "a2"}, {"s": "circle", "x": -28, "y": -6, "r": 14, "f": "a2"},
+            {"s": "rect", "x": -20, "y": 30, "w": 9, "h": 20, "f": "ink"}, {"s": "rect", "x": 10, "y": 30, "w": 9, "h": 20, "f": "ink"},
+            {"s": "line", "p": [[-40, -2], [-50, 20]], "w": 2}, {"s": "ellipse", "x": 35, "y": 6, "rx": 8, "ry": 12, "f": "warn"}]}
+        hero = self.h.parse_reply(json.dumps(spec) + "\n{\"note\": 1}")
+        self.assertEqual(hero["name"], "elephant")
+
     def test_parts_become_kit_part_lists_and_nothing_else(self):
         hero = asyncio.run(self.h.draw_new("How an elephant keeps cool", self.call("```json\n" + json.dumps(ELEPHANT) + "\n```")))
         self.assertEqual(hero["name"], "elephant")
