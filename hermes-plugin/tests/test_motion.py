@@ -136,6 +136,15 @@ class Compat(unittest.TestCase):
     def test_a_phone_that_plays_it_gets_it_as_is(self):
         self.assertEqual(compat.downgrade(self.FILM, compat.MOTION_BUILD), self.FILM)
 
+    def test_build_545_is_the_line(self):
+        self.assertEqual(compat.MOTION_BUILD, 545)
+        self.assertEqual(compat.downgrade(self.FILM, 562), self.FILM)
+        self.assertEqual(compat.downgrade(self.FILM, 545), self.FILM)
+        self.assertIn("=== scene", compat.downgrade(self.FILM, 562))
+        self.assertNotIn("=== scene", compat.downgrade(self.FILM, 538))
+        self.assertNotIn("motion", compat.note(562))
+        self.assertIn("motion", compat.note(538))
+
     def test_a_deck_page_is_a_page(self):
         out = compat.downgrade(f'```yui\ndeck "D"\nmotion "{ASK}"\nend\n```', 300)
         self.assertIn('page "How a heart pumps"', out)

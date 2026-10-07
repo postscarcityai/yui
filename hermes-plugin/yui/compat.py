@@ -67,10 +67,8 @@ MARKS_BUILD = 492
 # store, views and delete reached main at 428 (7b182c7); 450 is the first VALID build from it.
 TABLES_BUILD = 450
 # MOTION-1: the app plays `motion` films (a streamed block of scenes, yuigui spec/MOTION.md 0.5). The
-# MotionView and parser are not on a VALID build yet, so this is a sentinel: every phone gets the sketch
-# below and agents are told to skip it. Set it to the app commit's count (git rev-list --count) once the
-# build that plays films goes VALID.
-MOTION_BUILD = 1_000_000
+# first VALID build with MotionView and the film parser (f65d54d, commit 545). Phones below it get the sketch.
+MOTION_BUILD = 545
 MARK_KINDS = {"venn", "contour", "region", "doodle", "tap", "swipe"}
 
 # First app build whose parser knows each preset (git rev-list --count of the
