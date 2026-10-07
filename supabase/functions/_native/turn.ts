@@ -483,6 +483,12 @@ async function oneTurn(store: Store, agent: NativeAgent, rows: Row[], opts: Turn
       log(`${p.name}: ${e.message}`);
       return { handled: false };
     }
+    if (e instanceof HouseKeyDry) {
+      await say(restingScreen(), { turn: real, native: { dry: true } });
+      if (real.length) await store.markHandled(real);
+      log(`${p.name}: the house key is dry, showed the resting screen`);
+      return { handled: true };
+    }
     if (!(e instanceof ModelError)) throw e;
     const why = own ? `${e.message} (this is your own ${own.provider} key)` : e.message;
     await say(`${p.name} couldn't answer that: ${why}`, { turn: real });
@@ -682,6 +688,11 @@ async function makeFilm(store: Store, agent: NativeAgent, ask: string, real: str
   } catch (e: any) {
     if (e instanceof Stopped) throw e;
     log(`${p.name}: film failed: ${e?.message ?? e}`);
+    // A dry house key: no film and no words row either. The reply already landed, the phone draws its own sketch.
+    if (e instanceof HouseKeyDry) {
+      if (last) await store.doing(last, null);
+      return;
+    }
   }
   if (last) await store.doing(last, null);
   if (n) { log(`${p.name}: film ${film}, ${n} scene(s) for ${ask.slice(0, 60).replace(/\n/g, " ")}`); return; }
@@ -745,6 +756,11 @@ export async function runJob(store: Store, jobId: string, opts: TurnOptions): Pr
     // A model that is away gets another go from the tick; the third try tells the person.
     if (e instanceof ModelUnavailable && job.tries < 3) {
       await store.finishJob(job.id, "queued", { error: String(e.message).slice(0, 200) });
+      return result;
+    }
+    if (e instanceof HouseKeyDry) {
+      await store.finishJob(job.id, "failed", { dry: true });
+      result.replies.push(await store.reply(agent, restingScreen(), { native: { meal: job.id, failed: true, dry: true } }));
       return result;
     }
     await store.finishJob(job.id, "failed", { error: String(e?.message ?? e).slice(0, 200) });
@@ -1213,6 +1229,7 @@ async function studyModel<T>(store: Store, agent: NativeAgent, opts: TurnOptions
     }
   } catch (e: any) {
     if (e instanceof ModelUnavailable) return { say: `${p.name} can't reach its model right now. Send that again in a minute.` };
+    if (e instanceof HouseKeyDry) return { say: restingScreen() };
     if (!(e instanceof ModelError)) throw e;
     return { say: `${p.name} couldn't answer that: ${own ? `${e.message} (this is your own ${own.provider} key)` : e.message}` };
   }
@@ -2131,10 +2148,43 @@ async function ask(opts: TurnOptions, pv: Provider, req: Record<string, unknown>
     return await client.complete(body, { stream: true, onDelta });
   } catch (e) {
     if (opts.signal?.aborted) throw new Stopped(); // the person's Stop ended the call, not the model
+    if (pv === opts.provider && dryKey(e)) {
+      noteDry(opts, (e as Error).message);
+      throw new HouseKeyDry((e as ModelError).status, (e as Error).message);
+    }
     if (!(e instanceof ModelUnavailable) || onDelta) throw e; // a stream already played into onDelta is not replayed
     await new Promise((r) => setTimeout(r, Math.min((e.retryAfter ?? 2) * 1000, 8000)));
     return await client.complete(body, { stream: true });
   }
+}
+
+/** Yui's own OpenRouter key is out of credit (YUI-322). Thrown only for a call on the house key; a person's own key keeps the plain ModelError. */
+export class HouseKeyDry extends ModelError {}
+
+const DRY = /credits|spending limit|insufficient (balance|funds)|payment required/i;
+/** The server said "no credit": a 402, or the credits / spending-limit wording openai.ts names, also mid-stream. */
+function dryKey(e: unknown): boolean {
+  return e instanceof ModelError && !(e instanceof HouseKeyDry) && (e.status === 402 || DRY.test(e.message));
+}
+
+export const DRY_TAG = "house-key-dry";
+const DRY_EVERY_MS = 3_600_000;
+let dryAt = -Infinity;
+/** Tells an operator once an hour (per function instance) that the house key is dry; never one line per turn. */
+function noteDry(opts: TurnOptions, why: string): void {
+  const now = (opts.now ?? Date.now)();
+  if (now - dryAt < DRY_EVERY_MS) return;
+  dryAt = now;
+  (opts.log ?? ((m: string) => console.warn(m)))(`${DRY_TAG}: Yui's OpenRouter key is out of credit, native turns on it show the resting screen (${why.slice(0, 120)})`);
+}
+/** Test hook: forget when the dry line last went out. */
+export function resetDryLog(): void {
+  dryAt = -Infinity;
+}
+
+/** What a person sees when the house key is dry: one line that Yui is resting, then a card that does something. */
+export function restingScreen(): string {
+  return `Yui is resting for now. Add your own model key to keep going.\n\`\`\`yui\ncard "Yui is resting" body="The free model is out of juice. Your own key works right now." cta="Add my key" url=yui://settings/key\n\`\`\``;
 }
 
 export function outOfTurns(limit: number): string {
