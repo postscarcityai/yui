@@ -4,6 +4,7 @@
 """
 
 import asyncio
+import json
 import os
 import sys
 import unittest
@@ -119,6 +120,15 @@ class SplitFilm(unittest.TestCase):
 class Hero(unittest.TestCase):
     """The kit draws the hero (MOTION-14): picked from the ask by words, written into scene 1, kept in later scenes."""
 
+    def setUp(self):  # no test reaches the model for a hero the kit lacks
+        import tempfile
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        h = motion.motion_hero
+        for patcher in (mock.patch.object(h, "THINGS_ON", False), mock.patch.dict(os.environ, {h.CACHE_ENV: os.path.join(self._tmp.name, "things.json")})):
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
     def test_pick_by_words(self):
         pick = motion.motion_hero.pick
         self.assertEqual(pick("How a heart pumps blood"), "heart")
@@ -174,6 +184,107 @@ class Hero(unittest.TestCase):
 
         async def go():
             with mock.patch.object(motion, "claude_cli", fake):
+                return [s async for s in motion.split_film("A calm mood")]
+        self.assertEqual(asyncio.run(go())[0]["code"], "api.say('x');")
+
+
+ELEPHANT = {"noun": "Elephant", "parts": [
+    {"s": "ellipse", "x": 5, "y": 8, "rx": 33, "ry": 21, "f": "a2"}, {"s": "circle", "x": -28, "y": -6, "r": 14, "f": "a2"},
+    {"s": "rect", "x": -20, "y": 30, "w": 9, "h": 20, "f": "ink"}, {"s": "rect", "x": 24, "y": 30, "w": 9, "h": 20, "f": "ink"},
+    {"s": "poly", "p": [[-36, -12], [-52, 0], [-44, 22], [-34, 10]], "f": "accent", "smooth": True},
+    {"s": "line", "p": [[-40, 0], [-52, 14], [-48, 30]], "w": 2}, {"s": "circle", "x": -30, "y": -10, "r": 2, "f": "ink"}]}
+
+
+class NewThing(unittest.TestCase):
+    """A hero the kit lacks (MOTION-15): one cheap call returns kit shapes, validated, cached by name."""
+
+    def setUp(self):
+        import tempfile
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        h = motion.motion_hero
+        for patcher in (mock.patch.object(h, "THINGS_ON", True), mock.patch.dict(os.environ, {h.CACHE_ENV: os.path.join(self._tmp.name, "things.json")})):
+            patcher.start()
+            self.addCleanup(patcher.stop)
+        self.h = h
+        self.calls = []
+
+    def call(self, reply):
+        async def f(ask):
+            self.calls.append(ask)
+            return reply if isinstance(reply, str) else json.dumps(reply)
+        return f
+
+    def test_parts_become_kit_part_lists_and_nothing_else(self):
+        hero = asyncio.run(self.h.draw_new("How an elephant keeps cool", self.call("```json\n" + json.dumps(ELEPHANT) + "\n```")))
+        self.assertEqual(hero["name"], "elephant")
+        self.assertEqual(len(hero["parts"]), 7)
+        self.assertTrue(all(len(p) == 4 and p[0].startswith("M") for p in hero["parts"]))
+        line = self.h.define_call(hero)
+        self.assertTrue(line.startswith('if (api.defineThing) api.defineThing("elephant", [['))
+
+    def test_second_ask_for_the_same_name_hits_the_cache(self):
+        asyncio.run(self.h.draw_new("How an elephant keeps cool", self.call(ELEPHANT)))
+        again = asyncio.run(self.h.draw_new("How an elephant keeps cool", self.call("not json")))
+        self.assertEqual(again["name"], "elephant")
+        self.assertEqual(len(self.calls), 1)
+        other = asyncio.run(self.h.draw_new("Why elephants never forget", self.call(ELEPHANT)))  # new words, same noun: parts reused
+        self.assertEqual(other["parts"], again["parts"])
+
+    def test_no_single_thing_is_remembered_as_none(self):
+        self.assertIsNone(asyncio.run(self.h.draw_new("Show the plan for Monday", self.call({"noun": None}))))
+        self.assertIsNone(asyncio.run(self.h.draw_new("Show the plan for Monday", self.call(ELEPHANT))))
+        self.assertEqual(len(self.calls), 1)
+
+    def test_bad_replies_give_no_hero_and_are_not_remembered(self):
+        bad = [{"noun": "elephant", "parts": [{"s": "path", "d": "M0 0 L9 9"}] * 6},      # free-form svg is not in the vocabulary
+               {"noun": "elephant", "parts": ELEPHANT["parts"][:3]},                      # too few parts
+               {"noun": "elephant", "parts": [dict(p, f="red") if p.get("f") else p for p in ELEPHANT["parts"]]},  # a colour the kit lacks
+               {"noun": "elephant", "parts": [{"s": "circle", "x": 0, "y": 0, "r": 4, "f": "ink"}] * 6},           # too small to read
+               "sorry, I cannot", ""]
+        for r in bad:
+            self.assertIsNone(asyncio.run(self.h.draw_new("How an elephant keeps cool", self.call(r))), r)
+        self.assertEqual(len(self.calls), len(bad))
+
+    def test_call_that_raises_or_times_out_is_no_hero(self):
+        async def boom(ask):
+            raise OSError("no claude")
+        self.assertIsNone(asyncio.run(self.h.draw_new("How an elephant keeps cool", boom)))
+
+    def test_numbers_are_clamped_and_names_made_safe(self):
+        spec = dict(ELEPHANT, noun='Hot-Air "Balloon"; x', parts=[dict(p, x=9999) if "x" in p else p for p in ELEPHANT["parts"]])
+        hero = self.h.parse_reply(json.dumps(spec))
+        self.assertRegex(hero["name"], r"^[a-z][a-z0-9_]+$")
+        self.assertNotIn("9999", self.h.define_call(hero))
+
+    def test_a_noun_the_kit_draws_uses_the_kit_drawing(self):
+        hero = asyncio.run(self.h.draw_new("How a goldfish breathes", self.call({"noun": "fish", "parts": []})))
+        self.assertEqual(hero["name"], "fish")
+        self.assertEqual(self.h.define_call(hero), "")
+
+    def test_film_registers_the_drawn_hero_in_every_scene(self):
+        notes = []
+
+        async def fake(ask, model="big", extra="", think=True):
+            notes.append(extra)
+            yield {"name": "a" if model == motion.OPENER_MODEL else "s2", "dur": 3, "code": "api.say('x');" if model == motion.OPENER_MODEL else "api.thing('elephant', 1, 2, 3);"}
+
+        async def go():
+            with mock.patch.object(motion, "claude_cli", fake), mock.patch.object(self.h, "_call_model", self.call(ELEPHANT)):
+                return [s async for s in motion.split_film("How an elephant keeps cool")]
+        out = asyncio.run(go())
+        self.assertIn("api.defineThing", out[0]["code"])
+        self.assertLess(out[0]["code"].index("api.defineThing"), out[0]["code"].index('api.thing("elephant"'))
+        self.assertIn("api.defineThing", out[1]["code"])  # the model's own api.thing call needs the thing registered too
+        self.assertTrue(all("elephant" in n for n in notes))
+
+    def test_failed_call_leaves_the_film_as_it_was(self):
+        async def fake(ask, model="big", extra="", think=True):
+            assert "HERO" not in extra
+            yield {"name": "a", "dur": 3, "code": "api.say('x');"}
+
+        async def go():
+            with mock.patch.object(motion, "claude_cli", fake), mock.patch.object(self.h, "_call_model", self.call("nope")):
                 return [s async for s in motion.split_film("A calm mood")]
         self.assertEqual(asyncio.run(go())[0]["code"], "api.say('x');")
 

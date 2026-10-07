@@ -221,18 +221,25 @@ async def split_film(ask: str) -> AsyncIterator[dict]:
     """Scene 1 from a small fast model, the rest from the big one, both started at once. Scene 1 plays the moment
     the small model finishes it; the rest follow in order. If the small model gives nothing, the film starts at scene 2.
     The hero object is picked from the ask by a word match and drawn by the kit (motion_hero): scene 1 gets it written
-    in, scenes 2+ are told its name and get it written in when they leave it out."""
+    in, scenes 2+ are told its name and get it written in when they leave it out. When the word match finds nothing, one cheap
+    call may draw a hero the kit lacks from kit shapes, cached by name (motion_hero.draw_new, MOTION-15)."""
     hero = motion_hero.pick(ask) if HERO else None
-    opener = asyncio.ensure_future(_first(claude_cli(ask, OPENER_MODEL, OPENER + (motion_hero.OPENER_NOTE.format(name=hero) if hero else ""), think=False)))
-    rest = claude_cli(ask, extra=CONTINUE + (motion_hero.CONTINUE_NOTE.format(name=hero) if hero else ""))
+    label, define = hero, ""
+    if HERO and not hero:
+        new = await motion_hero.draw_new(ask)  # one cheap call, cached by name (MOTION-15); None = no hero, the film goes on as before
+        if new:
+            hero, label, define = new["name"], new["label"], motion_hero.define_call(new)
+    notes = dict(name=hero, label=label)
+    opener = asyncio.ensure_future(_first(claude_cli(ask, OPENER_MODEL, OPENER + (motion_hero.OPENER_NOTE.format(**notes) if hero else ""), think=False)))
+    rest = claude_cli(ask, extra=CONTINUE + (motion_hero.CONTINUE_NOTE.format(**notes) if hero else ""))
     first = True
     try:
         s = await opener
         if s:
-            yield dict(s, code=motion_hero.put_in(s["code"], hero, True)) if hero else s
+            yield dict(s, code=motion_hero.put_in(s["code"], hero, True, define)) if hero else s
             first = False
         async for s in rest:
-            yield dict(s, code=motion_hero.put_in(s["code"], hero, first)) if hero else s
+            yield dict(s, code=motion_hero.put_in(s["code"], hero, first, define)) if hero else s
             first = False
     finally:
         opener.cancel()
