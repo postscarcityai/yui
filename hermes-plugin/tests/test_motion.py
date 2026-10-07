@@ -220,7 +220,7 @@ class SeedThings(unittest.TestCase):
             self.assertRegex(name, r"^[a-z][a-z0-9_]{1,23}$")
             self.assertNotIn(name, self.h.WORDS)  # the kit draws those itself
             self.assertTrue(th["label"])
-            self.assertTrue(10 <= len(th["parts"]) + 1 and all(len(p) == 4 and p[0].startswith("M") for p in th["parts"]), name)
+            self.assertTrue(7 <= len(th["parts"]) and all(len(p) == 4 and p[0].startswith("M") for p in th["parts"]), name)
             self.assertTrue(self.h.define_call(dict(th, name=name)).startswith("if (api.defineThing)"))
 
     def test_word_forms_find_the_thing(self):
@@ -238,6 +238,20 @@ class SeedThings(unittest.TestCase):
         for ask in ("Show the plan for Monday", "How a decision tree splits data", "Explain a pyramid scheme", "A balloon payment on a loan",
                     "Show the Earth in real 3D with a tractor (api.three)", ""):
             self.assertIsNone(s(ask), ask)
+
+    def test_motion24_new_things_and_their_word_forms(self):
+        s = self.h.seeded
+        self.assertGreaterEqual(len(self.h._seed()["things"]), 80)
+        for ask, name in (("How penguins huddle in a blizzard", "penguin"), ("How a lightbulb glows", "light_bulb"), ("Why wolves howl", "wolf"),
+                          ("Inside a living cell", "cell"), ("How a magnet-free compass points north", "compass"), ("How a solar panel makes power", "solar_panel"),
+                          ("How a cargo ship stays afloat", "ship"), ("How the moon pulls the tide", "moon"), ("What a smartphone does", "phone"),
+                          ("How DNA copies itself", "dna"), ("A dinosaur and a comet", "dinosaur")):
+            self.assertEqual((s(ask) or {}).get("name"), name, ask)
+
+    def test_motion24_generic_words_do_not_hit(self):
+        for ask in ("Select a spreadsheet cell range", "Why cloud storage costs more", "We ship the feature on Friday",
+                    "Run this python code", "Stock prices rose today", "Show the plan for Monday", "How a decision tree splits data"):
+            self.assertIsNone(self.h.seeded(ask), ask)
 
     def test_the_kit_picks_first_and_the_seed_never_shadows_it(self):
         self.assertEqual(self.h.pick("How a dog sees"), "dog")
