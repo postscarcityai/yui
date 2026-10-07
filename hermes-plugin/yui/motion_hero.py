@@ -264,11 +264,15 @@ def _things() -> dict:
 
 
 def seeded(ask: str) -> Optional[dict]:
-    """The seed thing the ask is about ({"name", "label", "parts"}), or None. Run after pick() misses; the earliest word wins."""
+    """The seed or learned thing the ask is about ({"name", "label", "parts"}), or None. Run after pick() misses; the earliest word wins."""
     if not SEED_ON or not THINGS_ON or not (ask or "").strip() or SKIP.search(ask):
         return None
     best = None
     for name, pat in _seed()["words"].items():
+        m = pat.search(ask)
+        if m and (best is None or m.start() < best[0]):
+            best = (m.start(), name)
+    for name, pat in _learned_words().items():  # MOTION-25: nouns drawn and checked in the background after a first ask
         m = pat.search(ask)
         if m and (best is None or m.start() < best[0]):
             best = (m.start(), name)
@@ -296,6 +300,206 @@ def remember(ask: str, hero: Optional[dict]) -> None:
     if hero:
         d.setdefault("things", {})[hero["name"]] = {"label": hero["label"], "parts": hero["parts"]}
     _save(d)
+
+
+# MOTION-25: a noun in neither the kit, the seed nor the cache is drawn again in the background once its film is over, checked by the
+# same judge as the seed, and kept under its narrow word forms, so the second ask is a seed hit. Nothing here runs inside a turn.
+LEARN_ON = os.environ.get("YUI_MOTION_LEARN", "on").strip().lower() != "off"
+LEARN_JUDGE_ENV = "YUI_MOTION_LEARN_JUDGE"  # the judge script (yuigui site/scripts/motion/learn_judge.py); no script, no learning
+LEARN_MAX_INFLIGHT = int(os.environ.get("YUI_MOTION_LEARN_INFLIGHT", "2"))
+LEARN_DAILY = int(os.environ.get("YUI_MOTION_LEARN_DAILY", "20"))
+LEARN_TRIES = 2  # per noun, ever: a drawing that failed the judge twice is not tried a third time
+LEARN_PARTS_TIMEOUT = 40.0
+LEARN_JUDGE_TIMEOUT = 300.0
+# Single words that mean something else in a software or planning ask; a seed word wins over the parts call, so these are never learned.
+LEARN_AMBIGUOUS = {"cell", "cloud", "ship", "phone", "plant", "bank", "table", "chart", "graph", "key", "screen", "window", "file", "folder", "tree",
+                   "map", "board", "card", "page", "pipe", "stack", "mouse", "network", "server", "tool", "light", "box", "net", "web", "bug", "frame"}
+_LEARN_INFLIGHT: set = set()
+_LEARN_TASKS: set = set()
+_LEARN_LOG: list = []  # [{"noun", "pass", "why", "s"}], newest last, kept for the eval and the logs
+_LEARNED: dict = {"pat": None, "words": {}}
+
+
+def _forms(w: str) -> str:
+    plural = w[:-1] + "ies" if w.endswith("y") and w[-2] not in "aeiou" else w + ("es" if w.endswith(("s", "x", "ch", "sh")) else "s")
+    return r"(?:" + re.escape(w) + "|" + re.escape(plural) + ")"
+
+
+def learn_words(label: str) -> Optional[str]:
+    """The narrow pattern a learned noun answers to: its own name and plural, and for a two-word name its last word alone when that word
+    is not an everyday one ('snare drum' also answers to 'drum'; 'kayak' and 'boat' never answer to 'kayak paddle'; 'cell' is never learned)."""
+    toks = re.findall(r"[a-z][a-z0-9]*", (label or "").lower())
+    if not toks or len(toks) > 2 or len(toks[-1]) < 3 or (len(toks) == 1 and toks[0] in LEARN_AMBIGUOUS):
+        return None
+    if len(toks) == 1:
+        return _forms(toks[0])
+    full = r"[ -]?".join([re.escape(toks[0]), _forms(toks[1])])
+    head = toks[1]
+    return full + "|" + _forms(head) if len(head) >= 4 and head not in LEARN_AMBIGUOUS else full
+
+
+def _learned_words() -> dict:
+    """{name: compiled pattern} for the nouns the cache holds as learned (words are stored as pattern strings)."""
+    if not LEARN_ON:
+        return {}
+    d = _load()
+    raw = d.get("words") or {}
+    key = json.dumps(raw, sort_keys=True)
+    if _LEARNED["pat"] != key:
+        out = {}
+        for n, w in raw.items():
+            if n in (d.get("things") or {}):
+                try:
+                    out[n] = re.compile(r"\b(?:" + w + r")\b", re.I)
+                except re.error:
+                    pass
+        _LEARNED["pat"], _LEARNED["words"] = key, out
+    return _LEARNED["words"]
+
+
+def learn_judge_script() -> Optional[Path]:
+    p = Path(os.path.expanduser(os.environ.get(LEARN_JUDGE_ENV) or "~/dev/yuigui/site/scripts/motion/learn_judge.py"))
+    return p if p.is_file() else None
+
+
+def learn_idle() -> bool:
+    return not _LEARN_TASKS
+
+
+def _learn_note(name: str, ok: bool, why: str, t0: float, **kw) -> None:
+    _LEARN_LOG.append(dict(noun=name, ok=ok, why=why, s=round(time.time() - t0, 1), **kw))
+    del _LEARN_LOG[:-200]
+
+
+def _known(name: str) -> bool:
+    return name in WORDS or name in _seed()["things"] or name in _learned_words()
+
+
+def learn_after(ask: str, name: Optional[str]) -> bool:
+    """Called when a film that had to draw its hero from the parts call is over. Queues the background job; True when one started.
+    `name` is the hero the film used; None when the parts call failed (nothing was kept for the ask), and the job then names the thing itself.
+    Never raises, never waits: a refusal (off, capped, already known, tried twice, ambiguous word) just returns False."""
+    try:
+        if not (LEARN_ON and THINGS_ON and (ask or "").strip()) or SKIP.search(ask):
+            return False
+        key = name or "ask:" + _ask_key(ask)
+        if name and (_known(name) or not learn_words(name.replace("_", " "))):
+            return False
+        if not name and cached(ask) is not None:  # seen before: kept, or the model said it has no body
+            return False
+        if key in _LEARN_INFLIGHT or len(_LEARN_INFLIGHT) >= LEARN_MAX_INFLIGHT or learn_judge_script() is None:
+            return False
+        d = _load()
+        if (d.get("learn") or {}).get(key, {}).get("n", 0) >= LEARN_TRIES:
+            return False
+        day = time.strftime("%Y-%m-%d")
+        if (d.get("learn_day") or {}).get("d") == day and d["learn_day"].get("n", 0) >= LEARN_DAILY:
+            return False
+        loop = asyncio.get_running_loop()
+        _LEARN_INFLIGHT.add(key)
+        t = loop.create_task(_learn(key, name, ask))
+        _LEARN_TASKS.add(t)
+        t.add_done_callback(_LEARN_TASKS.discard)
+        return True
+    except Exception:
+        return False
+
+
+def _learn_count(name: str, ok: bool, why: str) -> None:
+    d = _load()
+    day = time.strftime("%Y-%m-%d")
+    ld = d.get("learn_day") or {}
+    d["learn_day"] = {"d": day, "n": (ld.get("n", 0) if ld.get("d") == day else 0) + 1}
+    rec = (d.get("learn") or {}).get(name, {})
+    d.setdefault("learn", {})[name] = {"n": rec.get("n", 0) + 1, "ok": ok, "why": why[:120], "at": int(time.time())}
+    _save(d)
+
+
+def learn_ask(label: str) -> str:
+    a = "an" if label[:1] in "aeiou" else "a"
+    return f"{a.title()} {label}, shown clearly."  # the seed's own ask (seed_build.ask_for), so a learned drawing is made like a seed one
+
+
+async def _parts(ask: str) -> Optional[dict]:
+    try:
+        return parse_reply(await asyncio.wait_for(_call_cold(ask), LEARN_PARTS_TIMEOUT))  # a process of its own: never the warm one a turn is using
+    except Exception:
+        return None
+
+
+async def _learn(key: str, name: Optional[str], ask: str) -> None:
+    t0 = time.time()
+    shown = name or key
+    try:
+        thing, why = None, "no parts"
+        for _ in range(2):  # as seed_build: one retry when the parts come back empty or name another thing
+            hero = await _parts(learn_ask(name.replace("_", " ")) if name else ask)
+            if hero and hero.get("parts") and (not name or hero["name"] == name):
+                thing = hero
+                break
+            why = f"parts named {hero['name']}" if hero and hero.get("name") else "no parts"
+        if thing and not name:  # the film's own call failed: the thing is whatever the model names from the ask
+            name = shown = thing["name"]
+            if _known(name) or not learn_words(name.replace("_", " ")) or name in _LEARN_INFLIGHT:
+                thing, why = None, f"{name} not learnable"
+            elif (_load().get("learn") or {}).get(name, {}).get("n", 0) >= LEARN_TRIES:
+                thing, why = None, f"{name} tried twice"
+        if not thing:
+            _learn_count(key, False, why)
+            return _learn_note(shown, False, why, t0)
+        ok, why = await _judge(thing)
+        _learn_count(name, ok, why)
+        if key != name:
+            _learn_count(key, ok, why)
+        if ok:
+            d = _load()
+            d.setdefault("things", {})[name] = {"label": thing["label"], "parts": thing["parts"]}  # the checked drawing replaces the unchecked one
+            d.setdefault("words", {})[name] = learn_words(name.replace("_", " "))
+            _save(d)
+        _learn_note(name, ok, why, t0)
+    except BaseException as e:  # a crash or a cancel here never reaches a reply
+        try:
+            _learn_note(shown, False, f"crash {type(e).__name__}", t0)
+        except Exception:
+            pass
+        if isinstance(e, asyncio.CancelledError):
+            raise
+    finally:
+        _LEARN_INFLIGHT.discard(key)
+
+
+async def _judge(thing: dict) -> tuple:
+    """(passed, why): the judge script renders the drawing as a one-scene film and looks at it, in its own process group."""
+    import signal
+    import tempfile
+    script = learn_judge_script()
+    if script is None:
+        return False, "no judge"
+    with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as f:
+        json.dump(thing, f)
+    cmd = ["nice", "-n", "10", "uv", "run", "--quiet", "--with", "playwright", "--with", "pillow", "python", str(script), str(Path(__file__).parent), f.name]
+    env = dict(os.environ, USER=os.environ.get("USER") or "yui", PATH=os.environ.get("PATH", "") + ":/opt/homebrew/bin:" + str(Path.home() / ".local/bin"))
+    proc = await asyncio.create_subprocess_exec(*cmd, stdin=asyncio.subprocess.DEVNULL, stdout=asyncio.subprocess.PIPE,
+                                                stderr=asyncio.subprocess.DEVNULL, env=env, start_new_session=True)
+    try:
+        out, _ = await asyncio.wait_for(proc.communicate(), LEARN_JUDGE_TIMEOUT)
+        for ln in reversed(out.decode("utf-8", "replace").splitlines()):
+            if ln.startswith("{"):
+                r = json.loads(ln)
+                return bool(r.get("pass")), ",".join(r.get("fail") or []) or str(r.get("note") or "ok")
+        return False, "judge gave nothing"
+    except asyncio.TimeoutError:
+        return False, "judge timeout"
+    finally:
+        if proc.returncode is None:
+            try:
+                os.killpg(proc.pid, signal.SIGKILL)
+            except (ProcessLookupError, PermissionError):
+                pass
+        try:
+            os.unlink(f.name)
+        except OSError:
+            pass
 
 
 def parse_reply(text: str) -> Optional[dict]:

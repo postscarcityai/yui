@@ -291,6 +291,188 @@ class SeedThings(unittest.TestCase):
         self.assertIn('api.thing("giraffe"', scenes[0]["code"])
 
 
+KAYAK = dict(ELEPHANT, noun="kayak")
+
+
+class LearnThings(unittest.TestCase):
+    """MOTION-25: a noun the film had to draw is drawn again in the background, judged, and kept under narrow words; never inside a turn."""
+
+    def setUp(self):
+        import tempfile
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        h = motion.motion_hero
+        judge = Path(self._tmp.name) / "learn_judge.py"
+        judge.write_text("")
+        for patcher in (mock.patch.object(h, "THINGS_ON", True), mock.patch.object(h, "SEED_ON", True), mock.patch.object(h, "LEARN_ON", True),
+                        mock.patch.dict(os.environ, {h.CACHE_ENV: os.path.join(self._tmp.name, "things.json"), h.LEARN_JUDGE_ENV: str(judge)})):
+            patcher.start()
+            self.addCleanup(patcher.stop)
+        h._LEARN_INFLIGHT.clear()
+        h._LEARN_LOG.clear()
+        self.h = h
+
+    def learn(self, name, reply, verdict=(True, "ok")):
+        async def parts(ask):
+            return json.dumps(reply)
+
+        async def judge(thing):
+            return verdict
+
+        async def run():
+            ok = self.h.learn_after("How a kayak goes", name)
+            while not self.h.learn_idle():
+                await asyncio.sleep(0.01)
+            return ok
+
+        with mock.patch.object(self.h, "_call_cold", parts), mock.patch.object(self.h, "_judge", judge):
+            return asyncio.run(run())
+
+    def test_a_pass_is_kept_and_the_second_ask_is_a_seed_hit(self):
+        self.assertTrue(self.learn("kayak", KAYAK))
+        self.assertIsNone(self.h.pick("Why do kayaks tip"))
+        hit = self.h.seeded("Why do kayaks tip so easily")
+        self.assertEqual((hit["name"], hit["label"]), ("kayak", "kayak"))
+        self.assertTrue(hit["parts"])
+        self.assertTrue(self.h._LEARN_LOG[-1]["ok"])
+
+    def test_a_fail_writes_nothing_and_a_noun_is_tried_twice_at_most(self):
+        self.assertTrue(self.learn("kayak", KAYAK, (False, "look:plain")))
+        self.assertIsNone(self.h.seeded("Why do kayaks tip so easily"))
+        self.assertNotIn("kayak", self.h._load().get("words", {}))
+        self.assertTrue(self.learn("kayak", KAYAK, (False, "look:plain")))
+        self.assertFalse(self.learn("kayak", KAYAK))
+        self.assertEqual(self.h._load()["learn"]["kayak"]["n"], 2)
+
+    def test_parts_naming_another_noun_or_nothing_is_a_fail(self):
+        self.learn("kayak", dict(KAYAK, noun="canoe"))
+        self.assertFalse(self.h._LEARN_LOG[-1]["ok"])
+        self.learn("kayak", {"noun": None})
+        self.assertIsNone(self.h.seeded("Why do kayaks tip so easily"))
+
+    def test_off_switch_queues_nothing_and_ignores_learned_words(self):
+        self.learn("kayak", KAYAK)
+        with mock.patch.object(self.h, "LEARN_ON", False):
+            self.assertFalse(self.h.learn_after("a", "kayak"))
+            self.assertIsNone(self.h.seeded("Why do kayaks tip so easily"))
+
+    def test_known_and_ambiguous_nouns_are_never_queued(self):
+        async def run():
+            return [self.h.learn_after("a", n) for n in ("heart", "giraffe", "cell", "cloud", "stapler")]
+        with mock.patch.object(self.h, "_learn", lambda k, n, a: asyncio.sleep(0)):
+            self.assertEqual(asyncio.run(run()), [False, False, False, False, True])
+
+    def test_a_failed_parts_call_is_named_by_the_job_from_the_ask(self):
+        async def parts(ask):
+            self.assertIn("kayak", ask)
+            return json.dumps(KAYAK)
+
+        async def judge(thing):
+            return True, "ok"
+
+        async def run():
+            ok = self.h.learn_after("How a kayak goes", None)
+            while not self.h.learn_idle():
+                await asyncio.sleep(0.01)
+            return ok
+
+        with mock.patch.object(self.h, "_call_cold", parts), mock.patch.object(self.h, "_judge", judge):
+            self.assertTrue(asyncio.run(run()))
+        self.assertEqual(self.h.seeded("Why do kayaks tip so easily")["name"], "kayak")
+        self.assertTrue(self.h._LEARN_LOG[-1]["ok"])
+
+    def test_an_ask_the_model_called_bodyless_is_not_learned(self):
+        self.h._save({"asks": {self.h._ask_key("Show the plan for Monday"): ""}})
+        self.assertFalse(asyncio.run(self._call_after("Show the plan for Monday", None)))
+
+    async def _call_after(self, ask, name):
+        return self.h.learn_after(ask, name)
+
+    def test_a_two_word_noun_also_answers_to_its_last_word(self):
+        w = lambda label, ask: bool(re.search(r"\b(?:" + self.h.learn_words(label) + r")\b", ask, re.I))
+        self.assertTrue(w("snare drum", "What makes a drum loud"))
+        self.assertTrue(w("snare drum", "a snare-drums rattle"))
+        self.assertFalse(w("kayak paddle", "a kayak glides"))
+        self.assertIsNone(self.h.learn_words("cell phone x"))
+
+    def test_narrow_words(self):
+        w = lambda label, ask: bool(re.search(r"\b(?:" + self.h.learn_words(label) + r")\b", ask, re.I))
+        self.assertTrue(w("kayak", "Why kayaks tip"))
+        self.assertTrue(w("stapler", "a stapler jams"))
+        self.assertFalse(w("kayak", "a canoe or a boat"))
+        self.assertTrue(w("candy", "all the candies"))
+        self.assertIsNone(self.h.learn_words("cell"))
+
+    def test_cap_in_flight_and_daily_ceiling(self):
+        async def run():
+            with mock.patch.object(self.h, "LEARN_MAX_INFLIGHT", 2), mock.patch.object(self.h, "_learn", lambda k, n, a: asyncio.sleep(0.05)):
+                got = [self.h.learn_after("a", n) for n in ("kayak", "stapler", "hourglass")]
+                await asyncio.sleep(0.2)
+                return got
+        self.assertEqual(asyncio.run(run()), [True, True, False])
+        self.h._LEARN_INFLIGHT.clear()
+        self.h._save({"learn_day": {"d": time.strftime("%Y-%m-%d"), "n": 99}})
+        self.assertFalse(asyncio.run(self._once("kayak")))
+
+    async def _once(self, n):
+        return self.h.learn_after("a", n)
+
+    def test_no_judge_script_no_learning(self):
+        with mock.patch.dict(os.environ, {self.h.LEARN_JUDGE_ENV: "/nonexistent/x.py"}), mock.patch.object(self.h.Path, "home", return_value=Path("/nonexistent")):
+            self.assertFalse(asyncio.run(self._once("kayak")))
+
+    def test_a_crash_in_the_job_never_reaches_the_film(self):
+        async def boom(thing):
+            raise RuntimeError("judge died")
+
+        async def parts(ask):
+            return json.dumps(KAYAK)
+
+        async def run():
+            self.h.learn_after("a", "kayak")
+            while not self.h.learn_idle():
+                await asyncio.sleep(0.01)
+
+        with mock.patch.object(self.h, "_call_cold", parts), mock.patch.object(self.h, "_judge", boom):
+            asyncio.run(run())
+        self.assertFalse(self.h._LEARN_LOG[-1]["ok"])
+        self.assertIsNone(self.h.seeded("Why do kayaks tip so easily"))
+
+    def test_a_missed_film_queues_the_job_after_it_ends_and_never_waits_on_it(self):
+        queued = []
+
+        async def fake(ask, model="big", extra="", think=True):
+            yield {"name": "x", "dur": 3.0, "code": "api.look('dark');\nconst k = 1;"}
+
+        async def draw(ask, call=None, on_noun=None, on_text=None):
+            self.assertEqual(queued, [])  # nothing queued while the film still draws
+            return {"name": "kayak", "label": "kayak", "parts": KAYAK["parts"]}
+
+        async def run():
+            return [s async for s in motion.split_film("How a kayak keeps its line")]
+
+        with mock.patch.object(motion, "claude_cli", fake), mock.patch.object(self.h, "draw_new", draw), mock.patch.object(motion, "HERO", True), \
+                mock.patch.object(self.h, "learn_after", lambda ask, n: queued.append(n) or True):
+            scenes = asyncio.run(run())
+        self.assertTrue(scenes)
+        self.assertEqual(queued, ["kayak"])
+
+    def test_a_seeded_or_kit_film_queues_nothing(self):
+        queued = []
+
+        async def fake(ask, model="big", extra="", think=True):
+            yield {"name": "x", "dur": 3.0, "code": "api.look('dark');\nconst k = 1;"}
+
+        async def run(ask):
+            return [s async for s in motion.split_film(ask)]
+
+        with mock.patch.object(motion, "claude_cli", fake), mock.patch.object(motion, "HERO", True), \
+                mock.patch.object(self.h, "learn_after", lambda ask, n: queued.append(n) or True):
+            asyncio.run(run("Why a giraffe has such a long neck"))
+            asyncio.run(run("How a heart pumps"))
+        self.assertEqual(queued, [])
+
+
 class NewThing(unittest.TestCase):
     """A hero the kit lacks (MOTION-15): one cheap call returns kit shapes, validated, cached by name."""
 
