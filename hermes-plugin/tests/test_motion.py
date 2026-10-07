@@ -5,6 +5,7 @@
 
 import asyncio
 import json
+import re
 import os
 import sys
 import time
@@ -17,6 +18,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "yui"))
 from test_board import _adapter_module  # noqa: E402
 import compat  # noqa: E402
 import motion  # noqa: E402
+import shown  # noqa: E402
 
 ASK = "How a heart pumps. Blood enters the right side. The left side pushes it out."
 REPLY = f'Here is the heart.\n```yui\nmotion "{ASK}"\n```'
@@ -735,6 +737,24 @@ class Turn(unittest.TestCase):
         self.run_all()
         self.assertIn("sketch", self.written[-1]["body"])
         self.assertIn("did not start", self.a._notes["a1"][0])
+
+
+    def test_another_take_makes_a_new_film_even_for_the_same_ask(self):
+        # YUI-320: the end-of-film tap reaches the agent as a normal turn; its new `motion` line is made again, never
+        # deduped against the film already cached for that ask.
+        self.send(REPLY)
+        self.send(REPLY)
+        self.run_all()
+        films = {re.search(r"film=(m\w+)", r["body"]).group(1) for r in self.written if "film=" in r["body"]}
+        self.assertEqual(len(films), 2)
+
+    def test_the_another_take_tap_is_a_plain_turn(self):
+        tap = '[yui] m7 motion again note="make this film again, a different take, same ask" title="How a heart pumps"'
+        self.assertFalse(shown.plain(tap))  # a tap, not typed words
+        row = {"id": "r1", "kind": "text", "body": tap, "sender": "user"}
+        for name in ("_stop", "_key_answer", "_control", "_owner_only", "_board_order", "_need_answer", "_invite_answer",
+                     "_need_dismiss", "_need_open", "_talk_tap"):
+            self.assertFalse(asyncio.run(getattr(self.a, name)("a1", row)), name)
 
 
 if __name__ == "__main__":

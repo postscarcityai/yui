@@ -3,6 +3,8 @@ import YuiLines
 
 extension EnvironmentValues {
     @Entry var ylEmit = YLEmit()
+    /// "Change it" at the end of a film (YUI-320): quotes the film's row and opens the composer.
+    @Entry var ylFilmChange = YLFilmChange()
     /// Every component in the reply: group heads find their members here, and
     /// `chart data=id` its table.
     @Entry var ylComponents: [YLComponent] = []
@@ -805,4 +807,9 @@ struct FlowLayout: Layout {
         }
         return rows.filter { !$0.items.isEmpty }
     }
+}
+
+struct YLFilmChange: Sendable {
+    var change: @MainActor @Sendable (String) -> Void = { _ in }
+    @MainActor func callAsFunction(_ film: String) { change(film) }
 }

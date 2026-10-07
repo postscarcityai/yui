@@ -447,6 +447,21 @@ final class ChatStore {
         withAnimation(spring) { replying = q }
     }
 
+    /// The thread row that holds a film's first part (its tile), so "Change it" can quote it (YUI-320).
+    func filmMessage(_ film: String) -> ChatMessage? {
+        messages.last { m in
+            m.yl?.components.contains { $0.preset == "motion" && !$0.isMotionPart && ($0.props["film"]?.string ?? $0.ylID) == film } == true
+        }
+    }
+
+    /// Quotes the film's row; false when it is not in the thread (an old film, a stage-only one).
+    @discardableResult
+    func startReply(film: String) -> Bool {
+        guard let m = filmMessage(film) else { return false }
+        startReply(m.id)
+        return replying != nil
+    }
+
     func cancelReply() { withAnimation(spring) { replying = nil } }
 
     /// Where a reply's chip goes: the first bubble of the row it quotes, if it is loaded.

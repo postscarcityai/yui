@@ -421,6 +421,7 @@ struct ChatView: View {
             .zIndex(3)
         })
         .environment(\.ylEmit, store.emit)
+        .environment(\.ylFilmChange, YLFilmChange { film in changeFilm(film) })
         .environment(\.ylShow, store.ylShow)
         .environment(\.ylPage, store.ylPage)
         .environment(\.ylAnswers, store.ylAnswers)
@@ -1945,6 +1946,15 @@ struct ChatView: View {
     private func startReply(_ id: String) {
         store.startReply(id)
         typeHere()
+    }
+
+    /// "Change it" at the end of a film (YUI-320): the film's row is quoted above the composer and the
+    /// keyboard comes up once the player has closed.
+    private func changeFilm(_ film: String) {
+        let quoted = store.startReply(film: film)
+        // The quote shows above the chat's composer, so the full-screen stage steps aside for it.
+        if quoted, stageFirstOn, stageFirst.open { closeStageFirst() }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) { typeHere() }
     }
 
     /// The keyboard up on the field. With the bar in the record, T comes out first

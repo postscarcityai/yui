@@ -923,6 +923,7 @@ window.__GEO={c:{"FJ":[[180,-16.1,180,-16.6,179.4,-16.8,178.7,-17,178.6,-16.6,17
       if (next !== clock) dirty = true; clock = next;
     }
     if (still && clock !== total) { clock = total; dirty = true; }
+    if (still && ended && !doneSent && clock >= total && total > 0) { doneSent = true; send("ended"); } // Reduce Motion: the still last frame is the end (YUI-320)
     if (clock !== lastTime && (!window.__pT || now - window.__pT > 120)) { window.__pT = now; lastTime = clock; send("time", { t: +clock.toFixed(2), total: +total.toFixed(2), paused: paused }); }
     if (!dirty && !(window.__always)) return;
     dirty = !paused && !still ? true : false;
