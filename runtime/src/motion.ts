@@ -21,6 +21,18 @@ export const MAX_ASK = 700; // characters of ask the maker sees
 export const MAX_SCENES = 12;
 export const MAX_FILMS_PER_HOUR = 8;
 export const FIRST_SCENE_SECONDS = 60;
+/** MOTION-30: the models the maker was built for, on Yui's own OpenRouter route. Empty: the agent's chat model writes and draws, as before. Set
+ *  YUI_MOTION_HERO_MODEL and YUI_MOTION_FILM_MODEL to anthropic/claude-sonnet-5.5 and YUI_MOTION_OPENER_MODEL to anthropic/claude-haiku-4.5 to turn the strong route
+ *  on (about 20 times the cost of a film on the chat model, so it is Chris's switch, spec/MOTION.md): measured 76% of frames and a 3.1 s first scene. */
+export const HERO_MODEL = "";
+export const FILM_MODEL = "";
+/** Scene 1 is written by a small fast model while the film model writes scenes 2+ (the plugin's split, MOTION-22). */
+export const OPENER_MODEL = "";
+
+const OPENER = "\n\nYOUR JOB: write ONLY scene 1, then `=== end ===`. A slower writer draws the rest. Scene 1 is SMALL (at most 10 lines, 3 s), opens on the hero "
+  + "drawing of the ask and shows the subject at once. Name it with one word, no spaces. No words before the first header.";
+const CONTINUE = "\n\nYOUR JOB: scene 1 is already written by someone else (it opens on the hero drawing with a title and a caption). Do NOT write it. Start at the next "
+  + "scene and write 4 to 6 scenes of 4 to 7 s that carry on from it. Name your scenes s2, s3, ...; the first scene you write is s2.";
 
 const LINE = /^\s*motion\s+(?<rest>\S.*?)\s*$/;
 const FENCE = /(```yui[^\n]*\n)([\s\S]*?)(```|$)/g;
@@ -129,6 +141,9 @@ export interface Hero { name: string; label: string; define: string }
 export interface Kept { things: Record<string, { label: string; parts: unknown[] }>; words: Record<string, string> }
 export const NO_KEPT: Kept = { things: {}, words: {} };
 
+/** A model id from the env: unset keeps `def`, `off` is no model (the chat model answers). */
+export const modelEnv = (n: string, def: string): string => { const v = envOf(n).trim(); return v.toLowerCase() === "off" ? "" : v || def; };
+
 export const envOf = (n: string): string => {
   const g = globalThis as any;
   try { return String(g.Deno?.env?.get?.(n) ?? g.process?.env?.[n] ?? ""); } catch { return ""; }
@@ -231,15 +246,32 @@ export interface MakeOptions {
   say?: Say; // the model call that draws a thing the kit lacks; none: no on-demand drawing
   drew?: (hero: Hero | null) => void; // told the hero the film used, when it is over
   log?: (m: string) => void; // why a drawing came back empty
+  early?: Promise<Hero | null> | null; // the hero drawn ahead from the person's words (speculate); null result: drawn now as before
+  split?: boolean; // scene 1 from `write(..., "opener")` and scenes 2+ from `write(..., "rest")`, started together
+  said?: string; // the person's own words: a kit word only the agent's line has (MOTION-30) does not pick the hero
 }
 
-export async function make(ask: string, film: string, write: (prompt: string, onText: (piece: string) => void) => Promise<unknown>,
+/** MOTION-30: the agent writes the film line and often adds parts of the thing ("a skateboard turns: the metal trucks under the deck"),
+ *  so a kit word in it (truck, plant, heart) can win over the noun the person asked about. When the person's own words name no kit,
+ *  seed or kept thing and the line's kit word is not in them, the hero is drawn from the person's words instead; the kit word stays
+ *  the fallback when that finds nothing. YUI_MOTION_GUARD=off turns it off. */
+export const guardOn = () => !off("YUI_MOTION_GUARD");
+export function elaborated(ask: string, said: string | undefined, kept: Kept = NO_KEPT): boolean {
+  if (!guardOn() || !said || said.trim().split(/\s+/).length < 4 || SKIP.test(said)) return false;
+  return !!pick(ask) && !heroOf(said, kept);
+}
+
+export type Role = "whole" | "opener" | "rest";
+export async function make(ask: string, film: string, write: (prompt: string, onText: (piece: string) => void, role: Role) => Promise<unknown>,
                            save: (body: string, part: number, last: boolean) => Promise<unknown>, note: (words: string | null) => Promise<unknown> = async () => {},
                            opts: MakeOptions = {}): Promise<number> {
-  const found = heroOf(ask, opts.kept);
+  const kitOnly = heroOf(ask, opts.kept);
+  const guarded = !!kitOnly && !!opts.say && thingsOn() && elaborated(ask, opts.said, opts.kept);
+  const found = guarded ? null : kitOnly;
   const drawWhy: { r?: string } = {};
   // A thing the kit lacks is drawn beside the writer, not before it; each scene waits for the drawing (up to CALL_TIMEOUT_MS) before it is saved.
-  const pending: Promise<Hero | null> | null = !found && opts.say && thingsOn() && !SKIP.test(ask) ? drawNew(ask, opts.say, CALL_TIMEOUT_MS, drawWhy).then((h) => { if (!h && drawWhy.r) opts.log?.(`no hero drawn: ${drawWhy.r}`); return h; }) : null;
+  const pending: Promise<Hero | null> | null = !found && opts.say && thingsOn() && !SKIP.test(ask)
+    ? (opts.early ?? Promise.resolve(null)).then((e) => e ?? drawNew(guarded ? opts.said! : ask, opts.say!, CALL_TIMEOUT_MS, drawWhy)).then((h) => { if (!h && drawWhy.r) opts.log?.(`no hero drawn: ${drawWhy.r}`); return h ?? kitOnly; }) : null;
   let hero: Hero | null = found;
   const title = titleOf(ask);
   let text = "", marks = 0, part = 0;
@@ -256,12 +288,38 @@ export async function make(ask: string, film: string, write: (prompt: string, on
     });
   };
   try {
-    await write(promptFor(ask, hero, !!pending), (piece) => {
-      text += piece;
-      const h = harvest(text, marks);
-      marks = h.done;
-      h.scenes.forEach(queue);
-    });
+    const base = promptFor(ask, hero, !!pending);
+    if (opts.split) {
+      let t1 = "", m1 = 0, t2 = "", m2 = 0, opened = false;
+      const held: Scene[] = [];
+      const open = (first?: Scene) => { if (opened) return; opened = true; if (first) queue(first); held.splice(0).forEach(queue); };
+      const rest = (sc: Scene) => (opened ? queue(sc) : void held.push(sc));
+      const a = write(base + OPENER, (piece) => {
+        t1 += piece;
+        if (opened) return;
+        const h = harvest(t1, m1);
+        m1 = h.done;
+        if (h.scenes.length) open(h.scenes[0]);
+      }, "opener").catch(() => {}).then(() => { if (!opened) open(harvest(t1 + "\n=== end ===\n", 0).scenes[0]); });
+      const b = write(base + CONTINUE, (piece) => {
+        t2 += piece;
+        const h = harvest(t2, m2);
+        m2 = h.done;
+        h.scenes.forEach(rest);
+      }, "rest");
+      b.catch(() => {}); // seen below; keeps an early rejection from going unhandled while the opener is awaited
+      await a;
+      await b;
+      harvest(t2 + "\n=== end ===\n", m2).scenes.forEach(rest);
+      open();
+    } else {
+      await write(base, (piece) => {
+        text += piece;
+        const h = harvest(text, marks);
+        marks = h.done;
+        h.scenes.forEach(queue);
+      }, "whole");
+    }
   } catch (e) {
     await chain.catch(() => {});
     await note(null);
@@ -270,7 +328,7 @@ export async function make(ask: string, film: string, write: (prompt: string, on
     await tell();
     return n;
   }
-  harvest(text + "\n=== end ===\n", marks).scenes.forEach(queue);
+  if (!opts.split) harvest(text + "\n=== end ===\n", marks).scenes.forEach(queue);
   const n = await finish(chain, film, part, save, note);
   await tell();
   return n;
@@ -353,8 +411,10 @@ export function buildParts(spec: unknown): unknown[][] | null {
         d = `M${f1(x - w / 2)} ${f1(y - h / 2)} L${f1(x + w / 2)} ${f1(y - h / 2)} L${f1(x + w / 2)} ${f1(y + h / 2)} L${f1(x - w / 2)} ${f1(y + h / 2)}Z`;
         pts = [[x - w / 2, y - h / 2], [x + w / 2, y + h / 2]];
       } else if (kind === "poly" || kind === "line") {
-        const raw = sh.p;
-        if (!Array.isArray(raw) || raw.length < (kind === "poly" ? 3 : 2) || raw.length > 12) return null;
+        let raw = sh.p;
+        if (!Array.isArray(raw) || raw.length < (kind === "poly" ? 3 : 2)) return null;
+        // MOTION-30: a model that traces an outline in 16 points (Sonnet does, on a skateboard deck) lost the whole drawing; thin it to the 12 the prompt asks for.
+        if (raw.length > 12) { if (raw.length > 40) return null; raw = Array.from({ length: 12 }, (_, i) => raw[Math.round(i * (raw.length - 1) / 11)]); }
         pts = raw.map((p: unknown[]) => [num(p[0]), num(p[1])]);
         const closed = kind === "poly";
         d = sh.smooth && pts.length >= 3 ? smooth(pts, closed) : "M" + pts.map(([a, b]) => `${f1(a)} ${f1(b)}`).join(" L") + (closed ? "Z" : "");
@@ -456,6 +516,23 @@ export function worthLearning(hero: Hero | null, kept: Kept): boolean {
   const n = hero.name;
   return !(n in WORDS) && !(n in MOTION_SEED.things) && !(n in kept.things) && !!learnWords(n.replace(/_/g, " "));
 }
+
+const specCalls = new Map<string, number[]>();
+export const SPEC_MAX_PER_HOUR = 20;
+const EXPLAIN = /\b(how|why|what|show|explain|works?|draw|looks?|happens?)\b/i;
+/** The hero drawn ahead of the agent's reply (MOTION-30): when the person's own words ask for an explanation, have at least 4 words and name no kit, seed or
+ *  kept thing, one drawing call starts now. At most SPEC_MAX_PER_HOUR an hour a person. Null: not started. Never throws; a failed drawing resolves null. */
+export function speculate(who: string, said: string | undefined, call: Say, log: (m: string) => void = () => {}, now: number = Date.now(), kept: Kept = NO_KEPT): Promise<Hero | null> | null {
+  if (!speculateOn() || !thingsOn() || !said || SKIP.test(said) || !EXPLAIN.test(said) || said.trim().split(/\s+/).length < 4 || heroOf(said, kept)) return null;
+  const mine = (specCalls.get(who) ?? []).filter((t) => now - t < 3_600_000);
+  if (mine.length >= SPEC_MAX_PER_HOUR) return null;
+  mine.push(now);
+  specCalls.set(who, mine);
+  const why: { r?: string } = {};
+  return drawNew(said, call, CALL_TIMEOUT_MS, why).then((h) => { if (!h && why.r) log(`speculative hero: ${why.r}`); return h; });
+}
+/** YUI_MOTION_SPECULATE=off keeps the drawing until the film starts. */
+export const speculateOn = () => !off("YUI_MOTION_SPECULATE");
 
 export function learnAsk(label: string): string {
   return `${/^[aeiou]/.test(label) ? "An" : "A"} ${label}, shown clearly.`; // the seed's own ask, so a learned drawing is made like a seed one

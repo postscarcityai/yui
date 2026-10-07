@@ -364,6 +364,10 @@ async function oneTurn(store: Store, agent: NativeAgent, rows: Row[], opts: Turn
     return { handled: true };
   }
 
+  // MOTION-30: a person asking how a thing works is likely to be answered with a film, and the film's hero drawing is its slowest start (about 4 s on
+  // Sonnet). When their words name no kit or seed thing, it is drawn now, beside the agent's own reply, so the film's first scene is not waiting on it.
+  const route = motionRoute(provider, opts, provider.model ?? "");
+  const early = route.heroModel && route.mine && typed.length === 1 ? motion.speculate(agent.userId, typed[0].body, route.heroSay, (m) => log(`${agent.profile.name}: ${m}`), (opts.now ?? Date.now)()) : null;
   if (last) await store.doing(last, "Thinking");
   const thread = threadOf(rows[0]);
   const [history, memory, guide, routes, tzRaw, schedules, mine, tables0, others] = await Promise.all([
@@ -597,7 +601,7 @@ async function oneTurn(store: Store, agent: NativeAgent, rows: Row[], opts: Turn
   }
   if (real.length) await store.markHandled(real);
   log(`${p.name}: ${model} answered, ${body.length} chars`);
-  if (filmAsk) await makeFilm(store, agent, filmAsk, real, last, { opts, provider, model, say, log, result });
+  if (filmAsk) await makeFilm(store, agent, filmAsk, real, last, { opts, provider, model, say, log, result, said: rows.filter((r) => !r.id.startsWith(SYNTHETIC)).map((r) => r.body).join("\n"), early });
 
   // Hand-offs last, so the person reads this answer first. One level only: a handed-off agent can't hand on.
   if (handoff) {
@@ -630,21 +634,35 @@ export async function learnNoun(store: Store, noun: string, opts: TurnOptions): 
   }
 }
 
+/** MOTION-30: on Yui's own OpenRouter route the hero drawing and the film run on the models the maker was built for (YUI_MOTION_HERO_MODEL,
+ *  YUI_MOTION_FILM_MODEL, YUI_MOTION_OPENER_MODEL); a person's own key keeps the model they named. `req` builds the request for one of them. */
+function motionRoute(provider: Provider, opts: TurnOptions, chatModel: string) {
+  const mine = provider === opts.provider && /openrouter\.ai/.test(provider.url);
+  const heroModel = mine ? motion.modelEnv("YUI_MOTION_HERO_MODEL", motion.HERO_MODEL) : "";
+  const filmModel = mine ? motion.modelEnv("YUI_MOTION_FILM_MODEL", motion.FILM_MODEL) : "";
+  const openerModel = filmModel ? motion.modelEnv("YUI_MOTION_OPENER_MODEL", motion.OPENER_MODEL) : ""; // a split needs a film model to take scenes 2+
+  // Sonnet on OpenRouter will not run with thinking off: it gets a low effort.
+  const req = (m: string, max: number, think = true) => (m && mine ? { model: m, max_tokens: max, reasoning: think ? { effort: "low" } : { enabled: false } }
+    : { model: chatModel, max_tokens: max, ...(provider.reasoning ? { reasoning: { enabled: false } } : {}) });
+  const heroSay = async (prompt: string) => (await ask_(opts, provider, { ...req(heroModel, heroModel && mine ? 4000 : 2500), messages: [{ role: "user", content: prompt }] }, () => {})).text;
+  return { mine, heroModel, filmModel, openerModel, req, heroSay };
+}
+
 /** The film for an agent's `motion` line (MOTION-27): one model call writes the scenes, each saved as its own row the moment it is
  *  complete. The working row says which scene is being drawn. A film that never starts is said in words. */
 async function makeFilm(store: Store, agent: NativeAgent, ask: string, real: string[], last: string | undefined,
-                        c: { opts: TurnOptions; provider: Provider; model: string; say: (body: string, meta: Record<string, unknown>) => Promise<string>; log: (m: string) => void; result: TurnResult }): Promise<void> {
-  const { opts, provider, model, say, log, result } = c;
+                        c: { opts: TurnOptions; provider: Provider; model: string; say: (body: string, meta: Record<string, unknown>) => Promise<string>; log: (m: string) => void; result: TurnResult; said?: string; early?: Promise<motion.Hero | null> | null }): Promise<void> {
+  const { opts, provider, say, log, result } = c;
+  const { filmModel, openerModel, heroModel, req, heroSay } = motionRoute(provider, opts, c.model);
   const p = agent.profile;
   const film = "m" + (opts.newId ?? uuid)().replace(/-/g, "").slice(0, 6);
   let n = 0;
   const kept = motion.thingsOn() ? await store.motionKept().catch(() => motion.NO_KEPT) : motion.NO_KEPT;
   try {
     n = await motion.make(ask, film,
-      async (prompt, onText) => {
+      async (prompt, onText, role) => {
         let streamed = false;
-        const a = await ask_(opts, provider, { model, messages: [{ role: "user", content: prompt }], max_tokens: 12000,
-                                               ...(provider.reasoning ? { reasoning: { enabled: false } } : {}) }, (t) => { streamed = true; onText(t); });
+        const a = await ask_(opts, provider, { ...(role === "opener" ? req(openerModel, 3000, false) : req(filmModel, 12000)), messages: [{ role: "user", content: prompt }] }, (t) => { streamed = true; onText(t); });
         if (!streamed) onText(a.text); // a server that answered plain, not as a stream
       },
       (body, part) => say(body, { ...(real.length ? { turn: real } : {}), native: { film, part } }),
@@ -653,8 +671,10 @@ async function makeFilm(store: Store, agent: NativeAgent, ask: string, real: str
         kept,
         log: (m) => log(`${p.name}: ${m}`),
         // A thing the kit lacks is drawn on this agent's model, beside the film writer (MOTION-15).
-        say: async (prompt) => (await ask_(opts, provider, { model, messages: [{ role: "user", content: prompt }], max_tokens: 2500,
-                                                             ...(provider.reasoning ? { reasoning: { enabled: false } } : {}) }, () => {})).text,
+        said: c.said,
+        split: !!openerModel,
+        early: c.early,
+        say: heroSay,
         // A film that drew its own hero queues the learner for it: it runs after the answer, never in the turn (MOTION-25).
         drew: (hero) => { if (motion.worthLearning(hero, kept)) (result.learn ??= []).push(hero!.name); },
       });
