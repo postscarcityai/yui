@@ -36,7 +36,10 @@ def main() -> int:
 
     rows = mgmt.logs("SELECT timestamp, event_message FROM logs WHERE (event_message LIKE '%yui-native%' OR event_message LIKE '%yui-agents%') "
                      "AND (event_message LIKE '%does not exist%' OR event_message LIKE '%error%') ORDER BY timestamp DESC LIMIT 5", m)
-    hits = rows.get("result", rows) if isinstance(rows, dict) else rows
+    hits = rows.get("result") if isinstance(rows, dict) else rows
+    if not isinstance(hits, list):
+        print(f"health_probe: unexpected logs response: {str(rows)[:200]}", file=sys.stderr)
+        return 1
     if hits:
         out.append(f"{len(hits)} function error log lines in {m} min, latest: {str(hits[0].get('event_message', ''))[:160]}")
 
