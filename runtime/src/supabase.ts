@@ -4,6 +4,7 @@
 // and, for a check, from a laptop. Never ship the service key to a client.
 import type { Store } from "./store.ts";
 import type { JobItem } from "./meals.ts";
+import type { Kept } from "./motion.ts";
 import { type Cell, type TableChange, type TableStore, emptyStore } from "./tables.ts";
 import { DEFAULT_PHOTO_LIMIT, DEFAULT_ROUTES, type MemoryItem, type NativeAgent, type OwnKey, type Profile, type Routes, type Row, type ScheduleItem, type SearchTake } from "./types.ts";
 
@@ -13,6 +14,7 @@ export class SupabaseStore implements Store {
   private fetch: typeof fetch;
   private guideCache?: { at: number; body: string };
   private photoCache?: { at: number; n: number };
+  private keptCache?: { at: number; kept: Kept };
 
   constructor(url: string, serviceKey: string, fetchImpl: typeof fetch = fetch) {
     this.url = url.replace(/\/+$/, "");
@@ -313,6 +315,28 @@ export class SupabaseStore implements Store {
 
   async finishJob(id: string, status: "done" | "failed" | "queued", result?: Record<string, unknown>) {
     await this.rest("PATCH", `yui_native_jobs?id=eq.${id}`, { status, result: result ?? null, finished_at: new Date().toISOString() }, "return=minimal");
+  }
+
+  async motionKept(): Promise<Kept> {
+    if (this.keptCache && Date.now() - this.keptCache.at < 60_000) return this.keptCache.kept;
+    const kept: Kept = { things: {}, words: {} };
+    try {
+      for (const r of await this.rest("GET", "yui_motion_things?select=name,label,parts,words&status=eq.kept&order=name&limit=2000")) {
+        if (Array.isArray(r.parts) && r.words) { kept.things[r.name] = { label: r.label, parts: r.parts }; kept.words[r.name] = r.words; }
+      }
+    } catch {
+      return this.keptCache?.kept ?? kept; // the table is a nicety: a film without it is the film it was
+    }
+    this.keptCache = { at: Date.now(), kept };
+    return kept;
+  }
+
+  async motionClaim(noun: string, daily: number, inflight: number) {
+    return (await this.rpc("yui_motion_learn_claim", { p_name: noun, p_daily: daily, p_inflight: inflight })) === true;
+  }
+
+  async motionPut(noun: string, label: string | null, parts: unknown[] | null, words: string | null, why: string) {
+    await this.rpc("yui_motion_learn_put", { p_name: noun, p_label: label, p_parts: parts, p_words: words, p_why: why });
   }
 
   async stoppedSince(agentId: string, userId: string, since: string, chat: string | null = null) {

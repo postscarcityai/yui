@@ -124,6 +124,7 @@ export interface TurnResult {
   replies: string[]; // row ids written, in any thread (hand-offs write in another)
   busy?: boolean;
   jobs: string[]; // work queued to run after the answer (runJob): a meal's macros
+  learn?: string[]; // nouns a film had to draw itself, to draw again after the answer (learnNoun, MOTION-29)
 }
 
 const HISTORY_ROWS = 60;
@@ -596,7 +597,7 @@ async function oneTurn(store: Store, agent: NativeAgent, rows: Row[], opts: Turn
   }
   if (real.length) await store.markHandled(real);
   log(`${p.name}: ${model} answered, ${body.length} chars`);
-  if (filmAsk) await makeFilm(store, agent, filmAsk, real, last, { opts, provider, model, say, log });
+  if (filmAsk) await makeFilm(store, agent, filmAsk, real, last, { opts, provider, model, say, log, result });
 
   // Hand-offs last, so the person reads this answer first. One level only: a handed-off agent can't hand on.
   if (handoff) {
@@ -607,14 +608,37 @@ async function oneTurn(store: Store, agent: NativeAgent, rows: Row[], opts: Turn
   return { handled: true };
 }
 
+/** The learner for one noun a film had to draw (MOTION-29): drawn again on a stronger model (Sonnet 5.5 on OpenRouter), saved for the judge, which keeps a pass
+ *  under the noun's word forms. Runs after the answer, off Yui's own key and never in a turn; the store holds the caps. Never throws. */
+export async function learnNoun(store: Store, noun: string, opts: TurnOptions): Promise<string> {
+  const log = opts.log ?? (() => {});
+  try {
+    const routes = await store.routes();
+    const why = await motion.learn(noun, { claim: (n, d, i) => store.motionClaim(n, d, i), put: (n, l, p, w, y) => store.motionPut(n, l, p, w, y) },
+      async (prompt) => {
+        // Sonnet on OpenRouter will not run with thinking off: it gets a low effort and room for it.
+        const strong = /openrouter\.ai/.test(opts.provider.url);
+        const req = strong ? { model: motion.envOf("YUI_MOTION_LEARN_MODEL") || motion.LEARN_MODEL, max_tokens: 4000, reasoning: { effort: "low" } }
+                           : { model: routes.text, max_tokens: 2500, ...(opts.provider.reasoning ? { reasoning: { enabled: false } } : {}) };
+        return (await ask(opts, opts.provider, { ...req, messages: [{ role: "user", content: prompt }] }, () => {})).text;
+      });
+    log(`learner: ${noun}: ${why}`);
+    return why;
+  } catch (e: any) {
+    log(`learner: ${noun} failed: ${e?.message ?? e}`);
+    return "failed";
+  }
+}
+
 /** The film for an agent's `motion` line (MOTION-27): one model call writes the scenes, each saved as its own row the moment it is
  *  complete. The working row says which scene is being drawn. A film that never starts is said in words. */
 async function makeFilm(store: Store, agent: NativeAgent, ask: string, real: string[], last: string | undefined,
-                        c: { opts: TurnOptions; provider: Provider; model: string; say: (body: string, meta: Record<string, unknown>) => Promise<string>; log: (m: string) => void }): Promise<void> {
-  const { opts, provider, model, say, log } = c;
+                        c: { opts: TurnOptions; provider: Provider; model: string; say: (body: string, meta: Record<string, unknown>) => Promise<string>; log: (m: string) => void; result: TurnResult }): Promise<void> {
+  const { opts, provider, model, say, log, result } = c;
   const p = agent.profile;
   const film = "m" + (opts.newId ?? uuid)().replace(/-/g, "").slice(0, 6);
   let n = 0;
+  const kept = motion.thingsOn() ? await store.motionKept().catch(() => motion.NO_KEPT) : motion.NO_KEPT;
   try {
     n = await motion.make(ask, film,
       async (prompt, onText) => {
@@ -624,7 +648,16 @@ async function makeFilm(store: Store, agent: NativeAgent, ask: string, real: str
         if (!streamed) onText(a.text); // a server that answered plain, not as a stream
       },
       (body, part) => say(body, { ...(real.length ? { turn: real } : {}), native: { film, part } }),
-      async (words) => { if (last) await store.doing(last, words); });
+      async (words) => { if (last) await store.doing(last, words); },
+      {
+        kept,
+        log: (m) => log(`${p.name}: ${m}`),
+        // A thing the kit lacks is drawn on this agent's model, beside the film writer (MOTION-15).
+        say: async (prompt) => (await ask_(opts, provider, { model, messages: [{ role: "user", content: prompt }], max_tokens: 2500,
+                                                             ...(provider.reasoning ? { reasoning: { enabled: false } } : {}) }, () => {})).text,
+        // A film that drew its own hero queues the learner for it: it runs after the answer, never in the turn (MOTION-25).
+        drew: (hero) => { if (motion.worthLearning(hero, kept)) (result.learn ??= []).push(hero!.name); },
+      });
   } catch (e: any) {
     if (e instanceof Stopped) throw e;
     log(`${p.name}: film failed: ${e?.message ?? e}`);

@@ -11,7 +11,10 @@
 //
 // Parts 2.. carry `part=<n>`; a last part with no scene carries `+last`. The hero object is picked from the ask by a word
 // match and drawn by the app's kit (api.thing); a thing the kit lacks comes from the drawings shipped in motion.gen.ts.
-// Not ported: the Hermes plugin's hero drawn on demand and learned afterwards (needs a warm CLI and a judge).
+// MOTION-29: the rest of the hero. A noun the kit and the seed lack is drawn on demand (`drawNew`, one call returning kit-shape
+// parts), and after the film a background job draws it again for the judge (`learn`); a pass is kept in yui_motion_things under
+// narrow word forms, so the next ask for that noun, from anyone, is a seed hit. The judge needs a browser, so it runs on a Mac
+// (yuigui site/scripts/motion/judge_things.py), not here. Never inside a turn; YUI_MOTION_THINGS=off and YUI_MOTION_LEARN=off.
 import { MOTION_PROMPT, MOTION_SEED } from "./motion.gen.ts";
 import { COOK, SKIP, WEAK, WORDS } from "./motionwords.ts";
 
@@ -123,6 +126,18 @@ export function harvest(text: string, done: number): { scenes: Scene[]; done: nu
 
 // ---- the hero (motion_hero.py) ----
 export interface Hero { name: string; label: string; define: string }
+/** Drawings the judge kept (yui_motion_things): parts by noun, and the word pattern each answers to. */
+export interface Kept { things: Record<string, { label: string; parts: unknown[] }>; words: Record<string, string> }
+export const NO_KEPT: Kept = { things: {}, words: {} };
+
+export const envOf = (n: string): string => {
+  const g = globalThis as any;
+  try { return String(g.Deno?.env?.get?.(n) ?? g.process?.env?.[n] ?? ""); } catch { return ""; }
+};
+const off = (n: string) => envOf(n).trim().toLowerCase() === "off";
+/** The on-demand drawing and the learner's off switches (the plugin's YUI_MOTION_THINGS and YUI_MOTION_LEARN). */
+export const thingsOn = () => !off("YUI_MOTION_THINGS");
+export const learnOn = () => thingsOn() && !off("YUI_MOTION_LEARN");
 
 /** The kit thing the ask is about, or null. The earliest word wins; a weak word loses to a body noun. */
 export function pick(ask: string): string | null {
@@ -141,21 +156,40 @@ export function pick(ask: string): string | null {
 }
 
 /** A drawing the app ships with (MOTION_SEED) that the ask is about; the earliest word wins. */
-export function seeded(ask: string): Hero | null {
+export function seeded(ask: string, kept: Kept = NO_KEPT): Hero | null {
   if (!ask.trim() || SKIP.test(ask)) return null;
   let best: [number, string] | null = null;
   for (const [name, pat] of SEED_PATS) {
     const m = pat.exec(ask);
     if (m && (!best || m.index < best[0])) best = [m.index, name];
   }
-  const th = best && MOTION_SEED.things[best[1]];
+  for (const [name, pat] of keptPats(kept)) { // MOTION-25: nouns drawn, judged and kept after an earlier ask
+    const m = pat.exec(ask);
+    if (m && (!best || m.index < best[0])) best = [m.index, name];
+  }
+  const th = best && (kept.things[best[1]] ?? MOTION_SEED.things[best[1]]);
   if (!best || !th) return null;
   return { name: best[1], label: th.label, define: `if (api.defineThing) api.defineThing("${best[1]}", ${JSON.stringify(th.parts)});` };
 }
 
-export function heroOf(ask: string): Hero | null {
+const keptCache = new WeakMap<Kept, [string, RegExp][]>();
+function keptPats(kept: Kept): [string, RegExp][] {
+  if (!learnOn()) return [];
+  let out = keptCache.get(kept);
+  if (!out) {
+    out = [];
+    for (const [n, w] of Object.entries(kept.words)) {
+      if (!(n in kept.things)) continue;
+      try { out.push([n, new RegExp(`\\b(?:${w})\\b`, "i")]); } catch { /* a bad pattern is not a word */ }
+    }
+    keptCache.set(kept, out);
+  }
+  return out;
+}
+
+export function heroOf(ask: string, kept: Kept = NO_KEPT): Hero | null {
   const name = pick(ask);
-  return name ? { name, label: name.replace(/_/g, " "), define: "" } : seeded(ask);
+  return name ? { name, label: name.replace(/_/g, " "), define: "" } : seeded(ask, kept);
 }
 
 const HERO_SIZE = 280;
@@ -179,30 +213,51 @@ const heroNote = (h: Hero) =>
   + `${h.label} yourself and do not hide it. Aim every callout at a spot inside its box and write the rest around it: a title near the top, `
   + "callouts on its parts in open space beside it, something moving. Do not call api.look unless you want a different look; the hero is drawn after it.";
 
-/** The prompt the film maker gets, one call for the whole film. */
-export function promptFor(ask: string, hero: Hero | null): string {
-  return MOTION_PROMPT + (hero ? heroNote(hero) : "") + "\n\nASK: " + ask + "\n";
+// The hero is still being drawn when the writer starts (it takes its own call): the writer is told a drawing is coming, if the ask has a body.
+const specNote = "\n\nHERO: if the ask is about one physical thing with a body (an animal, machine, building, tool, plant, vehicle), the kit has ALREADY drawn it, big in the middle "
+  + "of the screen (api.thing). Do not draw it yourself and do not hide it. It is centred at (api.w/2, api.h*0.47) and about 280 px wide and tall: aim every callout at a spot inside that box. "
+  + "Write the rest of the film around it: a title near the top, callouts on its parts in open space beside it (12 px clear), something moving. "
+  + "Do not call api.look unless you want a different look; the hero is drawn after it.";
+
+/** The prompt the film maker gets, one call for the whole film. `coming`: the hero is being drawn and is not known yet. */
+export function promptFor(ask: string, hero: Hero | null, coming = false): string {
+  return MOTION_PROMPT + (hero ? heroNote(hero) : coming ? specNote : "") + "\n\nASK: " + ask + "\n";
 }
 
 /** Makes the film for `ask`. `write` runs the model on the prompt and calls `onText` with each piece as it arrives.
  *  `save` stores one row. Each scene is saved the moment it is complete; a closing row says the film is whole. Resolves
  *  to the number of scenes saved (0: nothing was drawn, the caller says it in words). Never saves a half scene. */
+export interface MakeOptions {
+  kept?: Kept; // drawings the judge kept: a hit here is a seed hit
+  say?: Say; // the model call that draws a thing the kit lacks; none: no on-demand drawing
+  drew?: (hero: Hero | null) => void; // told the hero the film used, when it is over
+  log?: (m: string) => void; // why a drawing came back empty
+}
+
 export async function make(ask: string, film: string, write: (prompt: string, onText: (piece: string) => void) => Promise<unknown>,
-                           save: (body: string, part: number, last: boolean) => Promise<unknown>, note: (words: string | null) => Promise<unknown> = async () => {}): Promise<number> {
-  const hero = heroOf(ask);
+                           save: (body: string, part: number, last: boolean) => Promise<unknown>, note: (words: string | null) => Promise<unknown> = async () => {},
+                           opts: MakeOptions = {}): Promise<number> {
+  const found = heroOf(ask, opts.kept);
+  const drawWhy: { r?: string } = {};
+  // A thing the kit lacks is drawn beside the writer, not before it; each scene waits for the drawing (up to CALL_TIMEOUT_MS) before it is saved.
+  const pending: Promise<Hero | null> | null = !found && opts.say && thingsOn() && !SKIP.test(ask) ? drawNew(ask, opts.say, CALL_TIMEOUT_MS, drawWhy).then((h) => { if (!h && drawWhy.r) opts.log?.(`no hero drawn: ${drawWhy.r}`); return h; }) : null;
+  let hero: Hero | null = found;
   const title = titleOf(ask);
   let text = "", marks = 0, part = 0;
   let chain: Promise<unknown> = note(drawing(1));
+  // The hero the film used (drawn or found), for the learner. A drawing has its own timeout, so this never waits long.
+  const tell = async () => { if (opts.drew) opts.drew(hero ?? (pending ? await pending : null)); };
   const queue = (s: Scene) => {
     if (part >= MAX_SCENES) return;
     const n = ++part;
     chain = chain.then(async () => {
+      if (!hero && pending) hero = await pending;
       await save(block(film, title, n, hero ? { ...s, code: putIn(s.code, hero, n === 1) } : s), n, false);
       await note(drawing(n + 1));
     });
   };
   try {
-    await write(promptFor(ask, hero), (piece) => {
+    await write(promptFor(ask, hero, !!pending), (piece) => {
       text += piece;
       const h = harvest(text, marks);
       marks = h.done;
@@ -212,10 +267,14 @@ export async function make(ask: string, film: string, write: (prompt: string, on
     await chain.catch(() => {});
     await note(null);
     if (!part) throw e; // nothing played: the turn says so
-    return finish(chain, film, part, save);
+    const n = await finish(chain, film, part, save);
+    await tell();
+    return n;
   }
   harvest(text + "\n=== end ===\n", marks).scenes.forEach(queue);
-  return finish(chain, film, part, save, note);
+  const n = await finish(chain, film, part, save, note);
+  await tell();
+  return n;
 }
 
 async function finish(chain: Promise<unknown>, film: string, parts: number, save: (b: string, p: number, last: boolean) => Promise<unknown>,
@@ -224,4 +283,216 @@ async function finish(chain: Promise<unknown>, film: string, parts: number, save
   await note(null);
   if (parts) await save(close(film, parts + 1), parts + 1, true);
   return parts;
+}
+
+// ---- a thing the kit lacks, drawn on demand (motion_hero.py, MOTION-15) ----
+const FILLS = new Set(["ink", "panel", "accent", "a2", "warn", "good", "bad"]);
+const MAX_PARTS = 12;
+const MIN_PARTS = 5;
+const LIM = 70;
+export const CALL_TIMEOUT_MS = 14_000;
+
+export const THING_PROMPT = `You name the thing a short film is about and sketch it as parts. Reply with JSON only, no words around it.
+
+ASK: {ask}
+
+If the ask is about one physical thing with a recognisable body or outline (an animal, machine, building, tool, plant, vehicle, organ, instrument; for a job or a person name the object they work with), reply {"noun":"<one or two lowercase words>","parts":[...]}. If it is about a plan, numbers, status, screens, software, a feeling, a place or a process with no single body, reply {"noun":null}.
+
+parts: 7 to 12 shapes, back to front, drawn side-on in a box about -55..55 wide and -45..45 tall (y points down), centred on 0,0. Start with the big silhouette (body, hull, tower, case), then the details that name the thing (ears, trunk, lens, strings, blades, legs, wheels). The shapes must touch or overlap so it reads as one object, never loose bits. Shapes:
+ {"s":"ellipse","x":0,"y":0,"rx":30,"ry":20,"f":"a2"}
+ {"s":"circle","x":0,"y":0,"r":10,"f":"panel"}
+ {"s":"rect","x":0,"y":0,"w":20,"h":30,"f":"warn"}  (x,y is the centre)
+ {"s":"poly","p":[[x,y],[x,y],...],"f":"accent","smooth":true}  (closed filled shape, 3 to 12 points; smooth rounds the corners)
+ {"s":"line","p":[[x,y],[x,y],...],"w":1.5,"smooth":true}  (open stroke, 2 to 12 points, w 0.5 to 3)
+Fill f is one of: ink panel accent a2 warn good bad (leave out f for no fill). Use 3 or more different fills. The body must fill most of the box (at least 80 units wide or 60 tall).
+
+Think of the outline first: where the head, the body and each end are, then place every part so it joins the next. A mushroom for example: {"noun":"mushroom","parts":[{"s":"rect","x":0,"y":22,"w":20,"h":44,"f":"panel"},{"s":"poly","p":[[-52,2],[-40,-26],[-14,-42],[14,-42],[40,-26],[52,2]],"f":"bad","smooth":true},{"s":"line","p":[[-52,2],[52,2]],"w":1.5},{"s":"circle","x":-22,"y":-16,"r":6,"f":"panel"},{"s":"circle","x":10,"y":-26,"r":5,"f":"panel"},{"s":"circle","x":28,"y":-8,"r":5,"f":"panel"},{"s":"ellipse","x":0,"y":46,"rx":30,"ry":6,"f":"good"}]}.
+`;
+
+const num = (v: unknown, lo = -LIM, hi = LIM): number => {
+  const x = Number(v);
+  if (typeof v === "boolean" || v === null || !Number.isFinite(x)) throw new Error("nan");
+  return Math.min(hi, Math.max(lo, x));
+};
+const f1 = (x: number) => x.toFixed(1).replace(/\.?0+$/, "");
+
+/** Catmull-Rom through the points as cubic curves. */
+function smooth(pts: number[][], closed: boolean): string {
+  const n = pts.length;
+  let d = `M${f1(pts[0][0])} ${f1(pts[0][1])}`;
+  for (let i = 0; i < (closed ? n : n - 1); i++) {
+    const p0 = closed || i > 0 ? pts[(i - 1 + n) % n] : pts[0];
+    const p1 = pts[i], p2 = pts[(i + 1) % n];
+    const p3 = closed || i + 2 < n ? pts[(i + 2) % n] : pts[n - 1];
+    const c1 = [p1[0] + (p2[0] - p0[0]) / 6, p1[1] + (p2[1] - p0[1]) / 6];
+    const c2 = [p2[0] - (p3[0] - p1[0]) / 6, p2[1] - (p3[1] - p1[1]) / 6];
+    d += ` C${f1(c1[0])} ${f1(c1[1])} ${f1(c2[0])} ${f1(c2[1])} ${f1(p2[0])} ${f1(p2[1])}`;
+  }
+  return d + (closed ? "Z" : "");
+}
+const ell = (x: number, y: number, rx: number, ry: number) =>
+  `M${f1(x - rx)} ${f1(y)} A${f1(rx)} ${f1(ry)} 0 1 1 ${f1(x + rx)} ${f1(y)} A${f1(rx)} ${f1(ry)} 0 1 1 ${f1(x - rx)} ${f1(y)}Z`;
+
+/** The model's parts, checked, as the kit's part list [[path, fill, stroke, width scale], ...], or null when anything is off.
+ *  Only the five shapes of the vocabulary are read; every number is clamped; the model never writes a path string. */
+export function buildParts(spec: unknown): unknown[][] | null {
+  if (!Array.isArray(spec) || spec.length < MIN_PARTS || spec.length > MAX_PARTS + 4) return null;
+  const out: unknown[][] = [], fills = new Set<string>(), xs: number[] = [], ys: number[] = [];
+  try {
+    for (const sh of spec.slice(0, MAX_PARTS)) {
+      const kind = sh.s, f = sh.f;
+      if (f !== undefined && f !== null && !FILLS.has(f)) return null;
+      let d: string, pts: number[][];
+      if (kind === "ellipse") {
+        const x = num(sh.x), y = num(sh.y), rx = num(sh.rx, 2, LIM), ry = num(sh.ry, 2, LIM);
+        d = ell(x, y, rx, ry); pts = [[x - rx, y - ry], [x + rx, y + ry]];
+      } else if (kind === "circle") {
+        const x = num(sh.x), y = num(sh.y), r = num(sh.r, 1.5, LIM);
+        d = ell(x, y, r, r); pts = [[x - r, y - r], [x + r, y + r]];
+      } else if (kind === "rect") {
+        const x = num(sh.x), y = num(sh.y), w = num(sh.w, 2, 2 * LIM), h = num(sh.h, 2, 2 * LIM);
+        d = `M${f1(x - w / 2)} ${f1(y - h / 2)} L${f1(x + w / 2)} ${f1(y - h / 2)} L${f1(x + w / 2)} ${f1(y + h / 2)} L${f1(x - w / 2)} ${f1(y + h / 2)}Z`;
+        pts = [[x - w / 2, y - h / 2], [x + w / 2, y + h / 2]];
+      } else if (kind === "poly" || kind === "line") {
+        const raw = sh.p;
+        if (!Array.isArray(raw) || raw.length < (kind === "poly" ? 3 : 2) || raw.length > 12) return null;
+        pts = raw.map((p: unknown[]) => [num(p[0]), num(p[1])]);
+        const closed = kind === "poly";
+        d = sh.smooth && pts.length >= 3 ? smooth(pts, closed) : "M" + pts.map(([a, b]) => `${f1(a)} ${f1(b)}`).join(" L") + (closed ? "Z" : "");
+      } else return null;
+      for (const [a, b] of pts) { xs.push(a); ys.push(b); }
+      if (kind === "line") out.push([d, 0, "fg", num(sh.w || 1.2, 0.5, 3)]);
+      else { out.push([d, f || 0, "fg", 1]); if (f) fills.add(f); }
+    }
+  } catch { return null; }
+  if (fills.size < 2 || out.filter((p) => p[1]).length < 3) return null;
+  if (Math.max(...xs) - Math.min(...xs) < 60 && Math.max(...ys) - Math.min(...ys) < 45) return null;
+  return out;
+}
+
+export function nounId(noun: string): string | null {
+  let n = (noun ?? "").trim().toLowerCase().replace(/[^a-z0-9 -]/g, "").trim().replace(/[ -]+/g, "_");
+  return /^[a-z][a-z0-9_]{1,23}$/.test(n) ? n : null;
+}
+
+export interface Drawn { name: string; label: string; parts: unknown[][] | null } // parts null: the kit already draws it
+
+/** {name, label, parts} from the model's JSON, {} for 'no single thing', null when unusable. */
+export function parseReply(text: string): Drawn | Record<string, never> | null {
+  const i = (text ?? "").indexOf("{");
+  if (i < 0) return null;
+  let d: any;
+  try { d = firstJson(text.slice(i)); } catch { return null; }
+  if (!d || typeof d !== "object" || Array.isArray(d)) return null;
+  if (d.noun === null || d.noun === undefined || d.noun === "" || d.noun === "null") return {};
+  const name = nounId(String(d.noun));
+  if (!name) return null;
+  if (name in WORDS) return { name, label: name.replace(/_/g, " "), parts: null }; // the kit already draws it
+  const parts = buildParts(d.parts);
+  return parts ? { name, label: String(d.noun).trim().toLowerCase().slice(0, 24), parts } : null;
+}
+
+/** The first JSON object at the start of `s`; whatever follows it is ignored (MOTION-20). */
+function firstJson(s: string): unknown {
+  let depth = 0, inStr = false, esc = false;
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    if (inStr) { if (esc) esc = false; else if (c === "\\") esc = true; else if (c === '"') inStr = false; continue; }
+    if (c === '"') inStr = true;
+    else if (c === "{") depth++;
+    else if (c === "}" && --depth === 0) return JSON.parse(s.slice(0, i + 1));
+  }
+  throw new Error("no object");
+}
+
+/** The model call a drawing needs: the prompt in, the reply text out. */
+export type Say = (prompt: string) => Promise<string>;
+
+/** The hero for an ask the word match missed, or null for no hero (no body, a failed call, slow, unusable). Never throws.
+ *  Nothing is stored here, and nothing of the ask: the learner stores the noun alone, after the film. */
+export async function drawNew(ask: string, call: Say, timeoutMs = CALL_TIMEOUT_MS, why: { r?: string } = {}): Promise<Hero | null> {
+  if (!thingsOn() || !ask.trim() || SKIP.test(ask)) return null;
+  try {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const reply = await Promise.race([call(THING_PROMPT.replace("{ask}", ask.slice(0, 400))),
+                                      new Promise<never>((_, no) => { timer = setTimeout(() => no(new Error("slow")), timeoutMs); })])
+      .finally(() => clearTimeout(timer));
+    const d = parseReply(reply);
+    if (!d || !("name" in d)) { why.r = d ? "no single thing" : "unusable reply: " + String(reply).slice(0, 80).replace(/\s+/g, " "); return null; }
+    return { name: d.name, label: d.label, define: d.parts ? `if (api.defineThing) api.defineThing("${d.name}", ${JSON.stringify(d.parts)});` : "" };
+  } catch (e: any) { why.r = String(e?.message ?? e).slice(0, 80); return null; }
+}
+
+// ---- the learner (MOTION-25): a noun in neither the kit, the seed nor the kept set is drawn again once its film is over ----
+export const LEARN_MAX_INFLIGHT = 2;
+export const LEARN_DAILY = 20;
+export const LEARN_PARTS_TIMEOUT_MS = 40_000;
+/** The model that draws a learned thing: a drawing is kept for everyone, so it gets a stronger model than the chat route (YUI_MOTION_LEARN_MODEL; OpenRouter only). */
+export const LEARN_MODEL = "anthropic/claude-sonnet-5.5";
+// Single words that mean something else in a software or planning ask; a seed word wins over the parts call, so these are never learned.
+const LEARN_AMBIGUOUS = new Set(["cell", "cloud", "ship", "phone", "plant", "bank", "table", "chart", "graph", "key", "screen", "window", "file", "folder", "tree",
+  "map", "board", "card", "page", "pipe", "stack", "mouse", "network", "server", "tool", "light", "box", "net", "web", "bug", "frame"]);
+const esc = (w: string) => w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+function forms(w: string): string {
+  const plural = w.endsWith("y") && !"aeiou".includes(w[w.length - 2]) ? w.slice(0, -1) + "ies" : w + (/(s|x|ch|sh)$/.test(w) ? "es" : "s");
+  return `(?:${esc(w)}|${esc(plural)})`;
+}
+
+/** The narrow pattern a learned noun answers to: its own name and plural, and for a two-word name its last word alone when that word
+ *  is not an everyday one ('snare drum' also answers to 'drum'; 'kayak' and 'boat' never answer to 'kayak paddle'; 'cell' is never learned). */
+export function learnWords(label: string): string | null {
+  const toks = (label ?? "").toLowerCase().match(/[a-z][a-z0-9]*/g) ?? [];
+  if (!toks.length || toks.length > 2 || toks[toks.length - 1].length < 3 || (toks.length === 1 && LEARN_AMBIGUOUS.has(toks[0]))) return null;
+  if (toks.length === 1) return forms(toks[0]);
+  const full = [esc(toks[0]!), forms(toks[1]!)].join("[ -]?");
+  const head = toks[1]!;
+  return head.length >= 4 && !LEARN_AMBIGUOUS.has(head) ? full + "|" + forms(head) : full;
+}
+
+/** Whether a film that drew `hero` itself should queue a learner for it: a drawn thing (not a kit one) with a learnable name that is
+ *  not already known. Off with YUI_MOTION_LEARN=off. */
+export function worthLearning(hero: Hero | null, kept: Kept): boolean {
+  if (!hero || !hero.define || !learnOn()) return false; // no hero, or a kit thing (it has no define)
+  const n = hero.name;
+  return !(n in WORDS) && !(n in MOTION_SEED.things) && !(n in kept.things) && !!learnWords(n.replace(/_/g, " "));
+}
+
+export function learnAsk(label: string): string {
+  return `${/^[aeiou]/.test(label) ? "An" : "A"} ${label}, shown clearly.`; // the seed's own ask, so a learned drawing is made like a seed one
+}
+
+export interface Learner {
+  claim(noun: string, daily: number, inflight: number): Promise<boolean>;
+  put(noun: string, label: string | null, parts: unknown[] | null, words: string | null, why: string): Promise<void>;
+}
+
+/** Draws `noun` again for the judge. The store's claim holds the caps (2 in flight, 20 a day, two tries a noun ever); the drawing is
+ *  saved as `drawn` and a judge on a machine with a browser keeps or drops it. Returns why it stopped. Never throws. */
+export async function learn(noun: string, db: Learner, call: Say, timeoutMs = LEARN_PARTS_TIMEOUT_MS): Promise<string> {
+  try {
+    if (!learnOn()) return "off";
+    const words = learnWords(noun.replace(/_/g, " "));
+    if (!words || noun in WORDS || noun in MOTION_SEED.things) return "not learnable";
+    if (!(await db.claim(noun, LEARN_DAILY, LEARN_MAX_INFLIGHT))) return "capped or known";
+    let why = "no parts";
+    for (let i = 0; i < 2; i++) { // as seed_build: one retry when the parts come back empty or name another thing
+      let d: Drawn | Record<string, never> | null = null;
+      try {
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        d = parseReply(await Promise.race([call(THING_PROMPT.replace("{ask}", learnAsk(noun.replace(/_/g, " ")))),
+                                           new Promise<never>((_, no) => { timer = setTimeout(() => no(new Error("slow")), timeoutMs); })])
+          .finally(() => clearTimeout(timer)));
+      } catch { d = null; }
+      if (d && "name" in d && d.parts && d.name === noun) {
+        await db.put(noun, d.label, d.parts, words, "");
+        return "drawn";
+      }
+      why = d && "name" in d && d.name ? `parts named ${d.name}` : "no parts";
+    }
+    await db.put(noun, null, null, null, why);
+    return why;
+  } catch (e: any) {
+    return `crash ${e?.name ?? "error"}`;
+  }
 }

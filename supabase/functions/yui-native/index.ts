@@ -40,7 +40,7 @@
 // YUI_FIRECRAWL_KEY (Yui's own Firecrawl key for web search; free lookups a month per person in yui_limits).
 // The runtime lives in runtime/ and is copied to ../_native by runtime/scripts/build.mjs.
 import { withCors } from "../_shared/cors.ts";
-import { openRouter, runAgent, runJob, runScheduled, type TurnResult } from "../_native/turn.ts";
+import { learnNoun, openRouter, runAgent, runJob, runScheduled, type TurnResult } from "../_native/turn.ts";
 import { SupabaseStore } from "../_native/supabase.ts";
 import { MODELS, PROVIDERS } from "../_native/models.ts";
 import { oneLineMode } from "../_native/oneline.ts";
@@ -97,6 +97,8 @@ async function fromDatabase(body: { agent_id?: string; schedule_id?: string; mes
       const done = await runJob(store, j, opts);
       for (const m of done.replies) await push(m);
     }
+    // A noun the film had to draw is drawn again for the judge, after everything the person is waiting on (MOTION-29).
+    for (const n of r.learn ?? []) await learnNoun(store, n, opts);
   }).catch((e) => console.error("yui-native", id.slice(0, 8), e)));
   return json({ ok: true }, 202);
 }
