@@ -25,6 +25,7 @@ import { applySetup, isBlank, setupAsks } from "./setup.ts";
 import { jevLine, jevRoute } from "./jev.ts";
 import { gate as oneLineGate, onelineNote, type OneLineMode } from "./oneline.ts";
 import { better, keepNotes, owes, pagesOf, redrawNote } from "./teach.ts";
+import * as motion from "./motion.ts";
 import { keyModel, providerLabel, PROVIDERS } from "./models.ts";
 import { type Clock, type TableStore, LIMITS, applyHeld, applyTables, asText, changed, clock, diff, draw, emptyStore, fromSeeds, pretty,
          readQueries, tablesPrompt } from "./tables.ts";
@@ -463,7 +464,7 @@ async function oneTurn(store: Store, agent: NativeAgent, rows: Row[], opts: Turn
     // An explanation with a page that has no drawing (or no deck at all) is drawn again, once (t_88023cf2). The second try is kept only when it is better.
     const owed = owes(typed.map((r) => r.body).join(" "), answer.text);
     if (owed) {
-      log(`${p.name}: explanation with ${owed.why === "bare" ? `${owed.bare.length} of ${pagesOf(answer.text).pages} pages undrawn` : "no deck"}, asking once more to draw it`);
+      log(`${p.name}: explanation with ${owed.why === "bare" ? `${owed.bare.length} of ${pagesOf(answer.text).pages} pages undrawn` : owed.why}, asking once more to draw it`);
       const again = await ask(opts, provider, { ...sent, messages: [...(looked.messages ?? sent.messages), { role: "assistant", content: answer.text }, { role: "user", content: redrawNote(owed) }],
                                                 ...(provider.reasoning ? { reasoning: { enabled: false } } : {}) });
       if (better(answer.text, again.text)) answer = { ...again, text: keepNotes(answer.text, again.text) };
@@ -531,6 +532,10 @@ async function oneTurn(store: Store, agent: NativeAgent, rows: Row[], opts: Turn
     if (touched) t.text = `${t.text.trim() || "Saved."}\n\`\`\`yui\n${draw(t.store, view, clk).join("\n")}\n\`\`\``;
   }
   out.text = t.text;
+  // `motion "<ask>"` (MOTION-27): the line is cut out of the reply; the film is made after the reply is saved, scene by scene.
+  const cut = motion.split(out.text);
+  const filmAsk = cut.ask && motion.allowed(agent.userId, now) ? cut.ask : null;
+  out.text = cut.ask ? (filmAsk ? cut.body : `${cut.body.trim()}\n\n${motion.words(cut.ask)}`.trim()) : out.text;
   let body = unsprawl(unmark(undeck(unend(unbreak(undash(out.text))))));
   // A slip is never the reply (YUI-188): logged in full, shown as one small card with a retry under what worked.
   const slip = slipLine(notes, t.slipped);
@@ -592,6 +597,7 @@ async function oneTurn(store: Store, agent: NativeAgent, rows: Row[], opts: Turn
   }
   if (real.length) await store.markHandled(real);
   log(`${p.name}: ${model} answered, ${body.length} chars`);
+  if (filmAsk) await makeFilm(store, agent, filmAsk, real, last, { opts, provider, model, say, log });
 
   // Hand-offs last, so the person reads this answer first. One level only: a handed-off agent can't hand on.
   if (handoff) {
@@ -600,6 +606,34 @@ async function oneTurn(store: Store, agent: NativeAgent, rows: Row[], opts: Turn
     log(`${p.name}: no agent @${(out.handoff[0] ?? drawn[0]).target} to hand off to`);
   }
   return { handled: true };
+}
+
+/** The film for an agent's `motion` line (MOTION-27): one model call writes the scenes, each saved as its own row the moment it is
+ *  complete. The working row says which scene is being drawn. A film that never starts is said in words. */
+async function makeFilm(store: Store, agent: NativeAgent, ask: string, real: string[], last: string | undefined,
+                        c: { opts: TurnOptions; provider: Provider; model: string; say: (body: string, meta: Record<string, unknown>) => Promise<string>; log: (m: string) => void }): Promise<void> {
+  const { opts, provider, model, say, log } = c;
+  const p = agent.profile;
+  const film = "m" + (opts.newId ?? uuid)().replace(/-/g, "").slice(0, 6);
+  let n = 0;
+  try {
+    n = await motion.make(ask, film,
+      async (prompt, onText) => {
+        let streamed = false;
+        const a = await ask_(opts, provider, { model, messages: [{ role: "user", content: prompt }], max_tokens: 12000,
+                                               ...(provider.reasoning ? { reasoning: { enabled: false } } : {}) }, (t) => { streamed = true; onText(t); });
+        if (!streamed) onText(a.text); // a server that answered plain, not as a stream
+      },
+      (body, part) => say(body, { ...(real.length ? { turn: real } : {}), native: { film, part } }),
+      async (words) => { if (last) await store.doing(last, words); });
+  } catch (e: any) {
+    if (e instanceof Stopped) throw e;
+    log(`${p.name}: film failed: ${e?.message ?? e}`);
+  }
+  if (last) await store.doing(last, null);
+  if (n) { log(`${p.name}: film ${film}, ${n} scene(s) for ${ask.slice(0, 60).replace(/\n/g, " ")}`); return; }
+  log(`${p.name}: no scene for ${JSON.stringify(ask.slice(0, 60))}, said in words`);
+  await say(motion.words(ask), { ...(real.length ? { turn: real } : {}), native: { film, failed: true } });
 }
 
 /** Runs a queued job (a meal's macros) and writes its answer. Safe to call twice: the second finds it taken. */
@@ -2035,15 +2069,16 @@ export async function inlineImages(messages: any[], fetchImpl: typeof fetch): Pr
   return swapped ? out : null;
 }
 
-async function ask(opts: TurnOptions, pv: Provider, req: Record<string, unknown>): Promise<Completion> {
+const ask_ = (o: TurnOptions, pv: Provider, req: Record<string, unknown>, onText: (t: string) => void) => ask(o, pv, req, onText);
+async function ask(opts: TurnOptions, pv: Provider, req: Record<string, unknown>, onDelta?: (text: string) => void): Promise<Completion> {
   if (opts.signal?.aborted) throw new Stopped();
   const client = new ChatClient(pv.url, { key: pv.key, headers: pv.headers, fetch: opts.fetch, idle: 120 });
   const body = { ...req, ...(pv.extra ?? {}) } as any;
   try {
-    return await client.complete(body, { stream: true });
+    return await client.complete(body, { stream: true, onDelta });
   } catch (e) {
     if (opts.signal?.aborted) throw new Stopped(); // the person's Stop ended the call, not the model
-    if (!(e instanceof ModelUnavailable)) throw e;
+    if (!(e instanceof ModelUnavailable) || onDelta) throw e; // a stream already played into onDelta is not replayed
     await new Promise((r) => setTimeout(r, Math.min((e.retryAfter ?? 2) * 1000, 8000)));
     return await client.complete(body, { stream: true });
   }

@@ -1,10 +1,11 @@
 // t_88023cf2: an explanation is a deck with a drawing on every page; the net under the prompt.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { better, explainAsk, keepNotes, owes, pagesOf, redrawNote } from "../src/teach.ts";
+import { better, explainAsk, hasMotion, keepNotes, owes, pagesOf, redrawNote } from "../src/teach.ts";
 import { TEACH_RULES, systemPrompt } from "../src/prompt.ts";
 import { starters } from "../src/profiles.ts";
 import { runAgent } from "../src/turn.ts";
+import * as motion from "../src/motion.ts";
 import { fakeModel, freshYui, provider } from "./helpers.ts";
 
 const BARE = `Everything is tiny strings.
@@ -49,10 +50,10 @@ test("a page with no drawing right after it is found", () => {
 });
 
 test("owes a redraw only for an explanation that came back undrawn", () => {
-  assert.deepEqual(owes("Eli5 string theory", BARE), { why: "bare", bare: ["Strings"] });
-  assert.equal(owes("Eli5 string theory", DRAWN), null);
-  assert.equal(owes("log my run", BARE), null, "not an explanation");
-  assert.deepEqual(owes("how do vaccines work", "A vaccine is a practice run for your body. It shows your immune system a harmless piece of a germ so it can learn to fight it."), { why: "no deck", bare: [] });
+  assert.deepEqual(owes("Eli5 string theory", BARE), { why: "deck", bare: ["Strings"] });
+  assert.deepEqual(owes("Explain how big the sun is", BARE), { why: "bare", bare: ["Strings"] }, "a size ask keeps the deck check");
+    assert.equal(owes("log my run", BARE), null, "not an explanation");
+  assert.deepEqual(owes("how do vaccines work", "A vaccine is a practice run for your body. It shows your immune system a harmless piece of a germ so it can learn to fight it."), { why: "no film", bare: [] });
   assert.equal(owes("what is the capital of France", "Paris, the capital of France and its biggest city, sits on the Seine river in the north."), null, "a plain fact stays words");
   assert.equal(owes("explain my week", "Here is it.\n```yui\nplan \"Week\"\npage \"Mon\" body=\"x\"\nchoose \"Ok?\" A|B\nend\n```"), null, "a plan is not an explainer");
 });
@@ -71,36 +72,99 @@ test("notes the first try wrote are not lost in the redraw", () => {
   assert.equal(keepNotes(BARE, DRAWN), DRAWN);
 });
 
-test("every agent's prompt carries the teaching block, and its examples are drawn on every page", () => {
+const SCENES = `=== scene one 3 ===
+api.look('chalk');
+api.text('Loops', api.w/2, 120, {size:36});
+=== scene two 5 ===
+api.look('chalk');
+api.say('Each hum is a particle', 0.4, 4);
+=== end ===`;
+
+const FILM = `String theory says everything is tiny loops. Watch.
+\`\`\`yui
+motion "String theory: particles are tiny vibrating loops of energy, and each way a loop vibrates is a different particle."
+choose "Next?" "More"|"Less"
+end
+\`\`\``;
+
+test("which answers owe a film", () => {
+  assert.equal(hasMotion(FILM), true);
+  assert.equal(hasMotion('x\n```yui\nmotion film=m1 part=2 +last\n```'), false, "a block of ours is not the agent's line");
+  assert.equal(owes("Eli5 string theory", FILM), null, "a film is done");
+  assert.deepEqual(owes("Eli5 string theory", DRAWN), { why: "deck", bare: [] }, "a deck is not a film");
+  assert.equal(owes("take me through what string theory is", "Everything is tiny loops of energy that hum, and each hum is a particle you can feel, see or smell.")?.why, "no film");
+  assert.equal(owes("Explain how big the sun is", BARE)?.why, "bare", "a how-big ask keeps the deck check");
+  assert.equal(owes("Explain how big the sun is", DRAWN), null);
+  assert.match(redrawNote({ why: "deck", bare: [] }), /ONE `motion/);
+  assert.equal(better(DRAWN, FILM), true);
+  assert.equal(better(FILM, DRAWN), false);
+});
+
+test("every agent's prompt asks for a film, not a deck, and its example is a motion line", () => {
   const p = systemPrompt(starters()[0], [], "a1");
-  assert.ok(p.includes("### Explaining: draw every page"));
-  const decks = [...TEACH_RULES.matchAll(/```yui\n([\s\S]*?)```/g)].map((m) => m[1]);
-  assert.equal(decks.length, 3);
-  for (const d of decks) {
-    const p = pagesOf("```yui\n" + d + "```");
-    assert.equal(p.decks, 1);
-    assert.ok(p.pages >= 2 && p.pages <= 4);
-    assert.deepEqual(p.bare, []);
-    for (const b of d.matchAll(/body="([^"]*)"/g)) assert.ok(b[1].split(/\s+/).length <= 25, b[1]);
-  }
+  assert.ok(p.includes("### Explaining: one line and a film"));
+  const ex = [...TEACH_RULES.matchAll(/```yui\n([\s\S]*?)```/g)].map((m) => m[1]);
+  assert.equal(ex.length, 1);
+  assert.equal(hasMotion("```yui\n" + ex[0] + "```"), true);
+  assert.equal(pagesOf("```yui\n" + ex[0] + "```").decks, 0);
   assert.ok(!/[—–]/.test(TEACH_RULES), "no em or en dash");
 });
 
-test("a turn redraws an undrawn explanation once, and keeps it", async () => {
+test("a turn redraws a deck as a film once, and keeps it", async () => {
   const { store, byHandle } = await freshYui();
   const yui = await byHandle("yui");
-  const m = fakeModel((c) => (String(c.messages[c.messages.length - 1].content).startsWith("[yui] Pages with no drawing") ? DRAWN : BARE));
-  const row = store.say(yui.id, "Eli5 string theory");
+  const m = fakeModel((c) => {
+    const last = String(c.messages[c.messages.length - 1].content);
+    if (last.startsWith("[yui] That was a deck")) return FILM;
+    if (last.startsWith("You are a motion designer")) return SCENES;
+    return DRAWN;
+  });
+  store.say(yui.id, "Eli5 string theory");
   const r = await runAgent(store, yui.id, { provider, fetch: m.fetch });
-  assert.equal(m.calls.length, 2);
-  assert.match(String(m.calls[1].messages.at(-1).content), /"Strings"/);
+  assert.match(String(m.calls[1].messages.at(-1).content), /ONE `motion/);
   assert.equal(m.calls[1].messages.at(-2).role, "assistant", "the model sees its own first try");
-  const reply = store.data.rows.find((x) => x.id === r.replies[0])!;
-  assert.ok(reply.body.includes('sketch "One idea"'));
-  assert.ok(row);
+  const bodies = r.replies.map((id) => store.data.rows.find((x) => x.id === id)!.body);
+  assert.ok(!bodies[0].includes("motion"), "the line is cut out of the words");
+  assert.ok(bodies.some((b) => b.includes("deck")) === false);
+  assert.equal(bodies.filter((b) => /^```yui\nmotion /.test(b)).length, 3, "two scenes, then the close row");
 });
 
-test("a redraw that is no better is dropped, and a drawn answer is not asked twice", async () => {
+test("a film is one row per scene, the first with the title, the last with +last, the hero written in", async () => {
+  const { store, byHandle } = await freshYui();
+  const yui = await byHandle("yui");
+  const HEART = FILM.replace("String theory: particles are tiny vibrating loops of energy", "How a heart works: a heart is a pump of four rooms");
+  const m = fakeModel((c) => (String(c.messages[0].content).startsWith("You are a motion designer") ? SCENES : HEART));
+  store.say(yui.id, "Eli5 how a heart works");
+  const r = await runAgent(store, yui.id, { provider, fetch: m.fetch });
+  const rows = r.replies.map((id) => store.data.rows.find((x) => x.id === id)!);
+  const films = rows.filter((x) => /^```yui\nmotion /.test(x.body)).map((x) => x.body);
+  assert.equal(films.length, 3);
+  assert.match(films[0], /^```yui\nmotion "How a heart works[^"]*" film=m\w+ part=1\n=== scene one 3 ===/);
+  assert.match(films[1], /part=2\n=== scene two 5 ===/);
+  assert.match(films[2], /part=3 \+last\n```$/);
+  assert.match(films[0], /api\.thing\("heart"/, "the kit draws the hero");
+  const calls = m.calls.filter((c) => String(c.messages[0].content).startsWith("You are a motion designer"));
+  assert.equal(calls.length, 1);
+  assert.match(String(calls[0].messages[0].content), /ASK: How a heart works: a heart is a pump/);
+  assert.equal(rows.at(-1)!.body, films[2]);
+  assert.equal(m.calls.length, 2, "one turn, one film");
+});
+
+test("a film that draws nothing is said in words, and the ask is capped per hour", async () => {
+  const { store, byHandle } = await freshYui();
+  const yui = await byHandle("yui");
+  const m = fakeModel((c) => (String(c.messages[0].content).startsWith("You are a motion designer") ? "sorry, no" : FILM));
+  store.say(yui.id, "Eli5 string theory");
+  const r = await runAgent(store, yui.id, { provider, fetch: m.fetch });
+  const last = store.data.rows.find((x) => x.id === r.replies.at(-1))!;
+  assert.match(last.body, /^```yui\nsay "String theory/);
+  assert.equal(motion.allowed("cap-test", 0), true);
+  for (let i = 0; i < 7; i++) motion.allowed("cap-test", 1);
+  assert.equal(motion.allowed("cap-test", 2), false);
+  assert.equal(motion.allowed("cap-test", 3_700_000), true);
+});
+
+test("a redraw that is no better is dropped, and a film is not asked twice", async () => {
   const a = await freshYui();
   const m1 = fakeModel(() => BARE);
   a.store.say((await a.byHandle("yui")).id, "Eli5 string theory");
@@ -108,8 +172,17 @@ test("a redraw that is no better is dropped, and a drawn answer is not asked twi
   assert.equal(m1.calls.length, 2);
   assert.ok(a.store.data.rows.find((x) => x.id === r1.replies[0])!.body.includes("page \"Strings\""));
   const b = await freshYui();
-  const m2 = fakeModel(() => DRAWN);
+  const m2 = fakeModel((c) => (String(c.messages[0].content).startsWith("You are a motion designer") ? SCENES : FILM));
   b.store.say((await b.byHandle("yui")).id, "Eli5 string theory");
   await runAgent(b.store, (await b.byHandle("yui")).id, { provider, fetch: m2.fetch });
-  assert.equal(m2.calls.length, 1);
+  assert.equal(m2.calls.length, 2, "the answer and the film, no redraw");
+});
+
+test("where and how big keep the deck", async () => {
+  const { store, byHandle } = await freshYui();
+  const yui = await byHandle("yui");
+  const m = fakeModel(() => DRAWN);
+  store.say(yui.id, "Explain how big the sun is");
+  await runAgent(store, yui.id, { provider, fetch: m.fetch });
+  assert.equal(m.calls.length, 1);
 });

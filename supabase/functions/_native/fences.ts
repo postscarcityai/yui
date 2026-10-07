@@ -1,3 +1,4 @@
+// Copied from adapters/openai-compat/src/fences.ts by runtime/scripts/build.mjs. Do not edit here.
 // Small models draw screens in the wrong fence (INT-23): qwen2.5:7b tags a Yui
 // Lines block ```yml, ```yaml or nothing at all. The app only draws ```yui, so
 // the bridge retags a fence whose first line is a Yui Lines head. Runtime-neutral, no I/O.
