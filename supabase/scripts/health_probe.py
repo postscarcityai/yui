@@ -34,8 +34,9 @@ def main() -> int:
     for r in bad:
         out.append(f"Crew wake failed {r['n']}x in {m} min: {r['status_code']} {r['body']}")
 
-    rows = mgmt.logs("SELECT timestamp, event_message FROM logs WHERE (event_message LIKE '%yui-native%' OR event_message LIKE '%yui-agents%') "
-                     "AND (event_message LIKE '%does not exist%' OR event_message LIKE '%error%') ORDER BY timestamp DESC LIMIT 5", m)
+    # position() not LIKE: ClickHouse LIKE '%yui-native%' returns "Backend error" on this endpoint (Oct 8)
+    rows = mgmt.logs("SELECT timestamp, event_message FROM logs WHERE (position(event_message, 'yui-native') > 0 OR position(event_message, 'yui-agents') > 0) "
+                     "AND (position(event_message, 'does not exist') > 0 OR position(event_message, 'error') > 0) ORDER BY timestamp DESC LIMIT 5", m)
     hits = rows.get("result") if isinstance(rows, dict) else rows
     if not isinstance(hits, list):
         print(f"health_probe: unexpected logs response: {str(rows)[:200]}", file=sys.stderr)
