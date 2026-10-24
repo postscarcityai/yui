@@ -78,6 +78,11 @@ struct StageTurn: Equatable {
     var failed = false
     /// The person stopped it (YUI-190): nothing more comes for this turn.
     var stopped = false
+    /// The answer is one deck (TestFlight, Oct 5 and 7: "a card in a card with a tiny little stupid drawing",
+    /// "a shitty PowerPoint deck", "something that tweens, morphs between slides"): the stage plays it as the
+    /// deck's own stage (MorphStage), the drawing most of the screen and morphing from page to page, not as a
+    /// run of word pages with a small picture each. Set only when every picture in the turn is the deck's.
+    var deck: StageDeck?
 
     /// Something to look at, not just to read or answer (pick A, Oct 6): a deck or plan page, a drawing, a timer, a
     /// motion, a form. Plain words and plain questions stay in the chat, with their buttons inline.
@@ -87,12 +92,27 @@ struct StageTurn: Equatable {
             || plan != nil || questions.contains { $0.c.preset == "form" }
     }
 
-    /// The questions screen follows the last chunk.
-    var pages: Int { chunks.count + (questions.isEmpty ? 0 : 1) }
+    /// The pages read before the questions screen: a filmed deck is one page, a paged deck its steps, else the chunks.
+    var readPages: Int { deck.map { $0.film ? 1 : $0.steps.count } ?? chunks.count }
+
+    /// The questions screen follows the last page.
+    var pages: Int { readPages + (questions.isEmpty ? 0 : 1) }
 
     /// Their words got nothing back and nobody stopped it: a dropped or timed-out turn. The stage says so
     /// with Try again, never a bare "Nothing to show" (TestFlight AClUWC-D8VpsUHE98ZgCDik).
     var unanswered: Bool { ask != nil && pages == 0 && !stopped }
+}
+
+/// The deck a turn plays whole: its head, its steps (pages and the quiz questions between them, as
+/// `steps(of:)` lays them out), the reply's components and its scope.
+struct StageDeck: Equatable {
+    let head: YLComponent
+    let steps: [YLComponent]
+    let all: [YLComponent]
+    let scope: String
+    /// The deck plays as a film the phone makes from its pages (DeckFilm): every page's picture is a `shapes`,
+    /// a `sketch` or none. A deck with a chart, a map or math on a page pages instead.
+    var film = false
 }
 
 enum StageChunks {
@@ -272,9 +292,44 @@ enum StageChunks {
             replies.append(m)
         }
         for m in newest(replies) { add(m, to: &t) }
+        settle(&t)
+        return t
+    }
+
+    /// The turn's replies are in: the deck plays whole when it is the whole answer, else the chunks pack
+    /// onto pages and the last page lifts onto the questions screen.
+    static func settle(_ t: inout StageTurn) {
+        if var deck = t.deck, isDeckTurn(t, deck) {
+            deck.film = DeckFilm.canFilm(steps: deck.steps, all: deck.all)
+            t.deck = deck
+            if deck.film {
+                // A filmed deck asks every question after the film, on one screen, and the film has already
+                // said what they are about: no page drawn again over a question.
+                for i in t.questions.indices { t.questions[i].about = nil }
+            } else {
+                // A paged deck's own quiz questions play inside it, on their own step; only questions outside it
+                // (a `choose "What next?"` after the deck) wait on the questions screen.
+                let inside = Set(deck.all.members(of: deck.head).map(\.serial))
+                t.questions.removeAll { $0.scope == deck.scope && inside.contains($0.c.serial) }
+            }
+            t.lead = nil
+            return
+        }
+        t.deck = nil
         t.chunks = pack(t.chunks)
         lift(&t)
-        return t
+    }
+
+    /// The deck is the whole answer: no plan, and nothing else to look at. A line before it (the one-line answer
+    /// the guide asks for) rides in the chat; a picture outside the deck means the turn is a story of parts
+    /// and plays as chunks.
+    static func isDeckTurn(_ t: StageTurn, _ deck: StageDeck) -> Bool {
+        guard t.plan == nil, !deck.steps.isEmpty else { return false }
+        let pages = Set(deck.steps.map(\.serial))
+        return t.chunks.allSatisfy { k in
+            if let page = k.page { return k.scope == deck.scope && pages.contains(page.serial) }
+            return k.pic == nil
+        }
     }
 
     /// Seconds between replies that still belong to one answer.
@@ -307,8 +362,7 @@ enum StageChunks {
             if m.fromUser { break }
             if led != nil ? !m.home && !m.stopped : m.hello { add(m, to: &t) }
         }
-        t.chunks = pack(t.chunks)
-        lift(&t)
+        settle(&t)
         return t
     }
 
@@ -385,6 +439,14 @@ enum StageChunks {
                 return asked
             }
             if let p = r.plan { t.plan = StageQuestion(scope: m.id, c: p, all: yl.components)}
+            // One deck in the reply, drawn as a deck (not a scrolling one): the candidate for the whole turn.
+            // A second deck, or one in another reply of the turn, means the answer is more than a deck.
+            let decks = yl.components.filter { $0.preset == "deck" && $0.page == 1 }
+            if decks.count == 1, t.deck == nil, let head = decks.first, head.string("layout") != "scroll" {
+                t.deck = StageDeck(head: head, steps: yl.components.steps(of: head), all: yl.components, scope: m.id)
+            } else if !decks.isEmpty, t.deck != nil {
+                t.deck = StageDeck(head: decks[0], steps: [], all: [], scope: "")
+            }
         } else {
             let parts = text(m.text)
             guard !parts.isEmpty else { return }

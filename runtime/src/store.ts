@@ -8,6 +8,7 @@ import { DEFAULT_PHOTO_LIMIT, DEFAULT_ROUTES } from "./types.ts";
 import { HOME_META, homeBody } from "./home.ts";
 import { type TableChange, type TableStore, emptyStore, fromSeeds } from "./tables.ts";
 import type { JobItem } from "./meals.ts";
+import type { Kept } from "./motion.ts";
 import { chatOf } from "./handoff.ts";
 
 export interface Store {
@@ -67,6 +68,12 @@ export interface Store {
   /** Takes a queued job (or one whose run died) to run it; null when another run has it, it is done, or it failed 3 times. */
   claimJob(id: string): Promise<JobItem | null>;
   finishJob(id: string, status: "done" | "failed" | "queued", result?: Record<string, unknown>): Promise<void>;
+  /** Drawings the judge kept for films (MOTION-29), shared across people by noun. */
+  motionKept(): Promise<Kept>;
+  /** The learner's caps in one step (2 in flight, 20 a day, two tries a noun): true when this run may draw `noun` again. */
+  motionClaim(noun: string, daily: number, inflight: number): Promise<boolean>;
+  /** A claimed noun's drawing, to wait for the judge; `parts` null: the run gave up, `why` says why. */
+  motionPut(noun: string, label: string | null, parts: unknown[] | null, words: string | null, why: string): Promise<void>;
   /** Stop (YUI-190): true when this person tapped Stop on this agent at or after `since`. */
   stoppedSince(agentId: string, userId: string, since: string, chat?: string | null): Promise<boolean>;
   /** Stop (YUI-190): this agent's jobs for this person queued at or before `before` and not finished fail as stopped. How many. */
@@ -90,6 +97,8 @@ export interface LocalData {
   tables?: Record<string, TableStore>; // by agent id
   others?: { handle: string; name: string; userId?: string }[]; // connected agents (Hermes and others), for @mentions
   jobs?: (JobItem & { claimedAt?: string })[];
+  motion?: Record<string, { label: string; parts: unknown[] | null; words: string | null; status: "claimed" | "drawn" | "kept" | "failed"; tries: number; claimedAt?: number; why?: string }>; // learned drawings by noun
+  motionDay?: Record<string, number>; // drawings the learner started, by UTC day
 }
 
 export class LocalStore implements Store {
@@ -293,6 +302,35 @@ export class LocalStore implements Store {
   async finishJob(id: string, status: "done" | "failed" | "queued", result?: Record<string, unknown>) {
     const j = (this.data.jobs ?? []).find((x) => x.id === id);
     if (j) Object.assign(j, { status, ...(result ? { result } : {}) });
+    this.changed();
+  }
+  /** This store's side of the learner, for motion.learn. */
+  learner() {
+    return { claim: (n: string, d: number, i: number) => this.motionClaim(n, d, i), put: (n: string, l: string | null, p: unknown[] | null, w: string | null, y: string) => this.motionPut(n, l, p, w, y) };
+  }
+  async motionKept(): Promise<Kept> {
+    const kept: Kept = { things: {}, words: {} };
+    for (const [n, t] of Object.entries(this.data.motion ?? {})) {
+      if (t.status === "kept" && t.parts && t.words) { kept.things[n] = { label: t.label, parts: t.parts }; kept.words[n] = t.words; }
+    }
+    return kept;
+  }
+  async motionClaim(noun: string, daily: number, inflight: number) {
+    const m = (this.data.motion ??= {});
+    const r = m[noun], now = Date.now(), day = new Date(now).toISOString().slice(0, 10);
+    if (r && (r.status === "drawn" || r.status === "kept" || r.tries >= 2 || (r.status === "claimed" && now - (r.claimedAt ?? 0) < 300_000))) return false;
+    if (Object.values(m).filter((x) => x.status === "claimed" && now - (x.claimedAt ?? 0) < 300_000).length >= inflight) return false;
+    const d = (this.data.motionDay ??= {});
+    if ((d[day] ?? 0) >= daily) return false;
+    d[day] = (d[day] ?? 0) + 1;
+    m[noun] = { label: noun.replace(/_/g, " "), parts: null, words: null, status: "claimed", tries: (r?.tries ?? 0) + 1, claimedAt: now };
+    this.changed();
+    return true;
+  }
+  async motionPut(noun: string, label: string | null, parts: unknown[] | null, words: string | null, why: string) {
+    const r = this.data.motion?.[noun];
+    if (!r || r.status !== "claimed") return;
+    Object.assign(r, { status: parts ? "drawn" : "failed", label: label ?? r.label, parts, words, why });
     this.changed();
   }
   async stoppedSince(agentId: string, userId: string, since: string, chat: string | null = null) {

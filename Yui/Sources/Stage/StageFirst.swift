@@ -149,7 +149,8 @@ final class StageFirstModel {
         // Nothing said before it and no hello (a reply from another channel into a thread nobody spoke in): it plays from itself.
         let lead = start == nil && !messages[i].hello ? id : nil
         let t = start.map { StageChunks.turn(messages, ask: messages[$0].id) } ?? StageChunks.hello(messages, from: lead)
-        guard let at = t.chunks.firstIndex(where: { $0.scopes.contains(id) })
+        guard let at = t.deck.map({ $0.scope == id ? 0 : $0.steps.count })
+                ?? t.chunks.firstIndex(where: { $0.scopes.contains(id) })
                 ?? (t.questions.contains { $0.scope == id } ? t.chunks.count : nil) else { return false }
         ask = start.map { messages[$0].id }
         hello = start == nil ? (lead ?? messages.first(where: \.hello)?.id) : nil
@@ -237,6 +238,8 @@ struct StageFirstView: View {
     @Environment(\.colorScheme) private var scheme
     @Environment(\.scenePhase) private var phase
     @Environment(\.openURL) private var openURL
+    /// Taps inside a deck the stage plays whole (a quiz answer) go to the agent as from the chat.
+    @Environment(\.ylEmit) private var emit
     /// The visual's scrim follows the words (YUI-124): the top of the chunk's words and the
     /// stage's height, both in global points.
     @State private var wordsTop: CGFloat?
@@ -649,7 +652,7 @@ struct StageFirstView: View {
     /// Where the scrim lies: under the chunk's words, over the whole stage for the questions
     /// (words everywhere), the spec's zone until the words have been laid out.
     private func wordsZone(_ turn: StageTurn?) -> VisualPlan.Zone {
-        if let t = turn, t.pages > 0, model.at >= t.chunks.count { return .under(top: 1) }
+        if let t = turn, t.pages > 0, model.at >= t.readPages { return .under(top: 1) }
         guard let top = wordsTop, stageHeight > 0 else { return .spec }
         return .under(top: 1 - Double(top / stageHeight))
     }
@@ -806,7 +809,23 @@ struct StageFirstView: View {
                     } else {
                         greeting(c, title: "Anything else?", sub: "Everything so far is in the chat, top right.", orb: orb)
                     }
-                } else if at < t.chunks.count {
+                } else if let deck = t.deck, deck.film, at < 1 {
+                    // An explainer deck is a film the phone makes from its pages (DeckFilm): the drawing the hero,
+                    // the title in motion, the words spoken. No slides.
+                    DeckFilmStage(deck: deck, hasQuestions: !t.questions.isEmpty,
+                                  onQuestions: { withAnimation(look.enterAnimation) { model.at = 1 } },
+                                  onHome: { goHome() })
+                        // Full bleed: the film runs edge to edge under the ask, not in the page's margins.
+                        .padding(.horizontal, -theme.spacing.l)
+                        .id("film-" + deck.scope)
+                        .transition(look.transition(back: model.back))
+                } else if let deck = t.deck, !deck.film, at < deck.steps.count {
+                    // A deck with pictures the film cannot draw (a chart, a map, math) pages as its own stage, the
+                    // drawing most of the screen, morphing from page to page (DeckMorph).
+                    deckStage(deck, t)
+                        .id(deck.scope)
+                        .transition(look.transition(back: model.back))
+                } else if t.deck == nil, at < t.chunks.count {
                     // done: the stage hands over to the chunk, in the look's enter.
                     chunk(t.chunks[at], c)
                         .id(t.chunks[at].id)
@@ -906,7 +925,26 @@ struct StageFirstView: View {
     static let drawings: Set<String> = ["sketch", "row", "shapes", "shape", "mock", "part", "diagram", "map", "chart", "stat",
                                         "math", "timeline", "compare", "draw"]
 
-    /// One idea: its words, then the drawing that shows them, as a headline sits over its figure.
+    /// A deck played whole (MorphStage): the words of the page and the drawing over them, a swipe or the
+    /// bar's arrows turning the page, the deck's quiz steps answered where they are. No close and no notes
+    /// button: the stage has its own way home and the bar its arrows.
+    private func deckStage(_ deck: StageDeck, _ t: StageTurn) -> some View {
+        MorphStage(c: deck.head, pages: deck.steps,
+                   at: Binding(get: { min(model.at, max(0, deck.steps.count - 1)) },
+                               set: { i in
+                                   guard i != model.at, i < deck.steps.count else { return }
+                                   model.back = i < model.at
+                                   model.at = i
+                               }),
+                   notes: false, toggleNotes: {}, stage: true, emit: emit)
+            .environment(\.ylComponents, deck.all)
+            .environment(\.ylScope, deck.scope)
+            .accessibilityIdentifier("stage-deck")
+    }
+
+    /// One idea: its words, then the drawing that shows them, as a headline sits over its figure. The parts
+    /// come on a beat apart in the agent's own motion (the line, the body, then the drawing), so a page
+    /// builds itself instead of landing whole (TestFlight, Oct 5: "something that tweens").
     @ViewBuilder private func block(_ k: StageChunk, _ c: Swatch, room: CGFloat?) -> some View {
         let stacked = room != nil
         VStack(alignment: .leading, spacing: stacked ? theme.spacing.m : theme.spacing.xl) {
@@ -916,6 +954,7 @@ struct StageFirstView: View {
                             headlineSize: stacked ? theme.type.title + 2 : theme.type.display + 4)
                     .accessibilityIdentifier("stage-line")
                     .onGeometryChange(for: CGFloat.self, of: { $0.frame(in: .global).minY }) { wordsTop = $0 }
+                    .modifier(StaggerIn(index: 0, look: look))
             }
             if let page = k.page {
                 if let body = page.string("body") {
@@ -923,17 +962,20 @@ struct StageFirstView: View {
                         .onGeometryChange(for: CGFloat.self, of: { $0.frame(in: .global).minY }) { top in
                             if k.line?.isEmpty != false { wordsTop = top }
                         }
+                        .modifier(StaggerIn(index: 1, look: look))
                 }
-                ForEach(Array((page.strings("points") ?? []).enumerated()), id: \.offset) { _, p in
+                ForEach(Array((page.strings("points") ?? []).enumerated()), id: \.offset) { i, p in
                     Label { Text(p) } icon: { Circle().fill(c.accent).frame(width: 7, height: 7) }
                         .font(theme.font(theme.type.body, .semibold))
                         .foregroundStyle(c.ink)
+                        .modifier(StaggerIn(index: 1 + i, look: look))
                 }
             }
             if let pic = k.pic {
                 drawing(pic, k)
                     // Stacked ideas share the height: a scene is drawn narrower so its height shrinks with it; a sketch keeps its own height and the page scrolls if it must.
                     .frame(maxWidth: pic.preset == "shapes" ? room : nil)
+                    .modifier(StaggerIn(index: k.page == nil ? 1 : 2, look: look))
             }
         }
     }
@@ -1029,7 +1071,7 @@ struct StageFirstView: View {
         var f = StageFacts()
         f.failed = (t?.failed == true || t?.unanswered == true) && pages == 0 && !store.inFlight && model.foundUntil == nil
         f.listening = mic.live
-        f.asking = t != nil && pages > 0 && model.foundUntil == nil && model.at >= (t?.chunks.count ?? 0)
+        f.asking = t != nil && pages > 0 && model.foundUntil == nil && model.at >= (t?.readPages ?? 0)
         if pages > 0, model.foundUntil == nil, !f.asking { f.chunk = model.at }
         f.arrived = model.foundUntil != nil
         if store.waiting, let d = store.doing { f.doing = d.text ?? "" }
@@ -1077,7 +1119,8 @@ struct StageFirstView: View {
                         .accessibilityElement(children: .contain)
                         .accessibilityIdentifier("stage-questions-lead")
                 } else if !lone {
-                    Text(t.plan?.c.string("title") ?? (n == 1 ? "One question" : "Before I go"))
+                    // After a filmed deck the questions wear the deck's name, not a filler title.
+                    Text(t.plan?.c.string("title") ?? t.deck?.head.string("title") ?? (n == 1 ? "One question" : "Before I go"))
                         .font(theme.font(theme.type.display, .heavy))
                         .foregroundStyle(c.ink)
                 }
@@ -1147,7 +1190,7 @@ struct StageFirstView: View {
         // Tap the left side to go back (feedback AOM_F89JfsVH), as on a chunk: a tap on words or space in the
         // left quarter goes back to the page before the questions. Buttons, pickers and fields keep their own taps.
         .contentShape(.rect)
-        .onTapGesture { p in if p.x < geo.size.width * Self.backZone, !t.chunks.isEmpty { step(-1) } }
+        .onTapGesture { p in if p.x < geo.size.width * Self.backZone, t.readPages > 0 { step(-1) } }
         }
         .accessibilityIdentifier("stage-questions")
         // Kept answers count at once: Send is lit before a field has been touched again.
@@ -1243,7 +1286,7 @@ struct StageFirstView: View {
     /// Picks waiting to go, so the mic and T can take a word along with them.
     private func canBundle(_ t: StageTurn) -> Bool {
         let sent = t.ask.map { model.sent.contains($0.id) } == true || alreadySent(t)
-        return !t.questions.isEmpty && !sent && model.at >= t.chunks.count && picked(t)
+        return !t.questions.isEmpty && !sent && model.at >= t.readPages && picked(t)
     }
 
     /// Answered before (a relaunch, the record): the plan, or every loose question, has an answer.

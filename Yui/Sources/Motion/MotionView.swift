@@ -27,6 +27,9 @@ struct MotionView<Fallback: View, After: View>: View {
             } else {
                 MotionWeb(web: controller.web)
                     .ignoresSafeArea()
+                    // The harness boots dark; the agent's ground shows until the first frame is drawn.
+                    .opacity(controller.hasFirstFrame ? 1 : 0)
+                    .animation(reduce ? nil : .easeOut(duration: 0.25), value: controller.hasFirstFrame)
                     .accessibilityElement()
                     .accessibilityLabel(label)
                     .accessibilityAddTraits(.isImage)

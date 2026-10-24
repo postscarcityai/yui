@@ -124,6 +124,7 @@ export interface TurnResult {
   replies: string[]; // row ids written, in any thread (hand-offs write in another)
   busy?: boolean;
   jobs: string[]; // work queued to run after the answer (runJob): a meal's macros
+  learn?: string[]; // nouns a film had to draw itself, to draw again after the answer (learnNoun, MOTION-29)
 }
 
 const HISTORY_ROWS = 60;
@@ -363,6 +364,10 @@ async function oneTurn(store: Store, agent: NativeAgent, rows: Row[], opts: Turn
     return { handled: true };
   }
 
+  // MOTION-30: a person asking how a thing works is likely to be answered with a film, and the film's hero drawing is its slowest start (about 4 s on
+  // Sonnet). When their words name no kit or seed thing, it is drawn now, beside the agent's own reply, so the film's first scene is not waiting on it.
+  const route = motionRoute(provider, opts, provider.model ?? "");
+  const early = route.heroModel && route.mine && typed.length === 1 ? motion.speculate(agent.userId, typed[0].body, route.heroSay, (m) => log(`${agent.profile.name}: ${m}`), (opts.now ?? Date.now)()) : null;
   if (last) await store.doing(last, "Thinking");
   const thread = threadOf(rows[0]);
   const [history, memory, guide, routes, tzRaw, schedules, mine, tables0, others] = await Promise.all([
@@ -476,6 +481,12 @@ async function oneTurn(store: Store, agent: NativeAgent, rows: Row[], opts: Turn
       if (real.length) await store.reply(agent, `${p.name} can't reach its model right now. Send that again in a minute.`, { bridge: "status" });
       log(`${p.name}: ${e.message}`);
       return { handled: false };
+    }
+    if (e instanceof HouseKeyDry) {
+      await say(restingScreen(), { turn: real, native: { dry: true } });
+      if (real.length) await store.markHandled(real);
+      log(`${p.name}: the house key is dry, showed the resting screen`);
+      return { handled: true };
     }
     if (!(e instanceof ModelError)) throw e;
     const why = own ? `${e.message} (this is your own ${own.provider} key)` : e.message;
@@ -596,7 +607,7 @@ async function oneTurn(store: Store, agent: NativeAgent, rows: Row[], opts: Turn
   }
   if (real.length) await store.markHandled(real);
   log(`${p.name}: ${model} answered, ${body.length} chars`);
-  if (filmAsk) await makeFilm(store, agent, filmAsk, real, last, { opts, provider, model, say, log });
+  if (filmAsk) await makeFilm(store, agent, filmAsk, real, last, { opts, provider, model, say, log, result, said: rows.filter((r) => !r.id.startsWith(SYNTHETIC)).map((r) => r.body).join("\n"), early });
 
   // Hand-offs last, so the person reads this answer first. One level only: a handed-off agent can't hand on.
   if (handoff) {
@@ -607,27 +618,80 @@ async function oneTurn(store: Store, agent: NativeAgent, rows: Row[], opts: Turn
   return { handled: true };
 }
 
+/** The learner for one noun a film had to draw (MOTION-29): drawn again on a stronger model (Sonnet 5.5 on OpenRouter), saved for the judge, which keeps a pass
+ *  under the noun's word forms. Runs after the answer, off Yui's own key and never in a turn; the store holds the caps. Never throws. */
+export async function learnNoun(store: Store, noun: string, opts: TurnOptions): Promise<string> {
+  const log = opts.log ?? (() => {});
+  try {
+    const routes = await store.routes();
+    const why = await motion.learn(noun, { claim: (n, d, i) => store.motionClaim(n, d, i), put: (n, l, p, w, y) => store.motionPut(n, l, p, w, y) },
+      async (prompt) => {
+        // Sonnet on OpenRouter will not run with thinking off: it gets a low effort and room for it.
+        const strong = /openrouter\.ai/.test(opts.provider.url);
+        const req = strong ? { model: motion.envOf("YUI_MOTION_LEARN_MODEL") || motion.LEARN_MODEL, max_tokens: 4000, reasoning: { effort: "low" } }
+                           : { model: routes.text, max_tokens: 2500, ...(opts.provider.reasoning ? { reasoning: { enabled: false } } : {}) };
+        return (await ask(opts, opts.provider, { ...req, messages: [{ role: "user", content: prompt }] }, () => {})).text;
+      });
+    log(`learner: ${noun}: ${why}`);
+    return why;
+  } catch (e: any) {
+    log(`learner: ${noun} failed: ${e?.message ?? e}`);
+    return "failed";
+  }
+}
+
+/** MOTION-30: on Yui's own OpenRouter route the hero drawing and the film run on the models the maker was built for (YUI_MOTION_HERO_MODEL,
+ *  YUI_MOTION_FILM_MODEL, YUI_MOTION_OPENER_MODEL); a person's own key keeps the model they named. `req` builds the request for one of them. */
+function motionRoute(provider: Provider, opts: TurnOptions, chatModel: string) {
+  const mine = provider === opts.provider && /openrouter\.ai/.test(provider.url);
+  const heroModel = mine ? motion.modelEnv("YUI_MOTION_HERO_MODEL", motion.HERO_MODEL) : "";
+  const filmModel = mine ? motion.modelEnv("YUI_MOTION_FILM_MODEL", motion.FILM_MODEL) : "";
+  const openerModel = filmModel ? motion.modelEnv("YUI_MOTION_OPENER_MODEL", motion.OPENER_MODEL) : ""; // a split needs a film model to take scenes 2+
+  // Sonnet on OpenRouter will not run with thinking off: it gets a low effort.
+  const req = (m: string, max: number, think = true) => (m && mine ? { model: m, max_tokens: max, reasoning: think ? { effort: "low" } : { enabled: false } }
+    : { model: chatModel, max_tokens: max, ...(provider.reasoning ? { reasoning: { enabled: false } } : {}) });
+  const heroSay = async (prompt: string) => (await ask_(opts, provider, { ...req(heroModel, heroModel && mine ? 4000 : 2500), messages: [{ role: "user", content: prompt }] }, () => {})).text;
+  return { mine, heroModel, filmModel, openerModel, req, heroSay };
+}
+
 /** The film for an agent's `motion` line (MOTION-27): one model call writes the scenes, each saved as its own row the moment it is
  *  complete. The working row says which scene is being drawn. A film that never starts is said in words. */
 async function makeFilm(store: Store, agent: NativeAgent, ask: string, real: string[], last: string | undefined,
-                        c: { opts: TurnOptions; provider: Provider; model: string; say: (body: string, meta: Record<string, unknown>) => Promise<string>; log: (m: string) => void }): Promise<void> {
-  const { opts, provider, model, say, log } = c;
+                        c: { opts: TurnOptions; provider: Provider; model: string; say: (body: string, meta: Record<string, unknown>) => Promise<string>; log: (m: string) => void; result: TurnResult; said?: string; early?: Promise<motion.Hero | null> | null }): Promise<void> {
+  const { opts, provider, say, log, result } = c;
+  const { filmModel, openerModel, heroModel, req, heroSay } = motionRoute(provider, opts, c.model);
   const p = agent.profile;
   const film = "m" + (opts.newId ?? uuid)().replace(/-/g, "").slice(0, 6);
   let n = 0;
+  const kept = motion.thingsOn() ? await store.motionKept().catch(() => motion.NO_KEPT) : motion.NO_KEPT;
   try {
     n = await motion.make(ask, film,
-      async (prompt, onText) => {
+      async (prompt, onText, role) => {
         let streamed = false;
-        const a = await ask_(opts, provider, { model, messages: [{ role: "user", content: prompt }], max_tokens: 12000,
-                                               ...(provider.reasoning ? { reasoning: { enabled: false } } : {}) }, (t) => { streamed = true; onText(t); });
+        const a = await ask_(opts, provider, { ...(role === "opener" ? req(openerModel, 3000, false) : req(filmModel, 12000)), messages: [{ role: "user", content: prompt }] }, (t) => { streamed = true; onText(t); });
         if (!streamed) onText(a.text); // a server that answered plain, not as a stream
       },
       (body, part) => say(body, { ...(real.length ? { turn: real } : {}), native: { film, part } }),
-      async (words) => { if (last) await store.doing(last, words); });
+      async (words) => { if (last) await store.doing(last, words); },
+      {
+        kept,
+        log: (m) => log(`${p.name}: ${m}`),
+        // A thing the kit lacks is drawn on this agent's model, beside the film writer (MOTION-15).
+        said: c.said,
+        split: !!openerModel,
+        early: c.early,
+        say: heroSay,
+        // A film that drew its own hero queues the learner for it: it runs after the answer, never in the turn (MOTION-25).
+        drew: (hero) => { if (motion.worthLearning(hero, kept)) (result.learn ??= []).push(hero!.name); },
+      });
   } catch (e: any) {
     if (e instanceof Stopped) throw e;
     log(`${p.name}: film failed: ${e?.message ?? e}`);
+    // A dry house key: no film and no words row either. The reply already landed, the phone draws its own sketch.
+    if (e instanceof HouseKeyDry) {
+      if (last) await store.doing(last, null);
+      return;
+    }
   }
   if (last) await store.doing(last, null);
   if (n) { log(`${p.name}: film ${film}, ${n} scene(s) for ${ask.slice(0, 60).replace(/\n/g, " ")}`); return; }
@@ -691,6 +755,11 @@ export async function runJob(store: Store, jobId: string, opts: TurnOptions): Pr
     // A model that is away gets another go from the tick; the third try tells the person.
     if (e instanceof ModelUnavailable && job.tries < 3) {
       await store.finishJob(job.id, "queued", { error: String(e.message).slice(0, 200) });
+      return result;
+    }
+    if (e instanceof HouseKeyDry) {
+      await store.finishJob(job.id, "failed", { dry: true });
+      result.replies.push(await store.reply(agent, restingScreen(), { native: { meal: job.id, failed: true, dry: true } }));
       return result;
     }
     await store.finishJob(job.id, "failed", { error: String(e?.message ?? e).slice(0, 200) });
@@ -1159,6 +1228,7 @@ async function studyModel<T>(store: Store, agent: NativeAgent, opts: TurnOptions
     }
   } catch (e: any) {
     if (e instanceof ModelUnavailable) return { say: `${p.name} can't reach its model right now. Send that again in a minute.` };
+    if (e instanceof HouseKeyDry) return { say: restingScreen() };
     if (!(e instanceof ModelError)) throw e;
     return { say: `${p.name} couldn't answer that: ${own ? `${e.message} (this is your own ${own.provider} key)` : e.message}` };
   }
@@ -2077,10 +2147,43 @@ async function ask(opts: TurnOptions, pv: Provider, req: Record<string, unknown>
     return await client.complete(body, { stream: true, onDelta });
   } catch (e) {
     if (opts.signal?.aborted) throw new Stopped(); // the person's Stop ended the call, not the model
+    if (pv === opts.provider && dryKey(e)) {
+      noteDry(opts, (e as Error).message);
+      throw new HouseKeyDry((e as ModelError).status, (e as Error).message);
+    }
     if (!(e instanceof ModelUnavailable) || onDelta) throw e; // a stream already played into onDelta is not replayed
     await new Promise((r) => setTimeout(r, Math.min((e.retryAfter ?? 2) * 1000, 8000)));
     return await client.complete(body, { stream: true });
   }
+}
+
+/** Yui's own OpenRouter key is out of credit (YUI-322). Thrown only for a call on the house key; a person's own key keeps the plain ModelError. */
+export class HouseKeyDry extends ModelError {}
+
+const DRY = /credits|spending limit|insufficient (balance|funds)|payment required/i;
+/** The server said "no credit": a 402, or the credits / spending-limit wording openai.ts names, also mid-stream. */
+function dryKey(e: unknown): boolean {
+  return e instanceof ModelError && !(e instanceof HouseKeyDry) && (e.status === 402 || DRY.test(e.message));
+}
+
+export const DRY_TAG = "house-key-dry";
+const DRY_EVERY_MS = 3_600_000;
+let dryAt = -Infinity;
+/** Tells an operator once an hour (per function instance) that the house key is dry; never one line per turn. */
+function noteDry(opts: TurnOptions, why: string): void {
+  const now = (opts.now ?? Date.now)();
+  if (now - dryAt < DRY_EVERY_MS) return;
+  dryAt = now;
+  (opts.log ?? ((m: string) => console.warn(m)))(`${DRY_TAG}: Yui's OpenRouter key is out of credit, native turns on it show the resting screen (${why.slice(0, 120)})`);
+}
+/** Test hook: forget when the dry line last went out. */
+export function resetDryLog(): void {
+  dryAt = -Infinity;
+}
+
+/** What a person sees when the house key is dry: one line that Yui is resting, then a card that does something. */
+export function restingScreen(): string {
+  return `Yui is resting for now. Add your own model key to keep going.\n\`\`\`yui\ncard "Yui is resting" body="The free model is out of juice. Your own key works right now." cta="Add my key" url=yui://settings/key\n\`\`\``;
 }
 
 export function outOfTurns(limit: number): string {

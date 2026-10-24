@@ -19,7 +19,7 @@ import { parseArgs } from "node:util";
 import { fileURLToPath } from "node:url";
 import { LocalStore, type LocalData } from "./src/store.ts";
 import { crew, starters, checkProfile } from "./src/profiles.ts";
-import { runAgent, runJob, runScheduled, openRouter, type Provider } from "./src/turn.ts";
+import { learnNoun, runAgent, runJob, runScheduled, openRouter, type Provider } from "./src/turn.ts";
 import { aboutOf, notesOf } from "./src/memory.ts";
 import { extract } from "./src/directives.ts";
 import type { NativeAgent } from "./src/types.ts";
@@ -119,6 +119,7 @@ async function turn(store: LocalStore, agent: NativeAgent, text: string, pv: Pro
   const r = await runAgent(store, agent.id, o);
   // Work queued by the answer (a meal's macros) runs right after it, as on the server.
   for (const j of r.jobs) await runJob(store, j, o);
+  for (const n of r.learn ?? []) await learnNoun(store, n, o);
   const fresh = store.data.rows.filter((row) => !before.has(row.id) && row.sender === "agent");
   for (const row of fresh) {
     const who = (await store.agent(row.agent_id))?.profile.name ?? "Agent";

@@ -175,7 +175,8 @@ test("a redraw that is no better is dropped, and a film is not asked twice", asy
   const m2 = fakeModel((c) => (String(c.messages[0].content).startsWith("You are a motion designer") ? SCENES : FILM));
   b.store.say((await b.byHandle("yui")).id, "Eli5 string theory");
   await runAgent(b.store, (await b.byHandle("yui")).id, { provider, fetch: m2.fetch });
-  assert.equal(m2.calls.length, 2, "the answer and the film, no redraw");
+  // string theory has no body: the drawing call (MOTION-29) is a third call that answers noun null, never a redraw of the film
+  assert.equal(m2.calls.filter((c) => !String(c.messages[0].content).startsWith("You name the thing")).length, 2, "the answer and the film, no redraw");
 });
 
 test("where and how big keep the deck", async () => {

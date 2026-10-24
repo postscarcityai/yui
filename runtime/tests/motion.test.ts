@@ -45,3 +45,207 @@ test("the hero is written in after the look call, scene 1 big and drawn on, late
   assert.match(putIn("api.text('x',1,2);", hero, false), /^if \(api\.thing\) api\.thing\("heart".*230, \{k: 1\}\);/);
   assert.equal(putIn("api.thing('heart',1,2,3);", hero, false), "api.thing('heart',1,2,3);");
 });
+
+// ---- MOTION-29: the hero drawn on demand, and learned ----
+import { LocalStore } from "../src/store.ts";
+import { NO_KEPT, buildParts, drawNew, learn, learnWords, make, nounId, parseReply, promptFor, worthLearning, elaborated, speculate, SPEC_MAX_PER_HOUR } from "../src/motion.ts";
+
+const CAMEL = [
+  { s: "ellipse", x: 0, y: 6, rx: 34, ry: 18, f: "a2" }, { s: "circle", x: -6, y: -14, r: 12, f: "warn" },
+  { s: "poly", p: [[30, -4], [48, -34], [58, -30], [44, 4]], f: "accent", smooth: true }, { s: "rect", x: -20, y: 34, w: 8, h: 30, f: "panel" },
+  { s: "rect", x: 20, y: 34, w: 8, h: 30, f: "panel" }, { s: "line", p: [[-30, 20], [30, 20]], w: 1.5 }, { s: "circle", x: 34, y: -36, r: 8, f: "a2" },
+];
+const reply = (noun: string, parts: unknown = CAMEL) => JSON.stringify({ noun, parts });
+
+test("parts: only the shape vocabulary is read, numbers are clamped, a loose or flat drawing is refused", () => {
+  const p = buildParts(CAMEL)!;
+  assert.equal(p.length, 7);
+  assert.deepEqual(p[5], ["M-30 20 L30 20", 0, "fg", 1.5]);
+  assert.equal(buildParts(CAMEL.slice(0, 4)), null, "under five shapes");
+  assert.equal(buildParts([...CAMEL.slice(0, 6), { s: "path", d: "M0 0" }]), null, "no free-form paths");
+  assert.equal(buildParts([...CAMEL.slice(0, 6), { s: "circle", x: 1, y: 1, r: 4, f: "pink" }]), null, "fills are the kit's");
+  assert.equal(buildParts(CAMEL.map((x) => ({ ...x, f: "panel" }))), null, "needs three fills");
+  assert.equal((buildParts([...CAMEL.slice(0, 6), { s: "circle", x: 9999, y: 0, r: 4, f: "bad" }])!.at(-1)![0] as string).startsWith("M66"), true);
+  assert.equal(nounId("Snare Drum!"), "snare_drum");
+  assert.equal(nounId("x"), null);
+});
+
+test("the reply: a noun with parts, a kit thing by its name, no body, and junk", () => {
+  assert.deepEqual(parseReply(reply("camel")), { name: "camel", label: "camel", parts: buildParts(CAMEL) });
+  assert.deepEqual(parseReply(reply("heart", [])), { name: "heart", label: "heart", parts: null });
+  assert.deepEqual(parseReply('{"noun":null}'), {});
+  assert.equal(parseReply("sorry"), null);
+  assert.equal(parseReply(reply("camel", [{ s: "ellipse" }])), null);
+  assert.ok(parseReply(reply("camel") + '\n{"another":1}'), "a second object after the first is ignored");
+});
+
+test("drawNew: a drawn hero registers itself in the scene, a failure or a slow call is no hero, off is off", async () => {
+  const h = await drawNew("how a camel stores water", async () => reply("camel"));
+  assert.equal(h?.name, "camel");
+  assert.match(h!.define, /^if \(api\.defineThing\) api\.defineThing\("camel", \[\["M/);
+  assert.equal(await drawNew("what is inflation", async () => '{"noun":null}'), null);
+  assert.equal(await drawNew("x", async () => { throw new Error("down"); }), null);
+  assert.equal(await drawNew("x", () => new Promise(() => {}), 20), null, "slow: no hero, and nothing waits");
+  process.env.YUI_MOTION_THINGS = "off";
+  try { assert.equal(await drawNew("a camel", async () => reply("camel")), null); } finally { delete process.env.YUI_MOTION_THINGS; }
+});
+
+test("learned words are narrow: the name and its plural, a two-word name also answers to its last word", () => {
+  const re = (w: string) => new RegExp(`\\b(?:${w})\\b`, "i");
+  assert.ok(re(learnWords("kayak")!).test("a Kayak trip") && re(learnWords("kayak")!).test("two kayaks"));
+  assert.equal(re(learnWords("kayak")!).test("kayak paddle"), true);
+  assert.equal(re(learnWords("snare drum")!).test("how a drum works"), true);
+  assert.equal(re(learnWords("kayak paddle")!).test("the kayak"), false);
+  assert.equal(learnWords("cell"), null);
+  assert.equal(learnWords("one two three"), null);
+  assert.equal(re(learnWords("pony")!).test("two ponies"), true);
+});
+
+test("a kept drawing is a seed hit: the ask finds it, and a film needs no drawing call", async () => {
+  const kept = { things: { kayak: { label: "kayak", parts: buildParts(CAMEL)! } }, words: { kayak: learnWords("kayak")! } };
+  assert.equal(heroOf("how does a kayak stay upright", kept)?.name, "kayak");
+  assert.equal(heroOf("how does a kayak stay upright"), null);
+  process.env.YUI_MOTION_LEARN = "off";
+  try { assert.equal(heroOf("how does a kayak stay upright", { things: { kayak: kept.things.kayak }, words: { kayak: learnWords("kayak")! } }), null, "learning off: kept words are ignored"); }
+  finally { delete process.env.YUI_MOTION_LEARN; }
+  const prompts: string[] = [];
+  const codes: string[] = [];
+  const n = await make("how does a kayak stay upright", "m1", async (p, on) => { prompts.push(p); on("=== scene a 3 ===\napi.look('chalk');\n=== end ==="); },
+    async (b) => { codes.push(b); }, async () => {}, { kept, say: async () => { throw new Error("no call needed"); } });
+  assert.equal(n, 1);
+  assert.match(prompts[0], /ALREADY drawn the hero of this ask, a kayak/);
+  assert.match(codes[0], /api\.defineThing\("kayak"/);
+});
+
+test("a film draws the noun beside the writer, puts it in scene 1, and tells the learner", async () => {
+  let told: unknown = "unset";
+  const codes: string[] = [];
+  const prompts: string[] = [];
+  const n = await make("how a wombat digs a burrow", "m2", async (p, on) => { prompts.push(p); on("=== scene hook 4 ===\napi.look('chalk');\n=== scene two 4 ===\napi.text('x',1,2);\n=== end ==="); },
+    async (b) => { codes.push(b); }, async () => {},
+    { say: async () => { await new Promise((r) => setTimeout(r, 30)); return reply("sand camel"); }, drew: (h) => { told = h; } });
+  assert.equal(n, 2);
+  assert.match(prompts[0], /if the ask is about one physical thing with a body/);
+  assert.match(codes[0], /api\.defineThing\("sand_camel"[\s\S]*api\.thing\("sand_camel", api\.w \/ 2, api\.h \* 0\.47, 280/);
+  assert.match(codes[1], /api\.thing\("sand_camel".*230/);
+  assert.equal((told as any).name, "sand_camel");
+  assert.equal(worthLearning(told as any, NO_KEPT), true);
+  assert.equal(worthLearning({ name: "heart", label: "heart", define: "" }, NO_KEPT), false, "a kit thing");
+  assert.equal(worthLearning({ name: "cell", label: "cell", define: "x" }, NO_KEPT), false, "an ambiguous word");
+  assert.equal(worthLearning(null, NO_KEPT), false);
+});
+
+test("a film whose drawing fails is made without a hero, and nothing is learned", async () => {
+  let told: unknown = "unset";
+  const codes: string[] = [];
+  const n = await make("how a wombat digs a burrow", "m3", async (_p, on) => on("=== scene hook 4 ===\napi.look('chalk');\n=== end ==="),
+    async (b) => { codes.push(b); }, async () => {}, { say: async () => { throw new Error("down"); }, drew: (h) => { told = h; } });
+  assert.equal(n, 1);
+  assert.doesNotMatch(codes[0], /api\.thing/);
+  assert.equal(told, null);
+});
+
+test("the learner: the store holds the caps, a noun is drawn for the judge, a wrong or empty reply is failed after one retry", async () => {
+  const store = new LocalStore();
+  assert.equal(await learn("sloth", store.learner(), async () => reply("sloth")), "drawn");
+  const r = store.data.motion!.sloth;
+  assert.equal(r.status, "drawn");
+  assert.equal(r.parts!.length, 7);
+  assert.match(r.words!, /sloth/);
+  assert.equal((await store.motionKept()).things.sloth, undefined, "not kept until the judge says so");
+  assert.equal(await learn("sloth", store.learner(), async () => reply("sloth")), "capped or known", "already drawn");
+  let calls = 0;
+  assert.equal(await learn("kayak", store.learner(), async () => { calls++; return reply("canoe"); }), "parts named canoe");
+  assert.equal(calls, 2, "one retry");
+  assert.equal(store.data.motion!.kayak.status, "failed");
+  assert.equal(await learn("kayak", store.learner(), async () => reply("kayak")), "drawn", "a second try is allowed once");
+  store.data.motion!.kayak.status = "failed";
+  assert.equal(await learn("kayak", store.learner(), async () => reply("kayak")), "capped or known", "never a third");
+  assert.equal(await learn("cell", store.learner(), async () => reply("cell")), "not learnable");
+  assert.equal(await learn("heart", store.learner(), async () => reply("heart")), "not learnable", "the kit has it");
+  assert.equal(await learn("anvil", store.learner(), async () => { throw new Error("down"); }), "no parts");
+});
+
+test("the learner: 2 in flight, 20 a day, off with YUI_MOTION_LEARN", async () => {
+  const store = new LocalStore();
+  assert.equal(await store.motionClaim("sloth", 20, 2), true);
+  assert.equal(await store.motionClaim("walrus", 20, 2), true);
+  assert.equal(await store.motionClaim("anvil", 20, 2), false, "two drawings under way");
+  const day = new LocalStore();
+  for (let i = 0; i < 3; i++) { await day.motionClaim("n" + "abcdefg"[i], 3, 5); await day.motionPut("n" + "abcdefg"[i], null, null, null, "x"); }
+  assert.equal(await day.motionClaim("nzz", 3, 5), false, "the day is used up");
+  process.env.YUI_MOTION_LEARN = "off";
+  try { assert.equal(await learn("sloth2", new LocalStore().learner(), async () => reply("sloth2")), "off"); } finally { delete process.env.YUI_MOTION_LEARN; }
+});
+
+test("the prompt tells the writer a drawing is coming only when the hero is not known yet", () => {
+  assert.doesNotMatch(promptFor("x", null), /HERO: if the ask|ALREADY drawn the hero/);
+  assert.match(promptFor("x", null, true), /HERO: if the ask/);
+});
+
+// ---- MOTION-30 ----
+const SAND = JSON.stringify({ noun: "skateboard", parts: [
+  { s: "poly", p: Array.from({ length: 18 }, (_, i) => [-52 + i * 6, i % 2 ? 6 : -4]), f: "accent", smooth: true },
+  { s: "rect", x: 0, y: 3, w: 76, h: 6, f: "a2" }, { s: "circle", x: -30, y: 20, r: 11, f: "warn" }, { s: "circle", x: 30, y: 20, r: 11, f: "warn" },
+  { s: "circle", x: -30, y: 20, r: 4, f: "panel" } ] });
+
+test("an outline longer than 12 points is thinned, not thrown away with the whole drawing; a runaway one still is", () => {
+  const d = parseReply(SAND) as any;
+  assert.equal(d.name, "skateboard");
+  assert.ok(d.parts.length >= 5);
+  const long = JSON.parse(SAND); long.parts[0].p = Array.from({ length: 60 }, (_, i) => [i - 30, 0]);
+  assert.equal(parseReply(JSON.stringify(long)), null);
+});
+
+test("the agent's own kit word does not pick the hero when the person's words name another thing", async () => {
+  const ask = "How a skateboard turns: the metal trucks under the deck pivot";
+  const said = "Eli5: How a skateboard turns when the rider leans.";
+  assert.equal(pick(ask), "truck");
+  assert.equal(elaborated(ask, said), true);
+  assert.equal(elaborated(ask, "Eli5: how a truck turns on a corner"), false, "the person said truck");
+  assert.equal(elaborated(ask, "turns?"), false, "too short to name anything");
+  const asked: string[] = [];
+  const codes: string[] = [];
+  await make(ask, "m4", async (_p, on) => on("=== scene hook 4 ===\napi.look('chalk');\n=== end ==="), async (b) => { codes.push(b); }, async () => {},
+    { said, say: async (p) => { asked.push(p); return SAND; } });
+  assert.match(asked[0], /ASK: Eli5: How a skateboard turns when the rider leans/, "drawn from the person's words");
+  assert.match(codes[0], /api\.thing\("skateboard"/);
+  // the drawing finds nothing: the kit word is the fallback, not an empty film
+  const codes2: string[] = [];
+  await make(ask, "m5", async (_p, on) => on("=== scene hook 4 ===\napi.look('chalk');\n=== end ==="), async (b) => { codes2.push(b); }, async () => {},
+    { said, say: async () => { throw new Error("down"); } });
+  assert.match(codes2[0], /api\.thing\("truck"/);
+});
+
+test("a split film: scene 1 from the opener goes first even when the rest is written sooner, and a dead opener loses only scene 1", async () => {
+  const sc = (n: string) => `=== scene ${n} 4 ===\napi.text('${n}',1,2);\n=== end ===`;
+  const order = async (opener: "slow" | "dead") => {
+    const rows: string[] = [];
+    const n = await make("what is inflation", "m6", async (p, on, role) => {
+      if (role === "opener") { await new Promise((r) => setTimeout(r, 40)); if (opener === "dead") throw new Error("down"); on(sc("s1")); } else on(sc("s2") + "\n" + sc("s3"));
+    }, async (b) => { const m = b.match(/scene (\w+)/); if (m) rows.push(m[1]); }, async () => {}, { split: true });
+    return { n, rows };
+  };
+  assert.deepEqual(await order("slow"), { n: 3, rows: ["s1", "s2", "s3"] });
+  assert.deepEqual(await order("dead"), { n: 2, rows: ["s2", "s3"] });
+});
+
+test("the hero is drawn ahead from the person's words, once, and only for a how-does-it-work ask with no kit thing", async () => {
+  let calls = 0;
+  const call = async () => { calls++; return SAND; };
+  const early = speculate("u1", "How does a skateboard turn when I lean?", call, undefined, 1000);
+  assert.equal(((await early) as any).name, "skateboard");
+  assert.equal(speculate("u1", "How does a heart pump blood?", call, undefined, 1000), null, "the kit has a heart");
+  assert.equal(speculate("u1", "log my workout please for today", call, undefined, 1000), null, "not asking for an explanation");
+  assert.equal(speculate("u1", "why", call, undefined, 1000), null, "too short");
+  assert.equal(calls, 1);
+  for (let i = 0; i < 25; i++) speculate("u2", "How does a skateboard turn when I lean?", call, undefined, 1000);
+  assert.equal(calls, 1 + SPEC_MAX_PER_HOUR);
+  // a film that starts with that drawing in hand makes no drawing call of its own
+  let own = 0;
+  const codes: string[] = [];
+  await make("How a skateboard turns: the metal trucks under the deck", "m7", async (_p, on) => on("=== scene hook 4 ===\napi.look('chalk');\n=== end ==="), async (b) => { codes.push(b); }, async () => {},
+    { said: "How does a skateboard turn when I lean?", early, say: async () => { own++; return SAND; } });
+  assert.equal(own, 0);
+  assert.match(codes[0], /api\.thing\("skateboard"/);
+});
