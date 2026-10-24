@@ -593,3 +593,77 @@ final class StageChunksTests: XCTestCase {
         XCTAssertEqual(t.pages, 2)
     }
 }
+
+/// A turn whose answer is one deck plays as the deck's own stage (MorphStage), not as word pages.
+@MainActor
+final class StageDeckTurnTests: XCTestCase {
+    private func turn(_ replies: [String]) -> StageTurn {
+        var messages = [ChatMessage(id: "u1", text: "Take me through string theory", fromUser: true)]
+        for (i, r) in replies.enumerated() {
+            messages.append(ChatMessage(id: "r\(i)", text: "", fromUser: false, yl: YLScreen(r)))
+        }
+        return StageChunks.turn(messages, ask: "u1")
+    }
+
+    private let deck = """
+    deck "String theory"
+    page "Particles are not dots" body="Strings, not points."
+    shapes
+    shape dot "Point"
+    shape arrow
+    shape circle "Loop"
+    page "Not proven" body="No one has seen one."
+    shapes
+    shape box "The math"
+    choose "Which is a string?" "A dot"|"A loop" answer="A loop"
+    end
+    choose "Keep going?" "Grown-up version"|"Done"
+    """
+
+    func testOneDeckPlaysWhole() {
+        let t = turn([deck])
+        XCTAssertNotNil(t.deck)
+        // Two pages and the quiz step between them and the end: the deck's own steps.
+        XCTAssertEqual(t.deck?.steps.map(\.preset), ["page", "page", "choose"])
+        // Shapes on every page: the phone films it. One page, then every question on one screen.
+        XCTAssertEqual(t.deck?.film, true)
+        XCTAssertEqual(t.readPages, 1)
+        XCTAssertEqual(t.questions.map { $0.c.string("q") }, ["Which is a string?", "Keep going?"])
+        XCTAssertEqual(t.pages, 2)
+        XCTAssertNil(t.lead)
+    }
+
+    func testADeckWithAChartPagesInstead() {
+        let t = turn(["""
+        deck "Growth"
+        page "Up and to the right" body="Ten percent a year."
+        chart line "Money" x=Y0|Y10 y=100|259
+        page "Still up" body="Twenty years."
+        shapes
+        shape circle Money
+        choose "Which lever?" "Time"|"Deposit" answer="Time"
+        end
+        """])
+        XCTAssertEqual(t.deck?.film, false)
+        XCTAssertEqual(t.readPages, 3)
+        // Paged: the quiz is a step inside the deck, not a question after it.
+        XCTAssertEqual(t.questions.count, 0)
+    }
+
+    func testAPictureOutsideTheDeckKeepsTheChunks() {
+        let t = turn([deck + "\nstat 0 \"Strings found\""])
+        XCTAssertNil(t.deck)
+        XCTAssertEqual(t.readPages, t.chunks.count)
+        XCTAssertTrue(t.chunks.count >= 3)
+    }
+
+    func testTwoDecksKeepTheChunks() {
+        let t = turn([deck, deck])
+        XCTAssertNil(t.deck)
+    }
+
+    func testAPlanIsNeverADeckTurn() {
+        let t = turn([deck + "\nplan \"Before I go\"\nchoose@p \"Ping?\" Yes|No\nend"])
+        XCTAssertNil(t.deck)
+    }
+}
