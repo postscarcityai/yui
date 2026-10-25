@@ -523,7 +523,17 @@ export function applyPracticeFirst(store: TableStore, answers: Record<string, un
 /** What Gouda says on top of the plan: what it is, today's session, where to tap. No question. */
 export function firstLine(plan: FirstPlan): string {
   const on = plan.instrument && plan.instrument !== "Not yet" ? ` on ${plan.instrument.toLowerCase()}` : "";
-  return `Your practice plan is set: ${plan.minutes} minutes a day${on}, ${plan.level} level. Open Practice to see today. Tap Start on the timer when you're ready.`;
+  return `Your practice plan is set: ${plan.minutes} minutes a day${on}, ${plan.level} level. Today is right here: tap Start when you're ready, and it logs itself when the time is up.`;
+}
+
+/**
+ * Today's session on the answer itself, with its clock (the same pattern as Arnold's Start card: the words and the
+ * thing to tap on one screen, not "open Practice"). The timer's done logs the session (`timed` below).
+ */
+export function sessionLead(store: TableStore, clk: Clock): string[] {
+  const today = todaysSession(store, clk);
+  if (!today) return [];
+  return [`timer@practice-now ${today.minutes}m ${q(`Today: ${today.focus}`)} +inline`, `card@practice-steps ${q(sessionBody(today))} ""`];
 }
 
 // ---------- sessions ----------
@@ -805,7 +815,9 @@ export type MusicAsk =
   | { kind: "take"; row: Row; value: Record<string, unknown> }
   | { kind: "saved"; row: Row; answers: Record<string, unknown> }
   | { kind: "open"; row: Row; name: string }
-  | { kind: "first"; row: Row; answers: Record<string, unknown> };
+  | { kind: "first"; row: Row; answers: Record<string, unknown> }
+  /** A practice timer ran out (the one on the answer, or the one on Practice): today's session is logged. */
+  | { kind: "timed"; row: Row; id: string };
 
 const LEARN_WORDS = /^\s*(?:(?:please|can you|could you|let'?s|i want to|help me)\s+)?(?:learn|teach me)\s+(?:(?:a|the|my|this|new|another)\s+){0,2}song(?:'?s)?(?:\s+chords)?\s*[.!?]*\s*$/i;
 const LEARN_TITLE = /^\s*(?:(?:please|can you|let'?s|i want to|help me)\s+)?(?:learn|teach me)\s+(?:to play\s+)?["']?(.+?)["']?\s*[.!?]*\s*$/i;
@@ -848,6 +860,7 @@ export function musicAsks(rows: Row[], store?: TableStore): { asks: MusicAsk[]; 
       else if (e.preset === "choose" && e.id === "scale" && choice) a = { kind: "scale", row: r, choice };
       else if (e.preset === "choose" && e.id === "sessions" && choice) a = { kind: "open", row: r, name: choice };
       else if (e.preset === "metronome" && num(v.seconds) >= 10) a = { kind: "clicked", row: r, id: e.id, seconds: num(v.seconds), bpm: num(v.bpm) };
+      else if (e.preset === "timer" && (e.id === "session" || e.id === "practice-now") && v.done) a = { kind: "timed", row: r, id: e.id };
       // The Looper's Send, or a drum take: named and kept. A loop in the chat goes to Gouda, who can build on it.
       else if ((e.preset === "loop" && e.id === "looper") || (e.preset === "drums" && v.take)) a = { kind: "take", row: r, value: v };
       else if (e.preset === "card" && v.cta != null) {

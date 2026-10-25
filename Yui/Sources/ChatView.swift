@@ -101,6 +101,10 @@ struct ChatView: View {
     @State private var chatNotice: String?
     /// Stage first (YUI-119): Yui lives on the full screen and the chat is the record.
     @State private var stageFirst = StageFirstModel()
+    /// The drawer just switched agents: the stage opens on the new one's home when the drawer shuts.
+    @State private var pickedAgent = false
+    /// Where the person was when the drawer opened: a row that moves them is told from a drawer merely shut.
+    @State private var drawerOpenedAt: (page: Int, stage: Bool) = (1, false)
     /// A notification tap waiting for its thread to load: the agent and the message it came with (YUI-199).
     @State private var pushLanding: (agent: String, message: String?, since: Date)?
     /// The agent whose pending first plan this open thread already landed on (YUI-231).
@@ -825,7 +829,7 @@ struct ChatView: View {
 
     /// Springs open or shut from wherever the finger let go. Reduce Motion: a fade.
     private func settleDrawer(open: Bool) {
-        if open { focused = false }
+        if open { focused = false; drawerOpenedAt = (store.page, store.stageOpen) }
         withAnimation(reduceMotion ? .easeInOut(duration: 0.2) : theme.spring) {
             drawerOpen = open
             drawerMotion.drag = nil
@@ -836,17 +840,30 @@ struct ChatView: View {
     /// screen or a pinned full screen takes the person to the record, where those live.
     private func closeDrawer() {
         settleDrawer(open: false)
-        guard stageFirstOn, stageFirst.open else { return }
+        guard stageFirstOn else { return }
+        // Another agent picked: land on its home, its screens a swipe away (Chris, Sep 27: "when I go to one of
+        // these agent screens, I should see a unique set of shortcuts"; Gouda's looper, chords and keys are his
+        // home). Before this the record came up and the instruments sat behind Full screen.
+        if pickedAgent {
+            pickedAgent = false
+            if !stageFirst.open { openStageFirst() }
+            return
+        }
+        guard stageFirst.open else { return }
+        let was = drawerOpenedAt
         Task { @MainActor in
             await Task.yield()
-            if store.page != 1 || store.stageOpen { closeStageFirst() }
+            // Only a row that moved the person (to a screen, or a pinned full screen) goes to the record. A drawer
+            // opened and shut over the Looper leaves them on the Looper.
+            if store.page != was.page || store.stageOpen != was.stage { closeStageFirst() }
         }
     }
 
     /// The drawer itself; `DrawerLayer` slides it and dims the chat.
     private var drawerContent: some View {
         AgentDrawer(store: store, agents: agents.agents, unshared: agents.unshared, close: closeDrawer,
-                    pick: { agents.selectedID = $0 }, add: agents.onlyShared ? nil : { addFirst = true },
+                    pick: { if agents.selectedID != $0 { pickedAgent = true }; agents.selectedID = $0 },
+                    add: agents.onlyShared ? nil : { addFirst = true },
                     compose: { composer.draft = $0; stageFirstOn && stageFirst.open ? typeOnStage() : typeHere() },
                     manage: { settleDrawer(open: false); showAgents = true },
                     edit: { editingAgent = $0 },

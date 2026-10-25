@@ -567,6 +567,24 @@ export function firstLine(r: { days: number; effort: ReturnType<typeof effort>; 
   return `Your week is built: ${r.days} days, about ${r.minutes} minutes, ${gear}. ${hard} It's a starting point. Tap any day to change it.`;
 }
 
+/**
+ * The week is built: the answer carries today's session with its Start right there, on the same screen as the words
+ * (Chris, Oct 18 live thread, after Build my week: "What can I do to do workouts?", twice; the only Start was a swipe
+ * away on Today). A tap on it is the same start ask as the card on Today (`cta` starts with Start). On a rest day it
+ * offers the next session instead.
+ */
+export function startCard(store: TableStore, clk: Clock): string[] {
+  const d = today(store, clk);
+  if (d && !isRest(d)) {
+    const s = session(store, d, clk.today);
+    const moves = s.moves.length ? s.moves.map((m) => `${m.name} ${target(m)}`).join(", ") : d.workout || d.focus;
+    return [`card@start-now ${q(`Today: ${d.focus}`)} ${q(`${moves}. About ${d.minutes || 40} minutes.`)} sub="Start when you're ready" cta="Start"`];
+  }
+  const n = nextTraining(store, clk);
+  if (!n) return [];
+  return [`card@start-now ${q(`Rest today. Next: ${n.label} ${n.focus}`)} ${q(`${n.workout || n.focus}. About ${n.minutes || 40} minutes.`)} sub="Or start it now" cta="Start now"`];
+}
+
 // ---------- taps ----------
 
 /** A tap or words the runtime answers itself. */

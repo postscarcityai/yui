@@ -215,6 +215,86 @@ final class WorkoutSessionTests: XCTestCase {
     }
 
     /// Arnold's load call (feedback NOTE-35460), as runnerLines sends it in `why`: on a move's first set and the rest before it.
+    /// The coach talks (Chris, Sep 29: "it should be my coach along the way ... encourage me"): each step opens with
+    /// one line, the facts first; a work set gets a word halfway; a rest calls ten seconds; each once.
+    func testTheCoachOpensEveryStepAndHasAWordHalfway() throws {
+        let e = SessionEngine(try runner(), fast: false)
+        var p = RunnerProgress()
+        p.run = e.begin(at: t0)
+        XCTAssertEqual(e.opening(p.run!, p), "Bench press. 3x8 at 135. Brace. Slow down.")
+        XCTAssertNil(e.midway(p.run!, at: t0), "nothing to say at the start")
+        let half = e.midway(p.run!, at: t0.addingTimeInterval(16))
+        XCTAssertEqual(half?.mark, "half")
+        XCTAssertTrue(SessionEngine.cheers.contains(half?.line ?? ""), "a cheer halfway: \(half?.line ?? "nil")")
+        e.tick(&p, at: t0.addingTimeInterval(30))
+        XCTAssertEqual(e.opening(p.run!, p), "Done. Log the set.")
+        e.logSet(&p, reps: 8, weight: 135, at: t0.addingTimeInterval(45))
+        XCTAssertEqual(e.opening(p.run!, p), "Rest. Next, Bench press, set 2 of 3")
+        XCTAssertNil(e.midway(p.run!, at: t0.addingTimeInterval(46)))
+        let ten = e.midway(p.run!, at: t0.addingTimeInterval(45 + 52))
+        XCTAssertEqual(ten?.mark, "ten")
+        XCTAssertEqual(ten?.line, "Ten seconds.")
+        e.tick(&p, at: t0.addingTimeInterval(45 + 60))
+        XCTAssertEqual(e.opening(p.run!, p), "Bench press, set 2 of 3. Brace. Slow down.")
+        // the failure set and a paused clock
+        e.doneEarly(&p, at: t0.addingTimeInterval(200))
+        e.logSet(&p, reps: 8, weight: 135, at: t0.addingTimeInterval(201))
+        e.doneEarly(&p, at: t0.addingTimeInterval(202))
+        XCTAssertEqual(e.current(p.run!)?.kind, .fail)
+        XCTAssertEqual(e.opening(p.run!, p), "Last set, to failure. Stop when form breaks.")
+        XCTAssertNil(e.midway(p.run!, at: t0.addingTimeInterval(300)), "no clock, no word")
+    }
+
+    /// The whole workout on one clock (Chris: "estimate the time it takes"): the plan's seconds plus a guess per
+    /// log, counting down with the steps.
+    func testTheWholeWorkoutHasOneClock() throws {
+        let e = SessionEngine(try runner(), fast: false)
+        // bench 30+30+0(fail→40) work, 3 logs, 2 rests of 60; plank 30, 1 log, 1 rest of 60 between the moves
+        let planned = 30 + 30 + 40 + 3 * 20 + 2 * 60 + 60 + 30 + 20
+        XCTAssertEqual(e.plannedSeconds, planned)
+        var p = RunnerProgress()
+        p.run = e.begin(at: t0)
+        XCTAssertEqual(e.secondsLeft(p.run!, at: t0), planned)
+        XCTAssertEqual(e.secondsLeft(p.run!, at: t0.addingTimeInterval(10)), planned - 10)
+        e.tick(&p, at: t0.addingTimeInterval(30))
+        XCTAssertEqual(e.secondsLeft(p.run!, at: t0.addingTimeInterval(31)), planned - 30, "a log step counts its guess")
+        XCTAssertEqual(SessionEngine.leftLine(planned), "About 7 min left")
+        XCTAssertEqual(SessionEngine.leftLine(29), "Almost done")
+        p.run!.finished = t0
+        XCTAssertEqual(e.secondsLeft(p.run!, at: t0), 0)
+    }
+
+    /// The voice says each line once a key, stays quiet when asked, and remembers that.
+    func testTheCoachSaysEachLineOnceAndCanBeQuiet() {
+        final class Fake: MotionSpeechOutput {
+            var onFinish: (() -> Void)?
+            var said: [String] = []
+            var stops = 0
+            func speak(_ text: String) { said.append(text) }
+            func stop() { stops += 1 }
+            func pause() {}
+            func resume() {}
+        }
+        UserDefaults.standard.removeObject(forKey: SessionCoach.quietKey)
+        let out = Fake()
+        let c = SessionCoach(output: out)
+        c.say("Go.", once: "0-open")
+        c.say("Go.", once: "0-open")
+        c.say(nil, once: "0-x")
+        XCTAssertEqual(out.said, ["Go."])
+        c.toggle()
+        XCTAssertTrue(c.quiet)
+        XCTAssertTrue(UserDefaults.standard.bool(forKey: SessionCoach.quietKey))
+        c.say("Rest.", once: "1-open")
+        XCTAssertEqual(out.said, ["Go."], "quiet says nothing")
+        c.toggle()
+        c.say("Rest.", once: "1-open")
+        XCTAssertEqual(out.said, ["Go."], "a key already used stays used")
+        c.say("Rest.", once: "2-open")
+        XCTAssertEqual(out.said, ["Go.", "Rest."])
+        UserDefaults.standard.removeObject(forKey: SessionCoach.quietKey)
+    }
+
     func testTheLoadCallShowsOnAMovesFirstSetAndTheRestBeforeIt() throws {
         let r = try runner("""
         plan@wk-20261005-mon "Full body A" submit="Finish workout"

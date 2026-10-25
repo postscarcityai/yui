@@ -30,14 +30,14 @@ import { keyModel, providerLabel, PROVIDERS } from "./models.ts";
 import { type Clock, type TableStore, LIMITS, applyHeld, applyTables, asText, changed, clock, diff, draw, emptyStore, fromSeeds, pretty,
          readQueries, tablesPrompt } from "./tables.ts";
 import type { NativeAgent, OwnKey, Row, ScheduleItem } from "./types.ts";
-import { PLAN_TABLE, applyDay, applyFirst, applyLogged, applyRunner, editDayBody, firstBody, firstLine, logBody, loggedLine, progressShape, screenLines, session, splitDays, startReply,
+import { PLAN_TABLE, applyDay, applyFirst, applyLogged, applyRunner, editDayBody, firstBody, firstLine, logBody, loggedLine, progressShape, screenLines, session, splitDays, startCard, startReply,
          trains, workoutAsks, wrapUp, type Session, type WorkoutAsk } from "./workouts.ts";
 import { ACK, type MealFix, applyFix, fixTaps, logsMeals, mealTurn, runMealJob, spoken } from "./meals.ts";
 import { ADD_BODY, GOAL, GROCERIES, LOG_BODY, MEALS as MEAL_LOG, PLAN as MEAL_PLAN, addGroceries, applyMealFix, applyPlan, applySwap, ensureTools,
          drawnShape, readShape, NEW_DAY, NEW_DAY_RULE, fixBody, groceryText, lastPrefs, logPlanned, mealAsks, nextPlanned, planBody, plansMeals, readItems, screenLines as mealScreenLines, tickGrocery,
          weekDeck, applyMealFirst, firstLine as mealFirstLine, type MealAsk } from "./mealplan.ts";
 import { applyBar, applyLearn, applyOpen, applyPracticed, applySave, applyScale, applySpeed, drawnShape as musicShape, ensureTools as ensureMusic,
-         keepDraft, learnBody, logPractice, applyPracticeFirst, firstLine as musicFirstLine, practiceRedraw, musicAsks, musicPages, pasteBody, playBpm, lesson, playsMusic, practiceBody, readTake, saveBody,
+         keepDraft, learnBody, logPractice, sessionLead, todaysSession, applyPracticeFirst, firstLine as musicFirstLine, practiceRedraw, musicAsks, musicPages, pasteBody, playBpm, lesson, playsMusic, practiceBody, readTake, saveBody,
          screenLines as musicScreenLines, streak, type MusicAsk, type Page as MusicPage } from "./music.ts";
 import { ADD_BODY as TODO_BODY, TASKS, addTasks, applyMove, applyOrder, applyPlan as applyWeekPlan, applyReview, clockText, dayWord, drawnShape as plannerShape,
          ensureTools as ensurePlanner, applyFirst as applyWeekFirst, firstLine as weekFirstLine, FIRST_START, moveBody, nextText, nextTask, planAsks, planBody as weekPlanBody, plansWeeks, remindLead, reminderMeta, reviewBody,
@@ -978,6 +978,8 @@ async function musicTools(store: Store, agent: NativeAgent, asks: MusicAsk[], no
       continue;
     }
     let text = "";
+    // What the answer leads with on its own screen, before the pages (today's session and its clock).
+    let lead: string[] = [];
     let only: MusicPage[] = [];
     if (a.kind === "learned") {
       const r = applyLearn(tables, a.answers, clk);
@@ -994,6 +996,17 @@ async function musicTools(store: Store, agent: NativeAgent, asks: MusicAsk[], no
       const r = applyPracticeFirst(tables, a.answers, clk);
       tables = r.store;
       text = musicFirstLine(r.plan);
+      lead = sessionLead(tables, clk);
+    } else if (a.kind === "timed") {
+      // A practice timer ran out: today's session is the log, no questions.
+      const today = todaysSession(tables, clk);
+      const minutes = today?.minutes || 15;
+      const what = today?.focus || "Practice";
+      tables = logPractice(tables, { minutes, what }, clk);
+      text = `Logged ${minutes} minutes: ${what}. That's today done.`;
+      const s = streak(tables, clk);
+      if (s > 1) text += ` ${s} days in a row.`;
+      only = ["practice"];
     } else if (a.kind === "speed" || a.kind === "bar") {
       const r = a.kind === "speed" ? applySpeed(tables, a.choice, clk) : applyBar(tables, a.choice, clk);
       if (!r.lesson) {
@@ -1044,7 +1057,7 @@ async function musicTools(store: Store, agent: NativeAgent, asks: MusicAsk[], no
     }
     const sl = musicScreenLines(tables, clk, musicShape(agent.profile), only);
     if (a.kind === "first") sl.lines.push(...practiceRedraw(tables, clk));
-    await say(`${text}\n\`\`\`yui\n${sl.lines.join("\n")}\n\`\`\``, { ...turn, native: { musictool: a.kind } });
+    await say(`${text}\n\`\`\`yui\n${[...lead, ...sl.lines].join("\n")}\n\`\`\``, { ...turn, native: { musictool: a.kind } });
     agent.profile = { ...agent.profile, musicScreens: sl.shape };
     await store.updateAgent(agent.id, agent.profile);
     log(`${p.name}: ${a.kind}, ${sl.lines.some((l) => /^>\d clear$/.test(l)) ? "a page drawn again" : "pages patched"}`);
@@ -1426,10 +1439,13 @@ async function workoutTools(store: Store, agent: NativeAgent, asks: WorkoutAsk[]
       continue;
     }
     let text: string;
+    // The week-built answer leads with today's session and its Start, on the same screen as the words.
+    let lead: string[] = [];
     if (a.kind === "first") {
       const r = applyFirst(tables, a.answers, clk);
       tables = r.store;
       text = firstLine(r);
+      lead = startCard(tables, clk);
     } else if (a.kind === "runner") {
       history ??= await store.history(agent.id, before, HISTORY_ROWS, null, chatOf(a.row));
       let s: Session | undefined = [...history].reverse().find((h) => h.sender === "agent" && h.meta?.native?.workout?.id === a.id)?.meta.native.workout;
@@ -1460,7 +1476,7 @@ async function workoutTools(store: Store, agent: NativeAgent, asks: WorkoutAsk[]
     // The pages stay current with patches; the first time (or a new lift's chart) they are drawn again.
     const shape = progressShape(tables);
     const first = !p.workoutScreens;
-    const lines = screenLines(tables, clk, { week: first, progress: first || p.workoutScreens !== shape });
+    const lines = [...lead, ...screenLines(tables, clk, { week: first, progress: first || p.workoutScreens !== shape })];
     await say(`${text}\n\`\`\`yui\n${lines.join("\n")}\n\`\`\``, { ...turn, native: { workoutlog: a.kind } });
     agent.profile = { ...agent.profile, workoutScreens: shape };
     p.workoutScreens = shape;
