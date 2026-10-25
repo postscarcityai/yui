@@ -28,9 +28,7 @@
 //   { op: "error", screen, message, line }
 // A `flow` head is an add; the Mermaid lines after it are buffered and its
 // `end` (or the end of the input) gives one patch on the flow with the graph
-// (spec/FLOWS.md). A `diagram` head reads Mermaid the same way, and a `draw`
-// head reads its own markup (SVG) up to `end`, kept as `source`.
-// Call finish() after the last line (parse and flush do).
+// (spec/FLOWS.md). Call finish() after the last line (parse and flush do).
 // `props` holds only what the line actually said. Defaults live in resolve().
 // An add that joins an open group (a page under a deck) also carries `in`,
 // the group's id.
@@ -47,7 +45,7 @@ export const PRESETS = [
   "timeline", "done", "now", "next",
   "sketch", "row", "after",
   "shapes", "shape",
-  "diagram", "mock", "part", "draw",
+  "diagram", "mock", "part", "motion",
   "map", "area", "pin", "route",
   "game", "flow",
   "query",
@@ -61,13 +59,13 @@ export const CORE = ["say", "custom", "save", "show", "forget", "clear", "end", 
 // so does `end`. Comments, blank lines and error lines do not. A narrate
 // can hold another group (a deck), a deck or plan a sketch (a page's picture).
 export const GROUPS = {
-  deck: ["page", "ask", "choose", "pick", "sketch", "shapes", "diagram", "mock", "draw", "map", "math", "chart", "stat", "calc"],
-  plan: ["page", "ask", "choose", "pick", "slide", "form", "mic", "camera", "sketch", "shapes", "diagram", "mock", "draw", "map"],
+  deck: ["page", "ask", "choose", "pick", "sketch", "shapes", "diagram", "mock", "map", "math", "chart", "stat", "calc"],
+  plan: ["page", "ask", "choose", "pick", "slide", "form", "mic", "camera", "sketch", "shapes", "diagram", "mock", "map"],
   narrate: ["page", "compare", "image", "video", "card", "stat", "chart", "math", "storyboard", "gallery", "deck"],
   timeline: ["done", "now", "next"],
   sketch: ["row", "after"],
   shapes: ["shape"],
-  mock: ["part", "shape"],
+  mock: ["part"],
   map: ["area", "pin", "route"],
 };
 
@@ -495,9 +493,9 @@ const P = {
   // diagram [title...] (caption=): a Mermaid block up to `end`, read by the
   // parser (see the diagram section below), so the head takes a title only.
   diagram(pos) { return P.calc(pos); },
-  // draw [title...] (caption= ratio=): markup up to `end`, kept whole by the
-  // parser (see the draw section below), so the head takes a title only.
-  draw(pos) { return P.calc(pos); },
+  // motion "<what to show>" (an agent's ask, one line), or the film the plugin makes from it:
+  // motion [title...] film= part= +last, then scenes up to `end` (read as text, see motionLine).
+  motion(pos) { return P.calc(pos); },
   // mock [title...] (frame= url= dark), then `part KIND [text...]` lines: the
   // first bare word is the kind, wherever it sits (as in shape and game).
   mock(pos) { return P.calc(pos); },
@@ -665,7 +663,7 @@ const LISTS = {
   project: ["facts", "next"],
   pick: ["answer"],
   game: ["items"],
-  shape: ["pts", "sets", "pairs"],
+  shape: ["pts"],
   part: ["items"],
   area: ["codes", "pts"],
   route: ["pts"],
@@ -1156,16 +1154,6 @@ function stateLine(d, t) {
   if (m) { stateAdd(d, m[1]); const n = d.nodes.get(m[1]); if (!n.label) n.label = unlabel(m[2]); }
 }
 
-// ---------- draw (spec/YL.md, draw) ----------
-// The agent's own markup (SVG, with CSS or a script to move it) between `draw`
-// and a line that is only `end`. Not YL and not read: the end gives one patch
-// with `source`, the lines as written. If the first line after the head does
-// not open a tag, the draw stays empty and that line is read as YL. A drawing
-// past DRAW_LINES lines or DRAW_CHARS characters is cut (later lines dropped,
-// its `end` still closes it). Characters are counted as code points.
-export const DRAW_LINES = 600;
-export const DRAW_CHARS = 60000;
-
 // The patch props a diagram's end gives.
 function diagramGraph(d) {
   const src = d.src.join("\n");
@@ -1378,6 +1366,7 @@ export function flowEvent(g, answers) {
 // so "~hiit rounds=10" knows to parse its args as a timer. `known` is the ids
 // that last from earlier replies (spec section 5, Ids that last), id -> preset,
 // as `lastingIds(state)` gives them; this reply's own ids shadow them.
+const MOTION_MAX_CHARS = 120000; // a film longer than this is cut, its `end` still closes it
 export class Parser {
   constructor(known = {}) {
     this.screen = "1";
@@ -1387,7 +1376,7 @@ export class Parser {
     this.flowHead = null; // a flow head just added: { id, screen }
     this.flow = null; // an open flow's Mermaid, being read
     this.dgm = null; // an open diagram's Mermaid, being read
-    this.drw = null; // an open draw's markup, being read
+    this.mot = null; // an open motion's scenes, being read
   }
 
   // Group bookkeeping for one parsed op. Errors (and null) leave groups open.
@@ -1413,13 +1402,13 @@ export class Parser {
   }
 
   line(src) {
+    if (this.mot) {
+      const op = this.motionLine(src);
+      if (op !== undefined) return op;
+    }
     if (this.flow) return this.flowLine(src);
     if (this.dgm) {
       const op = this.dgmLine(src);
-      if (op !== undefined) return op;
-    }
-    if (this.drw) {
-      const op = this.drwLine(src);
       if (op !== undefined) return op;
     }
     if (this.flowHead) {
@@ -1435,7 +1424,7 @@ export class Parser {
     }
     const op = this.group(this.parseLine(src));
     if (op && op.op === "add" && op.preset === "diagram") this.dgm = newDiagram(op);
-    if (op && op.op === "add" && op.preset === "draw") this.drw = { id: op.id, screen: op.screen, src: [], chars: 0 };
+    if (op && op.op === "add" && op.preset === "motion") this.mot = { id: op.id, screen: op.screen, src: [], chars: 0 };
     if (op && op.op === "add" && op.preset === "flow") {
       // `as=` makes it a variant of the saved flow it names: its lines follow.
       if (op.props.as !== undefined) this.flow = newVariant(op);
@@ -1447,9 +1436,31 @@ export class Parser {
   // Ends the input: an open flow gives its graph now.
   finish() {
     this.flowHead = null;
+    if (this.mot) return this.motionDone("");
     if (this.dgm) return this.dgmDone("");
-    if (this.drw) return this.drwDone("");
     return this.flow ? this.flowDone("") : null;
+  }
+
+  // One line of an open motion: a scene header or JavaScript, not YL (spec/MOTION.md 0.5). undefined means the
+  // first line after the head is not a scene header (the agent's own one-line ask): it is read as YL.
+  motionLine(src) {
+    const m = this.mot;
+    const line = src.replace(/\r$/, "");
+    const t = line.trim();
+    if (t === "end") return this.motionDone(line);
+    if (!m.src.length) {
+      if (!t) return null;
+      if (!t.startsWith("===")) { this.mot = null; return undefined; }
+    }
+    if (m.chars + line.length <= MOTION_MAX_CHARS) { m.src.push(line); m.chars += line.length + 1; }
+    return null;
+  }
+
+  motionDone(line) {
+    const m = this.mot;
+    this.mot = null;
+    if (!m || !m.src.length) return null;
+    return { op: "patch", screen: m.screen, target: m.id, props: { source: m.src.join("\n") }, line };
   }
 
   // One line of an open diagram: Mermaid, not YL. undefined means the line is
@@ -1493,32 +1504,6 @@ export class Parser {
     this.dgm = null;
     if (!d.kind) return null;
     return { op: "patch", screen: d.screen, target: d.id, props: diagramGraph(d), line };
-  }
-
-  // One line of an open draw: markup, not YL. undefined means the line is not
-  // the draw's (no tag opened after the head), so the caller reads it as YL.
-  drwLine(src) {
-    const d = this.drw;
-    const line = src.replace(/\r$/, "");
-    const t = line.trim();
-    if (t === "end") return this.drwDone(line);
-    if (!d.src.length) {
-      if (!t) return null;
-      if (!t.startsWith("<")) { this.drw = null; return undefined; }
-    }
-    const n = [...line].length;
-    if (d.src.length < DRAW_LINES && d.chars + n <= DRAW_CHARS) {
-      d.src.push(line);
-      d.chars += n + 1;
-    }
-    return null;
-  }
-
-  drwDone(line) {
-    const d = this.drw;
-    this.drw = null;
-    if (!d.src.length) return null;
-    return { op: "patch", screen: d.screen, target: d.id, props: { source: d.src.join("\n") }, line };
   }
 
   // One line of an open flow: Mermaid, not YL. `end` closes a subgraph
@@ -2127,8 +2112,8 @@ export function resolve(preset, props) {
     }
     case "diagram":
       return { title: "", caption: "", ...p };
-    case "draw":
-      return { title: "", caption: "", ...p };
+    case "motion":
+      return { title: "", ...p };
     case "mock":
       return { title: "", frame: "phone", ...p };
     case "part": {
