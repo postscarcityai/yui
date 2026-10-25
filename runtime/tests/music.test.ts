@@ -429,6 +429,9 @@ test("the plan reply redraws Practice with today's session and ends on a timer t
   assert.match(page.find((x) => x.startsWith("card@next-up"))!, /Today: Scales/);
   assert.match(page.at(-1)!, /^timer@session 20m "Today's practice"/, "the page ends on the timer");
   assert.equal(l.at(-1), "save practice");
+  // Today is on the answer itself, with its clock, before the pages (Arnold's Start card pattern)
+  assert.equal(l[0], 'timer@practice-now 20m "Today: Scales" +inline');
+  assert.match(l[1], /^card@practice-steps "20 minutes\. /);
   const ops = lines(r.body);
   assert.ok(ops.some((o: any) => o.preset === "timer"));
   // The next open: today's practice is there with no reply at all.
@@ -447,6 +450,30 @@ test("logging practice after the plan patches Practice and never re-adds the tim
   const r = await run(store, gouda.id);
   assert.ok(!/timer/.test(fence(r.body)), "patches carry no timer");
   lines(r.body);
+});
+
+test("a practice timer running out logs today's session and patches Practice; nothing else asks", async () => {
+  const { store, gouda } = await goudaYui();
+  tap(store, gouda.id, "first", "plan", { plan: FIRST });
+  await run(store, gouda.id);
+  tap(store, gouda.id, "practice-now", "timer", { done: true, rounds: 1 });
+  const r = await run(store, gouda.id);
+  assert.match(r.body, /^Logged 20 minutes: Scales\. That's today done\./);
+  const t = await store.tables(gouda.id);
+  const rows = Object.values(t.tables.practice.rows) as any[];
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].Minutes, 20);
+  assert.equal(rows[0].What, "Scales");
+  assert.match(fence(r.body), /~week-min "20 min"/);
+  assert.ok(!/timer/.test(fence(r.body)), "patches carry no timer");
+  assert.ok(!/\?/.test(r.body.split("\n```yui")[0]), "no question");
+  lines(r.body);
+  // the Practice page's own timer logs the same way
+  tap(store, gouda.id, "session", "timer", { done: true, rounds: 1 });
+  const r2 = await run(store, gouda.id);
+  assert.match(r2.body, /^Logged 20 minutes: Scales\./);
+  assert.equal(Object.keys((await store.tables(gouda.id)).tables.practice.rows).length, 2);
+  assert.equal(turnsUsed(store), 0);
 });
 
 test("the {flow} event of the saved first-practice flow builds the same plan", async () => {

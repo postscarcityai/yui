@@ -335,7 +335,15 @@ test("the intake's Send builds the week: rows rewritten for the days, gear and e
   assert.match(body, /^Your week is built: 4 days, about 60 minutes, dumbbells\. The last set of each lift goes to failure, with a safe stop/);
   assert.match(fence(body), /stat@week-done "0 of 4"/);
   assert.match(fence(body), /"Mon Upper" "Tue Lower" "Thu Upper" "Fri Lower"/);
+  // Start is on the same screen as the words (Oct 18: "What can I do to do workouts?"), before the pages
+  const first = fence(body).split("\n")[0];
+  assert.match(first, /^card@start-now "Today: Upper" "Dumbbell bench press 4 x 6, .* About 60 minutes\." sub="Start when you're ready" cta="Start"$/, first);
   lines(body);
+  // and the tap on it runs today's session, like Start on Today
+  tap(store, arnold.id, "start-now", "card", { cta: "Start" });
+  await runAgent(store, arnold.id, { provider, fetch: m.fetch, now: () => MON });
+  assert.match(lastReply(store, arnold.id).body, /^Upper\. \d moves, one set at a time\. Let's go\./);
+  assert.match(fence(lastReply(store, arnold.id).body), /^plan@wk-20260928-mon "Upper" submit="Finish workout"/);
   // every move in the built week reads as sets to run
   for (const d of ["mon", "tue", "thu", "fri"]) assert.ok(parseWorkout(w[d].Workout).length >= 3, d);
   assert.equal(m.calls.length, 0);

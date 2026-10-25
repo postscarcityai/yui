@@ -254,6 +254,101 @@ struct SessionEngine {
     static func clock(_ s: Int) -> String { RestClock.label(s) }
 }
 
+// MARK: - the coach's voice and the whole workout's clock
+
+extension SessionEngine {
+    /// A log step is the person's, about this long; a failure set has no clock, so about a set's worth.
+    static let logGuess = 20, failGuess = 40
+
+    /// Seconds the whole session is planned to take: every set, every rest, and a guess for the logs.
+    var plannedSeconds: Int { steps.reduce(0) { $0 + Self.guess($1) } }
+
+    private static func guess(_ s: SessionStep) -> Int {
+        switch s.kind {
+        case .log: return logGuess
+        case .fail: return failGuess
+        case .work, .rest: return s.seconds
+        }
+    }
+
+    /// Seconds left in the session from where the clock is: the rest of this step, then every step after it.
+    func secondsLeft(_ run: SessionRun, at now: Date = .now) -> Int {
+        guard run.finished == nil, run.step < steps.count else { return 0 }
+        let here = steps[run.step]
+        let left = here.seconds > 0 ? run.left(at: now) : Self.guess(here)
+        return left + steps.dropFirst(run.step + 1).reduce(0) { $0 + Self.guess($1) }
+    }
+
+    /// "About 18 min left" (under a minute: "Almost done").
+    static func leftLine(_ seconds: Int) -> String {
+        let m = Int((Double(seconds) / 60).rounded())
+        return m < 1 ? "Almost done" : "About \(m) min left"
+    }
+
+    /// What the coach says as a step begins (Chris, Sep 29: "it should be my coach along the way ... it can
+    /// encourage me"). Short, caveman voice, the facts first: the move, the set, the cue.
+    func opening(_ run: SessionRun, _ p: RunnerProgress) -> String? {
+        guard let s = current(run) else { return nil }
+        let m = runner.moves[s.move]
+        switch s.kind {
+        case .work:
+            var line = s.set == 1 ? "\(m.name). \(target(m, p).dropFirst(m.name.count + 1)). " : "\(m.name), set \(s.set) of \(m.labels.count). "
+            if s.set == 1, let why = why(at: run.step) { line += why + " " }
+            return line + Self.cue(m)
+        case .fail: return "Last set, to failure. Stop when form breaks."
+        case .log: return "Done. Log the set."
+        case .rest: return "Rest. " + nextLine(after: run.step, p).replacingOccurrences(of: "Next: ", with: "Next, ")
+        }
+    }
+
+    static let cheers = ["Halfway. Keep it clean.", "Good. Own every rep.", "Breathe. Stay tight.", "Strong. Finish it."]
+
+    /// A word in the middle of a work set, and a ten-second call on a rest, each once a step.
+    func midway(_ run: SessionRun, at now: Date = .now) -> (mark: String, line: String)? {
+        guard let s = current(run), s.seconds > 0, !run.isPaused else { return nil }
+        let left = run.left(at: now)
+        if s.kind == .work, s.seconds >= 24, left <= s.seconds / 2, left > 3 {
+            return ("half", Self.cheers[(s.move + s.set) % Self.cheers.count])
+        }
+        if s.kind == .rest, s.seconds > 15, left <= 10, left > 5 { return ("ten", "Ten seconds.") }
+        return nil
+    }
+}
+
+/// Arnold's voice in the session: spoken on the phone, nothing leaves it, music from other apps keeps playing
+/// under it. A speaker button turns it off and the phone remembers that. VoiceOver already reads the screen,
+/// so it stays quiet then.
+@MainActor @Observable
+final class SessionCoach {
+    static let quietKey = "yuiCoachQuiet"
+    private let output: MotionSpeechOutput
+    private(set) var quiet: Bool
+    /// What was said for which step, so a step says each thing once.
+    private var said: Set<String> = []
+
+    init(output: MotionSpeechOutput? = nil) {
+        self.output = output ?? AVMotionSpeech()
+        quiet = UserDefaults.standard.bool(forKey: Self.quietKey)
+    }
+
+    func toggle() {
+        quiet.toggle()
+        UserDefaults.standard.set(quiet, forKey: Self.quietKey)
+        if quiet { output.stop() }
+    }
+
+    /// Says `line` once for `key` (a step and a mark).
+    func say(_ line: String?, once key: String) {
+        guard let line, !said.contains(key) else { return }
+        said.insert(key)
+        guard !quiet, !UIAccessibility.isVoiceOverRunning else { return }
+        output.stop()
+        output.speak(line)
+    }
+
+    func stop() { output.stop() }
+}
+
 // MARK: - the session screen
 
 /// The session, full size: the phase, the big clock, Arnold's line, the optional buttons. Finished, it logs.
@@ -273,6 +368,7 @@ struct TimedSessionView: View {
     /// The move open in the edit sheet, by tag.
     @State private var editing: String?
     @State private var music = NowPlaying()
+    @State private var coach = SessionCoach()
     @Environment(\.yuiTheme) private var theme
     @Environment(\.colorScheme) private var scheme
 
@@ -293,13 +389,27 @@ struct TimedSessionView: View {
         .onReceive(clock) { _ in
             var p = progress
             if engine.tick(&p) { progress = p }
+            if let run = progress.run, run.finished == nil, let mid = engine.midway(run) {
+                coach.say(mid.line, once: "\(run.step)-\(mid.mark)")
+            }
         }
-        .onAppear { UIApplication.shared.isIdleTimerDisabled = true; startLog(); music.start() }
-        .onDisappear { UIApplication.shared.isIdleTimerDisabled = false; if talk.listening { talk.cancel() }; music.stop() }
+        .onAppear { UIApplication.shared.isIdleTimerDisabled = true; startLog(); music.start(); speakStep() }
+        .onDisappear { UIApplication.shared.isIdleTimerDisabled = false; if talk.listening { talk.cancel() }; music.stop(); coach.stop() }
         .sheet(isPresented: Binding(get: { editing != nil }, set: { if !$0 { editing = nil } })) {
             if let tag = editing { RunnerEditSheet(base: runner, tag: tag, progress: $progress) }
         }
-        .onChange(of: progress.run?.step) { _, _ in startLog() }
+        .onChange(of: progress.run?.step) { _, _ in startLog(); speakStep() }
+    }
+
+    /// The coach says the step that just began, once; the finish line when the session ends.
+    private func speakStep() {
+        guard let run = progress.run else { return }
+        if run.finished != nil {
+            let sets = engine.setsDone(progress)
+            coach.say("Workout done. \(sets.done) of \(sets.of) sets. Nice work.", once: "finish")
+        } else {
+            coach.say(engine.opening(run, progress), once: "\(run.step)-open")
+        }
     }
 
     /// A set just ended: the numbers start from the plan's (or the last set's), ready to nudge.
@@ -331,9 +441,26 @@ struct TimedSessionView: View {
                     .accessibilityIdentifier("session-phase")
                     .accessibilityLabel(resting ? "Rest" : logging ? "Log" : step.kind == .fail ? "To failure" : "Work")
                 Spacer()
-                Text("Move \(step.move + 1) of \(live.moves.count) · Set \(step.set) of \(m.labels.count)")
-                    .font(theme.font(theme.type.caption, .heavy)).foregroundStyle(s.inkSoft)
-                    .accessibilityIdentifier("session-where")
+                VStack(alignment: .trailing, spacing: 2) {
+                    Text("Move \(step.move + 1) of \(live.moves.count) · Set \(step.set) of \(m.labels.count)")
+                        .font(theme.font(theme.type.caption, .heavy)).foregroundStyle(s.inkSoft)
+                        .accessibilityIdentifier("session-where")
+                    // The whole workout on one clock (Chris, Sep 29: "estimate the time it takes").
+                    TimelineView(.periodic(from: .now, by: 1)) { ctx in
+                        Text(SessionEngine.leftLine(e.secondsLeft(run, at: ctx.date)))
+                            .font(theme.font(theme.type.caption, .semibold)).foregroundStyle(s.inkSoft)
+                            .accessibilityIdentifier("session-left")
+                    }
+                }
+                Button { coach.toggle() } label: {
+                    Image(systemName: coach.quiet ? "speaker.slash.fill" : "speaker.wave.2.fill")
+                        .font(theme.font(theme.type.body, .black)).foregroundStyle(s.ink)
+                        .frame(width: 40, height: 40).background(coach.quiet ? s.surface : s.butter, in: Circle())
+                        .overlay(Circle().stroke(coach.quiet ? s.outline : .clear, lineWidth: 1.5))
+                }
+                .buttonStyle(BounceButtonStyle())
+                .accessibilityLabel(coach.quiet ? "Coach voice off" : "Coach voice on")
+                .accessibilityIdentifier("session-voice")
             }
             Text(m.name).font(theme.font(theme.type.display, .heavy)).foregroundStyle(s.ink)
                 .fixedSize(horizontal: false, vertical: true)
@@ -518,38 +645,47 @@ struct TimedSessionView: View {
         }
     }
 
+    /// The clock's buttons. A rest has one more (+15s), so its row is two: the clock's own on the first, the
+    /// move's on the second. One row of five squeezed "Pau se" and "Skip mov e" on a phone.
     private func controls(_ e: SessionEngine, _ run: SessionRun, _ step: SessionStep, _ s: Swatch) -> some View {
-        HStack(spacing: theme.spacing.s) {
-            if step.kind == .fail || step.kind == .log {
-                EmptyView()
-            } else if run.isPaused {
-                OptionPill(text: "Resume", fill: s.accent, ink: s.onAccent, grow: true) { change { e.resume(&$0) } }
-                    .accessibilityIdentifier("session-resume")
-            } else {
-                OptionPill(text: "Pause", fill: s.lavender, grow: true) { change { e.pause(&$0) } }
-                    .accessibilityIdentifier("session-pause")
+        VStack(spacing: theme.spacing.s) {
+            HStack(spacing: theme.spacing.s) {
+                if step.kind == .fail || step.kind == .log {
+                    EmptyView()
+                } else if run.isPaused {
+                    OptionPill(text: "Resume", fill: s.accent, ink: s.onAccent, grow: true) { change { e.resume(&$0) } }
+                        .accessibilityIdentifier("session-resume")
+                } else {
+                    OptionPill(text: "Pause", fill: s.lavender, grow: true) { change { e.pause(&$0) } }
+                        .accessibilityIdentifier("session-pause")
+                }
+                if step.kind == .rest {
+                    OptionPill(text: "+15s", fill: s.lavender, grow: true) { change { e.addTime(&$0) } }
+                        .accessibilityIdentifier("session-more")
+                    OptionPill(text: "Skip rest", fill: s.lavender, grow: true) { change { e.doneEarly(&$0) } }
+                        .accessibilityIdentifier("session-done")
+                } else if step.kind == .work {
+                    OptionPill(text: "Done early", fill: s.lavender, grow: true) { change { e.doneEarly(&$0) } }
+                        .accessibilityIdentifier("session-done")
+                }
+                if step.kind != .rest { moveButtons(e, run, step, s) }
             }
-            if step.kind == .rest {
-                OptionPill(text: "+15s", fill: s.lavender, grow: true) { change { e.addTime(&$0) } }
-                    .accessibilityIdentifier("session-more")
-                OptionPill(text: "Skip rest", fill: s.lavender, grow: true) { change { e.doneEarly(&$0) } }
-                    .accessibilityIdentifier("session-done")
-            } else if step.kind == .work {
-                OptionPill(text: "Done early", fill: s.lavender, grow: true) { change { e.doneEarly(&$0) } }
-                    .accessibilityIdentifier("session-done")
-            }
-            OptionPill(text: "Skip move", fill: s.lavender, grow: true) { change { e.skipMove(&$0) } }
-                .accessibilityIdentifier("session-skip")
-            // Edit the move on screen; on a rest, the one coming up.
-            let focus = step.kind == .rest ? (e.nextWork(after: run.step) ?? step) : step
-            Button { editing = live.moves[focus.move].tag } label: {
-                Image(systemName: "slider.horizontal.3").font(theme.font(theme.type.body, .black)).foregroundStyle(s.ink)
-                    .frame(width: 50, height: 50).background(s.butter, in: Circle())
-            }
-            .buttonStyle(BounceButtonStyle())
-            .accessibilityLabel("Edit \(live.moves[focus.move].name)")
-            .accessibilityIdentifier("session-edit")
+            if step.kind == .rest { HStack(spacing: theme.spacing.s) { moveButtons(e, run, step, s) } }
         }
+    }
+
+    /// Skip the move, and edit it (on a rest, the one coming up).
+    @ViewBuilder private func moveButtons(_ e: SessionEngine, _ run: SessionRun, _ step: SessionStep, _ s: Swatch) -> some View {
+        OptionPill(text: "Skip move", fill: s.lavender, grow: true) { change { e.skipMove(&$0) } }
+            .accessibilityIdentifier("session-skip")
+        let focus = step.kind == .rest ? (e.nextWork(after: run.step) ?? step) : step
+        Button { editing = live.moves[focus.move].tag } label: {
+            Image(systemName: "slider.horizontal.3").font(theme.font(theme.type.body, .black)).foregroundStyle(s.ink)
+                .frame(width: 50, height: 50).background(s.butter, in: Circle())
+        }
+        .buttonStyle(BounceButtonStyle())
+        .accessibilityLabel("Edit \(live.moves[focus.move].name)")
+        .accessibilityIdentifier("session-edit")
     }
 
     private func change(_ f: (inout RunnerProgress) -> Void) {
